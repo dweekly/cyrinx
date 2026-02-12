@@ -199,6 +199,68 @@ final class LinearStreamResampler {
     }
 }
 
+/// Audible role-distinct beacon used for local speaker verification in test labs.
+enum AudibleBeaconSynthesizer {
+    static func synthesize(role: Role, sampleRate: Double, txGainCap: Float) -> [Float] {
+        let fs = min(max(sampleRate.rounded(), 8_000), 192_000)
+        let amplitude = min(max(txGainCap, 0), 0.18)
+        if amplitude <= 0 {
+            return []
+        }
+
+        let pattern: [(freqHz: Double, durationSec: Double)]
+        switch role {
+        case .master:
+            pattern = [(1_240, 0.12), (0, 0.04), (1_860, 0.10), (0, 0.04), (1_240, 0.12)]
+        case .slave:
+            pattern = [(920, 0.10), (0, 0.04), (1_420, 0.10), (0, 0.04), (2_120, 0.10)]
+        }
+
+        var out: [Float] = []
+        for segment in pattern {
+            out.append(
+                contentsOf: makeSegment(
+                    frequencyHz: segment.freqHz,
+                    durationSec: segment.durationSec,
+                    sampleRate: fs,
+                    amplitude: amplitude
+                )
+            )
+        }
+        return out
+    }
+
+    private static func makeSegment(
+        frequencyHz: Double,
+        durationSec: Double,
+        sampleRate: Double,
+        amplitude: Float
+    ) -> [Float] {
+        let sampleCount = max(1, Int((durationSec * sampleRate).rounded()))
+        if frequencyHz <= 0 {
+            return [Float](repeating: 0, count: sampleCount)
+        }
+
+        let rampSamples = min(max(8, Int(sampleRate * 0.004)), sampleCount / 2)
+        let phaseStep = Float((2.0 * Double.pi * frequencyHz) / sampleRate)
+        var phase: Float = 0
+        var out = [Float](repeating: 0, count: sampleCount)
+        for idx in 0..<sampleCount {
+            let envelope: Float
+            if idx < rampSamples {
+                envelope = Float(idx) / Float(max(1, rampSamples))
+            } else if idx >= (sampleCount - rampSamples) {
+                envelope = Float(sampleCount - idx - 1) / Float(max(1, rampSamples))
+            } else {
+                envelope = 1
+            }
+            out[idx] = amplitude * max(0, envelope) * sin(phase)
+            phase += phaseStep
+        }
+        return out
+    }
+}
+
 enum StubWaveSynthesizer {
     static func synthesize(
         symbols: [UInt8],
@@ -276,6 +338,7 @@ protocol SessionFrameIOBackend: AnyObject {
     func start() throws
     func stop()
     func handleOutboundFrame(_ frame: UnsafeBufferPointer<UInt8>) -> Int32
+    func playLocalAudibleBeacon() -> Int32
 }
 
 enum AudioBackendFactory {
@@ -368,6 +431,23 @@ enum AudioBackendFactory {
                 )
             enqueueTxSamples(waveform)
             return 0
+        }
+
+        func playLocalAudibleBeacon() -> Int32 {
+            if state != .running {
+                return CYRINX_ERR_NOT_RUNNING.rawValue
+            }
+            let sampleRate =
+                observedOutputSampleRateHz > 0
+                ? Double(observedOutputSampleRateHz)
+                : Double(config.sampleRateHz)
+            let beacon = AudibleBeaconSynthesizer.synthesize(
+                role: config.role,
+                sampleRate: sampleRate,
+                txGainCap: config.txGainCap
+            )
+            enqueueTxSamples(beacon)
+            return CYRINX_OK.rawValue
         }
 
         private func configureAudioSession() throws {
@@ -772,18 +852,42 @@ enum AudioBackendFactory {
             return 0
         }
 
-        private func makeBuffer(frame: UnsafeBufferPointer<UInt8>) -> AVAudioPCMBuffer? {
-            guard let format else {
-                return nil
+        func playLocalAudibleBeacon() -> Int32 {
+            guard state == .running else {
+                return CYRINX_ERR_NOT_RUNNING.rawValue
             }
+            let sampleRate =
+                observedOutputSampleRateHz > 0
+                ? Double(observedOutputSampleRateHz)
+                : Double(config.sampleRateHz)
+            let waveform = AudibleBeaconSynthesizer.synthesize(
+                role: config.role,
+                sampleRate: sampleRate,
+                txGainCap: config.txGainCap
+            )
+            guard let buffer = makeBuffer(waveform: waveform) else {
+                return CYRINX_ERR_INTERNAL.rawValue
+            }
+            player.scheduleBuffer(buffer, completionHandler: nil)
+            return CYRINX_OK.rawValue
+        }
+
+        private func makeBuffer(frame: UnsafeBufferPointer<UInt8>) -> AVAudioPCMBuffer? {
             let frameBytes = Array(frame)
             let waveform =
                 (try? phyLink.encode(frame: frameBytes))
                 ?? StubWaveSynthesizer.synthesize(
                     symbols: frameBytes,
-                    sampleRate: format.sampleRate,
+                    sampleRate: Double(config.sampleRateHz),
                     txGainCap: config.txGainCap
                 )
+            return makeBuffer(waveform: waveform)
+        }
+
+        private func makeBuffer(waveform: [Float]) -> AVAudioPCMBuffer? {
+            guard let format else {
+                return nil
+            }
             if waveform.isEmpty {
                 return nil
             }

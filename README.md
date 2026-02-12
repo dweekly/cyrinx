@@ -67,6 +67,8 @@ Common status values:
 - `-8` (`CYRINX_ERR_STATE`): wrong state for this API call.
 - `-9` (`CYRINX_ERR_INTERNAL`): internal failure.
 
+For HIL diagnostics, `CyrinxSession.playLocalAudibleBeacon()` emits a role-distinct audible pattern so you can verify local speaker output independent of link decode success.
+
 ## Apple-Targeted Configuration Hooks
 
 `cyrinx_config_t` includes policy/config controls to support the Apple-specific deployment profile:

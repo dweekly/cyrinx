@@ -128,6 +128,16 @@ final class CyrinxTests: XCTestCase {
         }
     }
 
+    func testAudibleBeaconRequiresAudioBackend() throws {
+        let session = try CyrinxSession(config: Config(role: .master, transportBackend: .inMemory))
+        XCTAssertThrowsError(try session.playLocalAudibleBeacon()) { error in
+            guard case CyrinxError.status(let code) = error else {
+                return XCTFail("Expected cyrinx status error")
+            }
+            XCTAssertEqual(code, CYRINX_ERR_UNSUPPORTED.rawValue)
+        }
+    }
+
     func testARCSelectGearTransitions() {
         var metrics = cyrinx_metrics_t()
         var policy = cyrinx_arc_policy_t()

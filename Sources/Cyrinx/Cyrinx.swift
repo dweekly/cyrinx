@@ -5,6 +5,7 @@ private let CYRINX_SWIFT_OK: Int32 = 0
 private let CYRINX_SWIFT_ERR_INVALID_ARGUMENT: Int32 = -1
 private let CYRINX_SWIFT_ERR_BUFFER_TOO_SMALL: Int32 = -3
 private let CYRINX_SWIFT_ERR_TIMEOUT: Int32 = -4
+private let CYRINX_SWIFT_ERR_UNSUPPORTED: Int32 = -7
 private let CYRINX_SWIFT_ERR_INTERNAL: Int32 = -9
 
 /// Library error type that wraps C core status codes.
@@ -46,6 +47,8 @@ public enum CyrinxError: Error, CustomStringConvertible, LocalizedError, Sendabl
             return "Validate stream IDs, payload size, and configuration values."
         case CYRINX_SWIFT_ERR_BUFFER_TOO_SMALL:
             return "Increase receive buffer capacity and retry."
+        case CYRINX_SWIFT_ERR_UNSUPPORTED:
+            return "Use an appleAudioScaffold session for local audio diagnostics."
         default:
             return nil
         }
@@ -493,6 +496,17 @@ public final class CyrinxSession {
             crc_fail: crcFail ? 1 : 0
         )
         let rc = cyrinx_update_channel_report(handle, &r)
+        try Self.checkStatus(rc)
+    }
+
+    /// Plays a role-distinct local audible beacon on the active audio backend.
+    ///
+    /// This is intended for manual speaker-output verification during HIL testing.
+    public func playLocalAudibleBeacon() throws {
+        guard let audioBackend else {
+            throw CyrinxError.status(CYRINX_SWIFT_ERR_UNSUPPORTED)
+        }
+        let rc = audioBackend.playLocalAudibleBeacon()
         try Self.checkStatus(rc)
     }
 

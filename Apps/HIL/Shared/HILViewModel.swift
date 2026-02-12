@@ -228,6 +228,23 @@ final class HILViewModel: ObservableObject {
         #endif
     }
 
+    func playAudibleBeacon() {
+        guard let session else {
+            appendLog("audible beacon skipped: session is not started")
+            return
+        }
+
+        let roleLabel = roleChoice.label
+        sessionOperationQueue.async { [weak self] in
+            do {
+                try session.playLocalAudibleBeacon()
+                self?.postOperationResult("played audible beacon for \(roleLabel)")
+            } catch {
+                self?.postOperationResult("audible beacon failed: \(error)")
+            }
+        }
+    }
+
     private func appendLog(_ line: String) {
         logs.append(line)
         if logs.count > 200 {

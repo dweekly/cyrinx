@@ -21,6 +21,7 @@ This creates `/Users/dew/dev/cyrinx/Apps/HIL/CyrinxHIL.xcodeproj` from `project.
 7. Use `Send Probe (Reliable)` only when you explicitly want ACK/timeout behavior.
 8. Use `Receive Once`, `Refresh Diagnostics`, and `Probe Local Audio` to validate transport and negotiated route rates.
 9. Check diagnostics for `coreRx` increasing above `0` on both sides to confirm decoded inbound frames.
+10. Use `Play Audible Beacon` on each side to verify local speaker output with role-distinct patterns (`Master` and `Slave` sound different).
 
 ## 96 kHz Smoke Workflow
 

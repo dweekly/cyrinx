@@ -3,6 +3,33 @@ import XCTest
 @testable import Cyrinx
 
 final class CyrinxAudioStubTests: XCTestCase {
+    func testAudibleBeaconSynthesizerProducesRoleDistinctWaveforms() {
+        let master = AudibleBeaconSynthesizer.synthesize(
+            role: .master,
+            sampleRate: 48_000,
+            txGainCap: 0.1
+        )
+        let slave = AudibleBeaconSynthesizer.synthesize(
+            role: .slave,
+            sampleRate: 48_000,
+            txGainCap: 0.1
+        )
+
+        XCTAssertFalse(master.isEmpty)
+        XCTAssertFalse(slave.isEmpty)
+        XCTAssertNotEqual(Array(master.prefix(512)), Array(slave.prefix(512)))
+    }
+
+    func testAudibleBeaconSynthesizerHonorsGainCap() {
+        let waveform = AudibleBeaconSynthesizer.synthesize(
+            role: .master,
+            sampleRate: 48_000,
+            txGainCap: 0.05
+        )
+        let peak = waveform.map { abs($0) }.max() ?? 0
+        XCTAssertLessThanOrEqual(peak, 0.0501)
+    }
+
     func testStubWaveSynthesizerIsDeterministic() {
         let symbols: [UInt8] = [1, 7, 19, 31, 42, 88]
         let a = StubWaveSynthesizer.synthesize(

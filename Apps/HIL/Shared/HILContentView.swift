@@ -44,6 +44,9 @@ struct HILContentView: View {
                 Button("Probe Local Audio") {
                     viewModel.probeLocalAudioRoute()
                 }
+                Button("Play Audible Beacon") {
+                    viewModel.playAudibleBeacon()
+                }
             }
 
             Text("Status: \(viewModel.statusText)")
