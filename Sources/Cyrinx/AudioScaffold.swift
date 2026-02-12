@@ -31,7 +31,12 @@ public struct AudioBackendDiagnostics: Sendable {
     public let txFrameCount: UInt64
     public let txByteCount: UInt64
     public let rxCallbackCount: UInt64
+    /// Number of output render completions observed by the backend.
+    ///
+    /// On iOS this tracks RemoteIO render callbacks.
+    /// On macOS this tracks scheduled player-buffer completion callbacks.
     public let outputCallbackCount: UInt64
+    /// Number of queued output samples that have not been fully rendered yet.
     public let pendingOutputSampleCount: UInt64
     public let configuredSampleRateHz: UInt32
     public let observedInputSampleRateHz: UInt32
@@ -465,6 +470,7 @@ enum AudioBackendFactory {
                 sampleRate: sampleRate,
                 txGainCap: config.txGainCap
             )
+            counters.recordTx(bytes: beacon.count)
             enqueueTxSamples(beacon)
             return CYRINX_OK.rawValue
         }
@@ -475,6 +481,7 @@ enum AudioBackendFactory {
             try session.setPreferredSampleRate(Double(config.sampleRateHz))
             try session.setPreferredIOBufferDuration(0.01)
             try session.setActive(true, options: [])
+            try session.overrideOutputAudioPort(.speaker)
             let observedRate = UInt32(session.sampleRate.rounded())
             observedInputSampleRateHz = observedRate
             observedOutputSampleRateHz = observedRate
@@ -788,16 +795,18 @@ enum AudioBackendFactory {
 #endif
 
 #if os(macOS)
-    private final class MacEngineAudioBackend: SessionFrameIOBackend {
+    private final class MacEngineAudioBackend: SessionFrameIOBackend, @unchecked Sendable {
         private let config: Config
         private let counters = AudioCounterBox()
         private let phyLink: AcousticPHYLink
         private let engine = AVAudioEngine()
         private let player = AVAudioPlayerNode()
+        private let pendingOutputLock = NSLock()
         private var sessionHandle: OpaquePointer?
         private var state: AudioBackendState = .idle
         private var observedInputSampleRateHz: UInt32 = 0
         private var observedOutputSampleRateHz: UInt32 = 0
+        private var pendingOutputSamples: UInt64 = 0
         private var rxResampler: LinearStreamResampler?
         private lazy var format: AVAudioFormat? = {
             AVAudioFormat(
@@ -817,7 +826,7 @@ enum AudioBackendFactory {
             counters.snapshot(
                 backend: "macos-avaudioengine",
                 state: state,
-                pendingOutputSampleCount: 0,
+                pendingOutputSampleCount: pendingOutputSamplesSnapshot(),
                 configuredSampleRateHz: config.sampleRateHz,
                 observedInputSampleRateHz: observedInputSampleRateHz,
                 observedOutputSampleRateHz: observedOutputSampleRateHz
@@ -848,8 +857,11 @@ enum AudioBackendFactory {
             }
 
             do {
+                player.volume = 1.0
+                engine.mainMixerNode.outputVolume = 1.0
+                engine.prepare()
                 try engine.start()
-                player.play()
+                ensurePlayerRunning()
                 observedInputSampleRateHz = UInt32(
                     engine.inputNode.inputFormat(forBus: 0).sampleRate.rounded()
                 )
@@ -868,16 +880,20 @@ enum AudioBackendFactory {
             engine.inputNode.removeTap(onBus: 0)
             player.stop()
             engine.stop()
+            pendingOutputLock.lock()
+            pendingOutputSamples = 0
+            pendingOutputLock.unlock()
             state = .stopped
         }
 
         func handleOutboundFrame(_ frame: UnsafeBufferPointer<UInt8>) -> Int32 {
-            counters.recordTx(bytes: frame.count)
-            guard state == .running, let buffer = makeBuffer(frame: frame) else {
-                return 0
+            guard state == .running else {
+                return CYRINX_ERR_NOT_RUNNING.rawValue
             }
-            player.scheduleBuffer(buffer, completionHandler: nil)
-            return 0
+            guard let buffer = makeBuffer(frame: frame) else {
+                return CYRINX_ERR_INTERNAL.rawValue
+            }
+            return scheduleForPlayback(buffer: buffer, logicalBytes: frame.count)
         }
 
         func playLocalAudibleBeacon() -> Int32 {
@@ -896,8 +912,7 @@ enum AudioBackendFactory {
             guard let buffer = makeBuffer(waveform: waveform) else {
                 return CYRINX_ERR_INTERNAL.rawValue
             }
-            player.scheduleBuffer(buffer, completionHandler: nil)
-            return CYRINX_OK.rawValue
+            return scheduleForPlayback(buffer: buffer, logicalBytes: waveform.count)
         }
 
         private func makeBuffer(frame: UnsafeBufferPointer<UInt8>) -> AVAudioPCMBuffer? {
@@ -933,6 +948,58 @@ enum AudioBackendFactory {
                 channel[idx] = sample
             }
             return buffer
+        }
+
+        private func scheduleForPlayback(buffer: AVAudioPCMBuffer, logicalBytes: Int) -> Int32 {
+            guard state == .running else {
+                return CYRINX_ERR_NOT_RUNNING.rawValue
+            }
+            if !engine.isRunning {
+                do {
+                    try engine.start()
+                } catch {
+                    state = .failed
+                    return CYRINX_ERR_INTERNAL.rawValue
+                }
+            }
+            ensurePlayerRunning()
+
+            let renderedSamples = UInt64(buffer.frameLength)
+            counters.recordTx(bytes: logicalBytes)
+            addPendingOutputSamples(renderedSamples)
+            player.scheduleBuffer(buffer) { [weak self] in
+                guard let self else {
+                    return
+                }
+                self.counters.recordOutputCallback()
+                self.subtractPendingOutputSamples(renderedSamples)
+            }
+            return CYRINX_OK.rawValue
+        }
+
+        private func ensurePlayerRunning() {
+            if !player.isPlaying {
+                player.play()
+            }
+        }
+
+        private func pendingOutputSamplesSnapshot() -> UInt64 {
+            pendingOutputLock.lock()
+            let value = pendingOutputSamples
+            pendingOutputLock.unlock()
+            return value
+        }
+
+        private func addPendingOutputSamples(_ samples: UInt64) {
+            pendingOutputLock.lock()
+            pendingOutputSamples &+= samples
+            pendingOutputLock.unlock()
+        }
+
+        private func subtractPendingOutputSamples(_ samples: UInt64) {
+            pendingOutputLock.lock()
+            pendingOutputSamples = pendingOutputSamples > samples ? (pendingOutputSamples - samples) : 0
+            pendingOutputLock.unlock()
         }
 
         private func ingestInboundBuffer(_ buffer: AVAudioPCMBuffer) {
