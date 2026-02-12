@@ -56,7 +56,7 @@ public enum CyrinxError: Error, CustomStringConvertible, LocalizedError, Sendabl
 }
 
 /// Session role for the half-duplex ping-pong transport.
-public enum Role {
+public enum Role: CustomStringConvertible {
     /// Initiates discovery and starts the first transmission slot.
     case master
     /// Responds to discovery and alternates receive/transmit slots.
@@ -66,6 +66,15 @@ public enum Role {
         switch self {
         case .master: return CYRINX_ROLE_MASTER
         case .slave: return CYRINX_ROLE_SLAVE
+        }
+    }
+
+    public var description: String {
+        switch self {
+        case .master:
+            return "master"
+        case .slave:
+            return "slave"
         }
     }
 }
