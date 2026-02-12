@@ -9,7 +9,10 @@ let package = Package(
     ],
     products: [
         .library(name: "CCyrinx", targets: ["CCyrinx"]),
-        .library(name: "Cyrinx", targets: ["Cyrinx"])
+        .library(name: "Cyrinx", targets: ["Cyrinx"]),
+        .executable(name: "cyrinx-example-loopback", targets: ["ExampleLoopback"]),
+        .executable(name: "cyrinx-example-multiplex", targets: ["ExampleMultiplex"]),
+        .executable(name: "cyrinx-example-large-payload", targets: ["ExampleLargePayload"])
     ],
     targets: [
         .target(
@@ -24,6 +27,21 @@ let package = Package(
             name: "Cyrinx",
             dependencies: ["CCyrinx"],
             path: "Sources/Cyrinx"
+        ),
+        .executableTarget(
+            name: "ExampleLoopback",
+            dependencies: ["Cyrinx"],
+            path: "Examples/Loopback"
+        ),
+        .executableTarget(
+            name: "ExampleMultiplex",
+            dependencies: ["Cyrinx"],
+            path: "Examples/Multiplex"
+        ),
+        .executableTarget(
+            name: "ExampleLargePayload",
+            dependencies: ["Cyrinx"],
+            path: "Examples/LargePayload"
         ),
         .testTarget(
             name: "CyrinxTests",

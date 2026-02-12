@@ -51,6 +51,16 @@ This repository currently provides:
 swift test
 ```
 
+## Sample Programs
+
+Sample runnable programs live in `/Users/dew/dev/cyrinx/Examples/README.md`.
+
+```bash
+swift run cyrinx-example-loopback
+swift run cyrinx-example-multiplex
+swift run cyrinx-example-large-payload
+```
+
 ## Linting and Formatting
 
 ```bash
