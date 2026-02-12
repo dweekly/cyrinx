@@ -500,8 +500,16 @@ enum AudioBackendFactory {
             )
             let beaconPeak = peakAbs(beacon)
             counters.recordTx(bytes: beacon.count)
-            enqueueTxSamples(beacon)
-            playAudibleBeaconViaAVAudioPlayer(beacon, sampleRate: sampleRate)
+            if AVAudioSession.sharedInstance().outputVolume <= 0.01 {
+                log.warning("system output volume is near zero; beacon audibility may be poor")
+            }
+            let startedWithPlayer = playAudibleBeaconViaAVAudioPlayer(beacon, sampleRate: sampleRate)
+            if !startedWithPlayer {
+                enqueueTxSamples(beacon)
+            } else {
+                // Avoid double-rendering (AVAudioPlayer + RemoteIO) which sounds choppy in HIL tests.
+                clearTxQueue()
+            }
             if let audioUnit {
                 let startStatus = AudioOutputUnitStart(audioUnit)
                 if startStatus != noErr {
@@ -516,12 +524,14 @@ enum AudioBackendFactory {
             return CYRINX_OK.rawValue
         }
 
-        private func playAudibleBeaconViaAVAudioPlayer(_ samples: [Float], sampleRate: Double) {
+        private func playAudibleBeaconViaAVAudioPlayer(_ samples: [Float], sampleRate: Double) -> Bool {
             guard !samples.isEmpty else {
-                return
+                return false
             }
             let wavData = makePCM16WAV(samples: samples, sampleRate: sampleRate)
             do {
+                beaconPlayer?.stop()
+                beaconPlayer = nil
                 let player = try AVAudioPlayer(data: wavData)
                 player.volume = 1.0
                 player.prepareToPlay()
@@ -530,8 +540,10 @@ enum AudioBackendFactory {
                 log.info(
                     "beacon AVAudioPlayer started=\(started) durationSec=\(player.duration)"
                 )
+                return started
             } catch {
                 log.error("beacon AVAudioPlayer failed: \(error.localizedDescription)")
+                return false
             }
         }
 
@@ -1019,6 +1031,13 @@ enum AudioBackendFactory {
             }
             txQueueLock.unlock()
             return copied
+        }
+
+        private func clearTxQueue() {
+            txQueueLock.lock()
+            txSampleQueue.removeAll(keepingCapacity: false)
+            txSampleReadIndex = 0
+            txQueueLock.unlock()
         }
 
         private func makePCM16WAV(samples: [Float], sampleRate: Double) -> Data {
