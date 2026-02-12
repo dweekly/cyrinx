@@ -1030,24 +1030,24 @@ enum AudioBackendFactory {
             data.reserveCapacity(totalBytes)
 
             data.append(contentsOf: [0x52, 0x49, 0x46, 0x46])  // RIFF
-            data.append(le32(UInt32(totalBytes - 8)))
+            data.append(contentsOf: le32(UInt32(totalBytes - 8)))
             data.append(contentsOf: [0x57, 0x41, 0x56, 0x45])  // WAVE
             data.append(contentsOf: [0x66, 0x6D, 0x74, 0x20])  // fmt
-            data.append(le32(16))
-            data.append(le16(1))  // PCM
-            data.append(le16(1))  // mono
-            data.append(le32(clampedRate))
+            data.append(contentsOf: le32(16))
+            data.append(contentsOf: le16(1))  // PCM
+            data.append(contentsOf: le16(1))  // mono
+            data.append(contentsOf: le32(clampedRate))
             let byteRate = clampedRate * UInt32(MemoryLayout<Int16>.size)
-            data.append(le32(byteRate))
-            data.append(le16(UInt16(MemoryLayout<Int16>.size)))
-            data.append(le16(16))
+            data.append(contentsOf: le32(byteRate))
+            data.append(contentsOf: le16(UInt16(MemoryLayout<Int16>.size)))
+            data.append(contentsOf: le16(16))
             data.append(contentsOf: [0x64, 0x61, 0x74, 0x61])  // data
-            data.append(le32(UInt32(pcmBytes)))
+            data.append(contentsOf: le32(UInt32(pcmBytes)))
 
             for sample in samples {
                 let s = max(-1.0, min(1.0, sample))
                 let i16 = Int16((s * Float(Int16.max)).rounded())
-                data.append(le16(UInt16(bitPattern: i16)))
+                data.append(contentsOf: le16(UInt16(bitPattern: i16)))
             }
             return data
         }
