@@ -516,7 +516,7 @@ enum AudioBackendFactory {
             if AVAudioSession.sharedInstance().outputVolume <= 0.01 {
                 log.warning("system output volume is near zero; beacon audibility may be poor")
             }
-            log.info("audible beacon role=\(config.role) sr=\(Int(sampleRate))Hz")
+            log.info("audible beacon role=\(self.config.role) sr=\(Int(sampleRate))Hz")
             log.info("audible beacon durationSec=\(beaconDurationSec) samples=\(beacon.count)")
             let startedWithPlayer = playAudibleBeaconViaAVAudioPlayer(beacon, sampleRate: sampleRate)
             let queuedRemoteFallback: Bool
