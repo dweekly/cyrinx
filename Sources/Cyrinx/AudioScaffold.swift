@@ -846,7 +846,9 @@ enum AudioBackendFactory {
             guard let ioActionFlags else {
                 return
             }
-            let silenceFlag = AudioUnitRenderActionFlags(rawValue: kAudioUnitRenderAction_OutputIsSilence)
+            // AUComponent.h: kAudioUnitRenderAction_OutputIsSilence = (1UL << 4).
+            // Some Swift SDK overlays do not expose the C symbol consistently.
+            let silenceFlag = AudioUnitRenderActionFlags(rawValue: 1 << 4)
             if totalCopied > 0 {
                 ioActionFlags.pointee.remove(silenceFlag)
             } else {
