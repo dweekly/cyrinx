@@ -223,7 +223,7 @@ final class LinearStreamResampler {
 enum AudibleBeaconSynthesizer {
     static func synthesize(role: Role, sampleRate: Double, txGainCap: Float) -> [Float] {
         let fs = min(max(sampleRate.rounded(), 8_000), 192_000)
-        let amplitude = min(max(txGainCap, 0), 0.55)
+        let amplitude = min(max(txGainCap, 0), 0.25)
         if amplitude <= 0 {
             return []
         }
@@ -231,13 +231,10 @@ enum AudibleBeaconSynthesizer {
         let pattern: [(freqHz: Double, durationSec: Double)]
         switch role {
         case .master:
-            pattern =
-                [(1_300, 0.18), (0, 0.06), (1_700, 0.18), (0, 0.06), (1_300, 0.18)]
-                + [(0, 0.12), (1_300, 0.18), (0, 0.06), (1_700, 0.18), (0, 0.06), (1_300, 0.18)]
+            // Smooth continuous tone for reliable "is audio playing?" verification.
+            pattern = [(1_100, 1.4)]
         case .slave:
-            pattern =
-                [(900, 0.18), (0, 0.06), (1_200, 0.18), (0, 0.06), (1_700, 0.18)]
-                + [(0, 0.12), (900, 0.18), (0, 0.06), (1_200, 0.18), (0, 0.06), (1_700, 0.18)]
+            pattern = [(880, 1.4)]
         }
 
         var out: [Float] = []
@@ -265,7 +262,7 @@ enum AudibleBeaconSynthesizer {
             return [Float](repeating: 0, count: sampleCount)
         }
 
-        let rampSamples = min(max(8, Int(sampleRate * 0.004)), sampleCount / 2)
+        let rampSamples = min(max(16, Int(sampleRate * 0.012)), sampleCount / 2)
         let phaseStep = Float((2.0 * Double.pi * frequencyHz) / sampleRate)
         var phase: Float = 0
         var out = [Float](repeating: 0, count: sampleCount)
@@ -504,13 +501,16 @@ enum AudioBackendFactory {
                 log.warning("system output volume is near zero; beacon audibility may be poor")
             }
             let startedWithPlayer = playAudibleBeaconViaAVAudioPlayer(beacon, sampleRate: sampleRate)
+            let queuedRemoteFallback: Bool
             if !startedWithPlayer {
                 enqueueTxSamples(beacon)
+                queuedRemoteFallback = true
             } else {
                 // Avoid double-rendering (AVAudioPlayer + RemoteIO) which sounds choppy in HIL tests.
                 clearTxQueue()
+                queuedRemoteFallback = false
             }
-            if let audioUnit {
+            if queuedRemoteFallback, let audioUnit {
                 let startStatus = AudioOutputUnitStart(audioUnit)
                 if startStatus != noErr {
                     log.error("AudioOutputUnitStart(kick) failed status=\(startStatus)")
