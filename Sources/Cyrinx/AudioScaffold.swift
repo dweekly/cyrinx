@@ -1,3 +1,4 @@
+import CCyrinx
 import Foundation
 
 #if canImport(AVFoundation)
@@ -89,8 +90,44 @@ enum StubWaveSynthesizer {
         }
 
         let cappedSymbols = Array(symbols.prefix(max(0, symbolLimit)))
+        if let vDSPWaveform = tryVDSPWaveform(
+            symbols: cappedSymbols,
+            sampleRate: sampleRate,
+            txGainCap: txGainCap
+        ) {
+            return vDSPWaveform
+        }
+        return toneFallbackWaveform(
+            symbols: cappedSymbols,
+            sampleRate: sampleRate,
+            txGainCap: txGainCap
+        )
+    }
+
+    private static func tryVDSPWaveform(
+        symbols: [UInt8],
+        sampleRate: Double,
+        txGainCap: Float
+    ) -> [Float]? {
+        if sampleRate <= 0 {
+            return nil
+        }
+
+        let clampedSampleRate = min(max(sampleRate.rounded(), 8_000), 192_000)
+        let config = VDSPOFDMConfig(
+            sampleRateHz: UInt32(clampedSampleRate),
+            txGainCap: min(max(txGainCap, 0), 0.12)
+        )
+        return try? VDSPPHY.modulateOFDMQPSK(payload: symbols, config: config)
+    }
+
+    private static func toneFallbackWaveform(
+        symbols: [UInt8],
+        sampleRate: Double,
+        txGainCap: Float
+    ) -> [Float] {
         let samplesPerSymbol = max(Int(sampleRate * 0.002), 48)
-        let totalSamples = cappedSymbols.count * samplesPerSymbol
+        let totalSamples = symbols.count * samplesPerSymbol
         var out = [Float](repeating: 0, count: totalSamples)
         let nyquistSafe = max(19_000.0, (sampleRate * 0.5) - 500.0)
         let base = min(18_500.0, nyquistSafe - 800.0)
@@ -98,7 +135,7 @@ enum StubWaveSynthesizer {
         let amplitude = min(max(txGainCap, 0), 0.12)
         var cursor = 0
 
-        for symbol in cappedSymbols {
+        for symbol in symbols {
             let tone = base + (Double(symbol % 31) / 30.0) * span
             let delta = Float(2.0 * .pi * tone / sampleRate)
             var phase: Float = 0
@@ -114,6 +151,7 @@ enum StubWaveSynthesizer {
 
 protocol SessionFrameIOBackend: AnyObject {
     var diagnostics: AudioBackendDiagnostics { get }
+    func attachSessionHandle(_ handle: OpaquePointer)
     func start() throws
     func stop()
     func handleOutboundFrame(_ frame: UnsafeBufferPointer<UInt8>) -> Int32
@@ -142,20 +180,27 @@ enum AudioBackendFactory {
     private final class IOSRemoteIOAudioBackend: SessionFrameIOBackend {
         private let config: Config
         private let counters = AudioCounterBox()
+        private let phyLink: AcousticPHYLink
         private let txQueueLock = NSLock()
         private var audioUnit: AudioUnit?
+        private var sessionHandle: OpaquePointer?
         private var txSampleQueue: [Float] = []
         private var txSampleReadIndex: Int = 0
         private var state: AudioBackendState = .idle
 
         init(config: Config) throws {
             self.config = config
+            phyLink = AcousticPHYLink(config: config)
             try configureAudioSession()
             try createAudioUnit()
         }
 
         var diagnostics: AudioBackendDiagnostics {
             counters.snapshot(backend: "ios-remoteio", state: state)
+        }
+
+        func attachSessionHandle(_ handle: OpaquePointer) {
+            sessionHandle = handle
         }
 
         func start() throws {
@@ -184,12 +229,14 @@ enum AudioBackendFactory {
                 return 0
             }
 
-            let symbols = Array(frame)
-            let waveform = StubWaveSynthesizer.synthesize(
-                symbols: symbols,
-                sampleRate: Double(config.sampleRateHz),
-                txGainCap: config.txGainCap
-            )
+            let frameBytes = Array(frame)
+            let waveform =
+                (try? phyLink.encode(frame: frameBytes))
+                ?? StubWaveSynthesizer.synthesize(
+                    symbols: frameBytes,
+                    sampleRate: Double(config.sampleRateHz),
+                    txGainCap: config.txGainCap
+                )
             enqueueTxSamples(waveform)
             return 0
         }
@@ -381,6 +428,12 @@ enum AudioBackendFactory {
             )
             if status == noErr {
                 counters.recordRxCallback()
+                let sampleCount = Int(inNumberFrames)
+                let samples = UnsafeBufferPointer(
+                    start: raw.assumingMemoryBound(to: Float.self),
+                    count: sampleCount
+                )
+                ingestInboundSamples(samples)
             }
             return status
         }
@@ -432,6 +485,23 @@ enum AudioBackendFactory {
             txQueueLock.unlock()
             return copied
         }
+
+        private func ingestInboundSamples(_ samples: UnsafeBufferPointer<Float>) {
+            guard let sessionHandle else {
+                return
+            }
+
+            let decodedFrames = phyLink.ingest(samples: samples)
+            for decoded in decodedFrames where !decoded.frame.isEmpty {
+                var report = decoded.report
+                let rc = decoded.frame.withUnsafeBufferPointer { ptr in
+                    cyrinx_ingest_frame(sessionHandle, ptr.baseAddress, ptr.count, &report)
+                }
+                if rc != CYRINX_OK.rawValue {
+                    state = .failed
+                }
+            }
+        }
     }
     // swiftlint:enable type_body_length
 
@@ -482,8 +552,10 @@ enum AudioBackendFactory {
     private final class MacEngineAudioBackend: SessionFrameIOBackend {
         private let config: Config
         private let counters = AudioCounterBox()
+        private let phyLink: AcousticPHYLink
         private let engine = AVAudioEngine()
         private let player = AVAudioPlayerNode()
+        private var sessionHandle: OpaquePointer?
         private var state: AudioBackendState = .idle
         private lazy var format: AVAudioFormat? = {
             AVAudioFormat(
@@ -496,10 +568,15 @@ enum AudioBackendFactory {
 
         init(config: Config) {
             self.config = config
+            phyLink = AcousticPHYLink(config: config)
         }
 
         var diagnostics: AudioBackendDiagnostics {
             counters.snapshot(backend: "macos-avaudioengine", state: state)
+        }
+
+        func attachSessionHandle(_ handle: OpaquePointer) {
+            sessionHandle = handle
         }
 
         func start() throws {
@@ -516,8 +593,9 @@ enum AudioBackendFactory {
                 onBus: 0,
                 bufferSize: 1024,
                 format: engine.inputNode.inputFormat(forBus: 0)
-            ) { [weak self] _, _ in
+            ) { [weak self] buffer, _ in
                 self?.counters.recordRxCallback()
+                self?.ingestInboundBuffer(buffer)
             }
 
             do {
@@ -550,11 +628,14 @@ enum AudioBackendFactory {
             guard let format else {
                 return nil
             }
-            let waveform = StubWaveSynthesizer.synthesize(
-                symbols: Array(frame),
-                sampleRate: format.sampleRate,
-                txGainCap: config.txGainCap
-            )
+            let frameBytes = Array(frame)
+            let waveform =
+                (try? phyLink.encode(frame: frameBytes))
+                ?? StubWaveSynthesizer.synthesize(
+                    symbols: frameBytes,
+                    sampleRate: format.sampleRate,
+                    txGainCap: config.txGainCap
+                )
             if waveform.isEmpty {
                 return nil
             }
@@ -572,6 +653,27 @@ enum AudioBackendFactory {
                 channel[idx] = sample
             }
             return buffer
+        }
+
+        private func ingestInboundBuffer(_ buffer: AVAudioPCMBuffer) {
+            guard let sessionHandle, let channel = buffer.floatChannelData?.pointee else {
+                return
+            }
+            let frameLength = Int(buffer.frameLength)
+            if frameLength == 0 {
+                return
+            }
+            let samples = UnsafeBufferPointer(start: channel, count: frameLength)
+            let decodedFrames = phyLink.ingest(samples: samples)
+            for decoded in decodedFrames where !decoded.frame.isEmpty {
+                var report = decoded.report
+                let rc = decoded.frame.withUnsafeBufferPointer { ptr in
+                    cyrinx_ingest_frame(sessionHandle, ptr.baseAddress, ptr.count, &report)
+                }
+                if rc != CYRINX_OK.rawValue {
+                    state = .failed
+                }
+            }
         }
     }
 #endif

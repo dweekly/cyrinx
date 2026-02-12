@@ -13,9 +13,15 @@ This repository currently provides:
 - In-memory linked transport for deterministic tests without audio hardware
 - PHY utility module with Zadoff-Chu generation, CFO estimation, and dynamic CP selection
 - Apple audio backend scaffold (`RemoteIO` on iOS, `AVAudioEngine` on macOS)
-- Shared deterministic ultrasonic waveform synthesizer used by both Apple scaffolds
-- Deterministic OFDM/D-CSS PHY stub interfaces, including stateful sequential chunk APIs
-- Golden-vector and chunked-sequence PHY tests for deterministic behavior
+- End-to-end acoustic PHY bridge (`AcousticPHYLink`) with:
+  - dual-ZC preamble-based synchronization
+  - robust D-CSS control header
+  - adaptive D-CSS/OFDM-QPSK payload modulation based on frame gear/control type
+  - RX demodulation path into `cyrinx_ingest_frame` from live audio callbacks
+- Shared fallback deterministic ultrasonic waveform synthesizer used by both Apple scaffolds
+- Deterministic OFDM/D-CSS PHY stubs for C ABI compatibility
+- vDSP-backed OFDM QPSK and D-CSS modulators/demodulators in Swift (`VDSPPHY`)
+- Golden-vector, chunked-sequence, and acoustic end-to-end PHY tests for deterministic behavior
 
 ## Implemented Protocol Model
 
@@ -85,12 +91,12 @@ swift run cyrinx-sim-bench --profile quiet --out artifacts/bench/sim-quiet.json
 
 ## Current Scope and Next Steps
 
-This implementation is protocol-complete for simulation/in-memory transport, but not yet a full real-time acoustic modem.
+This implementation now includes a real TX/RX acoustic PHY pipeline in Swift for Apple backends, plus full simulation and in-memory transport.
 
 Planned next layers:
 
-1. Replace stub PHY blocks with vDSP-backed OFDM/D-CSS implementations
-2. Complete live frame demodulation path into `cyrinx_ingest_frame`
-3. Hardware-in-the-loop channel calibration for MacBook Pro <-> iPhone Pro Max
-4. Security envelope integration in host app (Encrypt-then-MAC payloads)
-5. Optional C++/Rust backend behind the same public C ABI and Swift API
+1. Add pilot tracking, channel estimation, and equalization for non-ideal OFDM channels
+2. Improve Doppler/CFO estimation and compensation in the live RX path
+3. Harden D-CSS synchronization and multipath tolerance under office-noise profiles
+4. Hardware-in-the-loop channel calibration for MacBook Pro <-> iPhone Pro Max
+5. Security envelope integration in host app (Encrypt-then-MAC payloads)

@@ -22,15 +22,27 @@ final class CyrinxAudioStubTests: XCTestCase {
 
     func testStubWaveSynthesizerRespectsSymbolLimit() {
         let symbols: [UInt8] = (0..<120).map { UInt8($0 % 255) }
-        let out = StubWaveSynthesizer.synthesize(
+        let limitedOut = StubWaveSynthesizer.synthesize(
             symbols: symbols,
             sampleRate: 48_000,
             txGainCap: 0.7,
             symbolLimit: 64
         )
+        let manuallyTrimmedOut = StubWaveSynthesizer.synthesize(
+            symbols: Array(symbols.prefix(64)),
+            sampleRate: 48_000,
+            txGainCap: 0.7,
+            symbolLimit: 64
+        )
+        let unboundedOut = StubWaveSynthesizer.synthesize(
+            symbols: symbols,
+            sampleRate: 48_000,
+            txGainCap: 0.7,
+            symbolLimit: 256
+        )
 
-        let samplesPerSymbol = max(Int(48_000 * 0.002), 48)
-        XCTAssertEqual(out.count, 64 * samplesPerSymbol)
+        XCTAssertEqual(limitedOut, manuallyTrimmedOut)
+        XCTAssertLessThan(limitedOut.count, unboundedOut.count)
     }
 
     func testStubWaveSynthesizerHonorsGainCap() {

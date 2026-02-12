@@ -307,6 +307,7 @@ public final class CyrinxSession {
         }
 
         handle = opened
+        audioBackend?.attachSessionHandle(opened)
     }
 
     deinit {
