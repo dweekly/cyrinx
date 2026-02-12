@@ -53,6 +53,28 @@ public struct PHYStubConfig: Sendable {
     }
 }
 
+public struct PHYStubSequentialState: Sendable {
+    fileprivate var cState: cyrinx_phy_stub_state_t
+
+    public init(mode: PHYStubMode) {
+        cState = cyrinx_phy_stub_state_t(
+            mode: mode.cValue, tx_symbol_index: 0, rx_symbol_index: 0, initialized: 0)
+        cyrinx_phy_stub_state_reset(&cState, mode.cValue)
+    }
+
+    public mutating func reset(mode: PHYStubMode) {
+        cyrinx_phy_stub_state_reset(&cState, mode.cValue)
+    }
+
+    public var txSymbolIndex: UInt64 {
+        cState.tx_symbol_index
+    }
+
+    public var rxSymbolIndex: UInt64 {
+        cState.rx_symbol_index
+    }
+}
+
 public enum PHYStub {
     public static func modulate(symbols: [UInt8], config: PHYStubConfig) throws -> [PHYComplex] {
         if symbols.isEmpty {
@@ -99,6 +121,68 @@ public enum PHYStub {
                 &symbolCount
             )
         }
+        try checkPHYStatus(rc)
+        return Array(symbols.prefix(symbolCount))
+    }
+
+    public static func modulateSequential(
+        symbols: [UInt8],
+        config: PHYStubConfig,
+        state: inout PHYStubSequentialState
+    ) throws -> [PHYComplex] {
+        if symbols.isEmpty {
+            return []
+        }
+
+        var cConfig = config.toC()
+        var cState = state.cState
+        var out = [cyrinx_complex_f32_t](
+            repeating: cyrinx_complex_f32_t(re: 0, im: 0),
+            count: symbols.count
+        )
+        var outCount = out.count
+
+        let rc = symbols.withUnsafeBufferPointer { inPtr in
+            cyrinx_phy_modulate_stub_seq(
+                &cConfig,
+                &cState,
+                inPtr.baseAddress,
+                symbols.count,
+                &out,
+                &outCount
+            )
+        }
+        state.cState = cState
+        try checkPHYStatus(rc)
+        return out.prefix(outCount).map { PHYComplex(re: $0.re, im: $0.im) }
+    }
+
+    public static func demodulateSequential(
+        samples: [PHYComplex],
+        config: PHYStubConfig,
+        state: inout PHYStubSequentialState
+    ) throws -> [UInt8] {
+        if samples.isEmpty {
+            return []
+        }
+
+        var cConfig = config.toC()
+        var cState = state.cState
+        let cSamples = samples.map { cyrinx_complex_f32_t(re: $0.re, im: $0.im) }
+        var symbols = [UInt8](repeating: 0, count: cSamples.count)
+        var symbolCount = symbols.count
+
+        let rc = cSamples.withUnsafeBufferPointer { samplePtr in
+            cyrinx_phy_demodulate_stub_seq(
+                &cConfig,
+                &cState,
+                samplePtr.baseAddress,
+                samplePtr.count,
+                &symbols,
+                &symbolCount
+            )
+        }
+        state.cState = cState
         try checkPHYStatus(rc)
         return Array(symbols.prefix(symbolCount))
     }

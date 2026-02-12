@@ -147,6 +147,36 @@ static uint8_t cyrinx_demap_dcss(const cyrinx_complex_f32_t *sample) {
     return (uint8_t)nearest;
 }
 
+static cyrinx_complex_f32_t cyrinx_rotate(cyrinx_complex_f32_t in, float phase) {
+    float c = cosf(phase);
+    float s = sinf(phase);
+    cyrinx_complex_f32_t out;
+    out.re = (in.re * c) - (in.im * s);
+    out.im = (in.re * s) + (in.im * c);
+    return out;
+}
+
+static float cyrinx_stub_phase_offset(const cyrinx_phy_stub_config_t *config, uint64_t symbol_index) {
+    if (!config) {
+        return 0.0f;
+    }
+
+    switch (config->mode) {
+    case CYRINX_PHY_STUB_OFDM_QPSK: {
+        uint32_t period = config->fft_size ? config->fft_size : CYRINX_OFDM_FFT_SIZE;
+        uint32_t bucket = (uint32_t)(symbol_index % (uint64_t)period);
+        return CYRINX_TWO_PI * ((float)bucket / (float)period);
+    }
+    case CYRINX_PHY_STUB_DCSS: {
+        const uint32_t period = 127u;
+        uint32_t bucket = (uint32_t)(symbol_index % period);
+        return CYRINX_TWO_PI * ((float)bucket / (float)period);
+    }
+    default:
+        return 0.0f;
+    }
+}
+
 void cyrinx_phy_stub_default_config(cyrinx_phy_stub_mode_t mode, cyrinx_phy_stub_config_t *out_config) {
     if (!out_config) {
         return;
@@ -211,6 +241,102 @@ int cyrinx_phy_demodulate_stub(const cyrinx_phy_stub_config_t *config, const cyr
         return CYRINX_ERR_UNSUPPORTED;
     }
 
+    *inout_symbol_len = sample_len;
+    return CYRINX_OK;
+}
+
+void cyrinx_phy_stub_state_reset(cyrinx_phy_stub_state_t *state, cyrinx_phy_stub_mode_t mode) {
+    if (!state) {
+        return;
+    }
+    state->mode = mode;
+    state->tx_symbol_index = 0u;
+    state->rx_symbol_index = 0u;
+    state->initialized = 1u;
+}
+
+int cyrinx_phy_modulate_stub_seq(const cyrinx_phy_stub_config_t *config, cyrinx_phy_stub_state_t *state,
+                                 const uint8_t *symbols, size_t symbol_len, cyrinx_complex_f32_t *out_samples,
+                                 size_t *inout_sample_len) {
+    if (!config || !state || !symbols || !out_samples || !inout_sample_len || symbol_len == 0) {
+        return CYRINX_ERR_INVALID_ARGUMENT;
+    }
+    if (*inout_sample_len < symbol_len) {
+        *inout_sample_len = symbol_len;
+        return CYRINX_ERR_BUFFER_TOO_SMALL;
+    }
+    if (!state->initialized) {
+        cyrinx_phy_stub_state_reset(state, config->mode);
+    }
+    if (state->mode != config->mode) {
+        return CYRINX_ERR_STATE;
+    }
+
+    switch (config->mode) {
+    case CYRINX_PHY_STUB_OFDM_QPSK:
+        for (size_t i = 0; i < symbol_len; ++i) {
+            uint64_t symbol_index = state->tx_symbol_index + (uint64_t)i;
+            cyrinx_complex_f32_t base = cyrinx_map_qpsk(symbols[i]);
+            float phase = cyrinx_stub_phase_offset(config, symbol_index);
+            out_samples[i] = cyrinx_rotate(base, phase);
+        }
+        break;
+    case CYRINX_PHY_STUB_DCSS:
+        for (size_t i = 0; i < symbol_len; ++i) {
+            uint64_t symbol_index = state->tx_symbol_index + (uint64_t)i;
+            cyrinx_complex_f32_t base = cyrinx_map_dcss(symbols[i]);
+            float phase = cyrinx_stub_phase_offset(config, symbol_index);
+            out_samples[i] = cyrinx_rotate(base, phase);
+        }
+        break;
+    default:
+        return CYRINX_ERR_UNSUPPORTED;
+    }
+
+    state->tx_symbol_index += (uint64_t)symbol_len;
+    *inout_sample_len = symbol_len;
+    return CYRINX_OK;
+}
+
+int cyrinx_phy_demodulate_stub_seq(const cyrinx_phy_stub_config_t *config, cyrinx_phy_stub_state_t *state,
+                                   const cyrinx_complex_f32_t *samples, size_t sample_len,
+                                   uint8_t *out_symbols, size_t *inout_symbol_len) {
+    if (!config || !state || !samples || !out_symbols || !inout_symbol_len || sample_len == 0) {
+        return CYRINX_ERR_INVALID_ARGUMENT;
+    }
+    if (*inout_symbol_len < sample_len) {
+        *inout_symbol_len = sample_len;
+        return CYRINX_ERR_BUFFER_TOO_SMALL;
+    }
+    if (!state->initialized) {
+        cyrinx_phy_stub_state_reset(state, config->mode);
+    }
+    if (state->mode != config->mode) {
+        return CYRINX_ERR_STATE;
+    }
+
+    switch (config->mode) {
+    case CYRINX_PHY_STUB_OFDM_QPSK:
+        for (size_t i = 0; i < sample_len; ++i) {
+            uint64_t symbol_index = state->rx_symbol_index + (uint64_t)i;
+            float phase = -cyrinx_stub_phase_offset(config, symbol_index);
+            cyrinx_complex_f32_t corrected = cyrinx_rotate(samples[i], phase);
+            out_symbols[i] = cyrinx_demap_qpsk(&corrected);
+        }
+        break;
+    case CYRINX_PHY_STUB_DCSS:
+        for (size_t i = 0; i < sample_len; ++i) {
+            uint64_t symbol_index = state->rx_symbol_index + (uint64_t)i;
+            float phase = -cyrinx_stub_phase_offset(config, symbol_index);
+            cyrinx_complex_f32_t corrected = cyrinx_rotate(samples[i], phase);
+            out_symbols[i] = cyrinx_demap_dcss(&corrected);
+        }
+        break;
+    default:
+        return CYRINX_ERR_UNSUPPORTED;
+    }
+
+    state->rx_symbol_index += (uint64_t)sample_len;
     *inout_symbol_len = sample_len;
     return CYRINX_OK;
 }

@@ -13,7 +13,8 @@ This repository currently provides:
 - In-memory linked transport for deterministic tests without audio hardware
 - PHY utility module with Zadoff-Chu generation, CFO estimation, and dynamic CP selection
 - Apple audio backend scaffold (`RemoteIO` on iOS, `AVAudioEngine` on macOS)
-- Deterministic OFDM/D-CSS PHY stub interfaces with golden-vector coverage
+- Deterministic OFDM/D-CSS PHY stub interfaces, including stateful sequential chunk APIs
+- Golden-vector and chunked-sequence PHY tests for deterministic behavior
 
 ## Implemented Protocol Model
 

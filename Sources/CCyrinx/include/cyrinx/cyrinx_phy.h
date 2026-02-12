@@ -28,6 +28,13 @@ typedef struct {
     uint16_t cp_samples;
 } cyrinx_phy_stub_config_t;
 
+typedef struct {
+    cyrinx_phy_stub_mode_t mode;
+    uint64_t tx_symbol_index;
+    uint64_t rx_symbol_index;
+    uint8_t initialized;
+} cyrinx_phy_stub_state_t;
+
 /* Generate a root Zadoff-Chu sequence (N should be prime and root coprime to N). */
 CYRINX_API int cyrinx_zc_generate(uint16_t root, uint16_t length, cyrinx_complex_f32_t *out, size_t out_len);
 
@@ -54,6 +61,22 @@ CYRINX_API int cyrinx_phy_modulate_stub(const cyrinx_phy_stub_config_t *config, 
 CYRINX_API int cyrinx_phy_demodulate_stub(const cyrinx_phy_stub_config_t *config,
                                           const cyrinx_complex_f32_t *samples, size_t sample_len,
                                           uint8_t *out_symbols, size_t *inout_symbol_len);
+
+/*
+ * Stateful sequential variants for chunked processing.
+ *
+ * Symbol index state is carried across calls, so chunked mod/demod sequences are deterministic
+ * and equivalent to monolithic processing when state is reset once and reused in-order.
+ */
+CYRINX_API void cyrinx_phy_stub_state_reset(cyrinx_phy_stub_state_t *state, cyrinx_phy_stub_mode_t mode);
+CYRINX_API int cyrinx_phy_modulate_stub_seq(const cyrinx_phy_stub_config_t *config,
+                                            cyrinx_phy_stub_state_t *state, const uint8_t *symbols,
+                                            size_t symbol_len, cyrinx_complex_f32_t *out_samples,
+                                            size_t *inout_sample_len);
+CYRINX_API int cyrinx_phy_demodulate_stub_seq(const cyrinx_phy_stub_config_t *config,
+                                              cyrinx_phy_stub_state_t *state,
+                                              const cyrinx_complex_f32_t *samples, size_t sample_len,
+                                              uint8_t *out_symbols, size_t *inout_symbol_len);
 
 #ifdef __cplusplus
 }

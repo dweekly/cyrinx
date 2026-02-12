@@ -262,4 +262,5 @@ final class CyrinxTests: XCTestCase {
         XCTAssertTrue(json.contains("\"packetsDelivered\""))
         XCTAssertTrue(json.contains("\"packetsFailed\""))
     }
+
 }
