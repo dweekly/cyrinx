@@ -12,6 +12,13 @@ struct HILContentView: View {
             }
             .pickerStyle(.segmented)
 
+            Picker("Sample Rate", selection: $viewModel.sampleRateChoice) {
+                ForEach(HILSampleRateChoice.allCases) { choice in
+                    Text(choice.label).tag(choice)
+                }
+            }
+            .pickerStyle(.segmented)
+
             HStack {
                 Button("Start") {
                     viewModel.start()
@@ -33,6 +40,9 @@ struct HILContentView: View {
                 }
                 Button("Refresh Diagnostics") {
                     viewModel.refreshDiagnostics()
+                }
+                Button("Probe Local Audio") {
+                    viewModel.probeLocalAudioRoute()
                 }
             }
 

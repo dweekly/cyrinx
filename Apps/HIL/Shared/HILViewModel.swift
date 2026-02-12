@@ -2,6 +2,12 @@ import Cyrinx
 import Foundation
 import SwiftUI
 
+#if os(iOS)
+    import AVFoundation
+#elseif os(macOS)
+    import CoreAudio
+#endif
+
 enum HILRoleChoice: String, CaseIterable, Identifiable {
     case master
     case slave
@@ -27,9 +33,30 @@ enum HILRoleChoice: String, CaseIterable, Identifiable {
     }
 }
 
+enum HILSampleRateChoice: Int, CaseIterable, Identifiable {
+    case rate48k = 48_000
+    case rate96k = 96_000
+
+    var id: Int { rawValue }
+
+    var label: String {
+        switch self {
+        case .rate48k:
+            return "48 kHz"
+        case .rate96k:
+            return "96 kHz"
+        }
+    }
+
+    var hz: UInt32 {
+        UInt32(rawValue)
+    }
+}
+
 @MainActor
 final class HILViewModel: ObservableObject {
     @Published var roleChoice: HILRoleChoice = .master
+    @Published var sampleRateChoice: HILSampleRateChoice = .rate48k
     @Published var statusText: String = "Idle"
     @Published var diagnosticsText: String = "Audio backend is not started"
     @Published var logs: [String] = []
@@ -43,15 +70,15 @@ final class HILViewModel: ObservableObject {
         let config = Config(
             role: roleChoice.role,
             transportBackend: .appleAudioScaffold,
-            sampleRateHz: 48_000
+            sampleRateHz: sampleRateChoice.hz
         )
 
         do {
             let opened = try CyrinxSession(config: config)
             try opened.start()
             session = opened
-            statusText = "Running (\(roleChoice.label))"
-            appendLog("session started")
+            statusText = "Running (\(roleChoice.label), \(sampleRateChoice.label))"
+            appendLog("session started with preferred sampleRate=\(sampleRateChoice.hz)Hz")
             refreshDiagnostics()
             startEventLoop(for: opened)
         } catch {
@@ -124,7 +151,31 @@ final class HILViewModel: ObservableObject {
             return
         }
 
-        diagnosticsText = "backend=\(diagnostics.backend) state=\(diagnostics.state.rawValue) txFrames=\(diagnostics.txFrameCount) txBytes=\(diagnostics.txByteCount) rxCallbacks=\(diagnostics.rxCallbackCount)"
+        diagnosticsText =
+            "backend=\(diagnostics.backend) state=\(diagnostics.state.rawValue) configuredHz=\(diagnostics.configuredSampleRateHz) inHz=\(diagnostics.observedInputSampleRateHz) outHz=\(diagnostics.observedOutputSampleRateHz) txFrames=\(diagnostics.txFrameCount) txBytes=\(diagnostics.txByteCount) rxCallbacks=\(diagnostics.rxCallbackCount)"
+    }
+
+    func probeLocalAudioRoute() {
+        #if os(iOS)
+            let session = AVAudioSession.sharedInstance()
+            let routeSummary = session.currentRoute.outputs.map { $0.portName }.joined(separator: ",")
+            appendLog(
+                "ios route preferredHz=\(Int(session.preferredSampleRate)) actualHz=\(Int(session.sampleRate)) outputs=\(routeSummary)"
+            )
+        #elseif os(macOS)
+            if let output = defaultDeviceSummary(selector: kAudioHardwarePropertyDefaultOutputDevice) {
+                appendLog(output)
+            } else {
+                appendLog("mac output probe unavailable")
+            }
+            if let input = defaultDeviceSummary(selector: kAudioHardwarePropertyDefaultInputDevice) {
+                appendLog(input)
+            } else {
+                appendLog("mac input probe unavailable")
+            }
+        #else
+            appendLog("audio route probe unavailable on this platform")
+        #endif
     }
 
     private func appendLog(_ line: String) {
@@ -148,4 +199,80 @@ final class HILViewModel: ObservableObject {
     private func recordEvent(_ event: Event) {
         appendLog("event=\(event)")
     }
+
+    #if os(macOS)
+        private func defaultDeviceSummary(selector: AudioObjectPropertySelector) -> String? {
+            var address = AudioObjectPropertyAddress(
+                mSelector: selector,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            var deviceID = AudioDeviceID(0)
+            var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+            let rc = AudioObjectGetPropertyData(
+                AudioObjectID(kAudioObjectSystemObject),
+                &address,
+                0,
+                nil,
+                &size,
+                &deviceID
+            )
+            if rc != noErr {
+                return nil
+            }
+
+            let name = deviceName(deviceID) ?? "<unknown>"
+            let current = currentSampleRate(deviceID) ?? 0
+            let supports96k = availableRates(deviceID).contains { range in
+                range.mMinimum <= 96_000 && 96_000 <= range.mMaximum
+            }
+            let role = selector == kAudioHardwarePropertyDefaultOutputDevice ? "mac output" : "mac input"
+            return "\(role) \(name) currentHz=\(Int(current)) supports96k=\(supports96k)"
+        }
+
+        private func deviceName(_ deviceID: AudioDeviceID) -> String? {
+            var address = AudioObjectPropertyAddress(
+                mSelector: kAudioObjectPropertyName,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            var unmanaged: Unmanaged<CFString>?
+            var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+            let rc = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &unmanaged)
+            if rc != noErr {
+                return nil
+            }
+            return unmanaged?.takeRetainedValue() as String?
+        }
+
+        private func currentSampleRate(_ deviceID: AudioDeviceID) -> Double? {
+            var address = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyNominalSampleRate,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            var value: Double = 0
+            var size = UInt32(MemoryLayout<Double>.size)
+            let rc = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &value)
+            return rc == noErr ? value : nil
+        }
+
+        private func availableRates(_ deviceID: AudioDeviceID) -> [AudioValueRange] {
+            var address = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyAvailableNominalSampleRates,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            var size: UInt32 = 0
+            let sizeRC = AudioObjectGetPropertyDataSize(deviceID, &address, 0, nil, &size)
+            if sizeRC != noErr || size == 0 {
+                return []
+            }
+
+            let count = Int(size) / MemoryLayout<AudioValueRange>.stride
+            var values = Array(repeating: AudioValueRange(mMinimum: 0, mMaximum: 0), count: count)
+            let dataRC = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &values)
+            return dataRC == noErr ? values : []
+        }
+    #endif
 }

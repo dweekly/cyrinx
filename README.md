@@ -71,6 +71,8 @@ swift run cyrinx-example-multiplex
 swift run cyrinx-example-large-payload
 swift run cyrinx-sim-bench --profile quiet --out artifacts/bench/sim-quiet.json
 ./scripts/hil-generate.sh --open
+./scripts/probe-macos-audio-rates.sh
+./scripts/hil-96k-smoke.sh --open
 ```
 
 ## Linting and Formatting
@@ -88,6 +90,8 @@ swift run cyrinx-sim-bench --profile quiet --out artifacts/bench/sim-quiet.json
 - `check.sh`: full gate (`format-check` + `lint` + `swift test`).
 - `bench-sim.sh`: deterministic simulation benchmark JSON output under `artifacts/bench/`.
 - `hil-generate.sh`: generates paired macOS+iOS hardware-in-the-loop app project under `Apps/HIL/`.
+- `probe-macos-audio-rates.sh`: probes default macOS input/output sample-rate capability (including 96 kHz support) and writes JSON.
+- `hil-96k-smoke.sh`: runs macOS capability probe, generates HIL project, builds macOS+iOS HIL apps, and prints 96 kHz validation steps.
 
 ## Current Scope and Next Steps
 

@@ -22,13 +22,6 @@
 	<string>1</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Cyrinx HIL needs microphone access for ultrasonic testing.</string>
-	<key>UISupportedInterfaceOrientations</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
 </dict>

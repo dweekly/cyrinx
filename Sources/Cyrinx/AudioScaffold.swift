@@ -26,6 +26,9 @@ public struct AudioBackendDiagnostics: Sendable {
     public let txFrameCount: UInt64
     public let txByteCount: UInt64
     public let rxCallbackCount: UInt64
+    public let configuredSampleRateHz: UInt32
+    public let observedInputSampleRateHz: UInt32
+    public let observedOutputSampleRateHz: UInt32
 }
 
 public enum AudioBackendError: Error, CustomStringConvertible {
@@ -65,13 +68,32 @@ private final class AudioCounterBox {
     }
 
     func snapshot(backend: String, state: AudioBackendState) -> AudioBackendDiagnostics {
+        snapshot(
+            backend: backend,
+            state: state,
+            configuredSampleRateHz: 0,
+            observedInputSampleRateHz: 0,
+            observedOutputSampleRateHz: 0
+        )
+    }
+
+    func snapshot(
+        backend: String,
+        state: AudioBackendState,
+        configuredSampleRateHz: UInt32,
+        observedInputSampleRateHz: UInt32,
+        observedOutputSampleRateHz: UInt32
+    ) -> AudioBackendDiagnostics {
         lock.lock()
         let diagnostics = AudioBackendDiagnostics(
             backend: backend,
             state: state,
             txFrameCount: txFrames,
             txByteCount: txBytes,
-            rxCallbackCount: rxCallbacks
+            rxCallbackCount: rxCallbacks,
+            configuredSampleRateHz: configuredSampleRateHz,
+            observedInputSampleRateHz: observedInputSampleRateHz,
+            observedOutputSampleRateHz: observedOutputSampleRateHz
         )
         lock.unlock()
         return diagnostics
@@ -187,6 +209,8 @@ enum AudioBackendFactory {
         private var txSampleQueue: [Float] = []
         private var txSampleReadIndex: Int = 0
         private var state: AudioBackendState = .idle
+        private var observedInputSampleRateHz: UInt32 = 0
+        private var observedOutputSampleRateHz: UInt32 = 0
 
         init(config: Config) throws {
             self.config = config
@@ -196,7 +220,13 @@ enum AudioBackendFactory {
         }
 
         var diagnostics: AudioBackendDiagnostics {
-            counters.snapshot(backend: "ios-remoteio", state: state)
+            counters.snapshot(
+                backend: "ios-remoteio",
+                state: state,
+                configuredSampleRateHz: config.sampleRateHz,
+                observedInputSampleRateHz: observedInputSampleRateHz,
+                observedOutputSampleRateHz: observedOutputSampleRateHz
+            )
         }
 
         func attachSessionHandle(_ handle: OpaquePointer) {
@@ -247,6 +277,9 @@ enum AudioBackendFactory {
             try session.setPreferredSampleRate(Double(config.sampleRateHz))
             try session.setPreferredIOBufferDuration(0.01)
             try session.setActive(true, options: [])
+            let observedRate = UInt32(session.sampleRate.rounded())
+            observedInputSampleRateHz = observedRate
+            observedOutputSampleRateHz = observedRate
         }
 
         private func createAudioUnit() throws {
@@ -557,6 +590,8 @@ enum AudioBackendFactory {
         private let player = AVAudioPlayerNode()
         private var sessionHandle: OpaquePointer?
         private var state: AudioBackendState = .idle
+        private var observedInputSampleRateHz: UInt32 = 0
+        private var observedOutputSampleRateHz: UInt32 = 0
         private lazy var format: AVAudioFormat? = {
             AVAudioFormat(
                 commonFormat: .pcmFormatFloat32,
@@ -572,7 +607,13 @@ enum AudioBackendFactory {
         }
 
         var diagnostics: AudioBackendDiagnostics {
-            counters.snapshot(backend: "macos-avaudioengine", state: state)
+            counters.snapshot(
+                backend: "macos-avaudioengine",
+                state: state,
+                configuredSampleRateHz: config.sampleRateHz,
+                observedInputSampleRateHz: observedInputSampleRateHz,
+                observedOutputSampleRateHz: observedOutputSampleRateHz
+            )
         }
 
         func attachSessionHandle(_ handle: OpaquePointer) {
@@ -601,6 +642,12 @@ enum AudioBackendFactory {
             do {
                 try engine.start()
                 player.play()
+                observedInputSampleRateHz = UInt32(
+                    engine.inputNode.inputFormat(forBus: 0).sampleRate.rounded()
+                )
+                observedOutputSampleRateHz = UInt32(
+                    engine.outputNode.outputFormat(forBus: 0).sampleRate.rounded()
+                )
                 state = .running
             } catch {
                 state = .failed
