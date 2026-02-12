@@ -745,7 +745,8 @@ enum AudioBackendFactory {
             }
             if renderCallbacksTotal % 100 == 0 {
                 let pending = pendingTxSamples()
-                log.info("render cb total=\(renderCallbacksTotal) pending=\(pending)")
+                let total = self.renderCallbacksTotal
+                log.info("render cb total=\(total) pending=\(pending)")
             }
             renderOutputBuffers(buffers, frameCount: frameCount)
             return noErr
