@@ -19,22 +19,22 @@ struct HILContentView: View {
             }
             .pickerStyle(.segmented)
 
-            HStack {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8)], spacing: 8) {
                 Button("Start") {
                     viewModel.start()
                 }
                 Button("Stop") {
                     viewModel.stop()
                 }
-                Button("Send Probe") {
+                Button("Send Probe (BE)") {
                     viewModel.sendProbe()
+                }
+                Button("Send Probe (Reliable)") {
+                    viewModel.sendReliableProbe()
                 }
                 Button("Receive Once") {
                     viewModel.receiveOnce()
                 }
-            }
-
-            HStack {
                 Button("Inject Nominal Channel") {
                     viewModel.injectNominalChannelReport()
                 }
@@ -64,6 +64,10 @@ struct HILContentView: View {
             }
         }
         .padding(16)
-        .frame(minWidth: 560, minHeight: 420)
+        #if os(macOS)
+            .frame(minWidth: 560, minHeight: 420)
+        #else
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        #endif
     }
 }

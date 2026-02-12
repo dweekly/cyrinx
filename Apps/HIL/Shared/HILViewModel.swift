@@ -53,6 +53,8 @@ enum HILSampleRateChoice: Int, CaseIterable, Identifiable {
     }
 }
 
+extension CyrinxSession: @retroactive @unchecked Sendable {}
+
 @MainActor
 final class HILViewModel: ObservableObject {
     @Published var roleChoice: HILRoleChoice = .master
@@ -63,6 +65,7 @@ final class HILViewModel: ObservableObject {
 
     private var session: CyrinxSession?
     private var eventTask: Task<Void, Never>?
+    private let sessionOperationQueue = DispatchQueue(label: "com.dweekly.cyrinx.hil.sessionOps")
 
     func start() {
         stop()
@@ -102,13 +105,31 @@ final class HILViewModel: ObservableObject {
         }
 
         let payload = Data("probe:\(Date().timeIntervalSince1970)".utf8)
-        do {
-            try session.send(payload, streamID: 7, qos: .reliable, priority: .high, flags: [.fin])
-            appendLog("sent \(payload.count) bytes on stream 7")
-        } catch {
-            appendLog("send failed: \(error)")
+        sessionOperationQueue.async { [weak self] in
+            do {
+                try session.send(payload, streamID: 7, qos: .bestEffort, priority: .high, flags: [.fin])
+                self?.postOperationResult("sent \(payload.count) bytes on stream 7 (best-effort)")
+            } catch {
+                self?.postOperationResult("send (best-effort) failed: \(error)")
+            }
         }
-        refreshDiagnostics()
+    }
+
+    func sendReliableProbe() {
+        guard let session else {
+            appendLog("send skipped: session is not started")
+            return
+        }
+
+        let payload = Data("probe-reliable:\(Date().timeIntervalSince1970)".utf8)
+        sessionOperationQueue.async { [weak self] in
+            do {
+                try session.send(payload, streamID: 9, qos: .reliable, priority: .high, flags: [.fin])
+                self?.postOperationResult("sent \(payload.count) bytes on stream 9 (reliable)")
+            } catch {
+                self?.postOperationResult("send (reliable) failed: \(error)")
+            }
+        }
     }
 
     func receiveOnce() {
@@ -117,18 +138,20 @@ final class HILViewModel: ObservableObject {
             return
         }
 
-        do {
-            let message = try session.receive(timeoutMS: 50)
-            if let message {
-                let preview = String(decoding: message.data.prefix(32), as: UTF8.self)
-                appendLog("rx stream=\(message.streamID) bytes=\(message.data.count) preview=\(preview)")
-            } else {
-                appendLog("rx timeout")
+        sessionOperationQueue.async { [weak self] in
+            do {
+                let message = try session.receive(timeoutMS: 50)
+                if let message {
+                    let preview = String(decoding: message.data.prefix(32), as: UTF8.self)
+                    self?.postOperationResult(
+                        "rx stream=\(message.streamID) bytes=\(message.data.count) preview=\(preview)")
+                } else {
+                    self?.postOperationResult("rx timeout")
+                }
+            } catch {
+                self?.postOperationResult("receive failed: \(error)")
             }
-        } catch {
-            appendLog("receive failed: \(error)")
         }
-        refreshDiagnostics()
     }
 
     func injectNominalChannelReport() {
@@ -137,11 +160,19 @@ final class HILViewModel: ObservableObject {
             return
         }
 
-        do {
-            try session.injectChannelReport(snrDB: 26, evmPct: 4.5, cfoHz: 0, per2s: 0.01, crcFail: false)
-            appendLog("injected nominal channel report")
-        } catch {
-            appendLog("inject failed: \(error)")
+        sessionOperationQueue.async { [weak self] in
+            do {
+                try session.injectChannelReport(
+                    snrDB: 26,
+                    evmPct: 4.5,
+                    cfoHz: 0,
+                    per2s: 0.01,
+                    crcFail: false
+                )
+                self?.postOperationResult("injected nominal channel report")
+            } catch {
+                self?.postOperationResult("inject failed: \(error)")
+            }
         }
     }
 
@@ -191,13 +222,20 @@ final class HILViewModel: ObservableObject {
                 guard !Task.isCancelled else {
                     return
                 }
-                await self?.recordEvent(event)
+                self?.recordEvent(event)
             }
         }
     }
 
     private func recordEvent(_ event: Event) {
         appendLog("event=\(event)")
+    }
+
+    nonisolated private func postOperationResult(_ line: String) {
+        Task { @MainActor [weak self] in
+            self?.appendLog(line)
+            self?.refreshDiagnostics()
+        }
     }
 
     #if os(macOS)

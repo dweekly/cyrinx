@@ -17,8 +17,9 @@ This creates `/Users/dew/dev/cyrinx/Apps/HIL/CyrinxHIL.xcodeproj` from `project.
 3. Build and run `CyrinxHILiOS` on a physical iPhone (not simulator).
 4. On both apps pick opposite roles (`Master` on one side, `Slave` on the other).
 5. Select `Sample Rate` (`48 kHz` or `96 kHz`) on both sides.
-6. Press `Start`, then `Send Probe` repeatedly.
-7. Use `Receive Once`, `Refresh Diagnostics`, and `Probe Local Audio` to validate transport and negotiated route rates.
+6. Press `Start`, then `Send Probe (BE)` repeatedly for non-blocking link probing.
+7. Use `Send Probe (Reliable)` only when you explicitly want ACK/timeout behavior.
+8. Use `Receive Once`, `Refresh Diagnostics`, and `Probe Local Audio` to validate transport and negotiated route rates.
 
 ## 96 kHz Smoke Workflow
 

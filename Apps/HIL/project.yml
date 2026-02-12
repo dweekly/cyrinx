@@ -21,6 +21,11 @@ targets:
         CFBundleDisplayName: Cyrinx HIL iOS
         NSMicrophoneUsageDescription: Cyrinx HIL needs microphone access for ultrasonic testing.
         UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.dweekly.cyrinx.hil.ios
