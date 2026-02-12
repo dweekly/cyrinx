@@ -1,262 +1,261 @@
 # Cyrinx Roadmap
 
 ## Scope
-This roadmap sequences `cyrinx` from its current simulation-oriented transport core to a production-grade ultrasonic desktop↔phone link optimized for Apple Silicon MacBook Pro and iPhone Pro Max in the 1-2 ft range.
+This roadmap advances `cyrinx` from the current end-to-end acoustic PHY baseline to a production-grade ultrasonic link that is robust to noise, echoes, and reverb for MacBook Pro <-> iPhone Pro Max at 1-2 ft.
 
-Current baseline already implemented:
-- C ABI + Swift bindings
-- Framing, CRC, fragmentation/reassembly, ping-pong ACK transport
-- ARC state machine and policy hooks
-- In-memory link simulation path
-- PHY utility primitives (ZC generation, CFO estimate, dynamic CP heuristic)
-- Lint/format/test gates (`./scripts/check.sh`)
+## Current Baseline (Implemented)
+- C ABI + Swift wrapper with multiplexed streams.
+- Framing, CRC16/CRC32C, fragmentation/reassembly, ACK/retry transport.
+- ARC policy engine with reliability-first downshift behavior.
+- Apple audio backends (`RemoteIO` on iOS, `AVAudioEngine` on macOS).
+- End-to-end acoustic PHY bridge:
+  - dual-ZC preamble detector
+  - D-CSS robust/header path
+  - OFDM-QPSK turbo path
+  - RX callback -> demod -> `cyrinx_ingest_frame`.
+- vDSP-backed OFDM and D-CSS modem implementations.
+- Deterministic simulation and comprehensive test/lint/format gates.
 
-Not yet implemented (and planned here):
-- Real-time audio I/O (`RemoteIO`, `AVAudioSessionModeMeasurement`)
-- vDSP-backed modulation/demodulation for D-CSS and OFDM
-- Real hardware PHY pipeline and calibration
-- In-library security envelope plumbing
-- Multi-user/frequency-hopping profiles
+## Critical Gaps To Production Robustness
+- Multipath/reverb lock hardening beyond a single-threshold preamble detector.
+- Live CFO/Doppler estimation and correction in the acoustic RX path.
+- OFDM pilots + channel estimation/equalization for non-ideal channels.
+- True PHY FEC/interleaving and incremental-redundancy HARQ combining.
+- Impulsive-noise and clipping resilience in realistic office environments.
+- Hardware qualification matrix and threshold retuning from measured data.
 
 ## Sequencing Principles
-1. Reliability before throughput: mode downshift and delivery guarantees gate every performance upgrade.
-2. Deterministic simulation before hardware: every PHY/MAC change gets simulation vectors before live testing.
-3. Hardware truth over paper thresholds: ARC thresholds are finalized from measured data, not static constants.
-4. One stable API surface: keep C ABI and Swift wrapper stable while internals evolve.
-5. Release by evidence: every milestone has explicit exit criteria and benchmark artifacts.
+1. Reliability before throughput: any performance upgrade must preserve delivery guarantees.
+2. Measured truth over static constants: thresholds finalize from HIL data, not paper-only values.
+3. Deterministic regression first: every DSP change requires golden vectors and seeded simulation.
+4. Keep public API stable: evolve internals without breaking C ABI / Swift surface.
+5. Ship by evidence: each phase exits with explicit KPI artifacts.
 
 ## Phase Plan
 
-### Phase 0: Repo Hardening And Test Infrastructure (Week 1)
+### Phase R0: Robustness Bench Harness (Week 1)
 Objective:
-- Make the repo production-ready for iterative modem development.
+- Make robustness regressions measurable before algorithm changes.
 
 Work:
-- Add channel simulation framework (`Desktop Canyon` direct path + desk reflection + noise + Doppler).
-- Add benchmark harness for setup latency, goodput, PER, retries, mode transitions.
-- Add golden-vector fixtures for frame codec, CRC, ZC, CFO, ARC decision logic.
-- Add CI workflow to run `./scripts/check.sh` on every push/PR.
+- Extend simulation harness with:
+  - desktop-canyon multipath profiles (direct + reflected paths, comb null sweeps)
+  - reverberation tails (RT60 buckets)
+  - Doppler/CFO trajectories (+/-80 Hz instantaneous events)
+  - burst-noise injectors (keyboard clicks, cough-like impulses).
+- Add per-run artifacts: lock rate, false-lock rate, PER, retries, dwell transitions, decode latency.
+- Add scenario presets used by CI and HIL scripts.
 
 Exit criteria:
-- Deterministic simulation run with reproducible seed.
-- Bench command outputs JSON metrics to `artifacts/bench/*.json`.
-- CI green on lint/format/tests.
+- `artifacts/bench/*.json` contains reproducible robustness metrics by scenario.
+- CI gates fail on statistically significant regressions against baseline.
 
 Dependencies:
 - None.
 
-### Phase 1: Implement G1 Discovery PHY (Weeks 2-3)
+### Phase R1: Sync And Reverb Hardening (Weeks 2-3)
 Objective:
-- Replace synthetic discovery behavior with real preamble detection and timing/CFO estimation primitives.
+- Achieve stable frame start detection under multipath and moderate reverb.
 
 Work:
-- Implement dual-ZC preamble insertion and matched-correlation detector.
-- Implement sample-accurate timing lock and CFO correction from repeated ZC blocks.
-- Add false-positive controls (correlation thresholding, hysteresis, lock timeout).
-- Integrate discovery results into current session state machine and events.
+- Replace simple threshold lock with scored lock candidates:
+  - peak-to-sidelobe ratio
+  - dual-block consistency checks
+  - lock hysteresis and timeout windows.
+- Add multipath-aware preamble alignment strategy to avoid echo-peak mislocks.
+- Add false-positive suppression and reacquisition flow for burst interference.
 
 Exit criteria:
-- Detection probability >=99.9% at SNR >= -6 dB in simulation.
-- CFO estimate error <= +/-5 Hz for true CFO in +/-80 Hz.
-- Discovery->linked state change driven by decoder output (not injected reports).
+- Preamble detect >=99.9% at SNR >= -6 dB in non-reverb profiles.
+- False-lock rate <=1e-4/frame in reverb/noise stress profiles.
+- Reacquisition after forced unlock <=2 frames median.
 
 Dependencies:
-- Phase 0 simulation harness.
+- Phase R0 harness.
 
-### Phase 2: Implement G2 Robust D-CSS Path (Weeks 4-5)
+### Phase R2: CFO And Doppler Compensation (Weeks 4-5)
 Objective:
-- Provide resilient control/header and fallback payload mode for noisy/interference conditions.
+- Maintain decode stability during device motion and oscillator offsets.
 
 Work:
-- Implement D-CSS modulator/demodulator over full 18.5-23.5 kHz band.
-- Implement symbol timing and differential decoding with burst-noise tolerance.
-- Wire G2 into existing frame codec and reassembly path.
-- Integrate interleaver hooks and LDPC 1/2 interface stubs.
+- Implement coarse CFO from repeated ZC blocks.
+- Add fine CFO/phase tracking loop over payload symbols.
+- Apply per-symbol phase rotation correction before demod.
+- Feed CFO confidence and residual error into channel reports used by ARC.
 
 Exit criteria:
-- 300-600 bps net throughput in simulation profiles with intermittent burst noise.
-- Header decode success >=99% under target noisy scenarios.
-- Automatic ARC fallback from turbo modes to G2 on threshold violations.
+- CFO estimation error <= +/-5 Hz for true CFO in +/-80 Hz.
+- No catastrophic demod collapse during scripted motion events.
+- PER improvement vs baseline in Doppler scenarios is statistically significant.
 
 Dependencies:
-- Phase 1 discovery lock.
+- Phase R1 lock quality.
 
-### Phase 3: Implement G3 OFDM Turbo Modes (Weeks 6-8)
+### Phase R3: OFDM Pilot Tracking And Equalization (Weeks 6-8)
 Objective:
-- Deliver adaptive high-throughput payload transport (QPSK/16QAM, 64QAM experimental).
+- Make turbo mode resilient to frequency-selective fading from desk reflections.
 
 Work:
-- Implement OFDM modem chain:
-  - 1024 FFT
-  - 106 active carriers
-  - pilot/null map
-  - CP insertion/removal (default 96 samples)
-- Implement channel equalization and EVM estimation per frame.
-- Add adaptive constellation mapping (QPSK, 16QAM, optional 64QAM flag-gated).
-- Add HARQ parity round plumbing (up to 3 rounds).
+- Define pilot/null map consistent with active-carrier plan.
+- Implement per-subcarrier channel estimation and interpolation.
+- Add one-tap equalization and EVM computation on equalized symbols.
+- Add pilot-aided phase tracking and optional per-carrier quality masking.
 
 Exit criteria:
-- QPSK goodput >=4 kbps effective in clean simulation.
-- 16QAM goodput >=8 kbps effective in clean simulation.
-- No uncontrolled mode flapping in stationary and mild-motion simulations.
+- QPSK goodput >=4 kbps and 16QAM >=8 kbps in clean 1-2 ft profiles.
+- PER reduced vs pre-equalization baseline in desktop-canyon sweeps.
+- EVM metrics correlate with decode outcomes for ARC decisions.
 
 Dependencies:
-- Phase 2 robust control path for fallback.
+- Phase R2 CFO correction.
 
-### Phase 4: ARC Production Tuning And Stability (Weeks 9-10)
+### Phase R4: PHY FEC, Interleaver, And HARQ IR (Weeks 9-11)
 Objective:
-- Convert static thresholds into validated, stable rate-control behavior.
+- Move reliability from transport-only retries to real PHY error correction.
 
 Work:
-- Tune ARC thresholds and dwell windows using large simulation sweeps.
-- Add oscillation suppression checks (minimum dwell, upshift hold, retransmit guard).
-- Add explicit timeout recovery and reacquisition flow instrumentation.
-- Add KPI dashboards for transition latency and dwell distribution.
+- Implement LDPC encode/decode profiles:
+  - robust mode: rate 1/2
+  - turbo modes: rate 2/3 (and optional 3/4 experiment).
+- Add block interleaver/deinterleaver targeting ~50 ms depth.
+- Add soft-decision demodulation (LLRs) into LDPC decoder.
+- Implement incremental-redundancy HARQ rounds with soft combining.
 
 Exit criteria:
-- Downshift within <=2 frames on abrupt SNR/EVM degradation.
-- Upshift only after configured hold windows with <1 oscillation/minute under mixed traffic.
-- Link recovery to discovery state within timeout budget and successful reacquisition.
+- Robust mode sustains 300-600 bps under office-burst scenarios.
+- 256 B delivery success >=99% at 1-2 ft in moderate noise.
+- Retry count and timeout rate materially reduced vs pre-FEC baseline.
 
 Dependencies:
-- Phase 3 modem metrics.
+- Phase R3 equalized demod metrics.
 
-### Phase 5: Apple Real-Time Audio Backend (Weeks 11-13)
+### Phase R5: Impulsive Noise And Clipping Resilience (Weeks 12-13)
 Objective:
-- Move from in-memory transport to real ultrasonic over-air exchange on target hardware.
+- Prevent transient acoustic events from causing link collapse.
 
 Work:
-- Implement iOS audio backend:
-  - `AVAudioSessionCategoryPlayAndRecord`
-  - `AVAudioSessionModeMeasurement`
-  - `RemoteIO` path (no voice-processing chain)
-- Implement macOS CoreAudio backend with matching 48 kHz path.
-- Integrate vDSP kernels for FFT/correlation hot loops.
-- Add runtime calibration burst for per-device notch/frequency response estimation.
+- Add impulsive-noise mitigation (blanking/clipping-aware preprocessing).
+- Add saturation detection and TX/RX gain safety adaptation hooks.
+- Add optional narrowband interference suppression in ultrasonic band.
+- Add guard/recovery policy tuning for short high-energy events.
 
 Exit criteria:
-- End-to-end message exchange MacBook Pro↔iPhone Pro Max at 1-2 ft in quiet room.
-- Transport remains stable with expected guard interval timing.
-- Measured degradation when forcing voice-processing path is documented.
+- Noise burst downshift occurs within <=2 frames.
+- Link recovers to prior gear after hysteresis window without oscillation.
+- No sustained frame-loss cascades under scripted transient events.
 
 Dependencies:
-- Phase 1-4 completed modem path.
-- Access to target Apple hardware.
+- Phase R4 FEC/HARQ.
 
-### Phase 6: Security Envelope Integration (Weeks 14-15)
+### Phase R6: ARC Retune With Real PHY Metrics (Weeks 14-15)
 Objective:
-- Provide first-class secure session option while preserving transparent transport mode.
+- Calibrate mode transitions using real post-equalization and post-FEC data.
 
 Work:
-- Add secure session mode with:
-  - X25519 key agreement
-  - ChaCha20-Poly1305 payload protection
-  - nonce + replay window enforcement
-- Add key/session lifecycle APIs in C and Swift layers.
-- Add compatibility mode: external security remains supported.
+- Retune SNR/EVM/PER thresholds and dwell windows from measured distributions.
+- Add explicit safeguards:
+  - no upshift during retransmission bursts
+  - minimum dwell and upshift hold windows
+  - timeout-driven hard reset behavior verification.
+- Validate mode stability under mixed traffic and channel variability.
 
 Exit criteria:
-- Replay attacks rejected in tests.
-- Tampered ciphertext rejected with deterministic error reporting.
-- Secure-mode throughput and latency overhead quantified.
+- <1 oscillation/minute in mixed scenarios.
+- Throughput and reliability targets met simultaneously in target profiles.
+- Transition behavior matches documented policy envelopes.
 
 Dependencies:
-- Phase 5 real transport.
+- Phase R5 stable metrics.
 
-### Phase 7: Hardware Validation Matrix And UX Hooks (Weeks 16-17)
+### Phase R7: Hardware Qualification Matrix (Weeks 16-17)
 Objective:
-- Validate real-world robustness and integrate UX-driven physical optimizations.
+- Validate real-world performance on target Apple hardware.
 
 Work:
-- Test matrix:
-  - distances 1 ft / 2 ft
-  - on-axis and off-axis
-  - quiet and office noise
-  - desk material variants
-- Validate dynamic CP behavior with cloth/mousepad damping scenarios.
-- Validate static-device optimization path (sensor-assisted policy controls).
-- Add structured benchmark report generation.
+- Run matrix across:
+  - 1 ft / 2 ft
+  - face-on / off-axis
+  - quiet / office-noise
+  - desk surface variants / cloth damping.
+- Validate 48 kHz and optional 96 kHz profiles where route supports it.
+- Publish reproducible benchmark report and known limitations.
 
 Exit criteria:
-- 256-byte delivery success >=99% in target 1-2 ft conditions.
-- Throughput targets met in clean and moderate-noise profiles.
-- KPI report published with reproducible methodology.
+- 99% delivery for 256 B payload in target environments.
+- Throughput targets met for clean and noisy profiles with documented confidence.
+- Calibration guidance published for reproducible setup.
 
 Dependencies:
-- Phase 5 hardware backend.
+- Phase R6.
 
-### Phase 8: Release Candidate And API Freeze (Weeks 18-19)
+### Phase R8: Security Envelope And RC Freeze (Weeks 18-19)
 Objective:
-- Ship an RC suitable for external integration.
+- Deliver release candidate with security and frozen API.
 
 Work:
-- Freeze C ABI and Swift wrapper surface.
-- Write integration guides and operational tuning docs.
-- Add semver versioning, changelog, and migration notes.
-- Package benchmark artifacts and known limitations.
+- Add secure session option (X25519 + ChaCha20-Poly1305 + replay window).
+- Freeze ABI/API and complete operational docs.
+- Publish migration and tuning guidance.
 
 Exit criteria:
-- `v0.2.0-rc1` tagged with complete docs and passing checks.
-- No P0/P1 open defects in tracker.
+- `v0.2.0-rc1` with passing gates and documented security behavior.
+- No P0/P1 defects open.
 
 Dependencies:
-- Phase 0-7.
+- Phase R7.
 
-### Phase 9: Advanced Profiles (Post-RC)
+### Phase R9: Advanced Profiles (Post-RC)
 Objective:
-- Add optional advanced operating modes for dense/interfering environments.
+- Add optional profiles for dense/interfering deployments.
 
 Work:
 - Frequency-hopping profile family.
-- Multi-user scheduling strategies and collision management.
-- Optional ANE wake detector integration for low-power standby on iPhone.
+- Multi-user scheduling and collision management.
+- Optional low-power wake detection path.
 
 Exit criteria:
-- Experimental profile flags with documented constraints.
-- Measured benefit over baseline under interference-heavy scenarios.
+- Experimental flags with measured benefit and documented tradeoffs.
 
 Dependencies:
 - Stable RC baseline.
 
-## Deliverable Checklist By Milestone
+## Robustness Acceptance Matrix
+1. Noise:
+   - Office-like background + burst injectors.
+   - Target: 256 B message delivery >=99%, no runaway timeout cascades.
+2. Echo / Multipath:
+   - Desktop-canyon delay spread sweeps with deep comb nulls.
+   - Target: stable lock and no false-lock amplification.
+3. Reverb:
+   - Reverberation tail scenarios with controlled RT60 buckets.
+   - Target: false-lock <=1e-4/frame and bounded reacquisition latency.
+4. Motion / Doppler:
+   - CFO trajectories up to +/-80 Hz.
+   - Target: decode continuity with bounded PER impact.
+5. End-to-end UX:
+   - Verify downshift/upshift behavior is stable and explainable from metrics.
 
-### M1 (End Phase 1)
-- Discovery modem path merged.
-- Golden vectors for ZC detection/CFO.
-- Simulation benchmarks for detection probability.
+## Checkpoint Milestones
+### M1 (End R2)
+- Hardened sync + CFO compensation merged.
+- Lock/CFO KPI artifacts published.
 
-### M2 (End Phase 3)
-- G2 + G3 modem paths merged.
-- ARC integrated with real metrics (not synthetic-only).
-- Throughput targets met in simulation.
+### M2 (End R4)
+- Equalization + FEC/HARQ merged.
+- Robust/noisy scenario targets met in simulation bench.
 
-### M3 (End Phase 5)
-- Real Mac↔iPhone over-air transport demo.
-- Apple audio backend docs and caveats.
-- Hardware smoke-test report.
+### M3 (End R7)
+- Full hardware validation report published.
+- Default deployment profile finalized.
 
-### M4 (End Phase 8)
-- RC tag + frozen API.
-- Security mode available.
-- Release documentation complete.
-
-## Risks And Mitigations
-1. iOS processing pipeline unexpectedly suppresses ultrasound:
-   - Mitigation: strict measurement mode configuration validation and runtime diagnostics.
-2. Desk multipath nulls collapse narrow-band symbols:
-   - Mitigation: keep robust wideband fallback always available; dynamic CP and calibration.
-3. ARC oscillation in borderline SNR:
-   - Mitigation: hysteresis, dwell timers, retransmit-aware hold rules.
-4. Thermal/CPU constraints on mobile:
-   - Mitigation: vDSP-first kernels, profiling gates, optional lower-duty-cycle modes.
-5. Security overhead reduces goodput:
-   - Mitigation: benchmark secure vs external mode and tune framing overhead.
+### M4 (End R8)
+- RC tag and API freeze complete.
 
 ## Immediate Next 2 Sprints
 Sprint A:
-- Phase 0 complete and CI artifacts in place.
-- Start Phase 1 ZC detector implementation.
+- Complete Phase R0 harness updates.
+- Start Phase R1 sync/reverb hardening.
 
 Sprint B:
-- Finish Phase 1 and begin Phase 2 D-CSS modem path.
-- Publish first simulation benchmark package.
+- Finish Phase R1.
+- Implement Phase R2 coarse+fine CFO tracking and publish first Doppler benchmark set.
