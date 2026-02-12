@@ -404,6 +404,7 @@ enum AudioBackendFactory {
         private var renderCallbacksTotal: UInt64 = 0
         private var copiedAfterEnqueueLogCount: UInt32 = 0
         private var renderBufferShapeLogCount: UInt32 = 0
+        private var renderSilenceFlagLogCount: UInt32 = 0
 
         init(config: Config) throws {
             self.config = config
@@ -440,6 +441,7 @@ enum AudioBackendFactory {
             renderCallbacksTotal = 0
             copiedAfterEnqueueLogCount = 0
             renderBufferShapeLogCount = 0
+            renderSilenceFlagLogCount = 0
             let roleName = config.role == .master ? "master" : "slave"
             log.info("RemoteIO started role=\(roleName) cfgHz=\(self.config.sampleRateHz)")
             log.info("RemoteIO observed inHz=\(self.observedInputSampleRateHz)")
@@ -759,6 +761,7 @@ enum AudioBackendFactory {
 
         fileprivate func renderSilence(
             ioData: UnsafeMutablePointer<AudioBufferList>?,
+            ioActionFlags: UnsafeMutablePointer<AudioUnitRenderActionFlags>?,
             inNumberFrames: UInt32
         ) -> OSStatus {
             guard let ioData else {
@@ -783,14 +786,16 @@ enum AudioBackendFactory {
                 let total = self.renderCallbacksTotal
                 log.info("render cb total=\(total) pending=\(pending)")
             }
-            renderOutputBuffers(buffers, frameCount: frameCount)
+            let totalCopied = renderOutputBuffers(buffers, frameCount: frameCount)
+            updateRenderSilenceFlag(ioActionFlags: ioActionFlags, totalCopied: totalCopied)
             return noErr
         }
 
         private func renderOutputBuffers(
             _ buffers: UnsafeMutableAudioBufferListPointer,
             frameCount: Int
-        ) {
+        ) -> Int {
+            var totalCopied = 0
             for idx in buffers.indices {
                 var buffer = buffers[idx]
                 guard let data = buffer.mData else {
@@ -808,6 +813,7 @@ enum AudioBackendFactory {
                 }
                 let out = data.assumingMemoryBound(to: Float.self)
                 let copied = dequeueTxSamples(into: out, sampleCount: sampleCount)
+                totalCopied += copied
                 if copied > 0, copiedAfterEnqueueLogCount < 6 {
                     let pendingAfterCopy = pendingTxSamples()
                     let peak = peakAbs(UnsafeBufferPointer(start: out, count: copied))
@@ -829,6 +835,27 @@ enum AudioBackendFactory {
                 }
                 buffer.mDataByteSize = UInt32(sampleCount * MemoryLayout<Float>.size)
                 buffers[idx] = buffer
+            }
+            return totalCopied
+        }
+
+        private func updateRenderSilenceFlag(
+            ioActionFlags: UnsafeMutablePointer<AudioUnitRenderActionFlags>?,
+            totalCopied: Int
+        ) {
+            guard let ioActionFlags else {
+                return
+            }
+            let silenceFlag = AudioUnitRenderActionFlags(rawValue: kAudioUnitRenderAction_OutputIsSilence)
+            if totalCopied > 0 {
+                ioActionFlags.pointee.remove(silenceFlag)
+            } else {
+                ioActionFlags.pointee.formUnion(silenceFlag)
+            }
+            if renderSilenceFlagLogCount < 6 {
+                let active = ioActionFlags.pointee.contains(silenceFlag)
+                log.info("render silenceFlag=\(active) totalCopied=\(totalCopied)")
+                renderSilenceFlagLogCount += 1
             }
         }
 
@@ -941,7 +968,11 @@ enum AudioBackendFactory {
         _ = inTimeStamp
         _ = inBusNumber
         let backend = Unmanaged<IOSRemoteIOAudioBackend>.fromOpaque(inRefCon).takeUnretainedValue()
-        return backend.renderSilence(ioData: ioData, inNumberFrames: inNumberFrames)
+        return backend.renderSilence(
+            ioData: ioData,
+            ioActionFlags: ioActionFlags,
+            inNumberFrames: inNumberFrames
+        )
     }
     // swiftlint:enable function_parameter_count
 
