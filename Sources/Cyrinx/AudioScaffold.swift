@@ -401,6 +401,8 @@ enum AudioBackendFactory {
         private var renderCallbackLogCount: UInt32 = 0
         private var outputUnderrunLogCount: UInt32 = 0
         private var enqueueLogCount: UInt32 = 0
+        private var renderCallbacksTotal: UInt64 = 0
+        private var copiedAfterEnqueueLogCount: UInt32 = 0
 
         init(config: Config) throws {
             self.config = config
@@ -434,6 +436,8 @@ enum AudioBackendFactory {
             renderCallbackLogCount = 0
             outputUnderrunLogCount = 0
             enqueueLogCount = 0
+            renderCallbacksTotal = 0
+            copiedAfterEnqueueLogCount = 0
             let roleName = config.role == .master ? "master" : "slave"
             log.info("RemoteIO started role=\(roleName) cfgHz=\(self.config.sampleRateHz)")
             log.info("RemoteIO observed inHz=\(self.observedInputSampleRateHz)")
@@ -485,6 +489,14 @@ enum AudioBackendFactory {
             )
             counters.recordTx(bytes: beacon.count)
             enqueueTxSamples(beacon)
+            if let audioUnit {
+                let startStatus = AudioOutputUnitStart(audioUnit)
+                if startStatus != noErr {
+                    log.error("AudioOutputUnitStart(kick) failed status=\(startStatus)")
+                } else {
+                    log.info("AudioOutputUnitStart(kick) ok")
+                }
+            }
             let pending = pendingTxSamples()
             log.info("queued audible beacon samples=\(beacon.count) pendingSamples=\(pending)")
             return CYRINX_OK.rawValue
@@ -718,6 +730,7 @@ enum AudioBackendFactory {
                 return noErr
             }
             counters.recordOutputCallback()
+            renderCallbacksTotal &+= 1
             let buffers = UnsafeMutableAudioBufferListPointer(ioData)
             let frameCount = Int(inNumberFrames)
             if frameCount <= 0 {
@@ -730,7 +743,18 @@ enum AudioBackendFactory {
                 )
                 renderCallbackLogCount += 1
             }
+            if renderCallbacksTotal % 100 == 0 {
+                let pending = pendingTxSamples()
+                log.info("render cb total=\(renderCallbacksTotal) pending=\(pending)")
+            }
+            renderOutputBuffers(buffers, frameCount: frameCount)
+            return noErr
+        }
 
+        private func renderOutputBuffers(
+            _ buffers: UnsafeMutableAudioBufferListPointer,
+            frameCount: Int
+        ) {
             for idx in buffers.indices {
                 var buffer = buffers[idx]
                 guard let data = buffer.mData else {
@@ -740,6 +764,13 @@ enum AudioBackendFactory {
                 let sampleCount = max(frameCount, declaredSamples)
                 let out = data.assumingMemoryBound(to: Float.self)
                 let copied = dequeueTxSamples(into: out, sampleCount: sampleCount)
+                if copied > 0, copiedAfterEnqueueLogCount < 6 {
+                    let pendingAfterCopy = pendingTxSamples()
+                    log.info(
+                        "render copied=\(copied) req=\(sampleCount) pendingAfter=\(pendingAfterCopy)"
+                    )
+                    copiedAfterEnqueueLogCount += 1
+                }
                 if copied < sampleCount {
                     let remainder = sampleCount - copied
                     (out + copied).initialize(repeating: 0, count: remainder)
@@ -754,7 +785,6 @@ enum AudioBackendFactory {
                 buffer.mDataByteSize = UInt32(sampleCount * MemoryLayout<Float>.size)
                 buffers[idx] = buffer
             }
-            return noErr
         }
 
         private func enqueueTxSamples(_ samples: [Float]) {
