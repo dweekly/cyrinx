@@ -42,6 +42,31 @@ public enum QoS {
     }
 }
 
+public enum StreamPriority: UInt8 {
+    case low = 0
+    case normal = 1
+    case high = 2
+    case critical = 3
+}
+
+public struct StreamFlags: OptionSet, Sendable {
+    public let rawValue: UInt8
+
+    public init(rawValue: UInt8) {
+        self.rawValue = rawValue
+    }
+
+    public static let fin = StreamFlags(rawValue: UInt8(CYRINX_STREAM_FLAG_FIN))
+    public static let reset = StreamFlags(rawValue: UInt8(CYRINX_STREAM_FLAG_RST))
+}
+
+public struct ReceivedMessage {
+    public let data: Data
+    public let streamID: UInt16
+    public let priority: StreamPriority
+    public let flags: StreamFlags
+}
+
 public enum Gear: UInt8 {
     case discovery = 0
     case robust = 1
@@ -250,23 +275,49 @@ public final class CyrinxSession {
         try Self.checkStatus(rc)
     }
 
-    /// Sends a logical payload; underlying C core handles fragmentation/retransmit.
-    public func send(_ data: Data, qos: QoS = .reliable) throws {
+    /// Sends a payload on a specific logical stream.
+    ///
+    /// - Parameters:
+    ///   - data: User payload bytes.
+    ///   - streamID: Application stream ID in range `1...4095` (`0` is reserved).
+    ///   - qos: Best-effort or reliable delivery mode.
+    ///   - priority: Stream scheduling priority hint.
+    ///   - flags: Stream semantic flags (`.fin`, `.reset`) applied to message end.
+    public func send(
+        _ data: Data,
+        streamID: UInt16,
+        qos: QoS = .reliable,
+        priority: StreamPriority = .normal,
+        flags: StreamFlags = []
+    ) throws {
+        if streamID == UInt16(CYRINX_STREAM_CONTROL) {
+            throw CyrinxError.status(CYRINX_SWIFT_ERR_INVALID_ARGUMENT)
+        }
+
         let rc = data.withUnsafeBytes { rawBuffer -> Int32 in
             guard let base = rawBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
                 return CYRINX_SWIFT_ERR_INVALID_ARGUMENT
             }
-            return cyrinx_send(handle, base, data.count, qos.cValue)
+            return cyrinx_send_stream(
+                handle,
+                base,
+                data.count,
+                qos.cValue,
+                streamID,
+                priority.rawValue,
+                flags.rawValue
+            )
         }
         try Self.checkStatus(rc)
     }
 
-    /// Receives a logical payload if available before timeout.
-    public func receive(timeoutMS: UInt32 = 0, maxBytes: Int = 4096) throws -> Data? {
+    /// Receives the next payload and its stream metadata if available before timeout.
+    public func receive(timeoutMS: UInt32 = 0, maxBytes: Int = 4096) throws -> ReceivedMessage? {
         var buffer = [UInt8](repeating: 0, count: maxBytes)
         var len = buffer.count
+        var meta = cyrinx_message_meta_t(stream_id: 0, priority: 0, flags: 0, payload_len: 0)
         let rc: Int32 = buffer.withUnsafeMutableBufferPointer { buf in
-            cyrinx_recv(handle, buf.baseAddress, &len, timeoutMS)
+            cyrinx_recv_stream(handle, buf.baseAddress, &len, timeoutMS, &meta)
         }
         if rc == CYRINX_SWIFT_ERR_TIMEOUT {
             return nil
@@ -274,15 +325,26 @@ public final class CyrinxSession {
         if rc == CYRINX_SWIFT_ERR_BUFFER_TOO_SMALL {
             buffer = [UInt8](repeating: 0, count: len)
             var retryLen = len
+            var retryMeta = cyrinx_message_meta_t(stream_id: 0, priority: 0, flags: 0, payload_len: 0)
             let retry: Int32 = buffer.withUnsafeMutableBufferPointer { buf in
-                cyrinx_recv(handle, buf.baseAddress, &retryLen, timeoutMS)
+                cyrinx_recv_stream(handle, buf.baseAddress, &retryLen, timeoutMS, &retryMeta)
             }
             try Self.checkStatus(retry)
-            return Data(buffer.prefix(retryLen))
+            return ReceivedMessage(
+                data: Data(buffer.prefix(retryLen)),
+                streamID: retryMeta.stream_id,
+                priority: StreamPriority(rawValue: retryMeta.priority) ?? .normal,
+                flags: StreamFlags(rawValue: retryMeta.flags)
+            )
         }
 
         try Self.checkStatus(rc)
-        return Data(buffer.prefix(len))
+        return ReceivedMessage(
+            data: Data(buffer.prefix(len)),
+            streamID: meta.stream_id,
+            priority: StreamPriority(rawValue: meta.priority) ?? .normal,
+            flags: StreamFlags(rawValue: meta.flags)
+        )
     }
 
     /// Returns instantaneous transport and ARC metrics.

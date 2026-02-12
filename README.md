@@ -9,6 +9,7 @@ This repository currently provides:
 - Frame codec with bit-packed headers, CRC16/CRC32C, fragmentation/reassembly
 - Half-duplex ping-pong MAC with ACK and selective retransmission policy hooks
 - Adaptive Rate Control (ARC) gear state machine
+- Stream-multiplexed transport API (`stream_id`, priority, `FIN`/`RST` flags)
 - In-memory linked transport for deterministic tests without audio hardware
 - PHY utility module with Zadoff-Chu generation, CFO estimation, and dynamic CP selection
 
@@ -22,6 +23,15 @@ This repository currently provides:
   - Subcarrier spacing: `46.875 Hz`
   - Active carriers: `106`
   - Default CP: `96 samples` (~2 ms @ 48 kHz)
+
+## Stream Model
+
+- `stream_id = 0` is reserved for control frames.
+- Applications send on stream IDs `1...4095`.
+- Each received payload includes stream metadata:
+  - `stream_id`
+  - `priority` (`0...3`)
+  - `flags` (`FIN`, `RST`)
 
 ## Apple-Targeted Configuration Hooks
 

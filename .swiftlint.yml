@@ -31,3 +31,4 @@ disabled_rules:
   - identifier_name
   - inclusive_language
   - opening_brace
+  - file_length

@@ -17,14 +17,19 @@ final class CyrinxTests: XCTestCase {
         try b.start()
 
         let first = Data("mac-to-phone".utf8)
-        try a.send(first, qos: .reliable)
+        try a.send(first, streamID: 1, qos: .reliable, priority: .high, flags: [.fin])
         let receivedAtB = try b.receive(timeoutMS: 100)
-        XCTAssertEqual(receivedAtB, first)
+        XCTAssertEqual(receivedAtB?.data, first)
+        XCTAssertEqual(receivedAtB?.streamID, 1)
+        XCTAssertEqual(receivedAtB?.priority, .high)
+        XCTAssertEqual(receivedAtB?.flags, [.fin])
 
         let second = Data("phone-to-mac".utf8)
-        try b.send(second, qos: .reliable)
+        try b.send(second, streamID: 3, qos: .reliable, priority: .normal, flags: [.fin])
         let receivedAtA = try a.receive(timeoutMS: 100)
-        XCTAssertEqual(receivedAtA, second)
+        XCTAssertEqual(receivedAtA?.data, second)
+        XCTAssertEqual(receivedAtA?.streamID, 3)
+        XCTAssertEqual(receivedAtA?.flags, [.fin])
     }
 
     func testFragmentationAndReassemblyAt4KB() throws {
@@ -36,10 +41,59 @@ final class CyrinxTests: XCTestCase {
         try b.start()
 
         let payload = Data((0..<4096).map { UInt8($0 % 251) })
-        try a.send(payload, qos: .reliable)
+        try a.send(payload, streamID: 5, qos: .reliable, priority: .critical, flags: [.fin])
 
         let received = try b.receive(timeoutMS: 200)
-        XCTAssertEqual(received, payload)
+        XCTAssertEqual(received?.data, payload)
+        XCTAssertEqual(received?.streamID, 5)
+        XCTAssertEqual(received?.priority, .critical)
+    }
+
+    func testMultiplexedStreamsInterleaveWithoutLosingMetadata() throws {
+        let a = try CyrinxSession(config: Config(role: .master))
+        let b = try CyrinxSession(config: Config(role: .slave))
+
+        try CyrinxSession.linkInMemory(a, b)
+        try a.start()
+        try b.start()
+
+        let alpha = Data("alpha".utf8)
+        let beta = Data("beta".utf8)
+        let gamma = Data("gamma".utf8)
+
+        try a.send(alpha, streamID: 7, qos: .reliable, priority: .low)
+        try a.send(beta, streamID: 9, qos: .reliable, priority: .critical, flags: [.fin])
+        try a.send(gamma, streamID: 7, qos: .reliable, priority: .high, flags: [.fin])
+
+        let r1 = try b.receive(timeoutMS: 100)
+        let r2 = try b.receive(timeoutMS: 100)
+        let r3 = try b.receive(timeoutMS: 100)
+
+        XCTAssertEqual(r1?.data, alpha)
+        XCTAssertEqual(r1?.streamID, 7)
+        XCTAssertEqual(r1?.priority, .low)
+
+        XCTAssertEqual(r2?.data, beta)
+        XCTAssertEqual(r2?.streamID, 9)
+        XCTAssertEqual(r2?.priority, .critical)
+        XCTAssertEqual(r2?.flags, [.fin])
+
+        XCTAssertEqual(r3?.data, gamma)
+        XCTAssertEqual(r3?.streamID, 7)
+        XCTAssertEqual(r3?.priority, .high)
+        XCTAssertEqual(r3?.flags, [.fin])
+    }
+
+    func testControlStreamIsRejectedForApplicationSend() throws {
+        let a = try CyrinxSession(config: Config(role: .master))
+        try a.start()
+
+        XCTAssertThrowsError(try a.send(Data("x".utf8), streamID: 0, qos: .reliable)) { error in
+            guard case CyrinxError.status(let code) = error else {
+                return XCTFail("Expected cyrinx status error")
+            }
+            XCTAssertEqual(code, CYRINX_ERR_INVALID_ARGUMENT.rawValue)
+        }
     }
 
     func testARCSelectGearTransitions() {

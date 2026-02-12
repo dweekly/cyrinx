@@ -41,6 +41,24 @@ typedef enum { CYRINX_SECURITY_NONE = 0, CYRINX_SECURITY_EXTERNAL = 1 } cyrinx_s
 
 typedef enum { CYRINX_FRAME_DATA = 0, CYRINX_FRAME_ACK = 1, CYRINX_FRAME_CONTROL = 2 } cyrinx_frame_type_t;
 
+/*
+ * Multiplexing stream IDs:
+ * - 0 is reserved for control plane traffic.
+ * - application payloads should use stream IDs 1...4095.
+ */
+#define CYRINX_STREAM_CONTROL 0u
+#define CYRINX_STREAM_DEFAULT 1u
+
+/*
+ * Frame flags used by the transport:
+ * - FRAG_* are internal fragmentation markers.
+ * - STREAM_* are exposed to applications for logical stream semantics.
+ */
+#define CYRINX_FLAG_FRAG_START 0x01u
+#define CYRINX_FLAG_FRAG_END 0x02u
+#define CYRINX_STREAM_FLAG_FIN 0x04u
+#define CYRINX_STREAM_FLAG_RST 0x08u
+
 typedef enum {
     CYRINX_GEAR_G1_DISCOVERY = 0,
     CYRINX_GEAR_G2_ROBUST = 1,
@@ -104,6 +122,13 @@ typedef struct {
     uint8_t window_size;
 } cyrinx_arc_policy_t;
 
+typedef struct {
+    uint16_t stream_id;
+    uint8_t priority;
+    uint8_t flags;
+    size_t payload_len;
+} cyrinx_message_meta_t;
+
 typedef int (*cyrinx_tx_callback_t)(const uint8_t *frame, size_t len, void *user_data);
 typedef void (*cyrinx_event_callback_t)(cyrinx_event_t event, void *user_data);
 
@@ -146,13 +171,18 @@ CYRINX_API cyrinx_session_t *cyrinx_open(const cyrinx_config_t *config);
 CYRINX_API int cyrinx_start(cyrinx_session_t *session);
 
 /*
- * Send/receive logical payloads over the current transport.
+ * Stream-aware API for multiplexed logical channels.
  *
- * Payloads larger than CYRINX_MAX_FRAME_PAYLOAD are fragmented internally and
- * reassembled on the remote side.
+ * - stream_id: 1...4095 for app streams (0 reserved for control)
+ * - priority: 0 (lowest) to 3 (highest)
+ * - stream_flags: bitmask of CYRINX_STREAM_FLAG_*
  */
-CYRINX_API int cyrinx_send(cyrinx_session_t *session, const uint8_t *data, size_t len, cyrinx_qos_t qos);
-CYRINX_API int cyrinx_recv(cyrinx_session_t *session, uint8_t *out, size_t *inout_len, uint32_t timeout_ms);
+CYRINX_API int cyrinx_send_stream(cyrinx_session_t *session, const uint8_t *data, size_t len,
+                                  cyrinx_qos_t qos, uint16_t stream_id, uint8_t priority,
+                                  uint8_t stream_flags);
+CYRINX_API int cyrinx_recv_stream(cyrinx_session_t *session, uint8_t *out, size_t *inout_len,
+                                  uint32_t timeout_ms, cyrinx_message_meta_t *out_meta);
+
 CYRINX_API int cyrinx_get_metrics(cyrinx_session_t *session, cyrinx_metrics_t *out);
 CYRINX_API int cyrinx_set_arc_policy(cyrinx_session_t *session, const cyrinx_arc_policy_t *policy);
 CYRINX_API void cyrinx_close(cyrinx_session_t *session);

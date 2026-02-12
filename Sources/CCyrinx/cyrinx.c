@@ -18,23 +18,23 @@
 
 #define CYRINX_MAX_FRAME_PAYLOAD 1024u
 #define CYRINX_MAX_LOGICAL_MESSAGE 4096u
-#define CYRINX_HEADER_BITS 106u
-#define CYRINX_HEADER_BYTES 14u
-#define CYRINX_HEADER_NOCRC_BITS 90u
-#define CYRINX_HEADER_NOCRC_BYTES 12u
+#define CYRINX_HEADER_BITS 120u
+#define CYRINX_HEADER_BYTES 15u
+#define CYRINX_HEADER_NOCRC_BITS 104u
+#define CYRINX_HEADER_NOCRC_BYTES 13u
 #define CYRINX_FIXED_PREAMBLE_BYTES 2u
 #define CYRINX_FRAME_CRC_BYTES 4u
 #define CYRINX_FRAME_MIN_SIZE (CYRINX_FIXED_PREAMBLE_BYTES + CYRINX_HEADER_BYTES + CYRINX_FRAME_CRC_BYTES)
 
-#define CYRINX_FLAG_FRAG_START 0x01u
-#define CYRINX_FLAG_FRAG_END 0x02u
+#define CYRINX_STREAM_ID_MAX 4095u
+#define CYRINX_STREAM_PRIORITY_MAX 3u
 
 #define CYRINX_TIMEOUT_MS 1200u
 
 #define CYRINX_ACK_REPORT_PAYLOAD_BYTES 10u
 
 /*
- * Frame header used on the wire (bit-packed to 106 bits).
+ * Frame header used on the wire (bit-packed to 120 bits).
  *
  * The binary layout matches the PRD and is intentionally independent from host
  * ABI alignment.
@@ -47,6 +47,8 @@ typedef struct {
     uint16_t ack;
     uint8_t gear_id;
     uint8_t fec_rate;
+    uint16_t stream_id;
+    uint8_t priority;
     uint16_t payload_len;
     uint8_t flags;
     uint16_t header_crc16;
@@ -55,6 +57,9 @@ typedef struct {
 typedef struct cyrinx_message_node {
     uint8_t *data;
     size_t len;
+    uint16_t stream_id;
+    uint8_t priority;
+    uint8_t flags;
     struct cyrinx_message_node *next;
 } cyrinx_message_node_t;
 
@@ -85,6 +90,9 @@ struct cyrinx_session {
     uint8_t reassembly[CYRINX_MAX_LOGICAL_MESSAGE];
     size_t reassembly_len;
     bool reassembly_active;
+    uint16_t reassembly_stream_id;
+    uint8_t reassembly_priority;
+    uint8_t reassembly_flags;
 
     cyrinx_message_node_t *rx_head;
     cyrinx_message_node_t *rx_tail;
@@ -214,6 +222,8 @@ static bool cyrinx_serialize_header(const cyrinx_frame_header_t *h, uint8_t out[
     cyrinx_bw_write(out, &bit_pos, h->ack, 16);
     cyrinx_bw_write(out, &bit_pos, h->gear_id & 0x7u, 3);
     cyrinx_bw_write(out, &bit_pos, h->fec_rate & 0x7u, 3);
+    cyrinx_bw_write(out, &bit_pos, h->stream_id & 0xFFFu, 12);
+    cyrinx_bw_write(out, &bit_pos, h->priority & 0x3u, 2);
     cyrinx_bw_write(out, &bit_pos, h->payload_len & 0xFFFu, 12);
     cyrinx_bw_write(out, &bit_pos, h->flags, 8);
 
@@ -221,10 +231,7 @@ static bool cyrinx_serialize_header(const cyrinx_frame_header_t *h, uint8_t out[
         return false;
     }
 
-    /*
-     * Header CRC intentionally covers only the first 90 bits.
-     * Remaining bits in byte 12 are part of the CRC field itself.
-     */
+    /* Header CRC covers all fixed fields before the CRC itself. */
     uint16_t crc = cyrinx_crc16_ccitt(out, CYRINX_HEADER_NOCRC_BYTES);
     cyrinx_bw_write(out, &bit_pos, crc, 16);
 
@@ -236,11 +243,7 @@ static bool cyrinx_parse_header(const uint8_t in[CYRINX_HEADER_BYTES], cyrinx_fr
         return false;
     }
 
-    uint8_t header_nocrc[CYRINX_HEADER_NOCRC_BYTES];
-    memcpy(header_nocrc, in, CYRINX_HEADER_NOCRC_BYTES);
-    /* Only the first 90 bits are covered; clear trailing bits in the last byte. */
-    header_nocrc[CYRINX_HEADER_NOCRC_BYTES - 1u] &= 0xC0u;
-    uint16_t expected_crc = cyrinx_crc16_ccitt(header_nocrc, CYRINX_HEADER_NOCRC_BYTES);
+    uint16_t expected_crc = cyrinx_crc16_ccitt(in, CYRINX_HEADER_NOCRC_BYTES);
 
     size_t bit_pos = 0;
     h->version = (uint8_t)cyrinx_br_read(in, &bit_pos, 4);
@@ -250,6 +253,8 @@ static bool cyrinx_parse_header(const uint8_t in[CYRINX_HEADER_BYTES], cyrinx_fr
     h->ack = (uint16_t)cyrinx_br_read(in, &bit_pos, 16);
     h->gear_id = (uint8_t)cyrinx_br_read(in, &bit_pos, 3);
     h->fec_rate = (uint8_t)cyrinx_br_read(in, &bit_pos, 3);
+    h->stream_id = (uint16_t)cyrinx_br_read(in, &bit_pos, 12);
+    h->priority = (uint8_t)cyrinx_br_read(in, &bit_pos, 2);
     h->payload_len = (uint16_t)cyrinx_br_read(in, &bit_pos, 12);
     h->flags = (uint8_t)cyrinx_br_read(in, &bit_pos, 8);
     h->header_crc16 = (uint16_t)cyrinx_br_read(in, &bit_pos, 16);
@@ -301,7 +306,8 @@ static void cyrinx_update_goodput(cyrinx_session_t *session, size_t payload_byte
         (0.8f * session->metrics.goodput_bps) + (0.2f * (sample > gear_bps ? gear_bps : sample));
 }
 
-static void cyrinx_queue_message(cyrinx_session_t *session, const uint8_t *data, size_t len) {
+static void cyrinx_queue_message(cyrinx_session_t *session, const uint8_t *data, size_t len,
+                                 uint16_t stream_id, uint8_t priority, uint8_t flags) {
     if (!session || !data || len == 0) {
         return;
     }
@@ -319,6 +325,9 @@ static void cyrinx_queue_message(cyrinx_session_t *session, const uint8_t *data,
 
     memcpy(node->data, data, len);
     node->len = len;
+    node->stream_id = stream_id;
+    node->priority = priority;
+    node->flags = flags;
 
     if (!session->rx_tail) {
         session->rx_head = session->rx_tail = node;
@@ -395,8 +404,8 @@ static int cyrinx_dispatch_frame(cyrinx_session_t *session, const uint8_t *frame
 }
 
 static int cyrinx_send_internal(cyrinx_session_t *session, cyrinx_frame_type_t frame_type, uint16_t seq,
-                                uint16_t ack, uint8_t flags, const uint8_t *payload, size_t payload_len,
-                                bool track_ack) {
+                                uint16_t ack, uint16_t stream_id, uint8_t priority, uint8_t flags,
+                                const uint8_t *payload, size_t payload_len, bool track_ack) {
     if (!session) {
         return CYRINX_ERR_INVALID_ARGUMENT;
     }
@@ -423,6 +432,8 @@ static int cyrinx_send_internal(cyrinx_session_t *session, cyrinx_frame_type_t f
     h.ack = ack;
     h.gear_id = (uint8_t)session->current_gear;
     h.fec_rate = cyrinx_fec_rate_for_gear(session->current_gear);
+    h.stream_id = stream_id;
+    h.priority = priority;
     h.payload_len = (uint16_t)payload_len;
     h.flags = flags;
 
@@ -685,13 +696,22 @@ int cyrinx_start(cyrinx_session_t *session) {
     return CYRINX_OK;
 }
 
-int cyrinx_send(cyrinx_session_t *session, const uint8_t *data, size_t len, cyrinx_qos_t qos) {
+int cyrinx_send_stream(cyrinx_session_t *session, const uint8_t *data, size_t len, cyrinx_qos_t qos,
+                       uint16_t stream_id, uint8_t priority, uint8_t stream_flags) {
     if (!session || !data || len == 0 || len > CYRINX_MAX_LOGICAL_MESSAGE) {
         return CYRINX_ERR_INVALID_ARGUMENT;
     }
     if (!session->started) {
         return CYRINX_ERR_NOT_RUNNING;
     }
+    if ((stream_id == CYRINX_STREAM_CONTROL) || (stream_id > CYRINX_STREAM_ID_MAX)) {
+        return CYRINX_ERR_INVALID_ARGUMENT;
+    }
+    if (priority > CYRINX_STREAM_PRIORITY_MAX) {
+        return CYRINX_ERR_INVALID_ARGUMENT;
+    }
+
+    uint8_t app_flags = (uint8_t)(stream_flags & (CYRINX_STREAM_FLAG_FIN | CYRINX_STREAM_FLAG_RST));
 
     size_t sent = 0;
     size_t fragment_index = 0;
@@ -707,6 +727,7 @@ int cyrinx_send(cyrinx_session_t *session, const uint8_t *data, size_t len, cyri
         }
         if (sent + frag_len == len) {
             flags |= CYRINX_FLAG_FRAG_END;
+            flags |= app_flags;
         }
 
         uint16_t seq = session->next_tx_seq++;
@@ -717,8 +738,8 @@ int cyrinx_send(cyrinx_session_t *session, const uint8_t *data, size_t len, cyri
 
         do {
             session->metrics.retransmission_active = (attempts > 0);
-            rc = cyrinx_send_internal(session, CYRINX_FRAME_DATA, seq, session->last_rx_seq, flags,
-                                      data + sent, frag_len, qos == CYRINX_QOS_RELIABLE);
+            rc = cyrinx_send_internal(session, CYRINX_FRAME_DATA, seq, session->last_rx_seq, stream_id,
+                                      priority, flags, data + sent, frag_len, qos == CYRINX_QOS_RELIABLE);
             if (rc != CYRINX_OK) {
                 return rc;
             }
@@ -761,7 +782,8 @@ int cyrinx_send(cyrinx_session_t *session, const uint8_t *data, size_t len, cyri
     return CYRINX_OK;
 }
 
-int cyrinx_recv(cyrinx_session_t *session, uint8_t *out, size_t *inout_len, uint32_t timeout_ms) {
+int cyrinx_recv_stream(cyrinx_session_t *session, uint8_t *out, size_t *inout_len, uint32_t timeout_ms,
+                       cyrinx_message_meta_t *out_meta) {
     if (!session || !inout_len) {
         return CYRINX_ERR_INVALID_ARGUMENT;
     }
@@ -789,6 +811,12 @@ int cyrinx_recv(cyrinx_session_t *session, uint8_t *out, size_t *inout_len, uint
 
     memcpy(out, node->data, node->len);
     *inout_len = node->len;
+    if (out_meta) {
+        out_meta->stream_id = node->stream_id;
+        out_meta->priority = node->priority;
+        out_meta->flags = node->flags;
+        out_meta->payload_len = node->len;
+    }
 
     session->rx_head = node->next;
     if (!session->rx_head) {
@@ -891,9 +919,15 @@ int cyrinx_ingest_frame(cyrinx_session_t *session, const uint8_t *frame, size_t 
         if ((h.flags & CYRINX_FLAG_FRAG_START) != 0u) {
             session->reassembly_len = 0;
             session->reassembly_active = true;
-        } else if (!session->reassembly_active) {
+            session->reassembly_stream_id = h.stream_id;
+            session->reassembly_priority = h.priority;
+            session->reassembly_flags = 0u;
+        } else if ((!session->reassembly_active) || (session->reassembly_stream_id != h.stream_id)) {
             session->reassembly_len = 0;
             session->reassembly_active = true;
+            session->reassembly_stream_id = h.stream_id;
+            session->reassembly_priority = h.priority;
+            session->reassembly_flags = 0u;
         }
 
         if ((session->reassembly_len + payload_len) > CYRINX_MAX_LOGICAL_MESSAGE) {
@@ -904,18 +938,23 @@ int cyrinx_ingest_frame(cyrinx_session_t *session, const uint8_t *frame, size_t 
 
         memcpy(session->reassembly + session->reassembly_len, payload, payload_len);
         session->reassembly_len += payload_len;
+        session->reassembly_flags |= (uint8_t)(h.flags & (CYRINX_STREAM_FLAG_FIN | CYRINX_STREAM_FLAG_RST));
 
         if ((h.flags & CYRINX_FLAG_FRAG_END) != 0u) {
-            cyrinx_queue_message(session, session->reassembly, session->reassembly_len);
+            cyrinx_queue_message(session, session->reassembly, session->reassembly_len,
+                                 session->reassembly_stream_id, session->reassembly_priority,
+                                 session->reassembly_flags);
             session->reassembly_len = 0;
             session->reassembly_active = false;
+            session->reassembly_flags = 0u;
         }
 
         /* Immediate ACK keeps ping-pong control loop tight. */
         uint8_t ack_payload[CYRINX_ACK_REPORT_PAYLOAD_BYTES];
         cyrinx_encode_ack_report(&session->last_report, ack_payload);
-        int rc = cyrinx_send_internal(session, CYRINX_FRAME_ACK, session->next_tx_seq++, h.seq, 0u,
-                                      ack_payload, CYRINX_ACK_REPORT_PAYLOAD_BYTES, false);
+        int rc = cyrinx_send_internal(session, CYRINX_FRAME_ACK, session->next_tx_seq++, h.seq,
+                                      CYRINX_STREAM_CONTROL, 3u, 0u, ack_payload,
+                                      CYRINX_ACK_REPORT_PAYLOAD_BYTES, false);
         cyrinx_apply_arc(session, 0u);
         return rc;
     }
