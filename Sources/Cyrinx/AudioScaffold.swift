@@ -397,6 +397,7 @@ enum AudioBackendFactory {
         private let txQueueLock = NSLock()
         private let log = Logger(subsystem: "com.dweekly.cyrinx", category: "ios-remoteio")
         private var audioUnit: AudioUnit?
+        private var beaconPlayer: AVAudioPlayer?
         private var sessionHandle: OpaquePointer?
         private var txSampleQueue: [Float] = []
         private var txSampleReadIndex: Int = 0
@@ -500,6 +501,7 @@ enum AudioBackendFactory {
             let beaconPeak = peakAbs(beacon)
             counters.recordTx(bytes: beacon.count)
             enqueueTxSamples(beacon)
+            playAudibleBeaconViaAVAudioPlayer(beacon, sampleRate: sampleRate)
             if let audioUnit {
                 let startStatus = AudioOutputUnitStart(audioUnit)
                 if startStatus != noErr {
@@ -512,6 +514,25 @@ enum AudioBackendFactory {
             log.info("audible beacon peakAbs=\(beaconPeak)")
             log.info("queued audible beacon samples=\(beacon.count) pendingSamples=\(pending)")
             return CYRINX_OK.rawValue
+        }
+
+        private func playAudibleBeaconViaAVAudioPlayer(_ samples: [Float], sampleRate: Double) {
+            guard !samples.isEmpty else {
+                return
+            }
+            let wavData = makePCM16WAV(samples: samples, sampleRate: sampleRate)
+            do {
+                let player = try AVAudioPlayer(data: wavData)
+                player.volume = 1.0
+                player.prepareToPlay()
+                let started = player.play()
+                beaconPlayer = player
+                log.info(
+                    "beacon AVAudioPlayer started=\(started) durationSec=\(player.duration)"
+                )
+            } catch {
+                log.error("beacon AVAudioPlayer failed: \(error.localizedDescription)")
+            }
         }
 
         private func configureAudioSession() throws {
@@ -998,6 +1019,51 @@ enum AudioBackendFactory {
             }
             txQueueLock.unlock()
             return copied
+        }
+
+        private func makePCM16WAV(samples: [Float], sampleRate: Double) -> Data {
+            let clampedRate = UInt32(min(max(sampleRate.rounded(), 8_000), 192_000))
+            let sampleCount = samples.count
+            let pcmBytes = sampleCount * MemoryLayout<Int16>.size
+            let totalBytes = 44 + pcmBytes
+            var data = Data()
+            data.reserveCapacity(totalBytes)
+
+            data.append(contentsOf: [0x52, 0x49, 0x46, 0x46])  // RIFF
+            data.append(le32(UInt32(totalBytes - 8)))
+            data.append(contentsOf: [0x57, 0x41, 0x56, 0x45])  // WAVE
+            data.append(contentsOf: [0x66, 0x6D, 0x74, 0x20])  // fmt
+            data.append(le32(16))
+            data.append(le16(1))  // PCM
+            data.append(le16(1))  // mono
+            data.append(le32(clampedRate))
+            let byteRate = clampedRate * UInt32(MemoryLayout<Int16>.size)
+            data.append(le32(byteRate))
+            data.append(le16(UInt16(MemoryLayout<Int16>.size)))
+            data.append(le16(16))
+            data.append(contentsOf: [0x64, 0x61, 0x74, 0x61])  // data
+            data.append(le32(UInt32(pcmBytes)))
+
+            for sample in samples {
+                let s = max(-1.0, min(1.0, sample))
+                let i16 = Int16((s * Float(Int16.max)).rounded())
+                data.append(le16(UInt16(bitPattern: i16)))
+            }
+            return data
+        }
+
+        private func le16(_ value: UInt16) -> [UInt8] {
+            [UInt8(value & 0x00FF), UInt8((value >> 8) & 0x00FF)]
+        }
+
+        private func le32(_ value: UInt32) -> [UInt8] {
+            var out = [UInt8]()
+            out.reserveCapacity(4)
+            out.append(UInt8(value & 0x000000FF))
+            out.append(UInt8((value >> 8) & 0x000000FF))
+            out.append(UInt8((value >> 16) & 0x000000FF))
+            out.append(UInt8((value >> 24) & 0x000000FF))
+            return out
         }
 
         private func enqueueTxSamples(_ samples: [Float]) {
