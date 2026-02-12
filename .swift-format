@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "indentation": {
+    "spaces": 4
+  },
+  "lineLength": 110,
+  "maximumBlankLines": 1,
+  "respectsExistingLineBreaks": true,
+  "rules": {
+    "OrderedImports": true,
+    "DoNotUseSemicolons": true,
+    "NoParensAroundConditions": true,
+    "UseTripleSlashForDocumentationComments": true,
+    "NoAssignmentInExpressions": true,
+    "IdentifiersMustBeASCII": true
+  }
+}
