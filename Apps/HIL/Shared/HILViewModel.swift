@@ -237,8 +237,17 @@ final class HILViewModel: ObservableObject {
         let roleLabel = roleChoice.label
         sessionOperationQueue.async { [weak self] in
             do {
+                let before = session.audioDiagnostics
                 try session.playLocalAudibleBeacon()
                 self?.postOperationResult("played audible beacon for \(roleLabel)")
+                Thread.sleep(forTimeInterval: 0.35)
+                let after = session.audioDiagnostics
+                if let before, let after {
+                    let outDelta = Int64(after.outputCallbackCount) - Int64(before.outputCallbackCount)
+                    let pendingDelta = Int64(after.pendingOutputSampleCount) - Int64(before.pendingOutputSampleCount)
+                    self?.postOperationResult(
+                        "beacon output delta outCallbacks=\(outDelta) pendingOutSamplesDelta=\(pendingDelta)")
+                }
             } catch {
                 self?.postOperationResult("audible beacon failed: \(error)")
             }
