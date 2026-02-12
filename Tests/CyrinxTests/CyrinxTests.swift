@@ -47,6 +47,23 @@ final class CyrinxTests: XCTestCase {
         XCTAssertEqual(receivedAtA?.flags, [.fin])
     }
 
+    func testFirstValidInboundFramePromotesDiscoveryToRobust() throws {
+        let a = try CyrinxSession(config: Config(role: .master))
+        let b = try CyrinxSession(config: Config(role: .slave))
+
+        try CyrinxSession.linkInMemory(a, b)
+        try a.start()
+        try b.start()
+
+        XCTAssertEqual(b.metrics.gear, .discovery)
+
+        try a.send(Data("hello".utf8), streamID: 1, qos: .bestEffort, priority: .normal, flags: [.fin])
+        let received = try b.receive(timeoutMS: 100)
+        XCTAssertEqual(received?.data, Data("hello".utf8))
+
+        XCTAssertNotEqual(b.metrics.gear, .discovery)
+    }
+
     func testFragmentationAndReassemblyAt4KB() throws {
         let a = try CyrinxSession(config: Config(role: .master))
         let b = try CyrinxSession(config: Config(role: .slave))

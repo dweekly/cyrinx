@@ -952,6 +952,10 @@ int cyrinx_ingest_frame(cyrinx_session_t *session, const uint8_t *frame, size_t 
     session->last_rx_seq = h.seq;
     session->metrics.rx_frames += 1u;
     session->consecutive_crc_failures = 0u;
+    if (session->current_gear == CYRINX_GEAR_G1_DISCOVERY) {
+        /* First valid frame proves basic synchronization; move into robust mode. */
+        cyrinx_set_gear(session, CYRINX_GEAR_G2_ROBUST);
+    }
 
     if (h.frame_type == CYRINX_FRAME_ACK) {
         /* ACK frames may carry channel report feedback for ARC decisions. */
