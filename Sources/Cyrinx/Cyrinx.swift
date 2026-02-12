@@ -7,19 +7,56 @@ private let CYRINX_SWIFT_ERR_BUFFER_TOO_SMALL: Int32 = -3
 private let CYRINX_SWIFT_ERR_TIMEOUT: Int32 = -4
 private let CYRINX_SWIFT_ERR_INTERNAL: Int32 = -9
 
-public enum CyrinxError: Error, CustomStringConvertible {
+/// Library error type that wraps C core status codes.
+public enum CyrinxError: Error, CustomStringConvertible, LocalizedError, Sendable {
+    /// Raw C status code returned by the transport core.
     case status(Int32)
 
-    public var description: String {
+    /// Numeric status value returned by the C API.
+    public var statusCode: Int32 {
         switch self {
         case .status(let code):
-            return "cyrinx error \(code)"
+            return code
+        }
+    }
+
+    /// Stable symbolic name for this status code (for example `CYRINX_ERR_TIMEOUT`).
+    public var statusName: String {
+        Cyrinx.statusName(for: statusCode)
+    }
+
+    /// Human-readable explanation for this status code.
+    public var statusDescription: String {
+        Cyrinx.statusDescription(for: statusCode)
+    }
+
+    public var description: String {
+        "cyrinx error \(statusCode) (\(statusName)): \(statusDescription)"
+    }
+
+    public var errorDescription: String? {
+        description
+    }
+
+    public var recoverySuggestion: String? {
+        switch statusCode {
+        case CYRINX_SWIFT_ERR_TIMEOUT:
+            return "Verify both peers are started and use best-effort probing before reliable send."
+        case CYRINX_SWIFT_ERR_INVALID_ARGUMENT:
+            return "Validate stream IDs, payload size, and configuration values."
+        case CYRINX_SWIFT_ERR_BUFFER_TOO_SMALL:
+            return "Increase receive buffer capacity and retry."
+        default:
+            return nil
         }
     }
 }
 
+/// Session role for the half-duplex ping-pong transport.
 public enum Role {
+    /// Initiates discovery and starts the first transmission slot.
     case master
+    /// Responds to discovery and alternates receive/transmit slots.
     case slave
 
     fileprivate var cValue: cyrinx_role_t {
@@ -30,8 +67,11 @@ public enum Role {
     }
 }
 
+/// Delivery quality of service for a payload.
 public enum QoS {
+    /// Sends once with no retransmission/ACK requirement.
     case bestEffort
+    /// Requires ACK and retransmits up to policy limits.
     case reliable
 
     fileprivate var cValue: cyrinx_qos_t {
@@ -42,6 +82,7 @@ public enum QoS {
     }
 }
 
+/// Priority hint used by stream-aware frame scheduling.
 public enum StreamPriority: UInt8, Sendable {
     case low = 0
     case normal = 1
@@ -49,17 +90,22 @@ public enum StreamPriority: UInt8, Sendable {
     case critical = 3
 }
 
+/// Optional stream semantics that annotate logical message boundaries.
 public struct StreamFlags: OptionSet, Sendable {
     public let rawValue: UInt8
 
+    /// Creates a custom stream flag bitmask.
     public init(rawValue: UInt8) {
         self.rawValue = rawValue
     }
 
+    /// Marks logical end-of-stream payload.
     public static let fin = StreamFlags(rawValue: UInt8(CYRINX_STREAM_FLAG_FIN))
+    /// Requests stream reset semantics.
     public static let reset = StreamFlags(rawValue: UInt8(CYRINX_STREAM_FLAG_RST))
 }
 
+/// Payload and metadata returned by `receive(...)`.
 public struct ReceivedMessage {
     public let data: Data
     public let streamID: UInt16
@@ -67,6 +113,7 @@ public struct ReceivedMessage {
     public let flags: StreamFlags
 }
 
+/// Current adaptive PHY gear selected by ARC.
 public enum Gear: UInt8 {
     case discovery = 0
     case robust = 1
@@ -79,6 +126,7 @@ public enum Gear: UInt8 {
     }
 }
 
+/// Link-level state transitions emitted via `CyrinxSession.events`.
 public enum Event: UInt8 {
     case idle = 0
     case discovery = 1
@@ -92,6 +140,7 @@ public enum Event: UInt8 {
     }
 }
 
+/// Session configuration for transport policy and backend behavior.
 public struct Config {
     public var role: Role
     public var transportBackend: TransportBackend
@@ -165,6 +214,7 @@ public struct Config {
     }
 }
 
+/// Adaptive Rate Control thresholds and retry policy.
 public struct ARCPolicy {
     public var g2ToQPSKSNR: Float
     public var qpskTo16QAMSNR: Float
@@ -203,6 +253,7 @@ public struct ARCPolicy {
     }
 }
 
+/// Runtime metrics sampled from the transport core.
 public struct Metrics {
     public let gear: Gear
     public let snrDB: Float
@@ -264,6 +315,7 @@ private func cyrinx_swift_tx_callback(
     return backend.handleOutboundFrame(bytes)
 }
 
+/// Stateful transport session.
 public final class CyrinxSession {
     private let handle: OpaquePointer
     private let relay: SessionCallbackRelay
@@ -366,6 +418,11 @@ public final class CyrinxSession {
     }
 
     /// Receives the next payload and its stream metadata if available before timeout.
+    ///
+    /// - Parameters:
+    ///   - timeoutMS: Poll timeout in milliseconds. `0` performs a non-blocking poll.
+    ///   - maxBytes: Initial receive buffer size. The call auto-retries once if resized.
+    /// - Returns: A decoded message, or `nil` when timeout expires before data arrives.
     public func receive(timeoutMS: UInt32 = 0, maxBytes: Int = 4096) throws -> ReceivedMessage? {
         var buffer = [UInt8](repeating: 0, count: maxBytes)
         var len = buffer.count
@@ -456,5 +513,20 @@ public enum Cyrinx {
     /// Current C core version string.
     public static var version: String {
         String(cString: cyrinx_version())
+    }
+
+    /// Returns the symbolic token for a C status code.
+    public static func statusName(for code: Int32) -> String {
+        String(cString: cyrinx_status_name(code))
+    }
+
+    /// Returns the human-readable description for a C status code.
+    public static func statusDescription(for code: Int32) -> String {
+        String(cString: cyrinx_status_description(code))
+    }
+
+    /// Convenience helper that joins code, name, and description for logs.
+    public static func explainStatus(_ code: Int32) -> String {
+        "\(code) (\(statusName(for: code))): \(statusDescription(for: code))"
     }
 }

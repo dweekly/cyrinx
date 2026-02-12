@@ -20,16 +20,32 @@ extern "C" {
 
 typedef struct cyrinx_session cyrinx_session_t;
 
+/*
+ * Core status codes returned by the C API.
+ *
+ * Use cyrinx_status_name / cyrinx_status_description to turn numeric return
+ * values into user-facing diagnostics.
+ */
 typedef enum {
+    /* Operation completed successfully. */
     CYRINX_OK = 0,
+    /* One or more input arguments were invalid. */
     CYRINX_ERR_INVALID_ARGUMENT = -1,
+    /* Session was not started before calling a runtime API. */
     CYRINX_ERR_NOT_RUNNING = -2,
+    /* Caller-provided output buffer is too small for the requested data. */
     CYRINX_ERR_BUFFER_TOO_SMALL = -3,
+    /* Operation timed out (for example, reliable send ACK timeout). */
     CYRINX_ERR_TIMEOUT = -4,
+    /* Frame failed integrity checks (header CRC or payload CRC). */
     CYRINX_ERR_CRC = -5,
+    /* Session is busy and cannot accept this request yet. */
     CYRINX_ERR_BUSY = -6,
+    /* Feature or mode is not supported by this build/backend. */
     CYRINX_ERR_UNSUPPORTED = -7,
+    /* API was called in the wrong state for the current operation. */
     CYRINX_ERR_STATE = -8,
+    /* Unexpected internal failure. */
     CYRINX_ERR_INTERNAL = -9
 } cyrinx_status_t;
 
@@ -160,7 +176,22 @@ typedef struct {
     void *user_data;
 } cyrinx_config_t;
 
+/* Returns the semantic version string of the linked cyrinx core. */
 CYRINX_API const char *cyrinx_version(void);
+
+/*
+ * Returns a stable symbolic token for a status code.
+ *
+ * Example: -4 -> "CYRINX_ERR_TIMEOUT".
+ */
+CYRINX_API const char *cyrinx_status_name(int status);
+
+/*
+ * Returns a concise human-readable explanation for a status code.
+ *
+ * Example: -4 -> "Operation timed out waiting for link progress or ACK."
+ */
+CYRINX_API const char *cyrinx_status_description(int status);
 
 /* Populate config/policy with PRD-aligned defaults. */
 CYRINX_API void cyrinx_default_config(cyrinx_config_t *out_config);
@@ -185,6 +216,8 @@ CYRINX_API int cyrinx_recv_stream(cyrinx_session_t *session, uint8_t *out, size_
 
 CYRINX_API int cyrinx_get_metrics(cyrinx_session_t *session, cyrinx_metrics_t *out);
 CYRINX_API int cyrinx_set_arc_policy(cyrinx_session_t *session, const cyrinx_arc_policy_t *policy);
+
+/* Stops and releases all resources associated with a session handle. */
 CYRINX_API void cyrinx_close(cyrinx_session_t *session);
 
 /* Transport integration hooks for modem layers. */

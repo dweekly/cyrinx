@@ -8,11 +8,15 @@ import Foundation
     import AudioToolbox
 #endif
 
+/// Transport wiring used by `CyrinxSession`.
 public enum TransportBackend: Sendable, Equatable {
+    /// Pure in-memory transport for deterministic testing.
     case inMemory
+    /// Apple audio stack scaffold (`RemoteIO` on iOS, `AVAudioEngine` on macOS).
     case appleAudioScaffold
 }
 
+/// Runtime state of the platform audio backend.
 public enum AudioBackendState: String, Sendable {
     case idle
     case running
@@ -20,6 +24,7 @@ public enum AudioBackendState: String, Sendable {
     case failed
 }
 
+/// Snapshot counters and negotiated route rates for audio backend diagnostics.
 public struct AudioBackendDiagnostics: Sendable {
     public let backend: String
     public let state: AudioBackendState
@@ -31,6 +36,7 @@ public struct AudioBackendDiagnostics: Sendable {
     public let observedOutputSampleRateHz: UInt32
 }
 
+/// Error values emitted by backend bootstrapping and OS audio calls.
 public enum AudioBackendError: Error, CustomStringConvertible {
     case unsupportedPlatform(String)
     case startupFailed(String)

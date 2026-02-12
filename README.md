@@ -43,6 +43,30 @@ This repository currently provides:
   - `priority` (`0...3`)
   - `flags` (`FIN`, `RST`)
 
+## Error Codes
+
+`cyrinx` status codes are stable across the C and Swift APIs.
+
+- Swift:
+  - `CyrinxError` now includes `statusCode`, `statusName`, and `statusDescription`.
+  - `Cyrinx.explainStatus(code)` returns a log-friendly single-line summary.
+- C:
+  - `cyrinx_status_name(int status)` returns symbolic names like `CYRINX_ERR_TIMEOUT`.
+  - `cyrinx_status_description(int status)` returns a human-readable explanation.
+
+Common status values:
+
+- `0` (`CYRINX_OK`): success.
+- `-1` (`CYRINX_ERR_INVALID_ARGUMENT`): invalid input parameter.
+- `-2` (`CYRINX_ERR_NOT_RUNNING`): session not started.
+- `-3` (`CYRINX_ERR_BUFFER_TOO_SMALL`): caller buffer too small.
+- `-4` (`CYRINX_ERR_TIMEOUT`): timed out waiting for link progress/ACK.
+- `-5` (`CYRINX_ERR_CRC`): frame integrity check failed.
+- `-6` (`CYRINX_ERR_BUSY`): operation blocked by current activity.
+- `-7` (`CYRINX_ERR_UNSUPPORTED`): feature not available in this build/backend.
+- `-8` (`CYRINX_ERR_STATE`): wrong state for this API call.
+- `-9` (`CYRINX_ERR_INTERNAL`): internal failure.
+
 ## Apple-Targeted Configuration Hooks
 
 `cyrinx_config_t` includes policy/config controls to support the Apple-specific deployment profile:

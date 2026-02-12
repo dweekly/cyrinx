@@ -1,6 +1,7 @@
 import CCyrinx
 import Foundation
 
+/// Complex sample in Cartesian form.
 public struct PHYComplex: Sendable, Equatable {
     public let re: Float
     public let im: Float
@@ -11,6 +12,7 @@ public struct PHYComplex: Sendable, Equatable {
     }
 }
 
+/// Deterministic stub modulation mode used by simulation/tests.
 public enum PHYStubMode: Sendable {
     case ofdmQPSK
     case dcss
@@ -25,6 +27,7 @@ public enum PHYStubMode: Sendable {
     }
 }
 
+/// PHY stub configuration aligned to PRD defaults.
 public struct PHYStubConfig: Sendable {
     public var mode: PHYStubMode
     public var sampleRateHz: UInt32
@@ -53,6 +56,7 @@ public struct PHYStubConfig: Sendable {
     }
 }
 
+/// Stateful cursor for sequential chunked PHY stub processing.
 public struct PHYStubSequentialState: Sendable {
     fileprivate var cState: cyrinx_phy_stub_state_t
 
@@ -62,20 +66,25 @@ public struct PHYStubSequentialState: Sendable {
         cyrinx_phy_stub_state_reset(&cState, mode.cValue)
     }
 
+    /// Reinitializes sequential symbol indices for a mode.
     public mutating func reset(mode: PHYStubMode) {
         cyrinx_phy_stub_state_reset(&cState, mode.cValue)
     }
 
+    /// Number of symbols modulated so far in sequential mode.
     public var txSymbolIndex: UInt64 {
         cState.tx_symbol_index
     }
 
+    /// Number of symbols demodulated so far in sequential mode.
     public var rxSymbolIndex: UInt64 {
         cState.rx_symbol_index
     }
 }
 
+/// Deterministic C-ABI-compatible PHY stubs used for tests and golden vectors.
 public enum PHYStub {
+    /// Modulates a full symbol slice into complex samples.
     public static func modulate(symbols: [UInt8], config: PHYStubConfig) throws -> [PHYComplex] {
         if symbols.isEmpty {
             return []
@@ -102,6 +111,7 @@ public enum PHYStub {
         return out.prefix(outCount).map { PHYComplex(re: $0.re, im: $0.im) }
     }
 
+    /// Demodulates a full sample slice into symbols.
     public static func demodulate(samples: [PHYComplex], config: PHYStubConfig) throws -> [UInt8] {
         if samples.isEmpty {
             return []
@@ -125,6 +135,7 @@ public enum PHYStub {
         return Array(symbols.prefix(symbolCount))
     }
 
+    /// Stateful modulator that can process symbols chunk-by-chunk.
     public static func modulateSequential(
         symbols: [UInt8],
         config: PHYStubConfig,
@@ -157,6 +168,7 @@ public enum PHYStub {
         return out.prefix(outCount).map { PHYComplex(re: $0.re, im: $0.im) }
     }
 
+    /// Stateful demodulator that can process sample chunks incrementally.
     public static func demodulateSequential(
         samples: [PHYComplex],
         config: PHYStubConfig,
@@ -187,6 +199,7 @@ public enum PHYStub {
         return Array(symbols.prefix(symbolCount))
     }
 
+    /// Returns PRD-aligned default config for the selected stub mode.
     public static func defaultConfig(for mode: PHYStubMode) -> PHYStubConfig {
         var c = cyrinx_phy_stub_config_t(mode: mode.cValue, sample_rate_hz: 0, fft_size: 0, cp_samples: 0)
         cyrinx_phy_stub_default_config(mode.cValue, &c)

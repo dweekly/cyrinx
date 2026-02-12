@@ -8,6 +8,21 @@ final class CyrinxTests: XCTestCase {
         XCTAssertFalse(Cyrinx.version.isEmpty)
     }
 
+    func testStatusHelpersExposeNamesAndDescriptions() {
+        XCTAssertEqual(Cyrinx.statusName(for: -4), "CYRINX_ERR_TIMEOUT")
+        XCTAssertTrue(Cyrinx.statusDescription(for: -4).localizedCaseInsensitiveContains("timed out"))
+        XCTAssertEqual(Cyrinx.statusName(for: -1234), "CYRINX_ERR_UNKNOWN")
+    }
+
+    func testCyrinxErrorDescriptionIncludesStatusMetadata() {
+        let error = CyrinxError.status(-4)
+        XCTAssertEqual(error.statusCode, -4)
+        XCTAssertEqual(error.statusName, "CYRINX_ERR_TIMEOUT")
+        XCTAssertTrue(error.description.contains("CYRINX_ERR_TIMEOUT"))
+        XCTAssertTrue(error.description.localizedCaseInsensitiveContains("timed out"))
+        XCTAssertNotNil(error.recoverySuggestion)
+    }
+
     func testLoopbackBidirectionalReliableTransfer() throws {
         let a = try CyrinxSession(config: Config(role: .master))
         let b = try CyrinxSession(config: Config(role: .slave))

@@ -508,6 +508,60 @@ const char *cyrinx_version(void) {
     return CYRINX_VERSION_STR;
 }
 
+const char *cyrinx_status_name(int status) {
+    switch (status) {
+    case CYRINX_OK:
+        return "CYRINX_OK";
+    case CYRINX_ERR_INVALID_ARGUMENT:
+        return "CYRINX_ERR_INVALID_ARGUMENT";
+    case CYRINX_ERR_NOT_RUNNING:
+        return "CYRINX_ERR_NOT_RUNNING";
+    case CYRINX_ERR_BUFFER_TOO_SMALL:
+        return "CYRINX_ERR_BUFFER_TOO_SMALL";
+    case CYRINX_ERR_TIMEOUT:
+        return "CYRINX_ERR_TIMEOUT";
+    case CYRINX_ERR_CRC:
+        return "CYRINX_ERR_CRC";
+    case CYRINX_ERR_BUSY:
+        return "CYRINX_ERR_BUSY";
+    case CYRINX_ERR_UNSUPPORTED:
+        return "CYRINX_ERR_UNSUPPORTED";
+    case CYRINX_ERR_STATE:
+        return "CYRINX_ERR_STATE";
+    case CYRINX_ERR_INTERNAL:
+        return "CYRINX_ERR_INTERNAL";
+    default:
+        return "CYRINX_ERR_UNKNOWN";
+    }
+}
+
+const char *cyrinx_status_description(int status) {
+    switch (status) {
+    case CYRINX_OK:
+        return "Operation completed successfully.";
+    case CYRINX_ERR_INVALID_ARGUMENT:
+        return "One or more arguments were invalid.";
+    case CYRINX_ERR_NOT_RUNNING:
+        return "Session is not running; call cyrinx_start first.";
+    case CYRINX_ERR_BUFFER_TOO_SMALL:
+        return "Output buffer is too small for the requested payload.";
+    case CYRINX_ERR_TIMEOUT:
+        return "Operation timed out waiting for link progress or ACK.";
+    case CYRINX_ERR_CRC:
+        return "Frame integrity check failed.";
+    case CYRINX_ERR_BUSY:
+        return "Session is busy; retry the operation.";
+    case CYRINX_ERR_UNSUPPORTED:
+        return "Requested feature is not supported by this build.";
+    case CYRINX_ERR_STATE:
+        return "Operation is invalid in the current state.";
+    case CYRINX_ERR_INTERNAL:
+        return "Internal cyrinx failure.";
+    default:
+        return "Unknown cyrinx status code.";
+    }
+}
+
 void cyrinx_default_config(cyrinx_config_t *out_config) {
     if (!out_config) {
         return;

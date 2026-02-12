@@ -1,5 +1,6 @@
 import Foundation
 
+/// Deterministic channel behavior presets for simulation runs.
 public enum SimulationProfile: String, CaseIterable, Sendable {
     case quietDesktop = "quiet"
     case officeBurst = "office-burst"
@@ -49,6 +50,7 @@ public enum SimulationProfile: String, CaseIterable, Sendable {
     }
 }
 
+/// Inputs that control a simulation run.
 public struct SimulationOptions: Sendable {
     public var packetCount: Int
     public var payloadBytes: Int
@@ -74,6 +76,7 @@ public struct SimulationOptions: Sendable {
     }
 }
 
+/// Machine-readable output from a completed simulation run.
 public struct SimulationResult: Codable, Sendable {
     public let profile: String
     public let seed: UInt64
@@ -124,6 +127,7 @@ private struct SplitMix64 {
     }
 }
 
+/// Deterministic in-memory simulation harness for ARC and transport behavior.
 public enum SimulationRunner {
     /// Runs a deterministic in-memory transport simulation and returns machine-readable metrics.
     public static func run(profile: SimulationProfile, options: SimulationOptions) throws -> SimulationResult
@@ -188,6 +192,7 @@ public enum SimulationRunner {
         )
     }
 
+    /// Encodes simulation output into canonical pretty-printed JSON.
     public static func makeJSON(_ result: SimulationResult) throws -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

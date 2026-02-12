@@ -5,6 +5,7 @@ import Foundation
     import Accelerate
 #endif
 
+/// Errors returned by vDSP-backed ultrasonic modems.
 public enum VDSPPHYError: Error, CustomStringConvertible {
     case unavailable(String)
     case invalidConfiguration(String)
@@ -22,6 +23,7 @@ public enum VDSPPHYError: Error, CustomStringConvertible {
     }
 }
 
+/// OFDM (Turbo gear) modem configuration.
 public struct VDSPOFDMConfig: Sendable {
     public var sampleRateHz: UInt32
     public var fftSize: Int
@@ -47,6 +49,7 @@ public struct VDSPOFDMConfig: Sendable {
     }
 }
 
+/// Differential-CSS (Robust gear) modem configuration.
 public struct VDSPDCSSConfig: Sendable {
     public var sampleRateHz: UInt32
     public var symbolSamples: Int
@@ -72,6 +75,7 @@ public struct VDSPDCSSConfig: Sendable {
     }
 }
 
+/// vDSP-backed modulators and demodulators for ultrasonic waveforms.
 public enum VDSPPHY {
     /// Maps payload bytes to OFDM QPSK frames and returns real-valued waveform samples.
     public static func modulateOFDMQPSK(
@@ -85,6 +89,7 @@ public enum VDSPPHY {
         #endif
     }
 
+    /// Demodulates real-valued OFDM-QPSK waveform samples back into payload bytes.
     public static func demodulateOFDMQPSK(
         samples: [Float],
         config: VDSPOFDMConfig = VDSPOFDMConfig()
@@ -108,6 +113,7 @@ public enum VDSPPHY {
         #endif
     }
 
+    /// Demodulates differential chirp waveform samples back into payload bytes.
     public static func demodulateDCSS(
         samples: [Float],
         config: VDSPDCSSConfig = VDSPDCSSConfig()
