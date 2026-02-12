@@ -31,6 +31,8 @@ public struct AudioBackendDiagnostics: Sendable {
     public let txFrameCount: UInt64
     public let txByteCount: UInt64
     public let rxCallbackCount: UInt64
+    public let outputCallbackCount: UInt64
+    public let pendingOutputSampleCount: UInt64
     public let configuredSampleRateHz: UInt32
     public let observedInputSampleRateHz: UInt32
     public let observedOutputSampleRateHz: UInt32
@@ -59,6 +61,7 @@ private final class AudioCounterBox {
     private var txFrames: UInt64 = 0
     private var txBytes: UInt64 = 0
     private var rxCallbacks: UInt64 = 0
+    private var outputCallbacks: UInt64 = 0
 
     func recordTx(bytes: Int) {
         lock.lock()
@@ -73,19 +76,28 @@ private final class AudioCounterBox {
         lock.unlock()
     }
 
+    func recordOutputCallback() {
+        lock.lock()
+        outputCallbacks &+= 1
+        lock.unlock()
+    }
+
     func snapshot(backend: String, state: AudioBackendState) -> AudioBackendDiagnostics {
         snapshot(
             backend: backend,
             state: state,
+            pendingOutputSampleCount: 0,
             configuredSampleRateHz: 0,
             observedInputSampleRateHz: 0,
             observedOutputSampleRateHz: 0
         )
     }
 
+    // swiftlint:disable:next function_parameter_count
     func snapshot(
         backend: String,
         state: AudioBackendState,
+        pendingOutputSampleCount: UInt64,
         configuredSampleRateHz: UInt32,
         observedInputSampleRateHz: UInt32,
         observedOutputSampleRateHz: UInt32
@@ -97,6 +109,8 @@ private final class AudioCounterBox {
             txFrameCount: txFrames,
             txByteCount: txBytes,
             rxCallbackCount: rxCallbacks,
+            outputCallbackCount: outputCallbacks,
+            pendingOutputSampleCount: pendingOutputSampleCount,
             configuredSampleRateHz: configuredSampleRateHz,
             observedInputSampleRateHz: observedInputSampleRateHz,
             observedOutputSampleRateHz: observedOutputSampleRateHz
@@ -203,7 +217,7 @@ final class LinearStreamResampler {
 enum AudibleBeaconSynthesizer {
     static func synthesize(role: Role, sampleRate: Double, txGainCap: Float) -> [Float] {
         let fs = min(max(sampleRate.rounded(), 8_000), 192_000)
-        let amplitude = min(max(txGainCap, 0), 0.18)
+        let amplitude = min(max(txGainCap, 0), 0.55)
         if amplitude <= 0 {
             return []
         }
@@ -211,9 +225,13 @@ enum AudibleBeaconSynthesizer {
         let pattern: [(freqHz: Double, durationSec: Double)]
         switch role {
         case .master:
-            pattern = [(1_240, 0.12), (0, 0.04), (1_860, 0.10), (0, 0.04), (1_240, 0.12)]
+            pattern =
+                [(1_300, 0.18), (0, 0.06), (1_700, 0.18), (0, 0.06), (1_300, 0.18)]
+                + [(0, 0.12), (1_300, 0.18), (0, 0.06), (1_700, 0.18), (0, 0.06), (1_300, 0.18)]
         case .slave:
-            pattern = [(920, 0.10), (0, 0.04), (1_420, 0.10), (0, 0.04), (2_120, 0.10)]
+            pattern =
+                [(900, 0.18), (0, 0.06), (1_200, 0.18), (0, 0.06), (1_700, 0.18)]
+                + [(0, 0.12), (900, 0.18), (0, 0.06), (1_200, 0.18), (0, 0.06), (1_700, 0.18)]
         }
 
         var out: [Float] = []
@@ -385,6 +403,7 @@ enum AudioBackendFactory {
             counters.snapshot(
                 backend: "ios-remoteio",
                 state: state,
+                pendingOutputSampleCount: pendingTxSamples(),
                 configuredSampleRateHz: config.sampleRateHz,
                 observedInputSampleRateHz: observedInputSampleRateHz,
                 observedOutputSampleRateHz: observedOutputSampleRateHz
@@ -654,6 +673,7 @@ enum AudioBackendFactory {
             guard let ioData else {
                 return noErr
             }
+            counters.recordOutputCallback()
             let buffers = UnsafeMutableAudioBufferListPointer(ioData)
             for buffer in buffers {
                 guard let data = buffer.mData else {
@@ -696,6 +716,13 @@ enum AudioBackendFactory {
             }
             txQueueLock.unlock()
             return copied
+        }
+
+        private func pendingTxSamples() -> UInt64 {
+            txQueueLock.lock()
+            let available = max(0, txSampleQueue.count - txSampleReadIndex)
+            txQueueLock.unlock()
+            return UInt64(available)
         }
 
         private func ingestInboundSamples(_ samples: UnsafeBufferPointer<Float>) {
@@ -790,6 +817,7 @@ enum AudioBackendFactory {
             counters.snapshot(
                 backend: "macos-avaudioengine",
                 state: state,
+                pendingOutputSampleCount: 0,
                 configuredSampleRateHz: config.sampleRateHz,
                 observedInputSampleRateHz: observedInputSampleRateHz,
                 observedOutputSampleRateHz: observedOutputSampleRateHz

@@ -22,6 +22,7 @@ This creates `/Users/dew/dev/cyrinx/Apps/HIL/CyrinxHIL.xcodeproj` from `project.
 8. Use `Receive Once`, `Refresh Diagnostics`, and `Probe Local Audio` to validate transport and negotiated route rates.
 9. Check diagnostics for `coreRx` increasing above `0` on both sides to confirm decoded inbound frames.
 10. Use `Play Audible Beacon` on each side to verify local speaker output with role-distinct patterns (`Master` and `Slave` sound different).
+11. After pressing `Play Audible Beacon`, verify `outCallbacks` is increasing and `pendingOutSamples` drains toward `0`.
 
 ## 96 kHz Smoke Workflow
 

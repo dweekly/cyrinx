@@ -202,7 +202,7 @@ final class HILViewModel: ObservableObject {
         }
 
         diagnosticsText =
-            "backend=\(diagnostics.backend) state=\(diagnostics.state.rawValue) configuredHz=\(diagnostics.configuredSampleRateHz) inHz=\(diagnostics.observedInputSampleRateHz) outHz=\(diagnostics.observedOutputSampleRateHz) txFrames=\(diagnostics.txFrameCount) txBytes=\(diagnostics.txByteCount) rxCallbacks=\(diagnostics.rxCallbackCount) coreGear=\(gear) coreTx=\(coreTx) coreRx=\(coreRx) per2s=\(corePer)"
+            "backend=\(diagnostics.backend) state=\(diagnostics.state.rawValue) configuredHz=\(diagnostics.configuredSampleRateHz) inHz=\(diagnostics.observedInputSampleRateHz) outHz=\(diagnostics.observedOutputSampleRateHz) txFrames=\(diagnostics.txFrameCount) txBytes=\(diagnostics.txByteCount) rxCallbacks=\(diagnostics.rxCallbackCount) outCallbacks=\(diagnostics.outputCallbackCount) pendingOutSamples=\(diagnostics.pendingOutputSampleCount) coreGear=\(gear) coreTx=\(coreTx) coreRx=\(coreRx) per2s=\(corePer)"
     }
 
     func probeLocalAudioRoute() {
