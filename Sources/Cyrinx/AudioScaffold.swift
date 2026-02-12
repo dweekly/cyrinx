@@ -403,6 +403,7 @@ enum AudioBackendFactory {
         private var enqueueLogCount: UInt32 = 0
         private var renderCallbacksTotal: UInt64 = 0
         private var copiedAfterEnqueueLogCount: UInt32 = 0
+        private var renderBufferShapeLogCount: UInt32 = 0
 
         init(config: Config) throws {
             self.config = config
@@ -438,6 +439,7 @@ enum AudioBackendFactory {
             enqueueLogCount = 0
             renderCallbacksTotal = 0
             copiedAfterEnqueueLogCount = 0
+            renderBufferShapeLogCount = 0
             let roleName = config.role == .master ? "master" : "slave"
             log.info("RemoteIO started role=\(roleName) cfgHz=\(self.config.sampleRateHz)")
             log.info("RemoteIO observed inHz=\(self.observedInputSampleRateHz)")
@@ -487,6 +489,7 @@ enum AudioBackendFactory {
                 sampleRate: sampleRate,
                 txGainCap: config.txGainCap
             )
+            let beaconPeak = peakAbs(beacon)
             counters.recordTx(bytes: beacon.count)
             enqueueTxSamples(beacon)
             if let audioUnit {
@@ -498,6 +501,7 @@ enum AudioBackendFactory {
                 }
             }
             let pending = pendingTxSamples()
+            log.info("audible beacon peakAbs=\(beaconPeak)")
             log.info("queued audible beacon samples=\(beacon.count) pendingSamples=\(pending)")
             return CYRINX_OK.rawValue
         }
@@ -517,7 +521,7 @@ enum AudioBackendFactory {
             let preferredHz = Int(session.preferredSampleRate)
             let actualHz = Int(session.sampleRate)
             log.info("AVAudioSession cfg prefHz=\(preferredHz) actualHz=\(actualHz)")
-            log.info("AVAudioSession route=\(route) micPerm=\(permission)")
+            log.info("AVAudioSession route=\(route) micPerm=\(permission) outVol=\(session.outputVolume)")
         }
 
         private func micPermissionDescription() -> String {
@@ -538,6 +542,8 @@ enum AudioBackendFactory {
             try configureIO(unit: unit)
             try configureStreamFormat(unit: unit)
             try configureCallbacks(unit: unit)
+            logStreamFormat(unit: unit, scope: kAudioUnitScope_Input, bus: 0, label: "render input bus0")
+            logStreamFormat(unit: unit, scope: kAudioUnitScope_Output, bus: 1, label: "capture output bus1")
             audioUnit = unit
         }
 
@@ -678,6 +684,35 @@ enum AudioBackendFactory {
             )
         }
 
+        private func logStreamFormat(
+            unit: AudioUnit,
+            scope: AudioUnitScope,
+            bus: AudioUnitElement,
+            label: String
+        ) {
+            var asbd = AudioStreamBasicDescription()
+            var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+            let rc = AudioUnitGetProperty(
+                unit,
+                kAudioUnitProperty_StreamFormat,
+                scope,
+                bus,
+                &asbd,
+                &size
+            )
+            if rc != noErr {
+                log.error("stream format read failed label=\(label) status=\(rc)")
+                return
+            }
+            let sr = Int(asbd.mSampleRate)
+            let channels = asbd.mChannelsPerFrame
+            let bytesPerFrame = asbd.mBytesPerFrame
+            let flagsHex = String(asbd.mFormatFlags, radix: 16)
+            log.info(
+                "stream format \(label) sr=\(sr) ch=\(channels) bpf=\(bytesPerFrame) flags=0x\(flagsHex)"
+            )
+        }
+
         fileprivate func capture(
             ioActionFlags: UnsafeMutablePointer<AudioUnitRenderActionFlags>,
             inTimeStamp: UnsafePointer<AudioTimeStamp>,
@@ -763,12 +798,21 @@ enum AudioBackendFactory {
                 }
                 let declaredSamples = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
                 let sampleCount = max(frameCount, declaredSamples)
+                if renderBufferShapeLogCount < 3 {
+                    let channels = buffer.mNumberChannels
+                    let bytes = buffer.mDataByteSize
+                    log.info(
+                        "render buf idx=\(idx) channels=\(channels) bytes=\(bytes) samples=\(sampleCount)"
+                    )
+                    renderBufferShapeLogCount += 1
+                }
                 let out = data.assumingMemoryBound(to: Float.self)
                 let copied = dequeueTxSamples(into: out, sampleCount: sampleCount)
                 if copied > 0, copiedAfterEnqueueLogCount < 6 {
                     let pendingAfterCopy = pendingTxSamples()
+                    let peak = peakAbs(UnsafeBufferPointer(start: out, count: copied))
                     log.info(
-                        "render copied=\(copied) req=\(sampleCount) pendingAfter=\(pendingAfterCopy)"
+                        "render copied=\(copied) req=\(sampleCount) peak=\(peak) pending=\(pendingAfterCopy)"
                     )
                     copiedAfterEnqueueLogCount += 1
                 }
@@ -786,6 +830,22 @@ enum AudioBackendFactory {
                 buffer.mDataByteSize = UInt32(sampleCount * MemoryLayout<Float>.size)
                 buffers[idx] = buffer
             }
+        }
+
+        private func peakAbs(_ samples: [Float]) -> Float {
+            var peak: Float = 0
+            for sample in samples {
+                peak = max(peak, abs(sample))
+            }
+            return peak
+        }
+
+        private func peakAbs(_ samples: UnsafeBufferPointer<Float>) -> Float {
+            var peak: Float = 0
+            for sample in samples {
+                peak = max(peak, abs(sample))
+            }
+            return peak
         }
 
         private func enqueueTxSamples(_ samples: [Float]) {
