@@ -599,7 +599,7 @@ enum AudioBackendFactory {
                 unit: unit,
                 spec: AudioUnitPropertySpec(
                     property: kAudioUnitProperty_SetRenderCallback,
-                    scope: kAudioUnitScope_Global,
+                    scope: kAudioUnitScope_Input,
                     bus: 0,
                     operation: "SetRenderCallback"
                 ),
@@ -800,15 +800,16 @@ enum AudioBackendFactory {
         private let counters = AudioCounterBox()
         private let phyLink: AcousticPHYLink
         private let engine = AVAudioEngine()
-        private let player = AVAudioPlayerNode()
-        private let pendingOutputLock = NSLock()
+        private let txQueueLock = NSLock()
         private var sessionHandle: OpaquePointer?
         private var state: AudioBackendState = .idle
         private var observedInputSampleRateHz: UInt32 = 0
         private var observedOutputSampleRateHz: UInt32 = 0
-        private var pendingOutputSamples: UInt64 = 0
+        private var txSampleQueue: [Float] = []
+        private var txSampleReadIndex: Int = 0
+        private var sourceNode: AVAudioSourceNode?
         private var rxResampler: LinearStreamResampler?
-        private lazy var format: AVAudioFormat? = {
+        private lazy var sourceFormat: AVAudioFormat? = {
             AVAudioFormat(
                 commonFormat: .pcmFormatFloat32,
                 sampleRate: Double(config.sampleRateHz),
@@ -826,7 +827,7 @@ enum AudioBackendFactory {
             counters.snapshot(
                 backend: "macos-avaudioengine",
                 state: state,
-                pendingOutputSampleCount: pendingOutputSamplesSnapshot(),
+                pendingOutputSampleCount: pendingTxSamples(),
                 configuredSampleRateHz: config.sampleRateHz,
                 observedInputSampleRateHz: observedInputSampleRateHz,
                 observedOutputSampleRateHz: observedOutputSampleRateHz
@@ -838,12 +839,19 @@ enum AudioBackendFactory {
         }
 
         func start() throws {
-            guard let format else {
+            guard let sourceFormat else {
                 throw AudioBackendError.startupFailed("failed to create AVAudioFormat")
             }
-            if player.engine == nil {
-                engine.attach(player)
-                engine.connect(player, to: engine.mainMixerNode, format: format)
+            if sourceNode == nil {
+                let node = AVAudioSourceNode(format: sourceFormat) { [weak self] _, _, frameCount, ioData in
+                    self?.renderOutbound(ioData: ioData, frameCount: Int(frameCount))
+                    return noErr
+                }
+                sourceNode = node
+            }
+            if let sourceNode, sourceNode.engine == nil {
+                engine.attach(sourceNode)
+                engine.connect(sourceNode, to: engine.mainMixerNode, format: sourceFormat)
             }
 
             engine.inputNode.removeTap(onBus: 0)
@@ -857,18 +865,16 @@ enum AudioBackendFactory {
             }
 
             do {
-                player.volume = 1.0
                 engine.mainMixerNode.outputVolume = 1.0
                 engine.prepare()
                 try engine.start()
-                ensurePlayerRunning()
                 observedInputSampleRateHz = UInt32(
                     engine.inputNode.inputFormat(forBus: 0).sampleRate.rounded()
                 )
                 observedOutputSampleRateHz = UInt32(
                     engine.outputNode.outputFormat(forBus: 0).sampleRate.rounded()
                 )
-                configureResamplerIfNeeded()
+                configureInputResamplerIfNeeded()
                 state = .running
             } catch {
                 state = .failed
@@ -878,11 +884,9 @@ enum AudioBackendFactory {
 
         func stop() {
             engine.inputNode.removeTap(onBus: 0)
-            player.stop()
             engine.stop()
-            pendingOutputLock.lock()
-            pendingOutputSamples = 0
-            pendingOutputLock.unlock()
+            clearTxQueue()
+            rxResampler = nil
             state = .stopped
         }
 
@@ -890,32 +894,6 @@ enum AudioBackendFactory {
             guard state == .running else {
                 return CYRINX_ERR_NOT_RUNNING.rawValue
             }
-            guard let buffer = makeBuffer(frame: frame) else {
-                return CYRINX_ERR_INTERNAL.rawValue
-            }
-            return scheduleForPlayback(buffer: buffer, logicalBytes: frame.count)
-        }
-
-        func playLocalAudibleBeacon() -> Int32 {
-            guard state == .running else {
-                return CYRINX_ERR_NOT_RUNNING.rawValue
-            }
-            let sampleRate =
-                observedOutputSampleRateHz > 0
-                ? Double(observedOutputSampleRateHz)
-                : Double(config.sampleRateHz)
-            let waveform = AudibleBeaconSynthesizer.synthesize(
-                role: config.role,
-                sampleRate: sampleRate,
-                txGainCap: config.txGainCap
-            )
-            guard let buffer = makeBuffer(waveform: waveform) else {
-                return CYRINX_ERR_INTERNAL.rawValue
-            }
-            return scheduleForPlayback(buffer: buffer, logicalBytes: waveform.count)
-        }
-
-        private func makeBuffer(frame: UnsafeBufferPointer<UInt8>) -> AVAudioPCMBuffer? {
             let frameBytes = Array(frame)
             let waveform =
                 (try? phyLink.encode(frame: frameBytes))
@@ -924,82 +902,123 @@ enum AudioBackendFactory {
                     sampleRate: Double(config.sampleRateHz),
                     txGainCap: config.txGainCap
                 )
-            return makeBuffer(waveform: waveform)
-        }
-
-        private func makeBuffer(waveform: [Float]) -> AVAudioPCMBuffer? {
-            guard let format else {
-                return nil
-            }
-            if waveform.isEmpty {
-                return nil
-            }
-            guard
-                let buffer = AVAudioPCMBuffer(
-                    pcmFormat: format,
-                    frameCapacity: AVAudioFrameCount(waveform.count)
-                ),
-                let channel = buffer.floatChannelData?.pointee
-            else {
-                return nil
-            }
-            buffer.frameLength = AVAudioFrameCount(waveform.count)
-            for (idx, sample) in waveform.enumerated() {
-                channel[idx] = sample
-            }
-            return buffer
-        }
-
-        private func scheduleForPlayback(buffer: AVAudioPCMBuffer, logicalBytes: Int) -> Int32 {
-            guard state == .running else {
-                return CYRINX_ERR_NOT_RUNNING.rawValue
-            }
-            if !engine.isRunning {
-                do {
-                    try engine.start()
-                } catch {
-                    state = .failed
-                    return CYRINX_ERR_INTERNAL.rawValue
-                }
-            }
-            ensurePlayerRunning()
-
-            let renderedSamples = UInt64(buffer.frameLength)
-            counters.recordTx(bytes: logicalBytes)
-            addPendingOutputSamples(renderedSamples)
-            player.scheduleBuffer(buffer) { [weak self] in
-                guard let self else {
-                    return
-                }
-                self.counters.recordOutputCallback()
-                self.subtractPendingOutputSamples(renderedSamples)
-            }
+            counters.recordTx(bytes: frame.count)
+            enqueueTxSamples(waveform)
             return CYRINX_OK.rawValue
         }
 
-        private func ensurePlayerRunning() {
-            if !player.isPlaying {
-                player.play()
+        func playLocalAudibleBeacon() -> Int32 {
+            guard state == .running else {
+                return CYRINX_ERR_NOT_RUNNING.rawValue
+            }
+            let waveform = AudibleBeaconSynthesizer.synthesize(
+                role: config.role,
+                sampleRate: Double(config.sampleRateHz),
+                txGainCap: config.txGainCap
+            )
+            counters.recordTx(bytes: waveform.count)
+            enqueueTxSamples(waveform)
+            return CYRINX_OK.rawValue
+        }
+
+        private func renderOutbound(
+            ioData: UnsafeMutablePointer<AudioBufferList>,
+            frameCount: Int
+        ) {
+            counters.recordOutputCallback()
+            guard frameCount > 0 else {
+                return
+            }
+            let buffers = UnsafeMutableAudioBufferListPointer(ioData)
+            guard !buffers.isEmpty else {
+                return
+            }
+            if buffers.count == 1 {
+                renderSingleOutputBuffer(buffers[0], frameCount: frameCount)
+                return
+            }
+            renderMultichannelOutputBuffers(buffers, frameCount: frameCount)
+        }
+
+        private func renderSingleOutputBuffer(_ buffer: AudioBuffer, frameCount: Int) {
+            let sampleCount = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
+            guard sampleCount > 0, let data = buffer.mData else {
+                return
+            }
+            let out = data.assumingMemoryBound(to: Float.self)
+            let toFill = min(sampleCount, frameCount)
+            let copied = dequeueTxSamples(into: out, sampleCount: toFill)
+            if copied < toFill {
+                (out + copied).initialize(repeating: 0, count: toFill - copied)
+            }
+            if toFill < sampleCount {
+                (out + toFill).initialize(repeating: 0, count: sampleCount - toFill)
             }
         }
 
-        private func pendingOutputSamplesSnapshot() -> UInt64 {
-            pendingOutputLock.lock()
-            let value = pendingOutputSamples
-            pendingOutputLock.unlock()
-            return value
+        private func renderMultichannelOutputBuffers(
+            _ buffers: UnsafeMutableAudioBufferListPointer,
+            frameCount: Int
+        ) {
+            var mono = [Float](repeating: 0, count: frameCount)
+            _ = mono.withUnsafeMutableBufferPointer { ptr in
+                dequeueTxSamples(into: ptr.baseAddress!, sampleCount: frameCount)
+            }
+            for buffer in buffers {
+                guard let data = buffer.mData else {
+                    continue
+                }
+                let out = data.assumingMemoryBound(to: Float.self)
+                let sampleCount = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
+                let toCopy = min(sampleCount, frameCount)
+                for idx in 0..<toCopy {
+                    out[idx] = mono[idx]
+                }
+                if toCopy < sampleCount {
+                    (out + toCopy).initialize(repeating: 0, count: sampleCount - toCopy)
+                }
+            }
         }
 
-        private func addPendingOutputSamples(_ samples: UInt64) {
-            pendingOutputLock.lock()
-            pendingOutputSamples &+= samples
-            pendingOutputLock.unlock()
+        private func enqueueTxSamples(_ samples: [Float]) {
+            guard !samples.isEmpty else {
+                return
+            }
+            txQueueLock.lock()
+            txSampleQueue.append(contentsOf: samples)
+            txQueueLock.unlock()
         }
 
-        private func subtractPendingOutputSamples(_ samples: UInt64) {
-            pendingOutputLock.lock()
-            pendingOutputSamples = pendingOutputSamples > samples ? (pendingOutputSamples - samples) : 0
-            pendingOutputLock.unlock()
+        private func dequeueTxSamples(into out: UnsafeMutablePointer<Float>, sampleCount: Int) -> Int {
+            txQueueLock.lock()
+            let available = max(0, txSampleQueue.count - txSampleReadIndex)
+            let copied = min(sampleCount, available)
+            if copied > 0 {
+                for idx in 0..<copied {
+                    out[idx] = txSampleQueue[txSampleReadIndex + idx]
+                }
+                txSampleReadIndex += copied
+            }
+            if txSampleReadIndex > 4096, txSampleReadIndex * 2 > txSampleQueue.count {
+                txSampleQueue.removeFirst(txSampleReadIndex)
+                txSampleReadIndex = 0
+            }
+            txQueueLock.unlock()
+            return copied
+        }
+
+        private func pendingTxSamples() -> UInt64 {
+            txQueueLock.lock()
+            let available = max(0, txSampleQueue.count - txSampleReadIndex)
+            txQueueLock.unlock()
+            return UInt64(available)
+        }
+
+        private func clearTxQueue() {
+            txQueueLock.lock()
+            txSampleQueue.removeAll(keepingCapacity: false)
+            txSampleReadIndex = 0
+            txQueueLock.unlock()
         }
 
         private func ingestInboundBuffer(_ buffer: AVAudioPCMBuffer) {
@@ -1033,7 +1052,7 @@ enum AudioBackendFactory {
             }
         }
 
-        private func configureResamplerIfNeeded() {
+        private func configureInputResamplerIfNeeded() {
             let inputRate = Double(observedInputSampleRateHz)
             let modemRate = Double(config.sampleRateHz)
             if inputRate <= 0 || abs(inputRate - modemRate) < 1.0 {
