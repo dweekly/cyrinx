@@ -12,6 +12,8 @@ This repository currently provides:
 - Stream-multiplexed transport API (`stream_id`, priority, `FIN`/`RST` flags)
 - In-memory linked transport for deterministic tests without audio hardware
 - PHY utility module with Zadoff-Chu generation, CFO estimation, and dynamic CP selection
+- Apple audio backend scaffold (`RemoteIO` on iOS, `AVAudioEngine` on macOS)
+- Deterministic OFDM/D-CSS PHY stub interfaces with golden-vector coverage
 
 ## Implemented Protocol Model
 
@@ -60,6 +62,7 @@ swift run cyrinx-example-loopback
 swift run cyrinx-example-multiplex
 swift run cyrinx-example-large-payload
 swift run cyrinx-sim-bench --profile quiet --out artifacts/bench/sim-quiet.json
+./scripts/hil-generate.sh --open
 ```
 
 ## Linting and Formatting
@@ -76,6 +79,7 @@ swift run cyrinx-sim-bench --profile quiet --out artifacts/bench/sim-quiet.json
 - `lint.sh`: runs `swiftlint` (strict mode) and `shellcheck` for scripts.
 - `check.sh`: full gate (`format-check` + `lint` + `swift test`).
 - `bench-sim.sh`: deterministic simulation benchmark JSON output under `artifacts/bench/`.
+- `hil-generate.sh`: generates paired macOS+iOS hardware-in-the-loop app project under `Apps/HIL/`.
 
 ## Current Scope and Next Steps
 
@@ -83,8 +87,8 @@ This implementation is protocol-complete for simulation/in-memory transport, but
 
 Planned next layers:
 
-1. Real audio I/O integration (RemoteIO / AVAudioSession measurement path)
-2. vDSP-backed OFDM/D-CSS modulator and demodulator blocks
+1. Replace stub PHY blocks with vDSP-backed OFDM/D-CSS implementations
+2. Complete live frame demodulation path into `cyrinx_ingest_frame`
 3. Hardware-in-the-loop channel calibration for MacBook Pro <-> iPhone Pro Max
 4. Security envelope integration in host app (Encrypt-then-MAC payloads)
 5. Optional C++/Rust backend behind the same public C ABI and Swift API

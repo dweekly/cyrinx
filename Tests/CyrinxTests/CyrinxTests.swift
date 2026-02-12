@@ -177,6 +177,57 @@ final class CyrinxTests: XCTestCase {
         XCTAssertEqual(cpNoisy, 96)
     }
 
+    func testPHYStubOFDMQPSKGoldenVectorCAPI() {
+        var config = cyrinx_phy_stub_config_t(
+            mode: CYRINX_PHY_STUB_OFDM_QPSK, sample_rate_hz: 0, fft_size: 0, cp_samples: 0)
+        cyrinx_phy_stub_default_config(CYRINX_PHY_STUB_OFDM_QPSK, &config)
+
+        let symbols: [UInt8] = [0, 1, 2, 3]
+        var samples = [cyrinx_complex_f32_t](
+            repeating: cyrinx_complex_f32_t(re: 0, im: 0), count: symbols.count)
+        var sampleCount = samples.count
+
+        let rcMod = symbols.withUnsafeBufferPointer { ptr in
+            cyrinx_phy_modulate_stub(&config, ptr.baseAddress, symbols.count, &samples, &sampleCount)
+        }
+        XCTAssertEqual(rcMod, CYRINX_OK.rawValue)
+        XCTAssertEqual(sampleCount, symbols.count)
+
+        let k: Float = 0.70710677
+        XCTAssertEqual(samples[0].re, k, accuracy: 1e-5)
+        XCTAssertEqual(samples[0].im, k, accuracy: 1e-5)
+        XCTAssertEqual(samples[1].re, -k, accuracy: 1e-5)
+        XCTAssertEqual(samples[1].im, k, accuracy: 1e-5)
+        XCTAssertEqual(samples[2].re, k, accuracy: 1e-5)
+        XCTAssertEqual(samples[2].im, -k, accuracy: 1e-5)
+        XCTAssertEqual(samples[3].re, -k, accuracy: 1e-5)
+        XCTAssertEqual(samples[3].im, -k, accuracy: 1e-5)
+
+        var demod = [UInt8](repeating: 0, count: symbols.count)
+        var demodCount = demod.count
+        let rcDemod = cyrinx_phy_demodulate_stub(&config, &samples, sampleCount, &demod, &demodCount)
+        XCTAssertEqual(rcDemod, CYRINX_OK.rawValue)
+        XCTAssertEqual(demodCount, symbols.count)
+        XCTAssertEqual(demod, symbols)
+    }
+
+    func testPHYStubSwiftDCSSRoundTrip() throws {
+        let config = PHYStub.defaultConfig(for: .dcss)
+        let symbols: [UInt8] = [0, 64, 128, 192]
+        let samples = try PHYStub.modulate(symbols: symbols, config: config)
+        XCTAssertEqual(samples.count, symbols.count)
+
+        XCTAssertEqual(samples[0].re, 1.0, accuracy: 1e-5)
+        XCTAssertEqual(samples[0].im, 0.0, accuracy: 1e-5)
+        XCTAssertEqual(samples[1].re, 0.0, accuracy: 1e-4)
+        XCTAssertEqual(samples[1].im, 1.0, accuracy: 1e-4)
+        XCTAssertEqual(samples[2].re, -1.0, accuracy: 1e-4)
+        XCTAssertEqual(samples[2].im, 0.0, accuracy: 1e-4)
+
+        let decoded = try PHYStub.demodulate(samples: samples, config: config)
+        XCTAssertEqual(decoded, symbols)
+    }
+
     func testSimulationRunnerProducesDeterministicCoreMetrics() throws {
         let options = SimulationOptions(
             packetCount: 24,

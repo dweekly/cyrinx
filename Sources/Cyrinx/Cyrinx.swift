@@ -94,6 +94,7 @@ public enum Event: UInt8 {
 
 public struct Config {
     public var role: Role
+    public var transportBackend: TransportBackend
     public var sampleRateHz: UInt32
     public var bandStartHz: UInt32
     public var bandEndHz: UInt32
@@ -111,6 +112,7 @@ public struct Config {
     ///   Real ultrasonic audio IO is added by platform backends.
     public init(
         role: Role = .master,
+        transportBackend: TransportBackend = .inMemory,
         sampleRateHz: UInt32 = 48_000,
         bandStartHz: UInt32 = 18_500,
         bandEndHz: UInt32 = 23_500,
@@ -123,6 +125,7 @@ public struct Config {
         sfbcStaticMode: Bool = true
     ) {
         self.role = role
+        self.transportBackend = transportBackend
         self.sampleRateHz = sampleRateHz
         self.bandStartHz = bandStartHz
         self.bandEndHz = bandEndHz
@@ -135,7 +138,11 @@ public struct Config {
         self.sfbcStaticMode = sfbcStaticMode
     }
 
-    fileprivate func toC(eventCallback: cyrinx_event_callback_t?, userData: UnsafeMutableRawPointer?)
+    fileprivate func toC(
+        eventCallback: cyrinx_event_callback_t?,
+        txCallback: cyrinx_tx_callback_t?,
+        userData: UnsafeMutableRawPointer?
+    )
         -> cyrinx_config_t
     {
         var c = cyrinx_config_t()
@@ -151,7 +158,7 @@ public struct Config {
         c.enable_dynamic_cp = dynamicCP ? 1 : 0
         c.enable_sfbc_static_mode = sfbcStaticMode ? 1 : 0
         c.security_mode = CYRINX_SECURITY_EXTERNAL
-        c.tx_callback = nil
+        c.tx_callback = txCallback
         c.event_callback = eventCallback
         c.user_data = userData
         return c
@@ -224,26 +231,49 @@ public struct Metrics {
     }
 }
 
-private final class EventRelay {
+private final class SessionCallbackRelay {
     var continuation: AsyncStream<Event>.Continuation?
+    weak var audioBackend: (any SessionFrameIOBackend)?
 }
 
 @_cdecl("cyrinx_swift_event_callback")
 private func cyrinx_swift_event_callback(_ event: cyrinx_event_t, _ userData: UnsafeMutableRawPointer?) {
     guard let userData else { return }
-    let relay = Unmanaged<EventRelay>.fromOpaque(userData).takeUnretainedValue()
+    let relay = Unmanaged<SessionCallbackRelay>.fromOpaque(userData).takeUnretainedValue()
     relay.continuation?.yield(Event(cValue: event))
+}
+
+@_cdecl("cyrinx_swift_tx_callback")
+private func cyrinx_swift_tx_callback(
+    _ frame: UnsafePointer<UInt8>?,
+    _ len: Int,
+    _ userData: UnsafeMutableRawPointer?
+) -> Int32 {
+    guard let frame else {
+        return CYRINX_SWIFT_ERR_INVALID_ARGUMENT
+    }
+    guard let userData else {
+        return CYRINX_SWIFT_ERR_INTERNAL
+    }
+
+    let relay = Unmanaged<SessionCallbackRelay>.fromOpaque(userData).takeUnretainedValue()
+    guard let backend = relay.audioBackend else {
+        return CYRINX_SWIFT_OK
+    }
+    let bytes = UnsafeBufferPointer(start: frame, count: len)
+    return backend.handleOutboundFrame(bytes)
 }
 
 public final class CyrinxSession {
     private let handle: OpaquePointer
-    private let relay: EventRelay
+    private let relay: SessionCallbackRelay
+    private let audioBackend: (any SessionFrameIOBackend)?
     private let relayToken: UnsafeMutableRawPointer
     public let events: AsyncStream<Event>
 
     /// Opens a new session handle and prepares event streaming.
     public init(config: Config = Config()) throws {
-        relay = EventRelay()
+        relay = SessionCallbackRelay()
         relayToken = UnsafeMutableRawPointer(Unmanaged.passRetained(relay).toOpaque())
 
         var streamContinuation: AsyncStream<Event>.Continuation?
@@ -253,10 +283,26 @@ public final class CyrinxSession {
         relay.continuation = streamContinuation
 
         let callback: cyrinx_event_callback_t = cyrinx_swift_event_callback
-        var cConfig = config.toC(eventCallback: callback, userData: relayToken)
+        let backend: (any SessionFrameIOBackend)?
+        let txCallback: cyrinx_tx_callback_t?
+        if config.transportBackend == .appleAudioScaffold {
+            backend = try AudioBackendFactory.make(config: config)
+            relay.audioBackend = backend
+            txCallback = cyrinx_swift_tx_callback
+        } else {
+            backend = nil
+            txCallback = nil
+        }
+        audioBackend = backend
+
+        var cConfig = config.toC(
+            eventCallback: callback,
+            txCallback: txCallback,
+            userData: relayToken
+        )
 
         guard let opened = cyrinx_open(&cConfig) else {
-            Unmanaged<EventRelay>.fromOpaque(relayToken).release()
+            Unmanaged<SessionCallbackRelay>.fromOpaque(relayToken).release()
             throw CyrinxError.status(CYRINX_SWIFT_ERR_INTERNAL)
         }
 
@@ -265,14 +311,21 @@ public final class CyrinxSession {
 
     deinit {
         relay.continuation?.finish()
+        audioBackend?.stop()
         cyrinx_close(handle)
-        Unmanaged<EventRelay>.fromOpaque(relayToken).release()
+        Unmanaged<SessionCallbackRelay>.fromOpaque(relayToken).release()
     }
 
     /// Moves the session from idle to discovery mode.
     public func start() throws {
+        try audioBackend?.start()
         let rc = cyrinx_start(handle)
-        try Self.checkStatus(rc)
+        do {
+            try Self.checkStatus(rc)
+        } catch {
+            audioBackend?.stop()
+            throw error
+        }
     }
 
     /// Sends a payload on a specific logical stream.
@@ -352,6 +405,11 @@ public final class CyrinxSession {
         var c = cyrinx_metrics_t()
         _ = cyrinx_get_metrics(handle, &c)
         return Metrics(c: c)
+    }
+
+    /// Returns platform audio backend diagnostics when `transportBackend` is `.appleAudioScaffold`.
+    public var audioDiagnostics: AudioBackendDiagnostics? {
+        audioBackend?.diagnostics
     }
 
     /// Replaces the ARC threshold policy for this session.

@@ -51,4 +51,4 @@ swift run cyrinx-sim-bench --profile quiet --out artifacts/bench/sim-quiet.json
 
 - These are transport/simulation examples using `CyrinxSession.linkInMemory`.
 - They do not require real audio hardware.
-- For hardware testing, swap in real modem IO once the audio backend is integrated.
+- For live device testing, use the paired macOS+iOS HIL scaffold in `/Users/dew/dev/cyrinx/Apps/HIL/README.md`.

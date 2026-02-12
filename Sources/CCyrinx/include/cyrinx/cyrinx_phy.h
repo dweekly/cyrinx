@@ -19,6 +19,15 @@ typedef struct {
     float im;
 } cyrinx_complex_f32_t;
 
+typedef enum { CYRINX_PHY_STUB_OFDM_QPSK = 0, CYRINX_PHY_STUB_DCSS = 1 } cyrinx_phy_stub_mode_t;
+
+typedef struct {
+    cyrinx_phy_stub_mode_t mode;
+    uint32_t sample_rate_hz;
+    uint16_t fft_size;
+    uint16_t cp_samples;
+} cyrinx_phy_stub_config_t;
+
 /* Generate a root Zadoff-Chu sequence (N should be prime and root coprime to N). */
 CYRINX_API int cyrinx_zc_generate(uint16_t root, uint16_t length, cyrinx_complex_f32_t *out, size_t out_len);
 
@@ -30,6 +39,21 @@ CYRINX_API float cyrinx_estimate_cfo_hz(const cyrinx_complex_f32_t *first_peak,
 /* Dynamic CP selection hook for UX-driven channel shaping (e.g., cloth/mousepad path damping). */
 CYRINX_API uint16_t cyrinx_select_cp_samples(const cyrinx_config_t *config, float measured_delay_spread_ms,
                                              uint8_t phone_static);
+
+/*
+ * Deterministic PHY DSP stubs.
+ *
+ * These are not production waveform implementations; they provide stable, testable interfaces for
+ * future vDSP-backed OFDM and D-CSS blocks while supporting golden-vector CI.
+ */
+CYRINX_API void cyrinx_phy_stub_default_config(cyrinx_phy_stub_mode_t mode,
+                                               cyrinx_phy_stub_config_t *out_config);
+CYRINX_API int cyrinx_phy_modulate_stub(const cyrinx_phy_stub_config_t *config, const uint8_t *symbols,
+                                        size_t symbol_len, cyrinx_complex_f32_t *out_samples,
+                                        size_t *inout_sample_len);
+CYRINX_API int cyrinx_phy_demodulate_stub(const cyrinx_phy_stub_config_t *config,
+                                          const cyrinx_complex_f32_t *samples, size_t sample_len,
+                                          uint8_t *out_symbols, size_t *inout_symbol_len);
 
 #ifdef __cplusplus
 }

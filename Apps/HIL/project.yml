@@ -1,0 +1,48 @@
+name: CyrinxHIL
+options:
+  minimumXcodeGenVersion: 2.39.0
+settings:
+  base:
+    SWIFT_VERSION: 6.0
+packages:
+  Cyrinx:
+    path: ../..
+targets:
+  CyrinxHILiOS:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Shared
+      - path: iOS/App
+    info:
+      path: iOS/Info.plist
+      properties:
+        CFBundleDisplayName: Cyrinx HIL iOS
+        NSMicrophoneUsageDescription: Cyrinx HIL needs microphone access for ultrasonic testing.
+        UILaunchScreen: {}
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.dweekly.cyrinx.hil.ios
+    dependencies:
+      - package: Cyrinx
+        product: Cyrinx
+
+  CyrinxHILMac:
+    type: application
+    platform: macOS
+    deploymentTarget: "13.0"
+    sources:
+      - path: Shared
+      - path: macOS/App
+    info:
+      path: macOS/Info.plist
+      properties:
+        CFBundleDisplayName: Cyrinx HIL macOS
+        NSMicrophoneUsageDescription: Cyrinx HIL needs microphone access for ultrasonic testing.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.dweekly.cyrinx.hil.macos
+    dependencies:
+      - package: Cyrinx
+        product: Cyrinx
