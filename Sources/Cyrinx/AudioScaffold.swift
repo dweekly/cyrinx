@@ -77,6 +77,41 @@ private final class AudioCounterBox {
     }
 }
 
+enum StubWaveSynthesizer {
+    static func synthesize(
+        symbols: [UInt8],
+        sampleRate: Double,
+        txGainCap: Float,
+        symbolLimit: Int = 64
+    ) -> [Float] {
+        if symbols.isEmpty || sampleRate <= 0 {
+            return []
+        }
+
+        let cappedSymbols = Array(symbols.prefix(max(0, symbolLimit)))
+        let samplesPerSymbol = max(Int(sampleRate * 0.002), 48)
+        let totalSamples = cappedSymbols.count * samplesPerSymbol
+        var out = [Float](repeating: 0, count: totalSamples)
+        let nyquistSafe = max(19_000.0, (sampleRate * 0.5) - 500.0)
+        let base = min(18_500.0, nyquistSafe - 800.0)
+        let span = max(600.0, nyquistSafe - base)
+        let amplitude = min(max(txGainCap, 0), 0.12)
+        var cursor = 0
+
+        for symbol in cappedSymbols {
+            let tone = base + (Double(symbol % 31) / 30.0) * span
+            let delta = Float(2.0 * .pi * tone / sampleRate)
+            var phase: Float = 0
+            for _ in 0..<samplesPerSymbol {
+                out[cursor] = amplitude * sin(phase)
+                phase += delta
+                cursor += 1
+            }
+        }
+        return out
+    }
+}
+
 protocol SessionFrameIOBackend: AnyObject {
     var diagnostics: AudioBackendDiagnostics { get }
     func start() throws
@@ -103,10 +138,14 @@ enum AudioBackendFactory {
 }
 
 #if os(iOS)
+    // swiftlint:disable type_body_length
     private final class IOSRemoteIOAudioBackend: SessionFrameIOBackend {
         private let config: Config
         private let counters = AudioCounterBox()
+        private let txQueueLock = NSLock()
         private var audioUnit: AudioUnit?
+        private var txSampleQueue: [Float] = []
+        private var txSampleReadIndex: Int = 0
         private var state: AudioBackendState = .idle
 
         init(config: Config) throws {
@@ -141,6 +180,17 @@ enum AudioBackendFactory {
 
         func handleOutboundFrame(_ frame: UnsafeBufferPointer<UInt8>) -> Int32 {
             counters.recordTx(bytes: frame.count)
+            if frame.isEmpty {
+                return 0
+            }
+
+            let symbols = Array(frame)
+            let waveform = StubWaveSynthesizer.synthesize(
+                symbols: symbols,
+                sampleRate: Double(config.sampleRateHz),
+                txGainCap: config.txGainCap
+            )
+            enqueueTxSamples(waveform)
             return 0
         }
 
@@ -339,17 +389,51 @@ enum AudioBackendFactory {
             guard let ioData else {
                 return noErr
             }
-            let bufferCount = Int(ioData.pointee.mNumberBuffers)
-            let ptr = UnsafeMutableAudioBufferListPointer(ioData)
-            for index in 0..<bufferCount {
-                guard let data = ptr[index].mData else {
+            let buffers = UnsafeMutableAudioBufferListPointer(ioData)
+            for buffer in buffers {
+                guard let data = buffer.mData else {
                     continue
                 }
-                memset(data, 0, Int(ptr[index].mDataByteSize))
+                let sampleCount = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
+                let out = data.assumingMemoryBound(to: Float.self)
+                let copied = dequeueTxSamples(into: out, sampleCount: sampleCount)
+                if copied < sampleCount {
+                    let remainder = sampleCount - copied
+                    (out + copied).initialize(repeating: 0, count: remainder)
+                }
             }
             return noErr
         }
+
+        private func enqueueTxSamples(_ samples: [Float]) {
+            if samples.isEmpty {
+                return
+            }
+            txQueueLock.lock()
+            txSampleQueue.append(contentsOf: samples)
+            txQueueLock.unlock()
+        }
+
+        private func dequeueTxSamples(into out: UnsafeMutablePointer<Float>, sampleCount: Int) -> Int {
+            txQueueLock.lock()
+            let available = max(0, txSampleQueue.count - txSampleReadIndex)
+            let copied = min(sampleCount, available)
+            if copied > 0 {
+                for idx in 0..<copied {
+                    out[idx] = txSampleQueue[txSampleReadIndex + idx]
+                }
+                txSampleReadIndex += copied
+            }
+
+            if txSampleReadIndex > 4096, txSampleReadIndex * 2 > txSampleQueue.count {
+                txSampleQueue.removeFirst(txSampleReadIndex)
+                txSampleReadIndex = 0
+            }
+            txQueueLock.unlock()
+            return copied
+        }
     }
+    // swiftlint:enable type_body_length
 
     // swiftlint:disable function_parameter_count
     private func remoteIOInputCallback(
@@ -466,48 +550,28 @@ enum AudioBackendFactory {
             guard let format else {
                 return nil
             }
-            let symbolCount = min(frame.count, 64)
-            let symbols = Array(frame.prefix(symbolCount))
-            let samplesPerSymbol = max(Int(format.sampleRate * 0.002), 48)
-            let totalSamples = symbolCount * samplesPerSymbol
+            let waveform = StubWaveSynthesizer.synthesize(
+                symbols: Array(frame),
+                sampleRate: format.sampleRate,
+                txGainCap: config.txGainCap
+            )
+            if waveform.isEmpty {
+                return nil
+            }
             guard
                 let buffer = AVAudioPCMBuffer(
                     pcmFormat: format,
-                    frameCapacity: AVAudioFrameCount(totalSamples)
+                    frameCapacity: AVAudioFrameCount(waveform.count)
                 ),
                 let channel = buffer.floatChannelData?.pointee
             else {
                 return nil
             }
-            buffer.frameLength = AVAudioFrameCount(totalSamples)
-            synthesize(
-                symbols: symbols, into: channel, stride: samplesPerSymbol,
-                sampleRate: format.sampleRate)
-            return buffer
-        }
-
-        private func synthesize(
-            symbols: [UInt8],
-            into channel: UnsafeMutablePointer<Float>,
-            stride: Int,
-            sampleRate: Double
-        ) {
-            let nyquistSafe = max(19_000.0, (sampleRate * 0.5) - 500.0)
-            let base = min(18_500.0, nyquistSafe - 800.0)
-            let span = max(600.0, nyquistSafe - base)
-            let amplitude: Float = 0.12
-            var cursor = 0
-
-            for symbol in symbols {
-                let tone = base + (Double(symbol % 31) / 30.0) * span
-                let delta = Float(2.0 * .pi * tone / sampleRate)
-                var phase: Float = 0
-                for _ in 0..<stride {
-                    channel[cursor] = amplitude * sin(phase)
-                    phase += delta
-                    cursor += 1
-                }
+            buffer.frameLength = AVAudioFrameCount(waveform.count)
+            for (idx, sample) in waveform.enumerated() {
+                channel[idx] = sample
             }
+            return buffer
         }
     }
 #endif
