@@ -223,21 +223,32 @@ final class LinearStreamResampler {
 enum AudibleBeaconSynthesizer {
     static func synthesize(role: Role, sampleRate: Double, txGainCap: Float) -> [Float] {
         let fs = min(max(sampleRate.rounded(), 8_000), 192_000)
-        let amplitude = min(max(txGainCap, 0), 0.25)
+        // Keep beacon gain intentionally conservative to avoid iPhone speaker clipping.
+        let amplitude = min(max(txGainCap, 0), 0.08)
         if amplitude <= 0 {
             return []
         }
 
-        let pattern: [(freqHz: Double, durationSec: Double)]
+        var pattern = [(freqHz: Double, durationSec: Double)]()
         switch role {
         case .master:
-            // Smooth continuous tone for reliable "is audio playing?" verification.
-            pattern = [(1_100, 1.4)]
+            // Master = high-low-high pulse signature.
+            pattern.append((1_320, 0.16))
+            pattern.append((0, 0.08))
+            pattern.append((1_980, 0.16))
+            pattern.append((0, 0.08))
+            pattern.append((1_320, 0.16))
         case .slave:
-            pattern = [(880, 1.4)]
+            // Slave = lower-frequency pulse signature.
+            pattern.append((880, 0.16))
+            pattern.append((0, 0.08))
+            pattern.append((1_320, 0.16))
+            pattern.append((0, 0.08))
+            pattern.append((880, 0.16))
         }
 
         var out: [Float] = []
+        out.reserveCapacity(Int(fs * 0.8))
         for segment in pattern {
             out.append(
                 contentsOf: makeSegment(
@@ -262,16 +273,20 @@ enum AudibleBeaconSynthesizer {
             return [Float](repeating: 0, count: sampleCount)
         }
 
-        let rampSamples = min(max(16, Int(sampleRate * 0.012)), sampleCount / 2)
+        let rampSamples = min(max(16, Int(sampleRate * 0.008)), sampleCount / 2)
         let phaseStep = Float((2.0 * Double.pi * frequencyHz) / sampleRate)
         var phase: Float = 0
         var out = [Float](repeating: 0, count: sampleCount)
         for idx in 0..<sampleCount {
             let envelope: Float
             if idx < rampSamples {
-                envelope = Float(idx) / Float(max(1, rampSamples))
+                // Raised-cosine window reduces edge clicks on tiny speakers.
+                let x = Float(idx) / Float(max(1, rampSamples))
+                envelope = 0.5 - (0.5 * cos(Float.pi * x))
             } else if idx >= (sampleCount - rampSamples) {
-                envelope = Float(sampleCount - idx - 1) / Float(max(1, rampSamples))
+                let remaining = Float(sampleCount - idx - 1)
+                let x = remaining / Float(max(1, rampSamples))
+                envelope = 0.5 - (0.5 * cos(Float.pi * x))
             } else {
                 envelope = 1
             }
@@ -496,10 +511,13 @@ enum AudioBackendFactory {
                 txGainCap: config.txGainCap
             )
             let beaconPeak = peakAbs(beacon)
+            let beaconDurationSec = sampleRate > 0 ? Double(beacon.count) / sampleRate : 0
             counters.recordTx(bytes: beacon.count)
             if AVAudioSession.sharedInstance().outputVolume <= 0.01 {
                 log.warning("system output volume is near zero; beacon audibility may be poor")
             }
+            log.info("audible beacon role=\(config.role) sr=\(Int(sampleRate))Hz")
+            log.info("audible beacon durationSec=\(beaconDurationSec) samples=\(beacon.count)")
             let startedWithPlayer = playAudibleBeaconViaAVAudioPlayer(beacon, sampleRate: sampleRate)
             let queuedRemoteFallback: Bool
             if !startedWithPlayer {
