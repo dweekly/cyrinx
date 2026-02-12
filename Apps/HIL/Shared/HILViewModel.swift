@@ -70,10 +70,13 @@ final class HILViewModel: ObservableObject {
     func start() {
         stop()
 
+        let compatibilityBandEndHz = effectiveBandEndHz(for: sampleRateChoice.hz)
         let config = Config(
             role: roleChoice.role,
             transportBackend: .appleAudioScaffold,
-            sampleRateHz: sampleRateChoice.hz
+            sampleRateHz: sampleRateChoice.hz,
+            bandStartHz: 18_500,
+            bandEndHz: compatibilityBandEndHz
         )
 
         do {
@@ -82,6 +85,7 @@ final class HILViewModel: ObservableObject {
             session = opened
             statusText = "Running (\(roleChoice.label), \(sampleRateChoice.label))"
             appendLog("session started with preferred sampleRate=\(sampleRateChoice.hz)Hz")
+            appendLog("using compatibility band=18500...\(compatibilityBandEndHz)Hz")
             refreshDiagnostics()
             startEventLoop(for: opened)
         } catch {
@@ -182,8 +186,14 @@ final class HILViewModel: ObservableObject {
             return
         }
 
+        let metrics = session?.metrics
+        let gear = metrics.map { "\($0.gear)" } ?? "n/a"
+        let coreRx = metrics.map { "\($0.rxFrames)" } ?? "n/a"
+        let coreTx = metrics.map { "\($0.txFrames)" } ?? "n/a"
+        let corePer = metrics.map { String(format: "%.3f", $0.per2s) } ?? "n/a"
+
         diagnosticsText =
-            "backend=\(diagnostics.backend) state=\(diagnostics.state.rawValue) configuredHz=\(diagnostics.configuredSampleRateHz) inHz=\(diagnostics.observedInputSampleRateHz) outHz=\(diagnostics.observedOutputSampleRateHz) txFrames=\(diagnostics.txFrameCount) txBytes=\(diagnostics.txByteCount) rxCallbacks=\(diagnostics.rxCallbackCount)"
+            "backend=\(diagnostics.backend) state=\(diagnostics.state.rawValue) configuredHz=\(diagnostics.configuredSampleRateHz) inHz=\(diagnostics.observedInputSampleRateHz) outHz=\(diagnostics.observedOutputSampleRateHz) txFrames=\(diagnostics.txFrameCount) txBytes=\(diagnostics.txByteCount) rxCallbacks=\(diagnostics.rxCallbackCount) coreGear=\(gear) coreTx=\(coreTx) coreRx=\(coreRx) per2s=\(corePer)"
     }
 
     func probeLocalAudioRoute() {
@@ -229,6 +239,7 @@ final class HILViewModel: ObservableObject {
 
     private func recordEvent(_ event: Event) {
         appendLog("event=\(event)")
+        refreshDiagnostics()
     }
 
     nonisolated private func postOperationResult(_ line: String) {
@@ -236,6 +247,11 @@ final class HILViewModel: ObservableObject {
             self?.appendLog(line)
             self?.refreshDiagnostics()
         }
+    }
+
+    private func effectiveBandEndHz(for requestedSampleRateHz: UInt32) -> UInt32 {
+        let nyquistLimited = requestedSampleRateHz > 4_000 ? (requestedSampleRateHz / 2) - 1_000 : 20_000
+        return min(21_000, max(19_500, nyquistLimited))
     }
 
     #if os(macOS)

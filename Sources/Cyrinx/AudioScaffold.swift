@@ -106,6 +106,99 @@ private final class AudioCounterBox {
     }
 }
 
+/// Streaming linear-interpolation resampler for audio callback pipelines.
+///
+/// This maintains phase continuity across callback boundaries and is used when
+/// the platform route sample rate differs from the modem sample rate.
+final class LinearStreamResampler {
+    private let inputRateHz: Double
+    private let outputRateHz: Double
+    private let inputSamplesPerOutputSample: Double
+
+    private var nextOutputInputIndex: Double = 0
+    private var totalInputSamples: Int64 = 0
+    private var lastSample: Float?
+
+    init(inputRateHz: Double, outputRateHz: Double) {
+        self.inputRateHz = max(inputRateHz, 1)
+        self.outputRateHz = max(outputRateHz, 1)
+        inputSamplesPerOutputSample = self.inputRateHz / self.outputRateHz
+    }
+
+    func reset() {
+        nextOutputInputIndex = 0
+        totalInputSamples = 0
+        lastSample = nil
+    }
+
+    func process(_ input: [Float]) -> [Float] {
+        input.withUnsafeBufferPointer { process($0) }
+    }
+
+    func process(_ input: UnsafeBufferPointer<Float>) -> [Float] {
+        if input.isEmpty {
+            return []
+        }
+
+        let hasCarry = (lastSample != nil)
+        let startIndex = Double(totalInputSamples) - (hasCarry ? 1.0 : 0.0)
+        if nextOutputInputIndex < startIndex {
+            nextOutputInputIndex = startIndex
+        }
+
+        let combinedCount = input.count + (hasCarry ? 1 : 0)
+        let expectedCount = max(
+            0,
+            Int((Double(input.count) * outputRateHz / inputRateHz).rounded()) + 2
+        )
+        var output: [Float] = []
+        output.reserveCapacity(expectedCount)
+
+        while true {
+            let relative = nextOutputInputIndex - startIndex
+            let leftIndex = Int(floor(relative))
+            if leftIndex < 0 || (leftIndex + 1) >= combinedCount {
+                break
+            }
+
+            let frac = Float(relative - Double(leftIndex))
+            let left = sampleAtCombinedIndex(
+                leftIndex,
+                hasCarry: hasCarry,
+                carry: lastSample,
+                input: input
+            )
+            let right = sampleAtCombinedIndex(
+                leftIndex + 1,
+                hasCarry: hasCarry,
+                carry: lastSample,
+                input: input
+            )
+            output.append(left + ((right - left) * frac))
+            nextOutputInputIndex += inputSamplesPerOutputSample
+        }
+
+        lastSample = input[input.count - 1]
+        totalInputSamples += Int64(input.count)
+        return output
+    }
+
+    private func sampleAtCombinedIndex(
+        _ index: Int,
+        hasCarry: Bool,
+        carry: Float?,
+        input: UnsafeBufferPointer<Float>
+    ) -> Float {
+        if hasCarry {
+            if index == 0 {
+                return carry ?? 0
+            }
+            return input[index - 1]
+        }
+        return input[index]
+    }
+}
+
 enum StubWaveSynthesizer {
     static func synthesize(
         symbols: [UInt8],
@@ -598,6 +691,7 @@ enum AudioBackendFactory {
         private var state: AudioBackendState = .idle
         private var observedInputSampleRateHz: UInt32 = 0
         private var observedOutputSampleRateHz: UInt32 = 0
+        private var rxResampler: LinearStreamResampler?
         private lazy var format: AVAudioFormat? = {
             AVAudioFormat(
                 commonFormat: .pcmFormatFloat32,
@@ -654,6 +748,7 @@ enum AudioBackendFactory {
                 observedOutputSampleRateHz = UInt32(
                     engine.outputNode.outputFormat(forBus: 0).sampleRate.rounded()
                 )
+                configureResamplerIfNeeded()
                 state = .running
             } catch {
                 state = .failed
@@ -716,8 +811,18 @@ enum AudioBackendFactory {
             if frameLength == 0 {
                 return
             }
-            let samples = UnsafeBufferPointer(start: channel, count: frameLength)
-            let decodedFrames = phyLink.ingest(samples: samples)
+            let decodedFrames: [AcousticDecodedFrame]
+            if let rxResampler {
+                let source = UnsafeBufferPointer(start: channel, count: frameLength)
+                let modemRateSamples = rxResampler.process(source)
+                if modemRateSamples.isEmpty {
+                    return
+                }
+                decodedFrames = phyLink.ingest(samples: modemRateSamples)
+            } else {
+                let samples = UnsafeBufferPointer(start: channel, count: frameLength)
+                decodedFrames = phyLink.ingest(samples: samples)
+            }
             for decoded in decodedFrames where !decoded.frame.isEmpty {
                 var report = decoded.report
                 let rc = decoded.frame.withUnsafeBufferPointer { ptr in
@@ -727,6 +832,16 @@ enum AudioBackendFactory {
                     state = .failed
                 }
             }
+        }
+
+        private func configureResamplerIfNeeded() {
+            let inputRate = Double(observedInputSampleRateHz)
+            let modemRate = Double(config.sampleRateHz)
+            if inputRate <= 0 || abs(inputRate - modemRate) < 1.0 {
+                rxResampler = nil
+                return
+            }
+            rxResampler = LinearStreamResampler(inputRateHz: inputRate, outputRateHz: modemRate)
         }
     }
 #endif

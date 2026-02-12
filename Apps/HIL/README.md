@@ -20,6 +20,7 @@ This creates `/Users/dew/dev/cyrinx/Apps/HIL/CyrinxHIL.xcodeproj` from `project.
 6. Press `Start`, then `Send Probe (BE)` repeatedly for non-blocking link probing.
 7. Use `Send Probe (Reliable)` only when you explicitly want ACK/timeout behavior.
 8. Use `Receive Once`, `Refresh Diagnostics`, and `Probe Local Audio` to validate transport and negotiated route rates.
+9. Check diagnostics for `coreRx` increasing above `0` on both sides to confirm decoded inbound frames.
 
 ## 96 kHz Smoke Workflow
 
@@ -40,6 +41,8 @@ This command:
 - Outbound frame dispatch into acoustic PHY waveform generation (`txFrameCount` / `txByteCount`).
 - Input callback activity and RX demodulation path into `receive()` (`rxCallbackCount`).
 - Negotiated sample-rate diagnostics (`configuredHz`, `inHz`, `outHz`) at runtime.
+- macOS input-rate mismatch handling: inbound audio is resampled into modem rate when route input is not `configuredHz`.
+- Cross-platform compatibility test profile band: HIL currently uses `18.5-21.0 kHz` to stay below 44.1 kHz Nyquist limits.
 
 ## Current limits
 
