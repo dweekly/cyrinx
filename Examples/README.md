@@ -36,6 +36,17 @@ Demonstrates:
 swift run cyrinx-example-large-payload
 ```
 
+## 4) Deterministic Simulation Benchmark
+
+Demonstrates:
+- deterministic channel profile replay
+- machine-readable benchmark JSON output
+- profile-driven ARC behavior observation
+
+```bash
+swift run cyrinx-sim-bench --profile quiet --out artifacts/bench/sim-quiet.json
+```
+
 ## Notes
 
 - These are transport/simulation examples using `CyrinxSession.linkInMemory`.

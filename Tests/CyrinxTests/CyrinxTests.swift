@@ -176,4 +176,39 @@ final class CyrinxTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(cpQuietStatic, 10)
         XCTAssertEqual(cpNoisy, 96)
     }
+
+    func testSimulationRunnerProducesDeterministicCoreMetrics() throws {
+        let options = SimulationOptions(
+            packetCount: 24,
+            payloadBytes: 64,
+            streamID: 33,
+            priority: .normal,
+            interPacketIntervalMS: 0,
+            seed: 12345
+        )
+
+        let resultA = try SimulationRunner.run(profile: .quietDesktop, options: options)
+        let resultB = try SimulationRunner.run(profile: .quietDesktop, options: options)
+
+        XCTAssertEqual(resultA.packetCount, 24)
+        XCTAssertEqual(resultA.packetsDelivered, 24)
+        XCTAssertEqual(resultA.packetsFailed, 0)
+        XCTAssertEqual(resultA.packetsDelivered, resultB.packetsDelivered)
+        XCTAssertEqual(resultA.packetsFailed, resultB.packetsFailed)
+        XCTAssertEqual(resultA.finalGear, resultB.finalGear)
+        XCTAssertEqual(resultA.gearHistogram, resultB.gearHistogram)
+        XCTAssertGreaterThan(resultA.goodputBps, 0)
+    }
+
+    func testSimulationJSONEncodingContainsProfileAndCounts() throws {
+        let options = SimulationOptions(
+            packetCount: 8, payloadBytes: 48, streamID: 5, interPacketIntervalMS: 0)
+        let result = try SimulationRunner.run(profile: .officeBurst, options: options)
+        let json = try SimulationRunner.makeJSON(result)
+
+        XCTAssertTrue(json.contains("\"profile\""))
+        XCTAssertTrue(json.contains("office-burst"))
+        XCTAssertTrue(json.contains("\"packetsDelivered\""))
+        XCTAssertTrue(json.contains("\"packetsFailed\""))
+    }
 }

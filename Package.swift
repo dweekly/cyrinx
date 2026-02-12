@@ -12,7 +12,8 @@ let package = Package(
         .library(name: "Cyrinx", targets: ["Cyrinx"]),
         .executable(name: "cyrinx-example-loopback", targets: ["ExampleLoopback"]),
         .executable(name: "cyrinx-example-multiplex", targets: ["ExampleMultiplex"]),
-        .executable(name: "cyrinx-example-large-payload", targets: ["ExampleLargePayload"])
+        .executable(name: "cyrinx-example-large-payload", targets: ["ExampleLargePayload"]),
+        .executable(name: "cyrinx-sim-bench", targets: ["SimulationBench"])
     ],
     targets: [
         .target(
@@ -42,6 +43,11 @@ let package = Package(
             name: "ExampleLargePayload",
             dependencies: ["Cyrinx"],
             path: "Examples/LargePayload"
+        ),
+        .executableTarget(
+            name: "SimulationBench",
+            dependencies: ["Cyrinx"],
+            path: "Examples/SimulationBench"
         ),
         .testTarget(
             name: "CyrinxTests",

@@ -59,6 +59,7 @@ Sample runnable programs live in `/Users/dew/dev/cyrinx/Examples/README.md`.
 swift run cyrinx-example-loopback
 swift run cyrinx-example-multiplex
 swift run cyrinx-example-large-payload
+swift run cyrinx-sim-bench --profile quiet --out artifacts/bench/sim-quiet.json
 ```
 
 ## Linting and Formatting
@@ -74,6 +75,7 @@ swift run cyrinx-example-large-payload
 - `format-check.sh`: fails if any Swift/C file is not formatted.
 - `lint.sh`: runs `swiftlint` (strict mode) and `shellcheck` for scripts.
 - `check.sh`: full gate (`format-check` + `lint` + `swift test`).
+- `bench-sim.sh`: deterministic simulation benchmark JSON output under `artifacts/bench/`.
 
 ## Current Scope and Next Steps
 

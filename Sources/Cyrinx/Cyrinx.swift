@@ -42,7 +42,7 @@ public enum QoS {
     }
 }
 
-public enum StreamPriority: UInt8 {
+public enum StreamPriority: UInt8, Sendable {
     case low = 0
     case normal = 1
     case high = 2
