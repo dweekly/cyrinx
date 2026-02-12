@@ -66,6 +66,7 @@ final class HILViewModel: ObservableObject {
     private var session: CyrinxSession?
     private var eventTask: Task<Void, Never>?
     private let sessionOperationQueue = DispatchQueue(label: "com.dweekly.cyrinx.hil.sessionOps")
+    private var lastObservedCoreRxFrames: UInt32 = 0
 
     func start() {
         stop()
@@ -83,6 +84,7 @@ final class HILViewModel: ObservableObject {
             let opened = try CyrinxSession(config: config)
             try opened.start()
             session = opened
+            lastObservedCoreRxFrames = 0
             statusText = "Running (\(roleChoice.label), \(sampleRateChoice.label))"
             appendLog("session started with preferred sampleRate=\(sampleRateChoice.hz)Hz")
             appendLog("using compatibility band=18500...\(compatibilityBandEndHz)Hz")
@@ -98,6 +100,7 @@ final class HILViewModel: ObservableObject {
         eventTask?.cancel()
         eventTask = nil
         session = nil
+        lastObservedCoreRxFrames = 0
         statusText = "Stopped"
         diagnosticsText = "Audio backend is not started"
     }
@@ -191,6 +194,12 @@ final class HILViewModel: ObservableObject {
         let coreRx = metrics.map { "\($0.rxFrames)" } ?? "n/a"
         let coreTx = metrics.map { "\($0.txFrames)" } ?? "n/a"
         let corePer = metrics.map { String(format: "%.3f", $0.per2s) } ?? "n/a"
+        if let coreRxFrames = metrics?.rxFrames {
+            if lastObservedCoreRxFrames == 0, coreRxFrames > 0 {
+                appendLog("link evidence: decoded inbound frame(s) detected")
+            }
+            lastObservedCoreRxFrames = coreRxFrames
+        }
 
         diagnosticsText =
             "backend=\(diagnostics.backend) state=\(diagnostics.state.rawValue) configuredHz=\(diagnostics.configuredSampleRateHz) inHz=\(diagnostics.observedInputSampleRateHz) outHz=\(diagnostics.observedOutputSampleRateHz) txFrames=\(diagnostics.txFrameCount) txBytes=\(diagnostics.txByteCount) rxCallbacks=\(diagnostics.rxCallbackCount) coreGear=\(gear) coreTx=\(coreTx) coreRx=\(coreRx) per2s=\(corePer)"
