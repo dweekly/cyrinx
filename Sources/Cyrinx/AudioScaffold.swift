@@ -219,33 +219,23 @@ final class LinearStreamResampler {
     }
 }
 
-/// Audible role-distinct beacon used for local speaker verification in test labs.
+/// Audible tri-tone beacon used for local speaker verification in test labs.
 enum AudibleBeaconSynthesizer {
-    static func synthesize(role: Role, sampleRate: Double, txGainCap: Float) -> [Float] {
+    static func synthesize(role _: Role, sampleRate: Double, txGainCap: Float) -> [Float] {
         let fs = min(max(sampleRate.rounded(), 8_000), 192_000)
-        // Keep beacon gain intentionally conservative to avoid iPhone speaker clipping.
-        let amplitude = min(max(txGainCap, 0), 0.08)
+        // Keep beacon gain conservative while staying above mobile speaker noise-gate thresholds.
+        let amplitude = min(max(txGainCap, 0), 0.12)
         if amplitude <= 0 {
             return []
         }
 
+        // Use the same low-high-low tri-tone for both roles so cross-device A/B checks match.
         var pattern = [(freqHz: Double, durationSec: Double)]()
-        switch role {
-        case .master:
-            // Master = high-low-high pulse signature.
-            pattern.append((1_320, 0.16))
-            pattern.append((0, 0.08))
-            pattern.append((1_980, 0.16))
-            pattern.append((0, 0.08))
-            pattern.append((1_320, 0.16))
-        case .slave:
-            // Slave = lower-frequency pulse signature.
-            pattern.append((880, 0.16))
-            pattern.append((0, 0.08))
-            pattern.append((1_320, 0.16))
-            pattern.append((0, 0.08))
-            pattern.append((880, 0.16))
-        }
+        pattern.append((660, 0.24))
+        pattern.append((0, 0.08))
+        pattern.append((1_320, 0.24))
+        pattern.append((0, 0.08))
+        pattern.append((660, 0.24))
 
         var out: [Float] = []
         out.reserveCapacity(Int(fs * 0.8))
@@ -273,7 +263,7 @@ enum AudibleBeaconSynthesizer {
             return [Float](repeating: 0, count: sampleCount)
         }
 
-        let rampSamples = min(max(16, Int(sampleRate * 0.008)), sampleCount / 2)
+        let rampSamples = min(max(16, Int(sampleRate * 0.020)), sampleCount / 2)
         let phaseStep = Float((2.0 * Double.pi * frequencyHz) / sampleRate)
         var phase: Float = 0
         var out = [Float](repeating: 0, count: sampleCount)

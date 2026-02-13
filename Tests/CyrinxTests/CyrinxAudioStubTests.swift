@@ -3,7 +3,7 @@ import XCTest
 @testable import Cyrinx
 
 final class CyrinxAudioStubTests: XCTestCase {
-    func testAudibleBeaconSynthesizerProducesRoleDistinctWaveforms() {
+    func testAudibleBeaconSynthesizerProducesConsistentWaveformsAcrossRoles() {
         let master = AudibleBeaconSynthesizer.synthesize(
             role: .master,
             sampleRate: 48_000,
@@ -17,7 +17,7 @@ final class CyrinxAudioStubTests: XCTestCase {
 
         XCTAssertFalse(master.isEmpty)
         XCTAssertFalse(slave.isEmpty)
-        XCTAssertNotEqual(Array(master.prefix(512)), Array(slave.prefix(512)))
+        XCTAssertEqual(master, slave)
     }
 
     func testAudibleBeaconSynthesizerHonorsGainCap() {
