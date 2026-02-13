@@ -560,7 +560,7 @@ enum AudioBackendFactory {
             guard !samples.isEmpty else {
                 return false
             }
-            let playRequestStart = ProcessInfo.processInfo.systemUptime
+            let playRequestStartMs = monotonicMs()
             let wavData = makePCM16WAV(samples: samples, sampleRate: sampleRate)
             let dedicatedSessionReady = prepareSessionForDedicatedBeaconPlayback(
                 sampleRate: sampleRate
@@ -580,11 +580,9 @@ enum AudioBackendFactory {
                 let started = player.play()
                 beaconPlayerDelegate = delegate
                 beaconPlayer = player
-                let playLatencyMs = Int(
-                    ((ProcessInfo.processInfo.systemUptime - playRequestStart) * 1000).rounded()
-                )
+                let playLatencyMs = monotonicMs() - playRequestStartMs
                 log.info("beacon AVAudioPlayer started=\(started) durationSec=\(player.duration)")
-                log.info("beacon AVAudioPlayer latencyMs=\(playLatencyMs)")
+                log.info("beacon AVAudioPlayer latencyMs=\(playLatencyMs) t0Ms=\(playRequestStartMs)")
                 if !started {
                     finishDedicatedBeaconPlaybackIfNeeded()
                 }
@@ -598,12 +596,14 @@ enum AudioBackendFactory {
             }
         }
 
-        private func prepareSessionForDedicatedBeaconPlayback(sampleRate: Double) -> Bool {
-            let startUptime = ProcessInfo.processInfo.systemUptime
+        private func prepareSessionForDedicatedBeaconPlayback(sampleRate _: Double) -> Bool {
+            let prepStartMs = monotonicMs()
             remoteIOWasPausedForBeacon = false
             beaconSessionOverrideActive = false
 
+            var pauseMs = 0
             if let audioUnit {
+                let pauseStartMs = monotonicMs()
                 let stopStatus = AudioOutputUnitStop(audioUnit)
                 if stopStatus == noErr {
                     remoteIOWasPausedForBeacon = true
@@ -611,22 +611,28 @@ enum AudioBackendFactory {
                 } else {
                     log.error("AudioOutputUnitStop(beacon pause) failed status=\(stopStatus)")
                 }
+                pauseMs = monotonicMs() - pauseStartMs
             }
 
             let session = AVAudioSession.sharedInstance()
             do {
-                try session.setCategory(.playback, mode: .default, options: [])
-                try session.setPreferredSampleRate(sampleRate)
-                try session.setPreferredIOBufferDuration(0.005)
+                let sessionSwitchStartMs = monotonicMs()
+                // Fast path: keep playAndRecord category, only relax mode for cleaner local playback.
+                // This avoids the multi-second latency seen when switching categories on some devices.
+                try session.setMode(.default)
+                try session.overrideOutputAudioPort(.speaker)
                 try session.setActive(true, options: [])
                 beaconSessionOverrideActive = true
+                let sessionSwitchMs = monotonicMs() - sessionSwitchStartMs
                 let route = session.currentRoute.outputs.map(\.portName).joined(separator: ",")
                 let activeHz = Int(session.sampleRate.rounded())
-                let prepLatencyMs = Int(
-                    ((ProcessInfo.processInfo.systemUptime - startUptime) * 1000).rounded()
-                )
-                log.info("AVAudioSession beacon cfg mode=playback route=\(route) hz=\(activeHz)")
-                log.info("AVAudioSession beacon prepMs=\(prepLatencyMs)")
+                let prepLatencyMs = monotonicMs() - prepStartMs
+                let categoryName = session.category.rawValue
+                let modeName = session.mode.rawValue
+                log.info("AVAudioSession beacon cfg category=\(categoryName) mode=\(modeName)")
+                log.info("AVAudioSession beacon route=\(route) hz=\(activeHz)")
+                log.info("AVAudioSession beacon prepMs=\(prepLatencyMs) pauseMs=\(pauseMs)")
+                log.info("AVAudioSession beacon modeSwitchMs=\(sessionSwitchMs)")
                 return true
             } catch {
                 log.error("AVAudioSession beacon cfg failed: \(error.localizedDescription)")
@@ -644,11 +650,14 @@ enum AudioBackendFactory {
                 return
             }
 
+            let restoreStartMs = monotonicMs()
             do {
                 try configureAudioSession()
             } catch {
                 log.error("AVAudioSession restore after beacon failed: \(error.localizedDescription)")
             }
+            let restoreMs = monotonicMs() - restoreStartMs
+            log.info("AVAudioSession restore after beacon ms=\(restoreMs)")
 
             guard resumeRemoteIO, hadPause else {
                 return
@@ -656,12 +665,18 @@ enum AudioBackendFactory {
             guard state == .running, let audioUnit else {
                 return
             }
+            let resumeStartMs = monotonicMs()
             let startStatus = AudioOutputUnitStart(audioUnit)
             if startStatus != noErr {
                 log.error("AudioOutputUnitStart(resume after beacon) failed status=\(startStatus)")
             } else {
-                log.info("RemoteIO resumed after dedicated beacon playback")
+                let resumeMs = monotonicMs() - resumeStartMs
+                log.info("RemoteIO resumed after dedicated beacon playback ms=\(resumeMs)")
             }
+        }
+
+        private func monotonicMs() -> Int {
+            Int((ProcessInfo.processInfo.systemUptime * 1000).rounded())
         }
 
         private func configureAudioSession() throws {
