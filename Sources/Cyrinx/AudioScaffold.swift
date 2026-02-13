@@ -433,6 +433,8 @@ enum AudioBackendFactory {
         private var renderBufferShapeLogCount: UInt32 = 0
         private var renderSilenceFlagLogCount: UInt32 = 0
         private var txOutputSampleFormat: TXOutputSampleFormat = .float32
+        private var txOutputChannelCount: Int = 1
+        private var txOutputIsInterleaved: Bool = false
 
         init(config: Config) throws {
             self.config = config
@@ -515,6 +517,8 @@ enum AudioBackendFactory {
             if state != .running {
                 return CYRINX_ERR_NOT_RUNNING.rawValue
             }
+            let requestMonoMs = monotonicMs()
+            let requestWallMs = wallClockMs()
             let sampleRate =
                 observedOutputSampleRateHz > 0
                 ? Double(observedOutputSampleRateHz)
@@ -530,19 +534,11 @@ enum AudioBackendFactory {
             if AVAudioSession.sharedInstance().outputVolume <= 0.01 {
                 log.warning("system output volume is near zero; beacon audibility may be poor")
             }
+            log.info("audible beacon request monoMs=\(requestMonoMs) wallMs=\(requestWallMs)")
             log.info("audible beacon role=\(self.config.role) sr=\(Int(sampleRate))Hz")
             log.info("audible beacon durationSec=\(beaconDurationSec) samples=\(beacon.count)")
-            let startedWithPlayer = playAudibleBeaconViaAVAudioPlayer(beacon, sampleRate: sampleRate)
-            let queuedRemoteFallback: Bool
-            if !startedWithPlayer {
-                enqueueTxSamples(beacon)
-                queuedRemoteFallback = true
-            } else {
-                // Avoid double-rendering (AVAudioPlayer + RemoteIO) which sounds choppy in HIL tests.
-                clearTxQueue()
-                queuedRemoteFallback = false
-            }
-            if queuedRemoteFallback, let audioUnit {
+            enqueueTxSamples(beacon)
+            if let audioUnit {
                 let startStatus = AudioOutputUnitStart(audioUnit)
                 if startStatus != noErr {
                     log.error("AudioOutputUnitStart(kick) failed status=\(startStatus)")
@@ -763,20 +759,6 @@ enum AudioBackendFactory {
 
         private func configureOutputRenderFormat(unit: AudioUnit) throws {
             do {
-                var renderFormatInt16 = makeInt16ASBD(sampleRate: Double(config.sampleRateHz))
-                try setAudioUnitProperty(
-                    unit: unit,
-                    spec: AudioUnitPropertySpec(
-                        property: kAudioUnitProperty_StreamFormat,
-                        scope: kAudioUnitScope_Input,
-                        bus: 0,
-                        operation: "SetStreamFormat(output bus int16)"
-                    ),
-                    value: &renderFormatInt16
-                )
-                txOutputSampleFormat = .int16
-                log.info("RemoteIO output format selected: int16")
-            } catch {
                 var renderFormatFloat = makeFloatASBD(sampleRate: Double(config.sampleRateHz))
                 try setAudioUnitProperty(
                     unit: unit,
@@ -784,13 +766,67 @@ enum AudioBackendFactory {
                         property: kAudioUnitProperty_StreamFormat,
                         scope: kAudioUnitScope_Input,
                         bus: 0,
-                        operation: "SetStreamFormat(output bus float fallback)"
+                        operation: "SetStreamFormat(output bus float32)"
                     ),
                     value: &renderFormatFloat
                 )
-                txOutputSampleFormat = .float32
-                log.info("RemoteIO output format selected: float32 (fallback)")
+                log.info("RemoteIO output format requested: float32")
+            } catch {
+                var renderFormatInt16 = makeInt16ASBD(sampleRate: Double(config.sampleRateHz))
+                try setAudioUnitProperty(
+                    unit: unit,
+                    spec: AudioUnitPropertySpec(
+                        property: kAudioUnitProperty_StreamFormat,
+                        scope: kAudioUnitScope_Input,
+                        bus: 0,
+                        operation: "SetStreamFormat(output bus int16 fallback)"
+                    ),
+                    value: &renderFormatInt16
+                )
+                log.info("RemoteIO output format requested: int16 (fallback)")
             }
+            try refreshActiveOutputRenderFormat(unit: unit)
+        }
+
+        private func refreshActiveOutputRenderFormat(unit: AudioUnit) throws {
+            var asbd = AudioStreamBasicDescription()
+            var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+            try checkOSStatus(
+                AudioUnitGetProperty(
+                    unit,
+                    kAudioUnitProperty_StreamFormat,
+                    kAudioUnitScope_Input,
+                    0,
+                    &asbd,
+                    &size
+                ),
+                operation: "GetStreamFormat(output bus active)"
+            )
+
+            let flags = asbd.mFormatFlags
+            let isFloat = (flags & kAudioFormatFlagIsFloat) != 0
+            let isInt16 = (flags & kAudioFormatFlagIsSignedInteger) != 0 && asbd.mBitsPerChannel == 16
+            let flagsHex = String(flags, radix: 16)
+            if isFloat && asbd.mBitsPerChannel == 32 {
+                txOutputSampleFormat = .float32
+            } else if isInt16 {
+                txOutputSampleFormat = .int16
+            } else {
+                let unsupported = "unsupported RemoteIO output format bits=\(asbd.mBitsPerChannel)"
+                throw AudioBackendError.startupFailed(
+                    "\(unsupported) flags=0x\(flagsHex)"
+                )
+            }
+
+            txOutputChannelCount = max(1, Int(asbd.mChannelsPerFrame))
+            txOutputIsInterleaved = (flags & kAudioFormatFlagIsNonInterleaved) == 0
+            let fmt = txOutputSampleFormat == .int16 ? "int16" : "float32"
+            log.info(
+                "RemoteIO out fmt=\(fmt) ch=\(self.txOutputChannelCount) ilv=\(self.txOutputIsInterleaved)"
+            )
+            log.info(
+                "RemoteIO out bpf=\(asbd.mBytesPerFrame) bits=\(asbd.mBitsPerChannel) flags=0x\(flagsHex)"
+            )
         }
 
         private func makeFloatASBD(sampleRate: Double) -> AudioStreamBasicDescription {
@@ -987,75 +1023,188 @@ enum AudioBackendFactory {
             _ buffers: UnsafeMutableAudioBufferListPointer,
             frameCount: Int
         ) -> Int {
-            var totalCopied = 0
+            guard frameCount > 0 else {
+                return 0
+            }
+
+            var mono = [Float](repeating: 0, count: frameCount)
+            let copiedFrames = mono.withUnsafeMutableBufferPointer { ptr in
+                dequeueTxSamples(into: ptr.baseAddress!, sampleCount: frameCount)
+            }
+
             for idx in buffers.indices {
                 var buffer = buffers[idx]
                 guard let data = buffer.mData else {
                     continue
                 }
-                let declaredSamples = declaredSampleCount(for: buffer)
-                let sampleCount = max(frameCount, declaredSamples)
-                logRenderBufferShapeIfNeeded(index: idx, buffer: buffer, sampleCount: sampleCount)
-                let copied = renderSamplesIntoOutputBuffer(data: data, sampleCount: sampleCount)
-                totalCopied += copied
-                logRenderCopiedIfNeeded(data: data, copied: copied, requested: sampleCount)
-                logRenderUnderrunIfNeeded(copied: copied, requested: sampleCount)
-                buffer.mDataByteSize = UInt32(sampleCount * outputBytesPerSample())
+
+                let bufferChannels = max(1, Int(buffer.mNumberChannels))
+                let declaredFrames = declaredFrameCapacity(for: buffer, channels: bufferChannels)
+                let framesToWrite = min(frameCount, declaredFrames)
+                logRenderBufferShapeIfNeeded(
+                    index: idx,
+                    buffer: buffer,
+                    frameCount: frameCount,
+                    declaredFrames: declaredFrames,
+                    channels: bufferChannels
+                )
+                writeMonoSamples(
+                    mono,
+                    copiedFrames: copiedFrames,
+                    to: data,
+                    plan: RenderWritePlan(
+                        channels: bufferChannels,
+                        framesToWrite: framesToWrite,
+                        sampleCapacity: declaredFrames * bufferChannels
+                    )
+                )
+                buffer.mDataByteSize = UInt32(declaredFrames * bufferChannels * outputBytesPerSample())
                 buffers[idx] = buffer
             }
-            return totalCopied
+
+            logRenderCopiedIfNeeded(copied: copiedFrames, requested: frameCount, mono: mono)
+            logRenderUnderrunIfNeeded(copied: copiedFrames, requested: frameCount)
+            return copiedFrames
         }
 
-        private func declaredSampleCount(for buffer: AudioBuffer) -> Int {
-            if txOutputSampleFormat == .int16 {
-                return Int(buffer.mDataByteSize) / MemoryLayout<Int16>.size
+        private func declaredFrameCapacity(for buffer: AudioBuffer, channels: Int) -> Int {
+            let bytes = Int(buffer.mDataByteSize)
+            let perFrame = max(1, outputBytesPerSample() * max(1, channels))
+            let declared = bytes / perFrame
+            if declared > 0 {
+                return declared
             }
-            return Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
+            return 0
         }
 
         private func outputBytesPerSample() -> Int {
             txOutputSampleFormat == .int16 ? MemoryLayout<Int16>.size : MemoryLayout<Float>.size
         }
 
-        private func logRenderBufferShapeIfNeeded(index: Int, buffer: AudioBuffer, sampleCount: Int) {
+        private func logRenderBufferShapeIfNeeded(
+            index: Int,
+            buffer: AudioBuffer,
+            frameCount: Int,
+            declaredFrames: Int,
+            channels: Int
+        ) {
             if renderBufferShapeLogCount >= 3 {
                 return
             }
-            let channels = buffer.mNumberChannels
             let bytes = buffer.mDataByteSize
             let fmt = txOutputSampleFormat == .int16 ? "int16" : "float32"
             log.info(
-                "render buf idx=\(index) ch=\(channels) bytes=\(bytes) samples=\(sampleCount) fmt=\(fmt)"
+                "render buf i=\(index) ch=\(channels) b=\(bytes) req=\(frameCount) fmt=\(fmt)"
+            )
+            log.info(
+                "render layout dec=\(declaredFrames) cfg=\(self.txOutputChannelCount)"
+            )
+            log.info(
+                "render layout ilv=\(self.txOutputIsInterleaved)"
             )
             renderBufferShapeLogCount += 1
         }
 
-        private func renderSamplesIntoOutputBuffer(
-            data: UnsafeMutableRawPointer,
-            sampleCount: Int
-        ) -> Int {
-            if txOutputSampleFormat == .int16 {
-                let outInt16 = data.assumingMemoryBound(to: Int16.self)
-                let copied = dequeueTxSamples(intoInt16: outInt16, sampleCount: sampleCount)
-                if copied < sampleCount {
-                    (outInt16 + copied).initialize(repeating: 0, count: sampleCount - copied)
-                }
-                return copied
-            }
-            let outFloat = data.assumingMemoryBound(to: Float.self)
-            let copied = dequeueTxSamples(into: outFloat, sampleCount: sampleCount)
-            if copied < sampleCount {
-                (outFloat + copied).initialize(repeating: 0, count: sampleCount - copied)
-            }
-            return copied
+        private struct RenderWritePlan {
+            let channels: Int
+            let framesToWrite: Int
+            let sampleCapacity: Int
         }
 
-        private func logRenderCopiedIfNeeded(data: UnsafeMutableRawPointer, copied: Int, requested: Int) {
+        private func writeMonoSamples(
+            _ mono: [Float],
+            copiedFrames: Int,
+            to data: UnsafeMutableRawPointer,
+            plan: RenderWritePlan
+        ) {
+            if plan.sampleCapacity <= 0 {
+                return
+            }
+            if txOutputSampleFormat == .int16 {
+                writeMonoSamplesInt16(mono, copiedFrames: copiedFrames, to: data, plan: plan)
+                return
+            }
+            writeMonoSamplesFloat32(mono, copiedFrames: copiedFrames, to: data, plan: plan)
+        }
+
+        private func writeMonoSamplesInt16(
+            _ mono: [Float],
+            copiedFrames: Int,
+            to data: UnsafeMutableRawPointer,
+            plan: RenderWritePlan
+        ) {
+            let out = data.assumingMemoryBound(to: Int16.self)
+            if plan.channels == 1 {
+                for idx in 0..<plan.framesToWrite {
+                    let s = idx < copiedFrames ? max(-1.0, min(1.0, mono[idx])) : 0
+                    out[idx] = Int16((s * Float(Int16.max)).rounded())
+                }
+                if plan.framesToWrite < plan.sampleCapacity {
+                    (out + plan.framesToWrite).initialize(
+                        repeating: 0,
+                        count: plan.sampleCapacity - plan.framesToWrite
+                    )
+                }
+                return
+            }
+            var writeIndex = 0
+            for frame in 0..<plan.framesToWrite {
+                let s = frame < copiedFrames ? max(-1.0, min(1.0, mono[frame])) : 0
+                let q = Int16((s * Float(Int16.max)).rounded())
+                for _ in 0..<plan.channels {
+                    out[writeIndex] = q
+                    writeIndex += 1
+                }
+            }
+            if writeIndex < plan.sampleCapacity {
+                (out + writeIndex).initialize(repeating: 0, count: plan.sampleCapacity - writeIndex)
+            }
+        }
+
+        private func writeMonoSamplesFloat32(
+            _ mono: [Float],
+            copiedFrames: Int,
+            to data: UnsafeMutableRawPointer,
+            plan: RenderWritePlan
+        ) {
+            let out = data.assumingMemoryBound(to: Float.self)
+            if plan.channels == 1 {
+                for idx in 0..<plan.framesToWrite {
+                    out[idx] = idx < copiedFrames ? mono[idx] : 0
+                }
+                if plan.framesToWrite < plan.sampleCapacity {
+                    (out + plan.framesToWrite).initialize(
+                        repeating: 0,
+                        count: plan.sampleCapacity - plan.framesToWrite
+                    )
+                }
+                return
+            }
+            var writeIndex = 0
+            for frame in 0..<plan.framesToWrite {
+                let s = frame < copiedFrames ? mono[frame] : 0
+                for _ in 0..<plan.channels {
+                    out[writeIndex] = s
+                    writeIndex += 1
+                }
+            }
+            if writeIndex < plan.sampleCapacity {
+                (out + writeIndex).initialize(repeating: 0, count: plan.sampleCapacity - writeIndex)
+            }
+        }
+
+        private func logRenderCopiedIfNeeded(copied: Int, requested: Int, mono: [Float]) {
             if copied <= 0 || copiedAfterEnqueueLogCount >= 6 {
                 return
             }
             let pendingAfterCopy = pendingTxSamples()
-            let peak = peakOfCopied(data: data, copied: copied)
+            var peak: Float = 0
+            let limit = min(copied, mono.count)
+            if limit > 0 {
+                for idx in 0..<limit {
+                    peak = max(peak, abs(mono[idx]))
+                }
+            }
             log.info("render copied=\(copied) req=\(requested) peak=\(peak) pending=\(pendingAfterCopy)")
             copiedAfterEnqueueLogCount += 1
         }
@@ -1097,52 +1246,6 @@ enum AudioBackendFactory {
                 peak = max(peak, abs(sample))
             }
             return peak
-        }
-
-        private func peakAbs(_ samples: UnsafeBufferPointer<Float>) -> Float {
-            var peak: Float = 0
-            for sample in samples {
-                peak = max(peak, abs(sample))
-            }
-            return peak
-        }
-
-        private func peakOfCopied(data: UnsafeMutableRawPointer, copied: Int) -> Float {
-            if copied <= 0 {
-                return 0
-            }
-            if txOutputSampleFormat == .int16 {
-                let ptr = data.assumingMemoryBound(to: Int16.self)
-                var peak: Float = 0
-                for idx in 0..<copied {
-                    peak = max(peak, abs(Float(ptr[idx]) / Float(Int16.max)))
-                }
-                return peak
-            }
-            let ptr = data.assumingMemoryBound(to: Float.self)
-            return peakAbs(UnsafeBufferPointer(start: ptr, count: copied))
-        }
-
-        private func dequeueTxSamples(
-            intoInt16 out: UnsafeMutablePointer<Int16>,
-            sampleCount: Int
-        ) -> Int {
-            txQueueLock.lock()
-            let available = max(0, txSampleQueue.count - txSampleReadIndex)
-            let copied = min(sampleCount, available)
-            if copied > 0 {
-                for idx in 0..<copied {
-                    let s = max(-1.0, min(1.0, txSampleQueue[txSampleReadIndex + idx]))
-                    out[idx] = Int16((s * Float(Int16.max)).rounded())
-                }
-                txSampleReadIndex += copied
-            }
-            if txSampleReadIndex > 4096, txSampleReadIndex * 2 > txSampleQueue.count {
-                txSampleQueue.removeFirst(txSampleReadIndex)
-                txSampleReadIndex = 0
-            }
-            txQueueLock.unlock()
-            return copied
         }
 
         private func clearTxQueue() {
