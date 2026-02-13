@@ -780,34 +780,34 @@ enum AudioBackendFactory {
             let sampleRate = Double(config.sampleRateHz)
             var selected = false
 
-            var floatStereo = makeFloatASBD(sampleRate: sampleRate, channels: 2)
+            var int16Stereo = makeInt16ASBD(sampleRate: sampleRate, channels: 2)
             selected = trySetOutputRenderFormat(
                 unit: unit,
-                format: &floatStereo,
-                label: "float32 stereo"
+                format: &int16Stereo,
+                label: "int16 stereo"
             )
-            if !selected {
-                var floatMono = makeFloatASBD(sampleRate: sampleRate, channels: 1)
-                selected = trySetOutputRenderFormat(
-                    unit: unit,
-                    format: &floatMono,
-                    label: "float32 mono"
-                )
-            }
-            if !selected {
-                var int16Stereo = makeInt16ASBD(sampleRate: sampleRate, channels: 2)
-                selected = trySetOutputRenderFormat(
-                    unit: unit,
-                    format: &int16Stereo,
-                    label: "int16 stereo"
-                )
-            }
             if !selected {
                 var int16Mono = makeInt16ASBD(sampleRate: sampleRate, channels: 1)
                 selected = trySetOutputRenderFormat(
                     unit: unit,
                     format: &int16Mono,
                     label: "int16 mono"
+                )
+            }
+            if !selected {
+                var floatStereo = makeFloatASBD(sampleRate: sampleRate, channels: 2)
+                selected = trySetOutputRenderFormat(
+                    unit: unit,
+                    format: &floatStereo,
+                    label: "float32 stereo"
+                )
+            }
+            if !selected {
+                var floatMono = makeFloatASBD(sampleRate: sampleRate, channels: 1)
+                selected = trySetOutputRenderFormat(
+                    unit: unit,
+                    format: &floatMono,
+                    label: "float32 mono"
                 )
             }
             if !selected {
@@ -873,8 +873,10 @@ enum AudioBackendFactory {
             txOutputChannelCount = max(1, Int(asbd.mChannelsPerFrame))
             txOutputIsInterleaved = (flags & kAudioFormatFlagIsNonInterleaved) == 0
             let fmt = txOutputSampleFormat == .int16 ? "int16" : "float32"
+            let activeChannels = txOutputChannelCount
+            let activeInterleaved = txOutputIsInterleaved
             log.info(
-                "RemoteIO out fmt=\(fmt) ch=\(self.txOutputChannelCount) ilv=\(self.txOutputIsInterleaved)"
+                "RemoteIO out fmt=\(fmt) ch=\(activeChannels) ilv=\(activeInterleaved)"
             )
             log.info(
                 "RemoteIO out bpf=\(asbd.mBytesPerFrame) bits=\(asbd.mBitsPerChannel) flags=0x\(flagsHex)"
@@ -954,10 +956,10 @@ enum AudioBackendFactory {
             let operation: String
         }
 
-        private func setAudioUnitProperty<T>(
+        private func setAudioUnitProperty(
             unit: AudioUnit,
             spec: AudioUnitPropertySpec,
-            value: inout T
+            value: inout UInt32
         ) throws {
             try checkOSStatus(
                 AudioUnitSetProperty(
@@ -966,7 +968,43 @@ enum AudioBackendFactory {
                     spec.scope,
                     spec.bus,
                     &value,
-                    UInt32(MemoryLayout<T>.size)
+                    UInt32(MemoryLayout<UInt32>.size)
+                ),
+                operation: spec.operation
+            )
+        }
+
+        private func setAudioUnitProperty(
+            unit: AudioUnit,
+            spec: AudioUnitPropertySpec,
+            value: inout AudioStreamBasicDescription
+        ) throws {
+            try checkOSStatus(
+                AudioUnitSetProperty(
+                    unit,
+                    spec.property,
+                    spec.scope,
+                    spec.bus,
+                    &value,
+                    UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+                ),
+                operation: spec.operation
+            )
+        }
+
+        private func setAudioUnitProperty(
+            unit: AudioUnit,
+            spec: AudioUnitPropertySpec,
+            value: inout AURenderCallbackStruct
+        ) throws {
+            try checkOSStatus(
+                AudioUnitSetProperty(
+                    unit,
+                    spec.property,
+                    spec.scope,
+                    spec.bus,
+                    &value,
+                    UInt32(MemoryLayout<AURenderCallbackStruct>.size)
                 ),
                 operation: spec.operation
             )
@@ -1151,14 +1189,16 @@ enum AudioBackendFactory {
             }
             let bytes = buffer.mDataByteSize
             let fmt = txOutputSampleFormat == .int16 ? "int16" : "float32"
+            let configuredChannels = txOutputChannelCount
+            let configuredInterleaved = txOutputIsInterleaved
             log.info(
                 "render buf i=\(index) ch=\(channels) b=\(bytes) req=\(frameCount) fmt=\(fmt)"
             )
             log.info(
-                "render layout dec=\(declaredFrames) cfg=\(self.txOutputChannelCount)"
+                "render layout dec=\(declaredFrames) cfg=\(configuredChannels)"
             )
             log.info(
-                "render layout ilv=\(self.txOutputIsInterleaved)"
+                "render layout ilv=\(configuredInterleaved)"
             )
             renderBufferShapeLogCount += 1
         }
