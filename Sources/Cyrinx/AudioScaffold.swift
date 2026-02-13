@@ -582,7 +582,9 @@ enum AudioBackendFactory {
                 beaconPlayer = player
                 let playLatencyMs = monotonicMs() - playRequestStartMs
                 log.info("beacon AVAudioPlayer started=\(started) durationSec=\(player.duration)")
+                let wallMs = wallClockMs()
                 log.info("beacon AVAudioPlayer latencyMs=\(playLatencyMs) t0Ms=\(playRequestStartMs)")
+                log.info("beacon AVAudioPlayer wallMs=\(wallMs)")
                 if !started {
                     finishDedicatedBeaconPlaybackIfNeeded()
                 }
@@ -598,47 +600,21 @@ enum AudioBackendFactory {
 
         private func prepareSessionForDedicatedBeaconPlayback(sampleRate _: Double) -> Bool {
             let prepStartMs = monotonicMs()
+            let session = AVAudioSession.sharedInstance()
+            // Do not pause RemoteIO or switch session category/mode for audible beacon.
+            // The stop/reconfigure path introduces multi-second latency and breaks duplex continuity.
             remoteIOWasPausedForBeacon = false
             beaconSessionOverrideActive = false
 
-            var pauseMs = 0
-            if let audioUnit {
-                let pauseStartMs = monotonicMs()
-                let stopStatus = AudioOutputUnitStop(audioUnit)
-                if stopStatus == noErr {
-                    remoteIOWasPausedForBeacon = true
-                    log.info("RemoteIO paused for dedicated beacon playback")
-                } else {
-                    log.error("AudioOutputUnitStop(beacon pause) failed status=\(stopStatus)")
-                }
-                pauseMs = monotonicMs() - pauseStartMs
-            }
-
-            let session = AVAudioSession.sharedInstance()
-            do {
-                let sessionSwitchStartMs = monotonicMs()
-                // Fast path: keep playAndRecord category, only relax mode for cleaner local playback.
-                // This avoids the multi-second latency seen when switching categories on some devices.
-                try session.setMode(.default)
-                try session.overrideOutputAudioPort(.speaker)
-                try session.setActive(true, options: [])
-                beaconSessionOverrideActive = true
-                let sessionSwitchMs = monotonicMs() - sessionSwitchStartMs
-                let route = session.currentRoute.outputs.map(\.portName).joined(separator: ",")
-                let activeHz = Int(session.sampleRate.rounded())
-                let prepLatencyMs = monotonicMs() - prepStartMs
-                let categoryName = session.category.rawValue
-                let modeName = session.mode.rawValue
-                log.info("AVAudioSession beacon cfg category=\(categoryName) mode=\(modeName)")
-                log.info("AVAudioSession beacon route=\(route) hz=\(activeHz)")
-                log.info("AVAudioSession beacon prepMs=\(prepLatencyMs) pauseMs=\(pauseMs)")
-                log.info("AVAudioSession beacon modeSwitchMs=\(sessionSwitchMs)")
-                return true
-            } catch {
-                log.error("AVAudioSession beacon cfg failed: \(error.localizedDescription)")
-                finishDedicatedBeaconPlaybackIfNeeded()
-                return false
-            }
+            let route = session.currentRoute.outputs.map(\.portName).joined(separator: ",")
+            let activeHz = Int(session.sampleRate.rounded())
+            let prepLatencyMs = monotonicMs() - prepStartMs
+            let categoryName = session.category.rawValue
+            let modeName = session.mode.rawValue
+            log.info("AVAudioSession beacon cfg category=\(categoryName) mode=\(modeName)")
+            log.info("AVAudioSession beacon route=\(route) hz=\(activeHz)")
+            log.info("AVAudioSession beacon prepMs=\(prepLatencyMs) wallMs=\(self.wallClockMs())")
+            return true
         }
 
         private func finishDedicatedBeaconPlaybackIfNeeded(resumeRemoteIO: Bool = true) {
@@ -677,6 +653,10 @@ enum AudioBackendFactory {
 
         private func monotonicMs() -> Int {
             Int((ProcessInfo.processInfo.systemUptime * 1000).rounded())
+        }
+
+        private func wallClockMs() -> Int64 {
+            Int64((Date().timeIntervalSince1970 * 1000).rounded())
         }
 
         private func configureAudioSession() throws {
