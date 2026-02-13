@@ -393,6 +393,22 @@ enum AudioBackendFactory {
             case int16
         }
 
+        private final class BeaconPlayerDelegate: NSObject, AVAudioPlayerDelegate {
+            var onFinish: (() -> Void)?
+
+            func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+                _ = player
+                _ = flag
+                onFinish?()
+            }
+
+            func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+                _ = player
+                _ = error
+                onFinish?()
+            }
+        }
+
         private let config: Config
         private let counters = AudioCounterBox()
         private let phyLink: AcousticPHYLink
@@ -400,10 +416,13 @@ enum AudioBackendFactory {
         private let log = Logger(subsystem: "com.dweekly.cyrinx", category: "ios-remoteio")
         private var audioUnit: AudioUnit?
         private var beaconPlayer: AVAudioPlayer?
+        private var beaconPlayerDelegate: BeaconPlayerDelegate?
         private var sessionHandle: OpaquePointer?
         private var txSampleQueue: [Float] = []
         private var txSampleReadIndex: Int = 0
         private var state: AudioBackendState = .idle
+        private var beaconSessionOverrideActive = false
+        private var remoteIOWasPausedForBeacon = false
         private var observedInputSampleRateHz: UInt32 = 0
         private var observedOutputSampleRateHz: UInt32 = 0
         private var renderCallbackLogCount: UInt32 = 0
@@ -442,6 +461,7 @@ enum AudioBackendFactory {
                 throw AudioBackendError.startupFailed("RemoteIO unit not initialized")
             }
 
+            try configureAudioSession()
             try checkOSStatus(AudioUnitInitialize(audioUnit), operation: "AudioUnitInitialize")
             try checkOSStatus(AudioOutputUnitStart(audioUnit), operation: "AudioOutputUnitStart")
             renderCallbackLogCount = 0
@@ -459,6 +479,10 @@ enum AudioBackendFactory {
         }
 
         func stop() {
+            beaconPlayer?.stop()
+            beaconPlayer = nil
+            beaconPlayerDelegate = nil
+            finishDedicatedBeaconPlaybackIfNeeded(resumeRemoteIO: false)
             guard let audioUnit else {
                 return
             }
@@ -537,21 +561,99 @@ enum AudioBackendFactory {
                 return false
             }
             let wavData = makePCM16WAV(samples: samples, sampleRate: sampleRate)
+            let dedicatedSessionReady = prepareSessionForDedicatedBeaconPlayback(
+                sampleRate: sampleRate
+            )
             do {
                 beaconPlayer?.stop()
                 beaconPlayer = nil
+                beaconPlayerDelegate = nil
                 let player = try AVAudioPlayer(data: wavData)
+                let delegate = BeaconPlayerDelegate()
+                delegate.onFinish = { [weak self] in
+                    self?.finishDedicatedBeaconPlaybackIfNeeded()
+                }
+                player.delegate = delegate
                 player.volume = 1.0
                 player.prepareToPlay()
                 let started = player.play()
+                beaconPlayerDelegate = delegate
                 beaconPlayer = player
                 log.info(
                     "beacon AVAudioPlayer started=\(started) durationSec=\(player.duration)"
                 )
+                if !started {
+                    finishDedicatedBeaconPlaybackIfNeeded()
+                }
                 return started
             } catch {
                 log.error("beacon AVAudioPlayer failed: \(error.localizedDescription)")
+                if dedicatedSessionReady {
+                    finishDedicatedBeaconPlaybackIfNeeded()
+                }
                 return false
+            }
+        }
+
+        private func prepareSessionForDedicatedBeaconPlayback(sampleRate: Double) -> Bool {
+            remoteIOWasPausedForBeacon = false
+            beaconSessionOverrideActive = false
+
+            if let audioUnit {
+                let stopStatus = AudioOutputUnitStop(audioUnit)
+                if stopStatus == noErr {
+                    remoteIOWasPausedForBeacon = true
+                    log.info("RemoteIO paused for dedicated beacon playback")
+                } else {
+                    log.error("AudioOutputUnitStop(beacon pause) failed status=\(stopStatus)")
+                }
+            }
+
+            let session = AVAudioSession.sharedInstance()
+            do {
+                try session.setActive(false, options: [.notifyOthersOnDeactivation])
+                try session.setCategory(.playback, mode: .default, options: [])
+                try session.setPreferredSampleRate(sampleRate)
+                try session.setPreferredIOBufferDuration(0.01)
+                try session.setActive(true, options: [])
+                beaconSessionOverrideActive = true
+                let route = session.currentRoute.outputs.map(\.portName).joined(separator: ",")
+                let activeHz = Int(session.sampleRate.rounded())
+                log.info("AVAudioSession beacon cfg mode=playback route=\(route) hz=\(activeHz)")
+                return true
+            } catch {
+                log.error("AVAudioSession beacon cfg failed: \(error.localizedDescription)")
+                finishDedicatedBeaconPlaybackIfNeeded()
+                return false
+            }
+        }
+
+        private func finishDedicatedBeaconPlaybackIfNeeded(resumeRemoteIO: Bool = true) {
+            let hadOverride = beaconSessionOverrideActive
+            let hadPause = remoteIOWasPausedForBeacon
+            beaconSessionOverrideActive = false
+            remoteIOWasPausedForBeacon = false
+            if !hadOverride && !hadPause {
+                return
+            }
+
+            do {
+                try configureAudioSession()
+            } catch {
+                log.error("AVAudioSession restore after beacon failed: \(error.localizedDescription)")
+            }
+
+            guard resumeRemoteIO, hadPause else {
+                return
+            }
+            guard state == .running, let audioUnit else {
+                return
+            }
+            let startStatus = AudioOutputUnitStart(audioUnit)
+            if startStatus != noErr {
+                log.error("AudioOutputUnitStart(resume after beacon) failed status=\(startStatus)")
+            } else {
+                log.info("RemoteIO resumed after dedicated beacon playback")
             }
         }
 
