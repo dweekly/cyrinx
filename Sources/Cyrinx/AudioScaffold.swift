@@ -560,6 +560,7 @@ enum AudioBackendFactory {
             guard !samples.isEmpty else {
                 return false
             }
+            let playRequestStart = ProcessInfo.processInfo.systemUptime
             let wavData = makePCM16WAV(samples: samples, sampleRate: sampleRate)
             let dedicatedSessionReady = prepareSessionForDedicatedBeaconPlayback(
                 sampleRate: sampleRate
@@ -579,9 +580,11 @@ enum AudioBackendFactory {
                 let started = player.play()
                 beaconPlayerDelegate = delegate
                 beaconPlayer = player
-                log.info(
-                    "beacon AVAudioPlayer started=\(started) durationSec=\(player.duration)"
+                let playLatencyMs = Int(
+                    ((ProcessInfo.processInfo.systemUptime - playRequestStart) * 1000).rounded()
                 )
+                log.info("beacon AVAudioPlayer started=\(started) durationSec=\(player.duration)")
+                log.info("beacon AVAudioPlayer latencyMs=\(playLatencyMs)")
                 if !started {
                     finishDedicatedBeaconPlaybackIfNeeded()
                 }
@@ -596,6 +599,7 @@ enum AudioBackendFactory {
         }
 
         private func prepareSessionForDedicatedBeaconPlayback(sampleRate: Double) -> Bool {
+            let startUptime = ProcessInfo.processInfo.systemUptime
             remoteIOWasPausedForBeacon = false
             beaconSessionOverrideActive = false
 
@@ -611,15 +615,18 @@ enum AudioBackendFactory {
 
             let session = AVAudioSession.sharedInstance()
             do {
-                try session.setActive(false, options: [.notifyOthersOnDeactivation])
                 try session.setCategory(.playback, mode: .default, options: [])
                 try session.setPreferredSampleRate(sampleRate)
-                try session.setPreferredIOBufferDuration(0.01)
+                try session.setPreferredIOBufferDuration(0.005)
                 try session.setActive(true, options: [])
                 beaconSessionOverrideActive = true
                 let route = session.currentRoute.outputs.map(\.portName).joined(separator: ",")
                 let activeHz = Int(session.sampleRate.rounded())
+                let prepLatencyMs = Int(
+                    ((ProcessInfo.processInfo.systemUptime - startUptime) * 1000).rounded()
+                )
                 log.info("AVAudioSession beacon cfg mode=playback route=\(route) hz=\(activeHz)")
+                log.info("AVAudioSession beacon prepMs=\(prepLatencyMs)")
                 return true
             } catch {
                 log.error("AVAudioSession beacon cfg failed: \(error.localizedDescription)")
