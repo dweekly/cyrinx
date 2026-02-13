@@ -387,6 +387,46 @@ enum AudioBackendFactory {
 }
 
 #if os(iOS)
+    private struct TimestampLogger {
+        private enum Level {
+            case info
+            case warning
+            case error
+        }
+
+        private let base: Logger
+
+        init(subsystem: String, category: String) {
+            base = Logger(subsystem: subsystem, category: category)
+        }
+
+        func info(_ message: String) {
+            emit(.info, message)
+        }
+
+        func warning(_ message: String) {
+            emit(.warning, message)
+        }
+
+        func error(_ message: String) {
+            emit(.error, message)
+        }
+
+        private func emit(_ level: Level, _ message: String) {
+            let monoMs = Int((ProcessInfo.processInfo.systemUptime * 1000).rounded())
+            let wallMs = Int64((Date().timeIntervalSince1970 * 1000).rounded())
+            let prefixed = "tMonoMs=\(monoMs) tWallMs=\(wallMs) \(message)"
+            switch level {
+            case .info:
+                base.info("\(prefixed, privacy: .public)")
+            case .warning:
+                base.warning("\(prefixed, privacy: .public)")
+            case .error:
+                base.error("\(prefixed, privacy: .public)")
+            }
+        }
+    }
+
     // swiftlint:disable type_body_length
     private final class IOSRemoteIOAudioBackend: SessionFrameIOBackend {
         private enum TXOutputSampleFormat {
@@ -414,7 +454,7 @@ enum AudioBackendFactory {
         private let counters = AudioCounterBox()
         private let phyLink: AcousticPHYLink
         private let txQueueLock = NSLock()
-        private let log = Logger(subsystem: "com.dweekly.cyrinx", category: "ios-remoteio")
+        private let log = TimestampLogger(subsystem: "com.dweekly.cyrinx", category: "ios-remoteio")
         private var audioUnit: AudioUnit?
         private var beaconPlayer: AVAudioPlayer?
         private var beaconPlayerDelegate: BeaconPlayerDelegate?
@@ -433,9 +473,11 @@ enum AudioBackendFactory {
         private var copiedAfterEnqueueLogCount: UInt32 = 0
         private var renderBufferShapeLogCount: UInt32 = 0
         private var renderSilenceFlagLogCount: UInt32 = 0
+        private var renderOutputSampleLogCount: UInt32 = 0
         private var txOutputSampleFormat: TXOutputSampleFormat = .float32
         private var txOutputChannelCount: Int = 1
         private var txOutputIsInterleaved: Bool = false
+        private let outputIsSilenceFlag = AudioUnitRenderActionFlags(rawValue: 1 << 4)
 
         init(config: Config) throws {
             self.config = config
@@ -475,6 +517,7 @@ enum AudioBackendFactory {
             copiedAfterEnqueueLogCount = 0
             renderBufferShapeLogCount = 0
             renderSilenceFlagLogCount = 0
+            renderOutputSampleLogCount = 0
             let roleName = config.role == .master ? "master" : "slave"
             log.info("RemoteIO started role=\(roleName) cfgHz=\(self.config.sampleRateHz)")
             log.info("RemoteIO observed inHz=\(self.observedInputSampleRateHz)")
@@ -1154,6 +1197,15 @@ enum AudioBackendFactory {
                         sampleCapacity: declaredFrames * bufferChannels
                     )
                 )
+                logRenderOutputSamplesIfNeeded(
+                    data: data,
+                    plan: RenderWritePlan(
+                        channels: bufferChannels,
+                        framesToWrite: framesToWrite,
+                        sampleCapacity: declaredFrames * bufferChannels
+                    ),
+                    copiedFrames: copiedFrames
+                )
                 buffer.mDataByteSize = UInt32(declaredFrames * bufferChannels * outputBytesPerSample())
                 buffers[idx] = buffer
             }
@@ -1316,13 +1368,63 @@ enum AudioBackendFactory {
             outputUnderrunLogCount += 1
         }
 
+        private func logRenderOutputSamplesIfNeeded(
+            data: UnsafeMutableRawPointer,
+            plan: RenderWritePlan,
+            copiedFrames: Int
+        ) {
+            if copiedFrames <= 0 || renderOutputSampleLogCount >= 4 || plan.sampleCapacity <= 0 {
+                return
+            }
+            let previewCount = min(8, plan.sampleCapacity)
+            if txOutputSampleFormat == .int16 {
+                let out = data.assumingMemoryBound(to: Int16.self)
+                var preview = [String]()
+                preview.reserveCapacity(previewCount)
+                for idx in 0..<previewCount {
+                    preview.append(String(out[idx]))
+                }
+                log.info("render out preview fmt=int16 samples=[\(preview.joined(separator: ","))]")
+            } else {
+                let out = data.assumingMemoryBound(to: Float.self)
+                var preview = [String]()
+                preview.reserveCapacity(previewCount)
+                for idx in 0..<previewCount {
+                    preview.append(String(format: "%.5f", out[idx]))
+                }
+                log.info("render out preview fmt=float32 samples=[\(preview.joined(separator: ","))]")
+            }
+            renderOutputSampleLogCount += 1
+        }
+
         private func updateRenderSilenceFlag(
             ioActionFlags: UnsafeMutablePointer<AudioUnitRenderActionFlags>?,
             totalCopied: Int
         ) {
-            if renderSilenceFlagLogCount < 6 {
-                let hasFlags = (ioActionFlags != nil)
-                log.info("render silenceFlag writeSkipped=\(hasFlags) totalCopied=\(totalCopied)")
+            guard let ioActionFlags else {
+                if renderSilenceFlagLogCount < 6 {
+                    log.info("render silenceFlag missing totalCopied=\(totalCopied)")
+                    renderSilenceFlagLogCount += 1
+                }
+                return
+            }
+            let before = ioActionFlags.pointee
+            if totalCopied > 0 {
+                ioActionFlags.pointee.remove(outputIsSilenceFlag)
+            } else {
+                ioActionFlags.pointee.insert(outputIsSilenceFlag)
+            }
+            if renderSilenceFlagLogCount < 8 {
+                let after = ioActionFlags.pointee
+                let beforeRaw = before.rawValue
+                let afterRaw = after.rawValue
+                let marked = after.contains(outputIsSilenceFlag)
+                let beforeHex = String(beforeRaw, radix: 16)
+                let afterHex = String(afterRaw, radix: 16)
+                let silenceLogLine =
+                    "render silenceFlag before=0x\(beforeHex) after=0x\(afterHex) "
+                    + "marked=\(marked) totalCopied=\(totalCopied)"
+                log.info(silenceLogLine)
                 renderSilenceFlagLogCount += 1
             }
         }
