@@ -223,22 +223,23 @@ final class LinearStreamResampler {
 enum AudibleBeaconSynthesizer {
     static func synthesize(role _: Role, sampleRate: Double, txGainCap: Float) -> [Float] {
         let fs = min(max(sampleRate.rounded(), 8_000), 192_000)
-        // Keep beacon gain conservative while staying above mobile speaker noise-gate thresholds.
-        let amplitude = min(max(txGainCap, 0), 0.12)
+        // Keep the validation beacon clearly audible on iPhone speaker paths that may attenuate
+        // play-and-record sessions (measurement mode + duplex routing).
+        let amplitude = min(max(txGainCap, 0), 0.30)
         if amplitude <= 0 {
             return []
         }
 
         // Use the same low-high-low tri-tone for both roles so cross-device A/B checks match.
         var pattern = [(freqHz: Double, durationSec: Double)]()
-        pattern.append((660, 0.24))
+        pattern.append((440, 0.28))
         pattern.append((0, 0.08))
-        pattern.append((1_320, 0.24))
+        pattern.append((880, 0.28))
         pattern.append((0, 0.08))
-        pattern.append((660, 0.24))
+        pattern.append((440, 0.28))
 
         var out: [Float] = []
-        out.reserveCapacity(Int(fs * 0.8))
+        out.reserveCapacity(Int(fs * 1.0))
         for segment in pattern {
             out.append(
                 contentsOf: makeSegment(
