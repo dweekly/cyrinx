@@ -660,7 +660,9 @@ enum AudioBackendFactory {
 
         private func configureAudioSession() throws {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker])
+            let useMeasurement = ProcessInfo.processInfo.environment["CYRINX_IOS_MEASUREMENT_MODE"] == "1"
+            let mode: AVAudioSession.Mode = useMeasurement ? .measurement : .default
+            try session.setCategory(.playAndRecord, mode: mode, options: [.defaultToSpeaker])
             try session.setPreferredSampleRate(Double(config.sampleRateHz))
             try session.setPreferredIOBufferDuration(0.01)
             try session.setActive(true, options: [])
@@ -672,7 +674,9 @@ enum AudioBackendFactory {
             let permission = micPermissionDescription()
             let preferredHz = Int(session.preferredSampleRate)
             let actualHz = Int(session.sampleRate)
+            let modeName = session.mode.rawValue
             log.info("AVAudioSession cfg prefHz=\(preferredHz) actualHz=\(actualHz)")
+            log.info("AVAudioSession mode=\(modeName) measurementOptIn=\(useMeasurement)")
             log.info("AVAudioSession route=\(route) micPerm=\(permission) outVol=\(session.outputVolume)")
         }
 
@@ -1276,20 +1280,9 @@ enum AudioBackendFactory {
             ioActionFlags: UnsafeMutablePointer<AudioUnitRenderActionFlags>?,
             totalCopied: Int
         ) {
-            guard let ioActionFlags else {
-                return
-            }
-            // AUComponent.h: kAudioUnitRenderAction_OutputIsSilence = (1UL << 4).
-            // Some Swift SDK overlays do not expose the C symbol consistently.
-            let silenceFlag = AudioUnitRenderActionFlags(rawValue: 1 << 4)
-            if totalCopied > 0 {
-                ioActionFlags.pointee.remove(silenceFlag)
-            } else {
-                ioActionFlags.pointee.formUnion(silenceFlag)
-            }
             if renderSilenceFlagLogCount < 6 {
-                let active = ioActionFlags.pointee.contains(silenceFlag)
-                log.info("render silenceFlag=\(active) totalCopied=\(totalCopied)")
+                let hasFlags = (ioActionFlags != nil)
+                log.info("render silenceFlag writeSkipped=\(hasFlags) totalCopied=\(totalCopied)")
                 renderSilenceFlagLogCount += 1
             }
         }
