@@ -467,6 +467,7 @@ enum AudioBackendFactory {
             try configureAudioSession()
             try checkOSStatus(AudioUnitInitialize(audioUnit), operation: "AudioUnitInitialize")
             try checkOSStatus(AudioOutputUnitStart(audioUnit), operation: "AudioOutputUnitStart")
+            forceSpeakerRoute(reason: "start")
             renderCallbackLogCount = 0
             outputUnderrunLogCount = 0
             enqueueLogCount = 0
@@ -535,6 +536,7 @@ enum AudioBackendFactory {
             if AVAudioSession.sharedInstance().outputVolume <= 0.01 {
                 log.warning("system output volume is near zero; beacon audibility may be poor")
             }
+            forceSpeakerRoute(reason: "beacon")
             log.info("audible beacon request monoMs=\(requestMonoMs) wallMs=\(requestWallMs)")
             log.info("audible beacon role=\(self.config.role) sr=\(Int(sampleRate))Hz")
             log.info("audible beacon durationSec=\(beaconDurationSec) samples=\(beacon.count)")
@@ -674,6 +676,18 @@ enum AudioBackendFactory {
             log.info("AVAudioSession route=\(route) micPerm=\(permission) outVol=\(session.outputVolume)")
         }
 
+        private func forceSpeakerRoute(reason: String) {
+            let session = AVAudioSession.sharedInstance()
+            do {
+                try session.overrideOutputAudioPort(.speaker)
+                let route = session.currentRoute.outputs.map(\.portName).joined(separator: ",")
+                log.info("AVAudioSession speaker route reason=\(reason) route=\(route)")
+            } catch {
+                let message = "AVAudioSession speaker route failed reason=\(reason)"
+                log.error("\(message) err=\(error.localizedDescription)")
+            }
+        }
+
         private func micPermissionDescription() -> String {
             switch AVAudioApplication.shared.recordPermission {
             case .granted:
@@ -744,7 +758,7 @@ enum AudioBackendFactory {
         }
 
         private func configureStreamFormat(unit: AudioUnit) throws {
-            var captureFormat = makeFloatASBD(sampleRate: Double(config.sampleRateHz))
+            var captureFormat = makeFloatASBD(sampleRate: Double(config.sampleRateHz), channels: 1)
             try setAudioUnitProperty(
                 unit: unit,
                 spec: AudioUnitPropertySpec(
@@ -759,34 +773,67 @@ enum AudioBackendFactory {
         }
 
         private func configureOutputRenderFormat(unit: AudioUnit) throws {
-            do {
-                var renderFormatFloat = makeFloatASBD(sampleRate: Double(config.sampleRateHz))
-                try setAudioUnitProperty(
+            let sampleRate = Double(config.sampleRateHz)
+            var selected = false
+
+            var floatStereo = makeFloatASBD(sampleRate: sampleRate, channels: 2)
+            selected = trySetOutputRenderFormat(
+                unit: unit,
+                format: &floatStereo,
+                label: "float32 stereo"
+            )
+            if !selected {
+                var floatMono = makeFloatASBD(sampleRate: sampleRate, channels: 1)
+                selected = trySetOutputRenderFormat(
                     unit: unit,
-                    spec: AudioUnitPropertySpec(
-                        property: kAudioUnitProperty_StreamFormat,
-                        scope: kAudioUnitScope_Input,
-                        bus: 0,
-                        operation: "SetStreamFormat(output bus float32)"
-                    ),
-                    value: &renderFormatFloat
+                    format: &floatMono,
+                    label: "float32 mono"
                 )
-                log.info("RemoteIO output format requested: float32")
-            } catch {
-                var renderFormatInt16 = makeInt16ASBD(sampleRate: Double(config.sampleRateHz))
-                try setAudioUnitProperty(
+            }
+            if !selected {
+                var int16Stereo = makeInt16ASBD(sampleRate: sampleRate, channels: 2)
+                selected = trySetOutputRenderFormat(
                     unit: unit,
-                    spec: AudioUnitPropertySpec(
-                        property: kAudioUnitProperty_StreamFormat,
-                        scope: kAudioUnitScope_Input,
-                        bus: 0,
-                        operation: "SetStreamFormat(output bus int16 fallback)"
-                    ),
-                    value: &renderFormatInt16
+                    format: &int16Stereo,
+                    label: "int16 stereo"
                 )
-                log.info("RemoteIO output format requested: int16 (fallback)")
+            }
+            if !selected {
+                var int16Mono = makeInt16ASBD(sampleRate: sampleRate, channels: 1)
+                selected = trySetOutputRenderFormat(
+                    unit: unit,
+                    format: &int16Mono,
+                    label: "int16 mono"
+                )
+            }
+            if !selected {
+                throw AudioBackendError.startupFailed("RemoteIO output stream format negotiation failed")
             }
             try refreshActiveOutputRenderFormat(unit: unit)
+        }
+
+        private func trySetOutputRenderFormat(
+            unit: AudioUnit,
+            format: inout AudioStreamBasicDescription,
+            label: String
+        ) -> Bool {
+            do {
+                try setAudioUnitProperty(
+                    unit: unit,
+                    spec: AudioUnitPropertySpec(
+                        property: kAudioUnitProperty_StreamFormat,
+                        scope: kAudioUnitScope_Input,
+                        bus: 0,
+                        operation: "SetStreamFormat(output bus \(label))"
+                    ),
+                    value: &format
+                )
+                log.info("RemoteIO output format requested: \(label)")
+                return true
+            } catch {
+                log.info("RemoteIO output format rejected: \(label)")
+                return false
+            }
         }
 
         private func refreshActiveOutputRenderFormat(unit: AudioUnit) throws {
@@ -830,29 +877,35 @@ enum AudioBackendFactory {
             )
         }
 
-        private func makeFloatASBD(sampleRate: Double) -> AudioStreamBasicDescription {
-            AudioStreamBasicDescription(
+        private func makeFloatASBD(sampleRate: Double, channels: UInt32) -> AudioStreamBasicDescription {
+            let clampedChannels = max(1, channels)
+            let bytesPerSample: UInt32 = 4
+            let bytesPerFrame = bytesPerSample * clampedChannels
+            return AudioStreamBasicDescription(
                 mSampleRate: sampleRate,
                 mFormatID: kAudioFormatLinearPCM,
                 mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
-                mBytesPerPacket: 4,
+                mBytesPerPacket: bytesPerFrame,
                 mFramesPerPacket: 1,
-                mBytesPerFrame: 4,
-                mChannelsPerFrame: 1,
+                mBytesPerFrame: bytesPerFrame,
+                mChannelsPerFrame: clampedChannels,
                 mBitsPerChannel: 32,
                 mReserved: 0
             )
         }
 
-        private func makeInt16ASBD(sampleRate: Double) -> AudioStreamBasicDescription {
-            AudioStreamBasicDescription(
+        private func makeInt16ASBD(sampleRate: Double, channels: UInt32) -> AudioStreamBasicDescription {
+            let clampedChannels = max(1, channels)
+            let bytesPerSample: UInt32 = 2
+            let bytesPerFrame = bytesPerSample * clampedChannels
+            return AudioStreamBasicDescription(
                 mSampleRate: sampleRate,
                 mFormatID: kAudioFormatLinearPCM,
                 mFormatFlags: kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked,
-                mBytesPerPacket: 2,
+                mBytesPerPacket: bytesPerFrame,
                 mFramesPerPacket: 1,
-                mBytesPerFrame: 2,
-                mChannelsPerFrame: 1,
+                mBytesPerFrame: bytesPerFrame,
+                mChannelsPerFrame: clampedChannels,
                 mBitsPerChannel: 16,
                 mReserved: 0
             )
