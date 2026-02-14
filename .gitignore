@@ -1,5 +1,11 @@
 .DS_Store
 .build/
+.swiftpm/
+tmp/
+**/*.xcodeproj/xcuserdata/
+**/*.xcworkspace/xcuserdata/
+Apps/HIL/CyrinxHIL.xcodeproj/xcuserdata/
+Apps/HIL/CyrinxHIL.xcodeproj/project.xcworkspace/xcuserdata/
 artifacts/
 benchmark_files.txt
 benchmark_rules.txt
