@@ -474,6 +474,8 @@ enum AudioBackendFactory {
         private var renderBufferShapeLogCount: UInt32 = 0
         private var renderSilenceFlagLogCount: UInt32 = 0
         private var renderOutputSampleLogCount: UInt32 = 0
+        private var renderCadenceLogCount: UInt32 = 0
+        private var renderLastMonotonicMs: Int = 0
         private var txOutputSampleFormat: TXOutputSampleFormat = .float32
         private var txOutputChannelCount: Int = 1
         private var txOutputIsInterleaved: Bool = false
@@ -518,6 +520,8 @@ enum AudioBackendFactory {
             renderBufferShapeLogCount = 0
             renderSilenceFlagLogCount = 0
             renderOutputSampleLogCount = 0
+            renderCadenceLogCount = 0
+            renderLastMonotonicMs = 0
             let roleName = config.role == .master ? "master" : "slave"
             log.info("RemoteIO started role=\(roleName) cfgHz=\(self.config.sampleRateHz)")
             log.info("RemoteIO observed inHz=\(self.observedInputSampleRateHz)")
@@ -1153,9 +1157,24 @@ enum AudioBackendFactory {
                 let total = self.renderCallbacksTotal
                 log.info("render cb total=\(total) pending=\(pending)")
             }
+            logRenderCadenceIfNeeded()
             let totalCopied = renderOutputBuffers(buffers, frameCount: frameCount)
             updateRenderSilenceFlag(ioActionFlags: ioActionFlags, totalCopied: totalCopied)
             return noErr
+        }
+
+        private func logRenderCadenceIfNeeded() {
+            let now = monotonicMs()
+            if renderLastMonotonicMs == 0 {
+                renderLastMonotonicMs = now
+                return
+            }
+            let deltaMs = now - renderLastMonotonicMs
+            renderLastMonotonicMs = now
+            if renderCadenceLogCount < 12 {
+                log.info("render cadence dtMs=\(deltaMs)")
+                renderCadenceLogCount += 1
+            }
         }
 
         private func renderOutputBuffers(
@@ -1409,12 +1428,9 @@ enum AudioBackendFactory {
                 return
             }
             let before = ioActionFlags.pointee
-            if totalCopied > 0 {
-                ioActionFlags.pointee.remove(outputIsSilenceFlag)
-            } else {
-                ioActionFlags.pointee.insert(outputIsSilenceFlag)
-            }
-            if renderSilenceFlagLogCount < 8 {
+            // Keep output callbacks flowing at real-time cadence; do not advertise silence.
+            ioActionFlags.pointee.remove(outputIsSilenceFlag)
+            if renderSilenceFlagLogCount < 12 || totalCopied > 0 {
                 let after = ioActionFlags.pointee
                 let beforeRaw = before.rawValue
                 let afterRaw = after.rawValue
@@ -1422,8 +1438,8 @@ enum AudioBackendFactory {
                 let beforeHex = String(beforeRaw, radix: 16)
                 let afterHex = String(afterRaw, radix: 16)
                 let silenceLogLine =
-                    "render silenceFlag before=0x\(beforeHex) after=0x\(afterHex) "
-                    + "marked=\(marked) totalCopied=\(totalCopied)"
+                    "render silenceFlag forceClear before=0x\(beforeHex) "
+                    + "after=0x\(afterHex) marked=\(marked) totalCopied=\(totalCopied)"
                 log.info(silenceLogLine)
                 renderSilenceFlagLogCount += 1
             }
