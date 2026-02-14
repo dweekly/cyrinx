@@ -428,7 +428,7 @@ enum AudioBackendFactory {
     }
 
     // swiftlint:disable type_body_length
-    private final class IOSRemoteIOAudioBackend: SessionFrameIOBackend {
+    private final class IOSRemoteIOAudioBackend: SessionFrameIOBackend, @unchecked Sendable {
         private enum TXOutputSampleFormat {
             case float32
             case int16
@@ -476,6 +476,15 @@ enum AudioBackendFactory {
         private var renderOutputSampleLogCount: UInt32 = 0
         private var renderCadenceLogCount: UInt32 = 0
         private var renderLastMonotonicMs: Int = 0
+        private var captureScratch: [Float] = []
+        private let inboundProcessingQueue = DispatchQueue(
+            label: "com.dweekly.cyrinx.ios-remoteio-rx",
+            qos: .userInitiated
+        )
+        private let inboundQueueLock = NSLock()
+        private var inboundQueuedSamples: Int = 0
+        private var inboundDropLogCount: UInt32 = 0
+        private let inboundQueueSoftLimitSamples: Int = 96_000
         private var txOutputSampleFormat: TXOutputSampleFormat = .float32
         private var txOutputChannelCount: Int = 1
         private var txOutputIsInterleaved: Bool = false
@@ -522,6 +531,10 @@ enum AudioBackendFactory {
             renderOutputSampleLogCount = 0
             renderCadenceLogCount = 0
             renderLastMonotonicMs = 0
+            inboundDropLogCount = 0
+            inboundQueueLock.lock()
+            inboundQueuedSamples = 0
+            inboundQueueLock.unlock()
             let roleName = config.role == .master ? "master" : "slave"
             log.info("RemoteIO started role=\(roleName) cfgHz=\(self.config.sampleRateHz)")
             log.info("RemoteIO observed inHz=\(self.observedInputSampleRateHz)")
@@ -541,6 +554,9 @@ enum AudioBackendFactory {
             _ = AudioOutputUnitStop(audioUnit)
             _ = AudioUnitUninitialize(audioUnit)
             log.info("RemoteIO stopped")
+            inboundQueueLock.lock()
+            inboundQueuedSamples = 0
+            inboundQueueLock.unlock()
             state = .stopped
         }
 
@@ -1095,39 +1111,89 @@ enum AudioBackendFactory {
             guard let audioUnit else {
                 return noErr
             }
-            let byteCount = Int(inNumberFrames) * MemoryLayout<Float>.size
-            let raw = UnsafeMutableRawPointer.allocate(
-                byteCount: byteCount,
-                alignment: MemoryLayout<Float>.alignment
-            )
-            defer { raw.deallocate() }
+            let frameCount = max(0, Int(inNumberFrames))
+            if frameCount <= 0 {
+                return noErr
+            }
+            if captureScratch.count < frameCount {
+                captureScratch = [Float](repeating: 0, count: frameCount)
+            }
+            let byteCount = frameCount * MemoryLayout<Float>.size
 
             var buffers = AudioBufferList(
                 mNumberBuffers: 1,
                 mBuffers: AudioBuffer(
                     mNumberChannels: 1,
                     mDataByteSize: UInt32(byteCount),
-                    mData: raw
+                    mData: nil
                 )
             )
-            let status = AudioUnitRender(
-                audioUnit,
-                ioActionFlags,
-                inTimeStamp,
-                inBusNumber,
-                inNumberFrames,
-                &buffers
-            )
+            let status = captureScratch.withUnsafeMutableBufferPointer { ptr -> OSStatus in
+                guard let base = ptr.baseAddress else {
+                    return noErr
+                }
+                buffers.mBuffers.mData = UnsafeMutableRawPointer(base)
+                return AudioUnitRender(
+                    audioUnit,
+                    ioActionFlags,
+                    inTimeStamp,
+                    inBusNumber,
+                    inNumberFrames,
+                    &buffers
+                )
+            }
             if status == noErr {
                 counters.recordRxCallback()
-                let sampleCount = Int(inNumberFrames)
-                let samples = UnsafeBufferPointer(
-                    start: raw.assumingMemoryBound(to: Float.self),
-                    count: sampleCount
-                )
-                ingestInboundSamples(samples)
+                captureScratch.withUnsafeBufferPointer { ptr in
+                    guard let base = ptr.baseAddress else {
+                        return
+                    }
+                    let samples = UnsafeBufferPointer(start: base, count: frameCount)
+                    enqueueInboundSamplesForProcessing(samples)
+                }
             }
             return status
+        }
+
+        private func enqueueInboundSamplesForProcessing(_ samples: UnsafeBufferPointer<Float>) {
+            if samples.isEmpty {
+                return
+            }
+            let count = samples.count
+            inboundQueueLock.lock()
+            let nextQueued = inboundQueuedSamples + count
+            let shouldQueue = nextQueued <= inboundQueueSoftLimitSamples
+            if shouldQueue {
+                inboundQueuedSamples = nextQueued
+            }
+            let queuedSnapshot = inboundQueuedSamples
+            inboundQueueLock.unlock()
+            if !shouldQueue {
+                if inboundDropLogCount < 6 {
+                    log.warning(
+                        "drop inbound samples count=\(count) "
+                            + "queued=\(queuedSnapshot) "
+                            + "limit=\(inboundQueueSoftLimitSamples)"
+                    )
+                    inboundDropLogCount += 1
+                }
+                return
+            }
+
+            let chunk = Array(samples)
+            inboundProcessingQueue.async { [weak self] in
+                guard let self else {
+                    return
+                }
+                defer {
+                    self.inboundQueueLock.lock()
+                    self.inboundQueuedSamples = max(0, self.inboundQueuedSamples - chunk.count)
+                    self.inboundQueueLock.unlock()
+                }
+                chunk.withUnsafeBufferPointer { ptr in
+                    self.ingestInboundSamples(ptr)
+                }
+            }
         }
 
         fileprivate func renderSilence(
@@ -1430,7 +1496,7 @@ enum AudioBackendFactory {
             let before = ioActionFlags.pointee
             // Keep output callbacks flowing at real-time cadence; do not advertise silence.
             ioActionFlags.pointee.remove(outputIsSilenceFlag)
-            if renderSilenceFlagLogCount < 12 || totalCopied > 0 {
+            if renderSilenceFlagLogCount < 12 {
                 let after = ioActionFlags.pointee
                 let beforeRaw = before.rawValue
                 let afterRaw = after.rawValue
