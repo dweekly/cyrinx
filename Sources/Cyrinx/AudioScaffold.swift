@@ -477,14 +477,17 @@ enum AudioBackendFactory {
         private var renderCadenceLogCount: UInt32 = 0
         private var renderLastMonotonicMs: Int = 0
         private var captureScratch: [Float] = []
+        private var inboundSampleQueue: [Float] = []
+        private var inboundSampleReadIndex: Int = 0
+        private var inboundDrainScheduled = false
         private let inboundProcessingQueue = DispatchQueue(
             label: "com.dweekly.cyrinx.ios-remoteio-rx",
             qos: .userInitiated
         )
         private let inboundQueueLock = NSLock()
-        private var inboundQueuedSamples: Int = 0
         private var inboundDropLogCount: UInt32 = 0
         private let inboundQueueSoftLimitSamples: Int = 96_000
+        private let inboundWorkerChunkSamples: Int = 4_096
         private var txOutputSampleFormat: TXOutputSampleFormat = .float32
         private var txOutputChannelCount: Int = 1
         private var txOutputIsInterleaved: Bool = false
@@ -533,7 +536,9 @@ enum AudioBackendFactory {
             renderLastMonotonicMs = 0
             inboundDropLogCount = 0
             inboundQueueLock.lock()
-            inboundQueuedSamples = 0
+            inboundSampleQueue.removeAll(keepingCapacity: false)
+            inboundSampleReadIndex = 0
+            inboundDrainScheduled = false
             inboundQueueLock.unlock()
             let roleName = config.role == .master ? "master" : "slave"
             log.info("RemoteIO started role=\(roleName) cfgHz=\(self.config.sampleRateHz)")
@@ -555,7 +560,9 @@ enum AudioBackendFactory {
             _ = AudioUnitUninitialize(audioUnit)
             log.info("RemoteIO stopped")
             inboundQueueLock.lock()
-            inboundQueuedSamples = 0
+            inboundSampleQueue.removeAll(keepingCapacity: false)
+            inboundSampleReadIndex = 0
+            inboundDrainScheduled = false
             inboundQueueLock.unlock()
             state = .stopped
         }
@@ -1159,39 +1166,76 @@ enum AudioBackendFactory {
             if samples.isEmpty {
                 return
             }
-            let count = samples.count
+            let incomingCount = samples.count
+            var shouldScheduleDrain = false
+            var droppedSamples = 0
+            var queuedSnapshot = 0
+
             inboundQueueLock.lock()
-            let nextQueued = inboundQueuedSamples + count
-            let shouldQueue = nextQueued <= inboundQueueSoftLimitSamples
-            if shouldQueue {
-                inboundQueuedSamples = nextQueued
-            }
-            let queuedSnapshot = inboundQueuedSamples
-            inboundQueueLock.unlock()
-            if !shouldQueue {
-                if inboundDropLogCount < 6 {
-                    log.warning(
-                        "drop inbound samples count=\(count) "
-                            + "queued=\(queuedSnapshot) "
-                            + "limit=\(inboundQueueSoftLimitSamples)"
-                    )
-                    inboundDropLogCount += 1
+            let availableBefore = max(0, inboundSampleQueue.count - inboundSampleReadIndex)
+            let overflow = max(0, (availableBefore + incomingCount) - inboundQueueSoftLimitSamples)
+            if overflow > 0 {
+                droppedSamples = overflow
+                inboundSampleReadIndex += overflow
+                if inboundSampleReadIndex >= inboundSampleQueue.count {
+                    inboundSampleQueue.removeAll(keepingCapacity: true)
+                    inboundSampleReadIndex = 0
+                } else if inboundSampleReadIndex > 4_096,
+                    inboundSampleReadIndex * 2 > inboundSampleQueue.count
+                {
+                    inboundSampleQueue.removeFirst(inboundSampleReadIndex)
+                    inboundSampleReadIndex = 0
                 }
-                return
+            }
+            inboundSampleQueue.append(contentsOf: samples)
+            queuedSnapshot = max(0, inboundSampleQueue.count - inboundSampleReadIndex)
+            if !inboundDrainScheduled {
+                inboundDrainScheduled = true
+                shouldScheduleDrain = true
+            }
+            inboundQueueLock.unlock()
+
+            if droppedSamples > 0, inboundDropLogCount < 6 {
+                log.warning(
+                    "drop inbound samples count=\(droppedSamples) "
+                        + "queued=\(queuedSnapshot) "
+                        + "limit=\(inboundQueueSoftLimitSamples)"
+                )
+                inboundDropLogCount += 1
             }
 
-            let chunk = Array(samples)
-            inboundProcessingQueue.async { [weak self] in
-                guard let self else {
+            if shouldScheduleDrain {
+                inboundProcessingQueue.async { [weak self] in
+                    self?.drainInboundQueue()
+                }
+            }
+        }
+
+        private func drainInboundQueue() {
+            while true {
+                let chunk: [Float]
+                inboundQueueLock.lock()
+                let available = max(0, inboundSampleQueue.count - inboundSampleReadIndex)
+                if available <= 0 {
+                    inboundDrainScheduled = false
+                    inboundQueueLock.unlock()
                     return
                 }
-                defer {
-                    self.inboundQueueLock.lock()
-                    self.inboundQueuedSamples = max(0, self.inboundQueuedSamples - chunk.count)
-                    self.inboundQueueLock.unlock()
+                let take = min(inboundWorkerChunkSamples, available)
+                let start = inboundSampleReadIndex
+                let end = start + take
+                chunk = Array(inboundSampleQueue[start..<end])
+                inboundSampleReadIndex = end
+                if inboundSampleReadIndex > 16_384,
+                    inboundSampleReadIndex * 2 > inboundSampleQueue.count
+                {
+                    inboundSampleQueue.removeFirst(inboundSampleReadIndex)
+                    inboundSampleReadIndex = 0
                 }
+                inboundQueueLock.unlock()
+
                 chunk.withUnsafeBufferPointer { ptr in
-                    self.ingestInboundSamples(ptr)
+                    ingestInboundSamples(ptr)
                 }
             }
         }

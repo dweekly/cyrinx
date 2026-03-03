@@ -65,6 +65,7 @@ final class AcousticPHYLink {
     private let turboConfig: VDSPOFDMConfig
     private let lock = NSLock()
     private var rxBuffer: [Float] = []
+    private var rxSearchStart: Int = 0
 
     init(config: Config) {
         let boundedSampleRate = min(max(config.sampleRateHz, 8_000), 192_000)
@@ -155,7 +156,7 @@ final class AcousticPHYLink {
         let headerSamples = expectedDCSSSamples(payloadBytes: acousticHeaderBytes, config: headerConfig)
 
         while true {
-            guard let lockResult = findBestPreambleLock(in: rxBuffer) else {
+            guard let lockResult = findBestPreambleLock(in: rxBuffer, startAt: rxSearchStart) else {
                 trimUnlockedBufferForResync()
                 break
             }
@@ -167,6 +168,7 @@ final class AcousticPHYLink {
             if rxBuffer.count < headerEnd {
                 if syncStart > 0 {
                     rxBuffer.removeFirst(syncStart)
+                    rxSearchStart = 0
                 }
                 break
             }
@@ -182,6 +184,7 @@ final class AcousticPHYLink {
                 packetHeader.payloadLength <= acousticFrameMaxBytes
             else {
                 rxBuffer.removeFirst(syncStart + 1)
+                rxSearchStart = 0
                 continue
             }
 
@@ -191,6 +194,7 @@ final class AcousticPHYLink {
             )
             if bodySamples == 0 {
                 rxBuffer.removeFirst(syncStart + 1)
+                rxSearchStart = 0
                 continue
             }
 
@@ -199,6 +203,7 @@ final class AcousticPHYLink {
             if rxBuffer.count < bodyEnd {
                 if syncStart > 0 {
                     rxBuffer.removeFirst(syncStart)
+                    rxSearchStart = 0
                 }
                 break
             }
@@ -214,12 +219,14 @@ final class AcousticPHYLink {
 
             guard let frame = bodyPayload, frame.count == Int(packetHeader.payloadLength) else {
                 rxBuffer.removeFirst(syncStart + 1)
+                rxSearchStart = 0
                 continue
             }
 
             let report = channelReport(for: lockResult)
             decoded.append(AcousticDecodedFrame(frame: frame, report: report))
             rxBuffer.removeFirst(bodyEnd)
+            rxSearchStart = 0
         }
 
         return decoded
@@ -295,13 +302,14 @@ final class AcousticPHYLink {
         let evmPct: Float
     }
 
-    private func findBestPreambleLock(in buffer: [Float]) -> PreambleLock? {
+    private func findBestPreambleLock(in buffer: [Float], startAt: Int) -> PreambleLock? {
         if buffer.count < preamble.count {
             return nil
         }
 
         let searchLimit = buffer.count - preamble.count
-        for start in 0...searchLimit {
+        let lowerBound = max(0, min(startAt, searchLimit))
+        for start in lowerBound...searchLimit {
             var dot: Float = 0
             var segmentEnergy: Float = 0
 
@@ -351,7 +359,13 @@ final class AcousticPHYLink {
         let headerWindow = expectedDCSSSamples(payloadBytes: acousticHeaderBytes, config: headerConfig)
         let keep = max(preamble.count * 2, headerWindow)
         if rxBuffer.count > keep {
-            rxBuffer.removeFirst(rxBuffer.count - keep)
+            let dropped = rxBuffer.count - keep
+            rxBuffer.removeFirst(dropped)
+            rxSearchStart = max(0, rxSearchStart - dropped)
+        }
+        let maxStart = max(0, rxBuffer.count - preamble.count)
+        if rxSearchStart > maxStart {
+            rxSearchStart = maxStart
         }
     }
 
