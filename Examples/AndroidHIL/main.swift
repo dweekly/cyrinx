@@ -217,7 +217,8 @@ private func runRawMode(_ opts: Options) throws {
             let diag = link.diagnostics
             print(
                 "[raw-diag] inHz=\(diag.observedInputSampleRateHz) outHz=\(diag.observedOutputSampleRateHz) " +
-                    "txFrames=\(diag.txFrameCount) rxFrames=\(diag.rxFrameCount) pending=\(diag.pendingOutputSampleCount)"
+                    "txFrames=\(diag.txFrameCount) rxFrames=\(diag.rxFrameCount) " +
+                    "pending=\(diag.pendingOutputSampleCount) rms=\(diag.recentInputRms)"
             )
             nextDiag = Date().addingTimeInterval(1.0)
         }

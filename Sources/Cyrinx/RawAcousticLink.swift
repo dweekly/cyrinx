@@ -8,6 +8,7 @@ public struct RawAcousticDiagnostics: Sendable {
     public let txFrameCount: UInt64
     public let rxFrameCount: UInt64
     public let pendingOutputSampleCount: UInt64
+    public let recentInputRms: Float
 }
 
 public final class RawAcousticMacLink: @unchecked Sendable {
@@ -23,6 +24,7 @@ public final class RawAcousticMacLink: @unchecked Sendable {
     private var observedOutputSampleRateHz: UInt32 = 0
     private var txFrameCount: UInt64 = 0
     private var rxFrameCount: UInt64 = 0
+    private var recentInputRms: Float = 0
     private var codec: BasicToneCodec
     private lazy var sourceFormat: AVAudioFormat? = {
         AVAudioFormat(
@@ -102,7 +104,8 @@ public final class RawAcousticMacLink: @unchecked Sendable {
             observedOutputSampleRateHz: observedOutputSampleRateHz,
             txFrameCount: txFrameCount,
             rxFrameCount: rxFrameCount,
-            pendingOutputSampleCount: pendingTxSamples()
+            pendingOutputSampleCount: pendingTxSamples(),
+            recentInputRms: recentInputRms
         )
     }
 
@@ -194,6 +197,11 @@ public final class RawAcousticMacLink: @unchecked Sendable {
         }
 
         let samples = UnsafeBufferPointer(start: channel, count: frameLength)
+        var energy: Float = 0
+        for sample in samples {
+            energy += sample * sample
+        }
+        recentInputRms = sqrt(energy / Float(frameLength))
         codecLock.lock()
         let decodedFrames = codec.ingest(samples: samples)
         codecLock.unlock()
