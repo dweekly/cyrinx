@@ -9,3 +9,6 @@ Apps/HIL/CyrinxHIL.xcodeproj/project.xcworkspace/xcuserdata/
 artifacts/
 benchmark_files.txt
 benchmark_rules.txt
+Apps/HIL/android/.gradle/
+Apps/HIL/android/**/build/
+Apps/HIL/android/local.properties

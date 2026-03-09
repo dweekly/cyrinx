@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:ns1="http://schemas.android.com/tools">
-    <string name="app_name">Cyrinx HIL</string>
-    <style name="Theme.CyrinxHIL" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <item name="android:statusBarColor" ns1:targetApi="l">@android:color/black</item>
-    </style>
-</resources>
