@@ -16,6 +16,8 @@ private struct Options {
     var forceRobustMode: Bool = true
     var beepOnStart: Bool = false
     var rxOnly: Bool = false
+    var rawMode: Bool = false
+    var rawSendText: String?
     var fixtureWavePath: String?
     var fixturePayloadHex: String?
     var fixturePayloadText: String?
@@ -81,6 +83,14 @@ private struct Options {
                 beepOnStart = true
             case "--rx-only":
                 rxOnly = true
+            case "--raw":
+                rawMode = true
+            case "--raw-send-text":
+                rawMode = true
+                if idx + 1 < args.count {
+                    idx += 1
+                    rawSendText = args[idx]
+                }
             case "--fixture-wave":
                 if idx + 1 < args.count {
                     idx += 1
@@ -156,6 +166,68 @@ private func fixturePayload(from opts: Options) throws -> Data {
     return Data((0..<48).map { UInt8(($0 * 13) & 0xFF) })
 }
 
+private func rawPayload(from opts: Options) -> Data {
+    if let text = opts.rawSendText {
+        return Data(text.utf8)
+    }
+    return Data("hello-from-mac".utf8)
+}
+
+private func runRawMode(_ opts: Options) throws {
+    let config = Config(
+        role: opts.role,
+        transportBackend: .inMemory,
+        sampleRateHz: opts.sampleRateHz,
+        bandStartHz: opts.bandStartHz,
+        bandEndHz: opts.bandEndHz,
+        txGainCap: opts.txGainCap
+    )
+
+    let link = RawAcousticMacLink(
+        config: config,
+        dcssSymbolSamples: opts.dcssSymbolSamples,
+        preambleSyncThreshold: opts.preambleSyncThreshold
+    )
+    try link.start { data in
+        let text = String(decoding: data, as: UTF8.self)
+        print("[raw-rx] bytes=\(data.count) text=\(text) hex=\(hexPrefix(data))")
+    }
+    defer { link.stop() }
+
+    if opts.beepOnStart {
+        let tone = Data("beep".utf8)
+        try? link.send(frame: tone)
+    }
+
+    let payload = rawPayload(from: opts)
+    let end = Date().addingTimeInterval(opts.durationSec)
+    var nextSend = Date()
+    var sendCount = 0
+    var nextDiag = Date()
+
+    while Date() < end {
+        if !opts.rxOnly, Date() >= nextSend {
+            try link.send(frame: payload)
+            print("[raw-tx] bytes=\(payload.count) text=\(String(decoding: payload, as: UTF8.self))")
+            sendCount += 1
+            nextSend = Date().addingTimeInterval(TimeInterval(opts.sendIntervalMs) / 1000.0)
+        }
+
+        if Date() >= nextDiag {
+            let diag = link.diagnostics
+            print(
+                "[raw-diag] inHz=\(diag.observedInputSampleRateHz) outHz=\(diag.observedOutputSampleRateHz) " +
+                    "txFrames=\(diag.txFrameCount) rxFrames=\(diag.rxFrameCount) pending=\(diag.pendingOutputSampleCount)"
+            )
+            nextDiag = Date().addingTimeInterval(1.0)
+        }
+
+        RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+    }
+
+    print("[raw-summary] sentFrames=\(sendCount) receivedFrames=\(link.diagnostics.rxFrameCount)")
+}
+
 private func runFixtureMode(_ opts: Options) throws {
     guard let wavePath = opts.fixtureWavePath else {
         return
@@ -205,6 +277,8 @@ struct AndroidHILRunner {
         )
 
         setenv("CYRINX_FORCE_ROBUST_MODE", opts.forceRobustMode ? "1" : "0", 1)
+        setenv("CYRINX_DCSS_SYMBOL_SAMPLES", "\(opts.dcssSymbolSamples)", 1)
+        setenv("CYRINX_PREAMBLE_SYNC_THRESHOLD", "\(opts.preambleSyncThreshold)", 1)
 
         if opts.fixtureWavePath != nil {
             do {
@@ -216,8 +290,15 @@ struct AndroidHILRunner {
             return
         }
 
-        setenv("CYRINX_DCSS_SYMBOL_SAMPLES", "\(opts.dcssSymbolSamples)", 1)
-        setenv("CYRINX_PREAMBLE_SYNC_THRESHOLD", "\(opts.preambleSyncThreshold)", 1)
+        if opts.rawMode {
+            do {
+                try runRawMode(opts)
+            } catch {
+                print("[fatal] raw mode failed: \(error)")
+                exit(3)
+            }
+            return
+        }
 
         let config = Config(
             role: opts.role,

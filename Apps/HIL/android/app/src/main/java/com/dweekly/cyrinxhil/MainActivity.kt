@@ -40,6 +40,8 @@ class MainActivity : ComponentActivity() {
     @Volatile
     private var backend: AndroidAudioBackend? = null
     @Volatile
+    private var rawBackend: BasicToneAndroidBackend? = null
+    @Volatile
     private var overrideSampleRateHz: Int? = null
     @Volatile
     private var overrideBandStartHz: Int? = null
@@ -93,6 +95,7 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
         mainHandler.removeCallbacks(periodicRefresh)
         stopSession()
+        stopRawBackend()
         ioExecutor.shutdownNow()
     }
 
@@ -160,17 +163,10 @@ class MainActivity : ComponentActivity() {
             return
         }
 
+        stopRawBackend()
         stopSession()
 
-        val config = SessionConfig(
-            role = role,
-            sampleRateHz = overrideSampleRateHz ?: 48_000,
-            bandStartHz = overrideBandStartHz ?: 18_500,
-            bandEndHz = overrideBandEndHz ?: 21_000,
-            txGainCap = overrideTxGainCap ?: 0.70f,
-            dcssSymbolSamples = overrideDcssSymbolSamples ?: 256,
-            preambleSyncThreshold = overrideSyncThreshold ?: 0.25f,
-        )
+        val config = buildSessionConfig(role)
 
         var sessionRef: CyrinxTransportSession? = null
         val backend = AndroidAudioBackend(
@@ -220,7 +216,9 @@ class MainActivity : ComponentActivity() {
         backend?.stop()
         session = null
         backend = null
-        statusText.text = "Status: Stopped"
+        if (rawBackend == null) {
+            statusText.text = "Status: Stopped"
+        }
     }
 
     private fun sendProbe(bestEffort: Boolean) {
@@ -248,6 +246,69 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun startRawBackend(role: Role) {
+        val micGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        if (!micGranted) {
+            appendLog("cannot start raw backend: RECORD_AUDIO permission missing")
+            ensureMicPermission()
+            return
+        }
+
+        stopSession()
+        stopRawBackend()
+
+        val config = buildSessionConfig(role)
+        val backend = BasicToneAndroidBackend(
+            context = this,
+            config = config,
+            frameIngress = { frame ->
+                appendLog("raw rx bytes=${frame.size} text=${previewText(frame)} hex=${hexPrefix(frame)}")
+            },
+            logSink = { appendLog(it) },
+        )
+
+        val backendRc = backend.start()
+        if (backendRc != CyrinxStatus.OK) {
+            appendLog("raw start failed rc=$backendRc")
+            statusText.text = "Status: Raw Failed"
+            return
+        }
+
+        rawBackend = backend
+        statusText.text = "Status: Raw Running (${role.name.lowercase(Locale.US)})"
+        appendLog(
+            "raw backend started role=${role.name.lowercase(Locale.US)} sampleRate=${config.sampleRateHz} " +
+                "band=${config.bandStartHz}...${config.bandEndHz} gain=${config.txGainCap} " +
+                "dcss=${config.dcssSymbolSamples} sync=${config.preambleSyncThreshold}",
+        )
+    }
+
+    private fun stopRawBackend() {
+        rawBackend?.stop()
+        rawBackend = null
+        if (session == null) {
+            statusText.text = "Status: Stopped"
+        }
+    }
+
+    private fun sendRawText(text: String) {
+        val current = rawBackend ?: run {
+            appendLog("raw send skipped: backend not started")
+            return
+        }
+        ioExecutor.execute {
+            try {
+                val payload = text.toByteArray(Charsets.UTF_8)
+                appendLog("raw send begin bytes=${payload.size} text=$text")
+                val rc = current.sendFrame(payload)
+                appendLog("raw send rc=$rc bytes=${payload.size} text=$text")
+                refreshDiagnostics()
+            } catch (t: Throwable) {
+                appendLog("raw send failed error=${t.javaClass.simpleName}:${t.message}")
+            }
+        }
+    }
+
     private fun playBeacon() {
         val currentBackend = backend ?: run {
             appendLog("beacon skipped: session not started")
@@ -261,6 +322,21 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun refreshDiagnostics() {
+        val currentRawBackend = rawBackend
+        if (currentRawBackend != null && session == null) {
+            val backendDiag = currentRawBackend.diagnostics()
+            val text =
+                "backend=android-audio/raw state=${backendDiag.state} configuredHz=${backendDiag.configuredSampleRateHz} " +
+                    "inHz=${backendDiag.observedInputSampleRateHz} outHz=${backendDiag.observedOutputSampleRateHz} " +
+                    "txFrames=${backendDiag.txFrameCount} txBytes=${backendDiag.txByteCount} " +
+                    "rxCallbacks=${backendDiag.rxCallbackCount} outCallbacks=${backendDiag.outputCallbackCount} " +
+                    "pendingOutSamples=${backendDiag.pendingOutputSampleCount}"
+            runOnUiThread {
+                diagnosticsText.text = text
+            }
+            return
+        }
+
         val currentBackend = backend
         val currentSession = session
         if (currentBackend == null || currentSession == null) {
@@ -326,7 +402,13 @@ class MainActivity : ComponentActivity() {
         )
         when (cmd) {
             "start" -> runOnUiThread { startSession(role ?: selectedRole()) }
-            "stop" -> runOnUiThread { stopSession() }
+            "stop" -> runOnUiThread {
+                stopSession()
+                stopRawBackend()
+            }
+            "raw_start" -> runOnUiThread { startRawBackend(role ?: selectedRole()) }
+            "raw_stop" -> runOnUiThread { stopRawBackend() }
+            "raw_send_text" -> sendRawText(intent.getStringExtra("text") ?: "hello-from-android")
             "send_be" -> sendProbe(bestEffort = true)
             "send_rel" -> sendProbe(bestEffort = false)
             "receive" -> receiveOnce()
@@ -390,17 +472,32 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun buildSessionConfig(role: Role): SessionConfig {
+        return SessionConfig(
+            role = role,
+            sampleRateHz = overrideSampleRateHz ?: 48_000,
+            bandStartHz = overrideBandStartHz ?: 18_500,
+            bandEndHz = overrideBandEndHz ?: 21_000,
+            txGainCap = overrideTxGainCap ?: 0.70f,
+            dcssSymbolSamples = overrideDcssSymbolSamples ?: 256,
+            preambleSyncThreshold = overrideSyncThreshold ?: 0.25f,
+        )
+    }
+
+    private fun previewText(bytes: ByteArray): String {
+        return bytes.toString(Charsets.UTF_8)
+            .map { ch -> if (ch.isISOControl()) '.' else ch }
+            .joinToString("")
+            .take(64)
+    }
+
+    private fun hexPrefix(bytes: ByteArray, count: Int = 8): String {
+        return bytes.take(count).joinToString("") { "%02x".format(it) }
+    }
+
     private fun runPhySelfTest(role: Role) {
         ioExecutor.execute {
-            val cfg = SessionConfig(
-                role = role,
-                sampleRateHz = overrideSampleRateHz ?: 48_000,
-                bandStartHz = overrideBandStartHz ?: 18_500,
-                bandEndHz = overrideBandEndHz ?: 21_000,
-                txGainCap = overrideTxGainCap ?: 0.70f,
-                dcssSymbolSamples = overrideDcssSymbolSamples ?: 256,
-                preambleSyncThreshold = overrideSyncThreshold ?: 0.25f,
-            )
+            val cfg = buildSessionConfig(role)
             val phy = AcousticPhyLink(cfg)
             val frame = ByteArray(48) { idx -> ((idx * 13) and 0xFF).toByte() }
             val encoded = phy.encode(frame)
@@ -416,15 +513,7 @@ class MainActivity : ComponentActivity() {
 
     private fun runDecodeFile(role: Role, intent: android.content.Intent) {
         ioExecutor.execute {
-            val cfg = SessionConfig(
-                role = role,
-                sampleRateHz = overrideSampleRateHz ?: 48_000,
-                bandStartHz = overrideBandStartHz ?: 18_500,
-                bandEndHz = overrideBandEndHz ?: 21_000,
-                txGainCap = overrideTxGainCap ?: 0.70f,
-                dcssSymbolSamples = overrideDcssSymbolSamples ?: 256,
-                preambleSyncThreshold = overrideSyncThreshold ?: 0.25f,
-            )
+            val cfg = buildSessionConfig(role)
             val wavePath = intent.getStringExtra("wave_path")?.takeIf { it.isNotBlank() } ?: "/data/local/tmp/cyrinx_wave_f32le.bin"
             val file = File(wavePath)
             if (!file.exists()) {
