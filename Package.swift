@@ -13,6 +13,7 @@ let package = Package(
         .executable(name: "cyrinx-example-loopback", targets: ["ExampleLoopback"]),
         .executable(name: "cyrinx-example-multiplex", targets: ["ExampleMultiplex"]),
         .executable(name: "cyrinx-example-large-payload", targets: ["ExampleLargePayload"]),
+        .executable(name: "cyrinx-example-android-hil", targets: ["ExampleAndroidHIL"]),
         .executable(name: "cyrinx-sim-bench", targets: ["SimulationBench"])
     ],
     targets: [
@@ -43,6 +44,11 @@ let package = Package(
             name: "ExampleLargePayload",
             dependencies: ["Cyrinx"],
             path: "Examples/LargePayload"
+        ),
+        .executableTarget(
+            name: "ExampleAndroidHIL",
+            dependencies: ["Cyrinx"],
+            path: "Examples/AndroidHIL"
         ),
         .executableTarget(
             name: "SimulationBench",

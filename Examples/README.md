@@ -45,6 +45,17 @@ Demonstrates:
 
 ```bash
 swift run cyrinx-sim-bench --profile quiet --out artifacts/bench/sim-quiet.json
+
+## 5) macOS <-> Android HIL CLI
+
+Demonstrates:
+- live macOS acoustic endpoint for Android HIL app interop
+- periodic best-effort + reliable probe traffic
+- streaming diagnostics and inbound payload logs
+
+```bash
+swift run cyrinx-example-android-hil --role master --duration 30 --send-interval-ms 700 --reliable-every 4
+```
 ```
 
 ## Notes
