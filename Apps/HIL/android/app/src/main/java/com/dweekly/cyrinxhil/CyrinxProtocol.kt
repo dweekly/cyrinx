@@ -89,6 +89,8 @@ data class SessionConfig(
     val bandStartHz: Int = 18_500,
     val bandEndHz: Int = 21_000,
     val txGainCap: Float = 0.70f,
+    val dcssSymbolSamples: Int = 256,
+    val preambleSyncThreshold: Float = 0.25f,
 )
 
 interface FrameTxSink {

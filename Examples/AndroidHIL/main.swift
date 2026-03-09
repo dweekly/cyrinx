@@ -1,4 +1,5 @@
 import Cyrinx
+import Darwin
 import Foundation
 
 private struct Options {
@@ -10,8 +11,14 @@ private struct Options {
     var bandStartHz: UInt32 = 18_500
     var bandEndHz: UInt32 = 21_000
     var txGainCap: Float = 0.70
+    var dcssSymbolSamples: Int = 256
+    var preambleSyncThreshold: Float = 0.52
+    var forceRobustMode: Bool = true
     var beepOnStart: Bool = false
     var rxOnly: Bool = false
+    var fixtureWavePath: String?
+    var fixturePayloadHex: String?
+    var fixturePayloadText: String?
 
     init(args: [String]) {
         var idx = 0
@@ -58,10 +65,37 @@ private struct Options {
                     idx += 1
                     txGainCap = Float(args[idx]) ?? txGainCap
                 }
+            case "--dcss-symbol-samples":
+                if idx + 1 < args.count {
+                    idx += 1
+                    dcssSymbolSamples = Int(args[idx]) ?? dcssSymbolSamples
+                }
+            case "--sync-threshold":
+                if idx + 1 < args.count {
+                    idx += 1
+                    preambleSyncThreshold = Float(args[idx]) ?? preambleSyncThreshold
+                }
+            case "--allow-turbo":
+                forceRobustMode = false
             case "--beep":
                 beepOnStart = true
             case "--rx-only":
                 rxOnly = true
+            case "--fixture-wave":
+                if idx + 1 < args.count {
+                    idx += 1
+                    fixtureWavePath = args[idx]
+                }
+            case "--fixture-payload-hex":
+                if idx + 1 < args.count {
+                    idx += 1
+                    fixturePayloadHex = args[idx]
+                }
+            case "--fixture-payload-text":
+                if idx + 1 < args.count {
+                    idx += 1
+                    fixturePayloadText = args[idx]
+                }
             default:
                 break
             }
@@ -70,12 +104,120 @@ private struct Options {
     }
 }
 
+private func parseHexData(_ raw: String) -> Data? {
+    let trimmed = raw.replacingOccurrences(of: " ", with: "")
+    let prefixed = trimmed.hasPrefix("0x") ? String(trimmed.dropFirst(2)) : trimmed
+    guard prefixed.count.isMultiple(of: 2), !prefixed.isEmpty else {
+        return nil
+    }
+
+    var bytes = [UInt8]()
+    bytes.reserveCapacity(prefixed.count / 2)
+    var cursor = prefixed.startIndex
+    while cursor < prefixed.endIndex {
+        let next = prefixed.index(cursor, offsetBy: 2)
+        let pair = prefixed[cursor..<next]
+        guard let byte = UInt8(pair, radix: 16) else {
+            return nil
+        }
+        bytes.append(byte)
+        cursor = next
+    }
+    return Data(bytes)
+}
+
+private func hexPrefix(_ data: Data, count: Int = 8) -> String {
+    data.prefix(count).map { String(format: "%02x", $0) }.joined()
+}
+
+private func writeFloat32LE(samples: [Float], path: String) throws {
+    var out = Data(capacity: samples.count * 4)
+    for value in samples {
+        var bits = value.bitPattern.littleEndian
+        withUnsafeBytes(of: &bits) { out.append(contentsOf: $0) }
+    }
+    try out.write(to: URL(fileURLWithPath: path))
+}
+
+private func fixturePayload(from opts: Options) throws -> Data {
+    if let hex = opts.fixturePayloadHex {
+        guard let data = parseHexData(hex) else {
+            throw NSError(
+                domain: "cyrinx.android_hil",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "invalid --fixture-payload-hex"]
+            )
+        }
+        return data
+    }
+    if let text = opts.fixturePayloadText {
+        return Data(text.utf8)
+    }
+    return Data((0..<48).map { UInt8(($0 * 13) & 0xFF) })
+}
+
+private func runFixtureMode(_ opts: Options) throws {
+    guard let wavePath = opts.fixtureWavePath else {
+        return
+    }
+    let payload = try fixturePayload(from: opts)
+    let config = Config(
+        role: opts.role,
+        transportBackend: .inMemory,
+        sampleRateHz: opts.sampleRateHz,
+        bandStartHz: opts.bandStartHz,
+        bandEndHz: opts.bandEndHz,
+        txGainCap: opts.txGainCap
+    )
+
+    let waveform = try AcousticPHYDebug.encodeFrame(
+        config: config,
+        frame: payload,
+        dcssSymbolSamples: opts.dcssSymbolSamples,
+        preambleSyncThreshold: opts.preambleSyncThreshold
+    )
+    try writeFloat32LE(samples: waveform, path: wavePath)
+
+    let decoded = AcousticPHYDebug.decodeWaveform(
+        config: config,
+        samples: waveform,
+        dcssSymbolSamples: opts.dcssSymbolSamples,
+        preambleSyncThreshold: opts.preambleSyncThreshold
+    )
+
+    let first = decoded.first
+    let firstLen = first?.frame.count ?? 0
+    let firstPrefix = first.map { hexPrefix($0.frame) } ?? ""
+    print("[fixture] wrote path=\(wavePath) samples=\(waveform.count)")
+    print("[fixture] payloadBytes=\(payload.count) payloadPrefix=\(hexPrefix(payload))")
+    print("[fixture] macDecode frames=\(decoded.count) firstLen=\(firstLen) firstPrefix=\(firstPrefix)")
+}
+
 @main
 struct AndroidHILRunner {
     static func main() async {
         let opts = Options(args: Array(CommandLine.arguments.dropFirst()))
         print("[cyrinx-android-hil] role=\(opts.role) durationSec=\(opts.durationSec) sendIntervalMs=\(opts.sendIntervalMs)")
-        print("[cyrinx-android-hil] sampleRate=\(opts.sampleRateHz) band=\(opts.bandStartHz)...\(opts.bandEndHz) txGain=\(opts.txGainCap)")
+        print(
+            "[cyrinx-android-hil] sampleRate=\(opts.sampleRateHz) band=\(opts.bandStartHz)...\(opts.bandEndHz) " +
+                "txGain=\(opts.txGainCap) dcss=\(opts.dcssSymbolSamples) sync=\(opts.preambleSyncThreshold) " +
+                "forceRobust=\(opts.forceRobustMode)"
+        )
+
+        setenv("CYRINX_FORCE_ROBUST_MODE", opts.forceRobustMode ? "1" : "0", 1)
+
+        if opts.fixtureWavePath != nil {
+            do {
+                try runFixtureMode(opts)
+            } catch {
+                print("[fatal] fixture mode failed: \(error)")
+                exit(2)
+            }
+            return
+        }
+
+        setenv("CYRINX_DCSS_SYMBOL_SAMPLES", "\(opts.dcssSymbolSamples)", 1)
+        setenv("CYRINX_PREAMBLE_SYNC_THRESHOLD", "\(opts.preambleSyncThreshold)", 1)
 
         let config = Config(
             role: opts.role,

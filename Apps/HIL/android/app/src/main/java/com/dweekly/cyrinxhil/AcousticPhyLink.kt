@@ -174,9 +174,10 @@ class AcousticPhyLink(private val config: SessionConfig) {
     private val sampleRateHz = config.sampleRateHz.coerceIn(8_000, 192_000)
     private val cappedGain = min(max(config.txGainCap, 0f), 0.12f)
 
+    private val dcssSymbolSamples = config.dcssSymbolSamples.coerceIn(64, 4096)
     private val robustConfig = DcssConfig(
         sampleRateHz = sampleRateHz,
-        symbolSamples = 256,
+        symbolSamples = dcssSymbolSamples,
         symbolBins = 256,
         startHz = config.bandStartHz.toFloat(),
         endHz = config.bandEndHz.toFloat(),
@@ -198,7 +199,7 @@ class AcousticPhyLink(private val config: SessionConfig) {
         System.arraycopy(preambleBlock, 0, it, preambleBlock.size, preambleBlock.size)
     }
     private val preambleEnergy = max(1e-7f, preamble.fold(0f) { acc, v -> acc + (v * v) })
-    private val syncThreshold = 0.25f
+    private val syncThreshold = config.preambleSyncThreshold.coerceIn(0.10f, 0.98f)
 
     private val rxBuffer = ArrayList<Float>()
     private var rxSearchStart = 0
@@ -251,7 +252,7 @@ class AcousticPhyLink(private val config: SessionConfig) {
             val syncStart = lockResult.index
             val headerLock = decodeHeaderAround(syncStart, headerSamples)
             if (headerLock == null) {
-                repeat(syncStart + 1) { rxBuffer.removeAt(0) }
+                dropFront(syncStart + 1)
                 rxSearchStart = 0
                 continue
             }
@@ -261,7 +262,7 @@ class AcousticPhyLink(private val config: SessionConfig) {
 
             if (rxBuffer.size < headerEnd) {
                 if (syncStart > 0) {
-                    repeat(syncStart) { rxBuffer.removeAt(0) }
+                    dropFront(syncStart)
                     rxSearchStart = 0
                 }
                 break
@@ -269,7 +270,7 @@ class AcousticPhyLink(private val config: SessionConfig) {
 
             if (packetHeader.mode != AcousticBodyMode.ROBUST_DCSS) {
                 // Turbo mode is intentionally not decoded in this Android port.
-                repeat(syncStart + 1) { rxBuffer.removeAt(0) }
+                dropFront(syncStart + 1)
                 rxSearchStart = 0
                 continue
             }
@@ -279,7 +280,7 @@ class AcousticPhyLink(private val config: SessionConfig) {
             val bodyEnd = bodyStart + bodySamples
             if (rxBuffer.size < bodyEnd) {
                 if (syncStart > 0) {
-                    repeat(syncStart) { rxBuffer.removeAt(0) }
+                    dropFront(syncStart)
                     rxSearchStart = 0
                 }
                 break
@@ -292,7 +293,7 @@ class AcousticPhyLink(private val config: SessionConfig) {
                 null
             }
             if (bodyPayload == null || bodyPayload.size != packetHeader.payloadLength) {
-                repeat(syncStart + 1) { rxBuffer.removeAt(0) }
+                dropFront(syncStart + 1)
                 rxSearchStart = 0
                 continue
             }
@@ -303,7 +304,7 @@ class AcousticPhyLink(private val config: SessionConfig) {
                     report = channelReport(lockResult),
                 ),
             )
-            repeat(bodyEnd) { rxBuffer.removeAt(0) }
+            dropFront(bodyEnd)
             rxSearchStart = 0
         }
 
@@ -318,7 +319,7 @@ class AcousticPhyLink(private val config: SessionConfig) {
 
     private fun decodeHeaderAround(syncStart: Int, headerSamples: Int): HeaderLock? {
         val baseStart = syncStart + preamble.size
-        val maxShiftSamples = 192
+        val maxShiftSamples = 32
         val shiftStep = 8
         val shifts = ArrayList<Int>()
         shifts.add(0)
@@ -387,8 +388,8 @@ class AcousticPhyLink(private val config: SessionConfig) {
         }
         val searchLimit = buffer.size - preamble.size
         val lowerBound = startAt.coerceIn(0, searchLimit)
-        var best: PreambleLock? = null
-        for (start in lowerBound..searchLimit) {
+
+        fun evaluateAt(start: Int): PreambleLock? {
             var dot = 0f
             var segmentEnergy = 0f
             for (idx in preamble.indices) {
@@ -400,7 +401,7 @@ class AcousticPhyLink(private val config: SessionConfig) {
             val norm = sqrt(max(segmentEnergy * preambleEnergy, 1e-7f))
             val corr = dot / norm
             if (corr < syncThreshold) {
-                continue
+                return null
             }
 
             val scale = dot / preambleEnergy
@@ -415,12 +416,27 @@ class AcousticPhyLink(private val config: SessionConfig) {
             val noisePower = max(1e-7f, errorEnergy / preamble.size)
             val snrDb = 10.0f * log10(signalPower / noisePower)
             val evmPct = sqrt(noisePower / signalPower) * 100.0f
-            val candidate = PreambleLock(start, corr, snrDb, evmPct)
-            if (best == null || candidate.correlation > best.correlation) {
-                best = candidate
-            }
+            return PreambleLock(index = start, correlation = corr, snrDb = snrDb, evmPct = evmPct)
         }
-        return best
+
+        val coarseStride = if ((searchLimit - lowerBound) > 256) 4 else 1
+        var coarse = lowerBound
+        while (coarse <= searchLimit) {
+            val coarseLock = evaluateAt(coarse)
+            if (coarseLock != null) {
+                val refineFrom = max(lowerBound, coarse - (coarseStride - 1))
+                val refineTo = min(searchLimit, coarse + (coarseStride - 1))
+                for (start in refineFrom..refineTo) {
+                    val refined = evaluateAt(start)
+                    if (refined != null) {
+                        return refined
+                    }
+                }
+                return coarseLock
+            }
+            coarse += coarseStride
+        }
+        return null
     }
 
     private fun channelReport(lockResult: PreambleLock): ChannelReport {
@@ -438,13 +454,21 @@ class AcousticPhyLink(private val config: SessionConfig) {
         val keep = max(preamble.size * 2, headerWindow)
         if (rxBuffer.size > keep) {
             val dropped = rxBuffer.size - keep
-            repeat(dropped) { rxBuffer.removeAt(0) }
+            dropFront(dropped)
             rxSearchStart = max(0, rxSearchStart - dropped)
         }
         val maxStart = max(0, rxBuffer.size - preamble.size)
         if (rxSearchStart > maxStart) {
             rxSearchStart = maxStart
         }
+    }
+
+    private fun dropFront(count: Int) {
+        if (count <= 0 || rxBuffer.isEmpty()) {
+            return
+        }
+        val clamped = min(count, rxBuffer.size)
+        rxBuffer.subList(0, clamped).clear()
     }
 
     private fun makePreambleBlock(

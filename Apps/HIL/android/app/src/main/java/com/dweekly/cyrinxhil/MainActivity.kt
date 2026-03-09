@@ -13,6 +13,9 @@ import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -44,6 +47,10 @@ class MainActivity : ComponentActivity() {
     private var overrideBandEndHz: Int? = null
     @Volatile
     private var overrideTxGainCap: Float? = null
+    @Volatile
+    private var overrideDcssSymbolSamples: Int? = null
+    @Volatile
+    private var overrideSyncThreshold: Float? = null
 
     private val periodicRefresh = object : Runnable {
         override fun run() {
@@ -161,6 +168,8 @@ class MainActivity : ComponentActivity() {
             bandStartHz = overrideBandStartHz ?: 18_500,
             bandEndHz = overrideBandEndHz ?: 21_000,
             txGainCap = overrideTxGainCap ?: 0.70f,
+            dcssSymbolSamples = overrideDcssSymbolSamples ?: 256,
+            preambleSyncThreshold = overrideSyncThreshold ?: 0.25f,
         )
 
         var sessionRef: CyrinxTransportSession? = null
@@ -201,7 +210,8 @@ class MainActivity : ComponentActivity() {
         statusText.text = "Status: Running (${role.name.lowercase(Locale.US)})"
         appendLog(
             "session started role=${role.name.lowercase(Locale.US)} sampleRate=${config.sampleRateHz} " +
-                "band=${config.bandStartHz}...${config.bandEndHz} gain=${config.txGainCap}",
+                "band=${config.bandStartHz}...${config.bandEndHz} gain=${config.txGainCap} " +
+                "dcss=${config.dcssSymbolSamples} sync=${config.preambleSyncThreshold}",
         )
     }
 
@@ -305,11 +315,14 @@ class MainActivity : ComponentActivity() {
         overrideBandStartHz = intent.getIntExtra("band_start_hz", -1).takeIf { it > 0 } ?: overrideBandStartHz
         overrideBandEndHz = intent.getIntExtra("band_end_hz", -1).takeIf { it > 0 } ?: overrideBandEndHz
         overrideTxGainCap = intent.getFloatExtra("tx_gain", -1f).takeIf { it > 0f } ?: overrideTxGainCap
+        overrideDcssSymbolSamples = intent.getIntExtra("dcss_symbol_samples", -1).takeIf { it > 0 } ?: overrideDcssSymbolSamples
+        overrideSyncThreshold = intent.getFloatExtra("sync_threshold", -1f).takeIf { it > 0f } ?: overrideSyncThreshold
 
         appendLog(
             "automation cmd=$cmd role=${role?.name ?: "unchanged"} sampleRate=${overrideSampleRateHz ?: 48_000} " +
                 "band=${overrideBandStartHz ?: 18_500}...${overrideBandEndHz ?: 21_000} " +
-                "gain=${overrideTxGainCap ?: 0.70f}",
+                "gain=${overrideTxGainCap ?: 0.70f} dcss=${overrideDcssSymbolSamples ?: 256} " +
+                "sync=${overrideSyncThreshold ?: 0.25f}",
         )
         when (cmd) {
             "start" -> runOnUiThread { startSession(role ?: selectedRole()) }
@@ -321,6 +334,7 @@ class MainActivity : ComponentActivity() {
             "beacon" -> playBeacon()
             "scenario" -> runAutomationScenario(role ?: selectedRole(), intent)
             "self_test" -> runPhySelfTest(role ?: selectedRole())
+            "decode_file" -> runDecodeFile(role ?: selectedRole(), intent)
             else -> appendLog("unknown automation cmd=$cmd")
         }
     }
@@ -384,6 +398,8 @@ class MainActivity : ComponentActivity() {
                 bandStartHz = overrideBandStartHz ?: 18_500,
                 bandEndHz = overrideBandEndHz ?: 21_000,
                 txGainCap = overrideTxGainCap ?: 0.70f,
+                dcssSymbolSamples = overrideDcssSymbolSamples ?: 256,
+                preambleSyncThreshold = overrideSyncThreshold ?: 0.25f,
             )
             val phy = AcousticPhyLink(cfg)
             val frame = ByteArray(48) { idx -> ((idx * 13) and 0xFF).toByte() }
@@ -392,7 +408,49 @@ class MainActivity : ComponentActivity() {
             val ok = decoded.firstOrNull()?.frame?.contentEquals(frame) == true
             appendLog(
                 "self_test ok=$ok encodedSamples=${encoded.size} decodedFrames=${decoded.size} " +
-                    "sampleRate=${cfg.sampleRateHz} band=${cfg.bandStartHz}...${cfg.bandEndHz}",
+                    "sampleRate=${cfg.sampleRateHz} band=${cfg.bandStartHz}...${cfg.bandEndHz} dcss=${cfg.dcssSymbolSamples} " +
+                    "sync=${cfg.preambleSyncThreshold}",
+            )
+        }
+    }
+
+    private fun runDecodeFile(role: Role, intent: android.content.Intent) {
+        ioExecutor.execute {
+            val cfg = SessionConfig(
+                role = role,
+                sampleRateHz = overrideSampleRateHz ?: 48_000,
+                bandStartHz = overrideBandStartHz ?: 18_500,
+                bandEndHz = overrideBandEndHz ?: 21_000,
+                txGainCap = overrideTxGainCap ?: 0.70f,
+                dcssSymbolSamples = overrideDcssSymbolSamples ?: 256,
+                preambleSyncThreshold = overrideSyncThreshold ?: 0.25f,
+            )
+            val wavePath = intent.getStringExtra("wave_path")?.takeIf { it.isNotBlank() } ?: "/data/local/tmp/cyrinx_wave_f32le.bin"
+            val file = File(wavePath)
+            if (!file.exists()) {
+                appendLog("decode_file missing path=$wavePath")
+                return@execute
+            }
+            val bytes = file.readBytes()
+            if (bytes.size < 4 || (bytes.size % 4) != 0) {
+                appendLog("decode_file invalid byteCount=${bytes.size}")
+                return@execute
+            }
+            val sampleCount = bytes.size / 4
+            val samples = FloatArray(sampleCount)
+            val buf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+            for (i in 0 until sampleCount) {
+                samples[i] = buf.float
+            }
+
+            val phy = AcousticPhyLink(cfg)
+            val decoded = phy.ingest(samples)
+            val first = decoded.firstOrNull()
+            val firstLen = first?.frame?.size ?: 0
+            val firstPrefix = first?.frame?.take(8)?.joinToString("") { "%02x".format(it) } ?: ""
+            appendLog(
+                "decode_file path=$wavePath samples=$sampleCount decodedFrames=${decoded.size} " +
+                    "firstLen=$firstLen firstPrefix=$firstPrefix",
             )
         }
     }

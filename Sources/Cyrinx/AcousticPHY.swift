@@ -60,6 +60,7 @@ final class AcousticPHYLink {
     private let preamble: [Float]
     private let preambleEnergy: Float
     private let syncThreshold: Float
+    private let forceRobustMode: Bool
     private let robustConfig: VDSPDCSSConfig
     private let headerConfig: VDSPDCSSConfig
     private let turboConfig: VDSPOFDMConfig
@@ -67,17 +68,22 @@ final class AcousticPHYLink {
     private var rxBuffer: [Float] = []
     private var rxSearchStart: Int = 0
 
-    init(config: Config) {
+    init(
+        config: Config,
+        dcssSymbolSamplesOverride: Int? = nil,
+        preambleSyncThresholdOverride: Float? = nil
+    ) {
         let boundedSampleRate = min(max(config.sampleRateHz, 8_000), 192_000)
         sampleRateHz = boundedSampleRate
         let boundedGain = min(max(config.txGainCap, 0), 0.12)
         let fftSize = Int(CYRINX_OFDM_FFT_SIZE)
         let requestedCP = max(Int(config.ofdmCPSamplesDefault), Int(config.ofdmCPSamplesMin))
         let clampedCP = min(max(8, requestedCP), fftSize - 1)
+        let symbolSamples = min(max(dcssSymbolSamplesOverride ?? AcousticPHYLink.runtimeDCSSSymbolSamples(), 64), 4096)
 
         robustConfig = VDSPDCSSConfig(
             sampleRateHz: boundedSampleRate,
-            symbolSamples: 256,
+            symbolSamples: symbolSamples,
             symbolBins: 256,
             startHz: Float(config.bandStartHz),
             endHz: Float(config.bandEndHz),
@@ -85,7 +91,7 @@ final class AcousticPHYLink {
         )
         headerConfig = VDSPDCSSConfig(
             sampleRateHz: boundedSampleRate,
-            symbolSamples: 256,
+            symbolSamples: symbolSamples,
             symbolBins: 256,
             startHz: Float(config.bandStartHz),
             endHz: Float(config.bandEndHz),
@@ -108,7 +114,8 @@ final class AcousticPHYLink {
         )
         preamble = preambleBlock + preambleBlock
         preambleEnergy = max(1e-7, preamble.reduce(0) { $0 + ($1 * $1) })
-        syncThreshold = 0.52
+        syncThreshold = min(max(preambleSyncThresholdOverride ?? AcousticPHYLink.runtimeSyncThreshold(), 0.10), 0.98)
+        forceRobustMode = AcousticPHYLink.runtimeForceRobustMode()
     }
 
     func encode(frame: [UInt8]) throws -> [Float] {
@@ -233,6 +240,9 @@ final class AcousticPHYLink {
     }
 
     private func selectBodyMode(for frame: [UInt8]) -> AcousticBodyMode {
+        if forceRobustMode {
+            return .robustDCSS
+        }
         let coreHeaderStart = 2
         let coreHeaderBytes = 15
         if frame.count < (coreHeaderStart + coreHeaderBytes) {
@@ -416,6 +426,27 @@ final class AcousticPHYLink {
             let phase = 2.0 * Float.pi * toneHz * Float(idx) / fs
             return amplitude * sin(phase)
         }
+    }
+
+    private static func runtimeDCSSSymbolSamples() -> Int {
+        let env = ProcessInfo.processInfo.environment["CYRINX_DCSS_SYMBOL_SAMPLES"] ?? ""
+        let parsed = Int(env) ?? 256
+        return min(max(parsed, 64), 4096)
+    }
+
+    private static func runtimeSyncThreshold() -> Float {
+        let env = ProcessInfo.processInfo.environment["CYRINX_PREAMBLE_SYNC_THRESHOLD"] ?? ""
+        let parsed = Float(env) ?? 0.52
+        return min(max(parsed, 0.10), 0.98)
+    }
+
+    private static func runtimeForceRobustMode() -> Bool {
+        let env = ProcessInfo.processInfo.environment["CYRINX_FORCE_ROBUST_MODE"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if env.isEmpty {
+            return false
+        }
+        let normalized = env.lowercased()
+        return normalized == "1" || normalized == "true" || normalized == "yes" || normalized == "on"
     }
 }
 // swiftlint:enable type_body_length

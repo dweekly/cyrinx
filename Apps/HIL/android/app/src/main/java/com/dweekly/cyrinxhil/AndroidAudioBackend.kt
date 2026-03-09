@@ -49,6 +49,7 @@ class AndroidAudioBackend(
     private val pendingOutputSampleCount = AtomicLong(0)
 
     private val txQueue = LinkedBlockingQueue<FloatArray>()
+    private val rxDecodeQueue = LinkedBlockingQueue<FloatArray>(96)
     private val phy = AcousticPhyLink(config)
 
     @Volatile
@@ -71,6 +72,8 @@ class AndroidAudioBackend(
 
     @Volatile
     private var txThread: Thread? = null
+    @Volatile
+    private var rxDecodeThread: Thread? = null
 
     fun start(): Int {
         if (running.get()) {
@@ -98,11 +101,11 @@ class AndroidAudioBackend(
         val trackBufferSize = max(outMin * 4, sampleRate / 2)
 
         val sourceCandidates = buildList {
-            add(MediaRecorder.AudioSource.MIC)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 add(MediaRecorder.AudioSource.UNPROCESSED)
             }
             add(MediaRecorder.AudioSource.VOICE_RECOGNITION)
+            add(MediaRecorder.AudioSource.MIC)
         }
 
         var chosenSource: Int? = null
@@ -162,6 +165,7 @@ class AndroidAudioBackend(
         track.play()
 
         rxThread = Thread({ rxLoop(recordDevice) }, "cyrinx-android-rx").apply { start() }
+        rxDecodeThread = Thread({ rxDecodeLoop() }, "cyrinx-android-rx-decode").apply { start() }
         txThread = Thread({ txLoop(track) }, "cyrinx-android-tx").apply { start() }
 
         logSink("android backend started cfgHz=$sampleRate inHz=$sampleRate outHz=$sampleRate source=$chosenSource")
@@ -175,6 +179,7 @@ class AndroidAudioBackend(
         }
 
         rxThread?.interrupt()
+        rxDecodeThread?.interrupt()
         txThread?.interrupt()
 
         val record = audioRecord
@@ -190,6 +195,7 @@ class AndroidAudioBackend(
         }
 
         rxThread?.join(1_000)
+        rxDecodeThread?.join(1_000)
         txThread?.join(1_000)
 
         record?.release()
@@ -198,9 +204,11 @@ class AndroidAudioBackend(
         audioRecord = null
         audioTrack = null
         rxThread = null
+        rxDecodeThread = null
         txThread = null
 
         txQueue.clear()
+        rxDecodeQueue.clear()
         pendingOutputSampleCount.set(0)
         state = "stopped"
         logSink("android backend stopped")
@@ -272,6 +280,38 @@ class AndroidAudioBackend(
                 samples[i] = buffer[i] / 32768.0f
                 energy += (samples[i] * samples[i]).toDouble()
             }
+            if (!rxDecodeQueue.offer(samples)) {
+                rxDecodeQueue.poll()
+                rxDecodeQueue.offer(samples)
+                logSink("rx decode queue overflow: dropped oldest chunk")
+            }
+            val callbackCount = rxCallbackCount.get()
+            if (callbackCount % 40L == 0L) {
+                val rms = sqrt(max(0.0, energy / max(1, read))).toFloat()
+                logSink(
+                    "rx callbacks=$callbackCount rms=$rms decodedTotal=${rxDecodedFrameCount.get()} " +
+                        "decodeQueueDepth=${rxDecodeQueue.size}",
+                )
+            }
+        }
+    }
+
+    private fun rxDecodeLoop() {
+        Process.setThreadPriority(Process.THREAD_PRIORITY_DEFAULT)
+        while (running.get()) {
+            val first = rxDecodeQueue.poll(120, TimeUnit.MILLISECONDS) ?: continue
+            val batch = ArrayList<FloatArray>(8)
+            batch.add(first)
+            rxDecodeQueue.drainTo(batch, 7)
+
+            val totalSamples = batch.sumOf { it.size }
+            val samples = FloatArray(totalSamples)
+            var cursor = 0
+            for (chunk in batch) {
+                System.arraycopy(chunk, 0, samples, cursor, chunk.size)
+                cursor += chunk.size
+            }
+
             val decoded = try {
                 phy.ingest(samples)
             } catch (t: Throwable) {
@@ -281,11 +321,6 @@ class AndroidAudioBackend(
             if (decoded.isNotEmpty()) {
                 rxDecodedFrameCount.addAndGet(decoded.size.toLong())
                 logSink("decoded acoustic frames=${decoded.size} total=${rxDecodedFrameCount.get()}")
-            }
-            val callbackCount = rxCallbackCount.get()
-            if (callbackCount % 40L == 0L) {
-                val rms = sqrt(max(0.0, energy / max(1, read))).toFloat()
-                logSink("rx callbacks=$callbackCount rms=$rms decodedTotal=${rxDecodedFrameCount.get()}")
             }
             for (frame in decoded) {
                 frameIngress(frame.frame, frame.report)

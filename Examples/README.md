@@ -45,6 +45,7 @@ Demonstrates:
 
 ```bash
 swift run cyrinx-sim-bench --profile quiet --out artifacts/bench/sim-quiet.json
+```
 
 ## 5) macOS <-> Android HIL CLI
 
@@ -55,7 +56,10 @@ Demonstrates:
 
 ```bash
 swift run cyrinx-example-android-hil --role master --duration 30 --send-interval-ms 700 --reliable-every 4
-```
+# robust tuning knobs:
+swift run cyrinx-example-android-hil --role master --duration 30 --dcss-symbol-samples 1024 --sync-threshold 0.30
+# offline fixture waveform for Android decode_file:
+swift run cyrinx-example-android-hil --fixture-wave /tmp/cyrinx_wave_f32le.bin --fixture-payload-text "fixture-mac-to-android"
 ```
 
 ## Notes
