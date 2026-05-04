@@ -13,11 +13,17 @@ public struct RawAcousticDiagnostics: Sendable {
 
 public final class RawAcousticMacLink: @unchecked Sendable {
     private let config: Config
+    private let codecKind: RawAcousticCodec
     private let engine = AVAudioEngine()
     private let txLock = NSLock()
     private let codecLock = NSLock()
+    private let captureLock = NSLock()
+    private let gateLock = NSLock()
+    private let decodeQueue = DispatchQueue(label: "cyrinx.raw.decode")
     private var txSampleQueue: [Float] = []
     private var txSampleReadIndex = 0
+    private var capturedInputSamples: [Float] = []
+    private var captureInputEnabled = false
     private var sourceNode: AVAudioSourceNode?
     private var receiveHandler: ((Data) -> Void)?
     private var observedInputSampleRateHz: UInt32 = 0
@@ -25,7 +31,18 @@ public final class RawAcousticMacLink: @unchecked Sendable {
     private var txFrameCount: UInt64 = 0
     private var rxFrameCount: UInt64 = 0
     private var recentInputRms: Float = 0
-    private var codec: BasicToneCodec
+    private let activityThreshold: Float
+    private let preRollSamples: Int
+    private let postRollBuffers = 3
+    private var rxPreRoll: [Float] = []
+    private var rxBurstOpen = false
+    private var rxHangoverBuffers = 0
+    private var basicCodec: BasicToneCodec?
+    private var reverseBurstCodec: ReverseBurstCodec?
+    private var ookCodec: OOKToneCodec?
+    private var morseCodec: MorseToneCodec?
+    private var dtmfCodec: DTMFCodec?
+    private var nibbleCodec: NibbleToneCodec?
     private lazy var sourceFormat: AVAudioFormat? = {
         AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
@@ -37,11 +54,34 @@ public final class RawAcousticMacLink: @unchecked Sendable {
 
     public init(
         config: Config,
+        rawCodec: RawAcousticCodec = .auto,
         dcssSymbolSamples: Int? = nil,
         preambleSyncThreshold: Float? = nil
     ) {
         self.config = config
-        codec = BasicToneCodec(config: config, symbolSamples: dcssSymbolSamples ?? 960)
+        codecKind = RawAcousticCodec.resolved(rawCodec, config: config)
+        switch codecKind {
+        case .dtmf, .nibble, .ook, .morse:
+            activityThreshold = 0.0020
+        case .reverseBurst:
+            activityThreshold = 0.0018
+        case .basic, .auto:
+            activityThreshold = 0.0015
+        }
+        preRollSamples = max(4096, min(32_768, (dcssSymbolSamples ?? 960) * 12))
+        if codecKind == .ook {
+            ookCodec = OOKToneCodec(config: config, symbolSamples: dcssSymbolSamples ?? 960)
+        } else if codecKind == .morse {
+            morseCodec = MorseToneCodec(config: config, symbolSamples: dcssSymbolSamples ?? 960)
+        } else if codecKind == .reverseBurst {
+            reverseBurstCodec = ReverseBurstCodec(config: config, symbolSamples: dcssSymbolSamples ?? 960)
+        } else if codecKind == .dtmf {
+            dtmfCodec = DTMFCodec(config: config, symbolSamples: dcssSymbolSamples ?? 960)
+        } else if codecKind == .nibble {
+            nibbleCodec = NibbleToneCodec(config: config, symbolSamples: dcssSymbolSamples ?? 960)
+        } else {
+            basicCodec = BasicToneCodec(config: config, symbolSamples: dcssSymbolSamples ?? 960)
+        }
     }
 
     public func start(onReceive: @escaping (Data) -> Void) throws {
@@ -86,13 +126,35 @@ public final class RawAcousticMacLink: @unchecked Sendable {
     public func stop() {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
+        decodeQueue.sync {}
         clearTxQueue()
         receiveHandler = nil
     }
 
     public func send(frame: Data) throws {
         codecLock.lock()
-        let waveform = codec.encode(payload: frame)
+        let waveform: [Float]
+        if var codec = basicCodec {
+            waveform = codec.encode(payload: frame)
+            basicCodec = codec
+        } else if var codec = morseCodec {
+            waveform = codec.encode(payload: frame)
+            morseCodec = codec
+        } else if var codec = reverseBurstCodec {
+            waveform = codec.encode(payload: frame)
+            reverseBurstCodec = codec
+        } else if var codec = dtmfCodec {
+            waveform = codec.encode(payload: frame)
+            dtmfCodec = codec
+        } else if var codec = nibbleCodec {
+            waveform = codec.encode(payload: frame)
+            nibbleCodec = codec
+        } else if var codec = ookCodec {
+            waveform = codec.encode(payload: frame)
+            ookCodec = codec
+        } else {
+            waveform = []
+        }
         codecLock.unlock()
         txFrameCount += 1
         enqueueTxSamples(waveform)
@@ -107,6 +169,22 @@ public final class RawAcousticMacLink: @unchecked Sendable {
             pendingOutputSampleCount: pendingTxSamples(),
             recentInputRms: recentInputRms
         )
+    }
+
+    public func setInputCaptureEnabled(_ enabled: Bool) {
+        captureLock.lock()
+        captureInputEnabled = enabled
+        if !enabled {
+            capturedInputSamples.removeAll(keepingCapacity: false)
+        }
+        captureLock.unlock()
+    }
+
+    public func snapshotCapturedInput() -> [Float] {
+        captureLock.lock()
+        let snapshot = capturedInputSamples
+        captureLock.unlock()
+        return snapshot
     }
 
     private func renderOutbound(
@@ -202,9 +280,75 @@ public final class RawAcousticMacLink: @unchecked Sendable {
             energy += sample * sample
         }
         recentInputRms = sqrt(energy / Float(frameLength))
+        captureLock.lock()
+        if captureInputEnabled {
+            capturedInputSamples.append(contentsOf: samples)
+        }
+        captureLock.unlock()
+        guard let copiedSamples = prepareDecodeSamples(Array(samples), rms: recentInputRms) else {
+            return
+        }
+        decodeQueue.async { [weak self] in
+            self?.decodeInboundSamples(copiedSamples)
+        }
+    }
+
+    private func prepareDecodeSamples(_ samples: [Float], rms: Float) -> [Float]? {
+        gateLock.lock()
+        defer { gateLock.unlock() }
+
+        if rms >= activityThreshold {
+            let combined = (!rxBurstOpen && !rxPreRoll.isEmpty) ? (rxPreRoll + samples) : samples
+            rxBurstOpen = true
+            rxHangoverBuffers = postRollBuffers
+            rxPreRoll.removeAll(keepingCapacity: false)
+            return combined
+        }
+
+        if rxBurstOpen, rxHangoverBuffers > 0 {
+            rxHangoverBuffers -= 1
+            if rxHangoverBuffers == 0 {
+                rxBurstOpen = false
+            }
+            return samples
+        }
+
+        rxBurstOpen = false
+        rxHangoverBuffers = 0
+        if samples.count > preRollSamples {
+            rxPreRoll = Array(samples.suffix(preRollSamples))
+        } else {
+            rxPreRoll = samples
+        }
+        return nil
+    }
+
+    private func decodeInboundSamples(_ samples: [Float]) {
         codecLock.lock()
-        let decodedFrames = codec.ingest(samples: samples)
+        let decodedFrames: [Data]
+        if var codec = basicCodec {
+            decodedFrames = samples.withUnsafeBufferPointer { codec.ingest(samples: $0) }
+            basicCodec = codec
+        } else if var codec = morseCodec {
+            decodedFrames = samples.withUnsafeBufferPointer { codec.ingest(samples: $0) }
+            morseCodec = codec
+        } else if var codec = reverseBurstCodec {
+            decodedFrames = samples.withUnsafeBufferPointer { codec.ingest(samples: $0) }
+            reverseBurstCodec = codec
+        } else if var codec = dtmfCodec {
+            decodedFrames = samples.withUnsafeBufferPointer { codec.ingest(samples: $0) }
+            dtmfCodec = codec
+        } else if var codec = nibbleCodec {
+            decodedFrames = samples.withUnsafeBufferPointer { codec.ingest(samples: $0) }
+            nibbleCodec = codec
+        } else if var codec = ookCodec {
+            decodedFrames = samples.withUnsafeBufferPointer { codec.ingest(samples: $0) }
+            ookCodec = codec
+        } else {
+            decodedFrames = []
+        }
         codecLock.unlock()
+
         for decoded in decodedFrames where !decoded.isEmpty {
             rxFrameCount += 1
             receiveHandler?(decoded)

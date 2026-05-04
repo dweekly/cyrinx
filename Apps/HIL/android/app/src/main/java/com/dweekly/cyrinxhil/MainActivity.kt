@@ -53,6 +53,10 @@ class MainActivity : ComponentActivity() {
     private var overrideDcssSymbolSamples: Int? = null
     @Volatile
     private var overrideSyncThreshold: Float? = null
+    @Volatile
+    private var overrideRawCodec: RawCodec? = null
+    @Volatile
+    private var overrideRawCapturePath: String? = null
 
     private val periodicRefresh = object : Runnable {
         override fun run() {
@@ -264,6 +268,7 @@ class MainActivity : ComponentActivity() {
             frameIngress = { frame ->
                 appendLog("raw rx bytes=${frame.size} text=${previewText(frame)} hex=${hexPrefix(frame)}")
             },
+            capturePath = overrideRawCapturePath,
             logSink = { appendLog(it) },
         )
 
@@ -279,7 +284,8 @@ class MainActivity : ComponentActivity() {
         appendLog(
             "raw backend started role=${role.name.lowercase(Locale.US)} sampleRate=${config.sampleRateHz} " +
                 "band=${config.bandStartHz}...${config.bandEndHz} gain=${config.txGainCap} " +
-                "dcss=${config.dcssSymbolSamples} sync=${config.preambleSyncThreshold}",
+                "dcss=${config.dcssSymbolSamples} sync=${config.preambleSyncThreshold} rawCodec=${config.rawCodec} " +
+                "capturePath=${overrideRawCapturePath ?: "none"}",
         )
     }
 
@@ -393,12 +399,15 @@ class MainActivity : ComponentActivity() {
         overrideTxGainCap = intent.getFloatExtra("tx_gain", -1f).takeIf { it > 0f } ?: overrideTxGainCap
         overrideDcssSymbolSamples = intent.getIntExtra("dcss_symbol_samples", -1).takeIf { it > 0 } ?: overrideDcssSymbolSamples
         overrideSyncThreshold = intent.getFloatExtra("sync_threshold", -1f).takeIf { it > 0f } ?: overrideSyncThreshold
+        overrideRawCodec = parseRawCodec(intent.getStringExtra("raw_codec")) ?: overrideRawCodec
+        overrideRawCapturePath = intent.getStringExtra("capture_path")?.takeIf { it.isNotBlank() } ?: overrideRawCapturePath
 
         appendLog(
             "automation cmd=$cmd role=${role?.name ?: "unchanged"} sampleRate=${overrideSampleRateHz ?: 48_000} " +
                 "band=${overrideBandStartHz ?: 18_500}...${overrideBandEndHz ?: 21_000} " +
                 "gain=${overrideTxGainCap ?: 0.70f} dcss=${overrideDcssSymbolSamples ?: 256} " +
-                "sync=${overrideSyncThreshold ?: 0.25f}",
+                "sync=${overrideSyncThreshold ?: 0.25f} rawCodec=${overrideRawCodec ?: RawCodec.AUTO} " +
+                "capturePath=${overrideRawCapturePath ?: "none"}",
         )
         when (cmd) {
             "start" -> runOnUiThread { startSession(role ?: selectedRole()) }
@@ -417,6 +426,8 @@ class MainActivity : ComponentActivity() {
             "scenario" -> runAutomationScenario(role ?: selectedRole(), intent)
             "self_test" -> runPhySelfTest(role ?: selectedRole())
             "decode_file" -> runDecodeFile(role ?: selectedRole(), intent)
+            "raw_encode_file" -> runRawEncodeFile(role ?: selectedRole(), intent)
+            "raw_decode_file" -> runRawDecodeFile(role ?: selectedRole(), intent)
             else -> appendLog("unknown automation cmd=$cmd")
         }
     }
@@ -481,7 +492,21 @@ class MainActivity : ComponentActivity() {
             txGainCap = overrideTxGainCap ?: 0.70f,
             dcssSymbolSamples = overrideDcssSymbolSamples ?: 256,
             preambleSyncThreshold = overrideSyncThreshold ?: 0.25f,
+            rawCodec = overrideRawCodec ?: RawCodec.AUTO,
         )
+    }
+
+    private fun parseRawCodec(raw: String?): RawCodec? {
+        return when (raw?.trim()?.lowercase(Locale.US)) {
+            "auto" -> RawCodec.AUTO
+            "basic" -> RawCodec.BASIC
+            "reverse", "reverse_burst", "reverse-burst" -> RawCodec.REVERSE_BURST
+            "ook" -> RawCodec.OOK
+            "morse" -> RawCodec.MORSE
+            "dtmf" -> RawCodec.DTMF
+            "nibble" -> RawCodec.NIBBLE
+            else -> null
+        }
     }
 
     private fun previewText(bytes: ByteArray): String {
@@ -542,5 +567,99 @@ class MainActivity : ComponentActivity() {
                     "firstLen=$firstLen firstPrefix=$firstPrefix",
             )
         }
+    }
+
+    private fun runRawEncodeFile(role: Role, intent: android.content.Intent) {
+        ioExecutor.execute {
+            val cfg = buildSessionConfig(role)
+            val wavePath = intent.getStringExtra("wave_path")?.takeIf { it.isNotBlank() }
+                ?: "/sdcard/Download/cyrinx_raw_encode_f32le.bin"
+            val text = intent.getStringExtra("text") ?: "hello-from-android"
+            val payload = text.toByteArray(Charsets.UTF_8)
+            val waveform = encodeRawWaveform(cfg, payload)
+            writeFloat32LE(wavePath, waveform)
+            val decoded = decodeRawWaveform(cfg, waveform)
+            val first = decoded.firstOrNull()
+            appendLog(
+                "raw_encode_file path=$wavePath codec=${resolvedRawCodec(cfg)} samples=${waveform.size} " +
+                    "bytes=${payload.size} decodedFrames=${decoded.size} " +
+                    "firstText=${first?.let { previewText(it) } ?: ""} firstHex=${first?.let { hexPrefix(it) } ?: ""}",
+            )
+        }
+    }
+
+    private fun runRawDecodeFile(role: Role, intent: android.content.Intent) {
+        ioExecutor.execute {
+            val cfg = buildSessionConfig(role)
+            val wavePath = intent.getStringExtra("wave_path")?.takeIf { it.isNotBlank() }
+                ?: "/sdcard/Download/cyrinx_raw_encode_f32le.bin"
+            val file = File(wavePath)
+            if (!file.exists()) {
+                appendLog("raw_decode_file missing path=$wavePath")
+                return@execute
+            }
+            val samples = readFloat32LE(file)
+            val decoded = decodeRawWaveform(cfg, samples)
+            val first = decoded.firstOrNull()
+            appendLog(
+                "raw_decode_file path=$wavePath codec=${resolvedRawCodec(cfg)} samples=${samples.size} " +
+                    "decodedFrames=${decoded.size} firstText=${first?.let { previewText(it) } ?: ""} " +
+                    "firstHex=${first?.let { hexPrefix(it) } ?: ""}",
+            )
+        }
+    }
+
+    private fun encodeRawWaveform(cfg: SessionConfig, payload: ByteArray): FloatArray {
+        return when (resolvedRawCodec(cfg)) {
+            RawCodec.OOK -> OOKToneCodec(cfg).encode(payload)
+            RawCodec.MORSE -> MorseToneCodec(cfg).encode(payload)
+            RawCodec.REVERSE_BURST -> ReverseBurstCodec(cfg).encode(payload)
+            RawCodec.DTMF -> DTMFCodec(cfg).encode(payload)
+            RawCodec.NIBBLE -> NibbleToneCodec(cfg).encode(payload)
+            RawCodec.BASIC, RawCodec.AUTO -> BasicToneCodec(cfg).encode(payload)
+        }
+    }
+
+    private fun decodeRawWaveform(cfg: SessionConfig, samples: FloatArray): List<ByteArray> {
+        return when (resolvedRawCodec(cfg)) {
+            RawCodec.OOK -> OOKToneCodec(cfg).ingest(samples)
+            RawCodec.MORSE -> MorseToneCodec(cfg).ingest(samples)
+            RawCodec.REVERSE_BURST -> ReverseBurstCodec(cfg).ingest(samples)
+            RawCodec.DTMF -> DTMFCodec(cfg).ingest(samples)
+            RawCodec.NIBBLE -> NibbleToneCodec(cfg).ingest(samples)
+            RawCodec.BASIC, RawCodec.AUTO -> BasicToneCodec(cfg).ingest(samples)
+        }
+    }
+
+    private fun resolvedRawCodec(cfg: SessionConfig): RawCodec {
+        if (cfg.rawCodec != RawCodec.AUTO) {
+            return cfg.rawCodec
+        }
+        if (cfg.bandStartHz == cfg.bandEndHz) {
+            return RawCodec.OOK
+        }
+        return if (cfg.role == Role.MASTER) RawCodec.REVERSE_BURST else RawCodec.BASIC
+    }
+
+    private fun writeFloat32LE(path: String, samples: FloatArray) {
+        val out = ByteBuffer.allocate(samples.size * java.lang.Float.BYTES)
+            .order(ByteOrder.LITTLE_ENDIAN)
+        for (sample in samples) {
+            out.putFloat(sample)
+        }
+        File(path).writeBytes(out.array())
+    }
+
+    private fun readFloat32LE(file: File): FloatArray {
+        val bytes = file.readBytes()
+        if (bytes.size < 4 || (bytes.size % 4) != 0) {
+            throw IllegalArgumentException("invalid float32le byteCount=${bytes.size}")
+        }
+        val samples = FloatArray(bytes.size / java.lang.Float.BYTES)
+        val buf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        for (i in samples.indices) {
+            samples[i] = buf.float
+        }
+        return samples
     }
 }

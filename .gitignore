@@ -10,5 +10,6 @@ artifacts/
 benchmark_files.txt
 benchmark_rules.txt
 Apps/HIL/android/.gradle/
+Apps/HIL/android/.idea/
 Apps/HIL/android/**/build/
 Apps/HIL/android/local.properties

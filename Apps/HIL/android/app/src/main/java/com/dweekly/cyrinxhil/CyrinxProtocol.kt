@@ -18,6 +18,16 @@ enum class Role {
     SLAVE,
 }
 
+enum class RawCodec {
+    AUTO,
+    BASIC,
+    REVERSE_BURST,
+    OOK,
+    MORSE,
+    DTMF,
+    NIBBLE,
+}
+
 enum class QoS {
     BEST_EFFORT,
     RELIABLE,
@@ -91,6 +101,7 @@ data class SessionConfig(
     val txGainCap: Float = 0.70f,
     val dcssSymbolSamples: Int = 256,
     val preambleSyncThreshold: Float = 0.25f,
+    val rawCodec: RawCodec = RawCodec.AUTO,
 )
 
 interface FrameTxSink {

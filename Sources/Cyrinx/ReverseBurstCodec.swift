@@ -1,9 +1,6 @@
 import Foundation
 
-private let basicToneSyncByte: UInt8 = 0x7E
-private let basicToneGuardByte: UInt8 = 0xA5
-
-struct BasicToneCodec {
+struct ReverseBurstCodec {
     private let sampleRateHz: Int
     private let lowHz: Int
     private let highHz: Int
@@ -14,11 +11,13 @@ struct BasicToneCodec {
     private let leaderSymbols = 6
     private let gapSymbols = 1
     private let minLeaderRms: Float = 0.0025
-    private let maxCandidatePayloadBytes = 64
     private let symbolSearchRadius: Int
     private let symbolSearchStep: Int
     private let preambleBits: [UInt8]
     private let minPreambleScore: Int
+    private let guardBytes: [UInt8] = [0x55, 0x2D]
+    private let fixedPayloadBytes = 5
+    private let repetitionCount = 5
     private var rxBuffer: [Float] = []
 
     init(config: Config, symbolSamples: Int) {
@@ -27,13 +26,13 @@ struct BasicToneCodec {
         highHz = Int(max(config.bandStartHz, config.bandEndHz))
         self.symbolSamples = min(max(symbolSamples, 240), 4096)
         txGainCap = min(max(config.txGainCap, 0.01), 0.80)
-        lowRef = BasicToneCodec.makeReference(
+        lowRef = Self.makeReference(
             freqHz: lowHz,
             sampleRateHz: sampleRateHz,
             symbolSamples: self.symbolSamples,
             txGainCap: txGainCap
         )
-        highRef = BasicToneCodec.makeReference(
+        highRef = Self.makeReference(
             freqHz: highHz,
             sampleRateHz: sampleRateHz,
             symbolSamples: self.symbolSamples,
@@ -42,18 +41,27 @@ struct BasicToneCodec {
         symbolSearchRadius = max(8, self.symbolSamples / 8)
         symbolSearchStep = max(1, self.symbolSamples / 48)
         let preamble = (0..<24).map { UInt8(($0 % 2) == 0 ? 1 : 0) }
-        preambleBits = preamble + BasicToneCodec.byteToBits(basicToneSyncByte)
+        preambleBits = preamble + Self.byteToBits(0x7E)
         minPreambleScore = preambleBits.count - 4
     }
 
     mutating func encode(payload: Data) -> [Float] {
-        let trimmed = Data(payload.prefix(255))
-        var frame = Data([basicToneGuardByte, UInt8(trimmed.count)])
-        frame.append(trimmed)
-        frame.append(UInt8(Self.crc8(frame.dropFirst())))
+        let trimmed = payload.prefix(fixedPayloadBytes)
+        var padded = [UInt8](repeating: 0, count: fixedPayloadBytes)
+        for (index, byte) in trimmed.enumerated() {
+            padded[index] = byte
+        }
+        let length = UInt8(trimmed.count)
+        let crc = UInt8(Self.crc8(Array(padded) + [length]))
+        var frameBytes = guardBytes
+        for byte in padded {
+            frameBytes.append(contentsOf: Array(repeating: byte, count: repetitionCount))
+        }
+        frameBytes.append(contentsOf: Array(repeating: length, count: repetitionCount))
+        frameBytes.append(contentsOf: Array(repeating: crc, count: repetitionCount))
 
         var bits = preambleBits
-        for byte in frame {
+        for byte in frameBytes {
             bits.append(contentsOf: Self.byteToBits(byte))
         }
 
@@ -87,8 +95,9 @@ struct BasicToneCodec {
 
     private mutating func decodeAvailable() -> [Data] {
         var decoded: [Data] = []
-        let minBits = preambleBits.count + 24
-        let minSamples = (leaderSymbols + gapSymbols + minBits) * symbolSamples
+        let frameBytes = guardBytes.count + ((fixedPayloadBytes + 2) * repetitionCount)
+        let totalBits = preambleBits.count + (frameBytes * 8)
+        let minSamples = (leaderSymbols + gapSymbols + totalBits) * symbolSamples
 
         while rxBuffer.count >= minSamples {
             guard let leaderStart = findLeaderStart() else {
@@ -99,58 +108,65 @@ struct BasicToneCodec {
                 dropFront(leaderStart + symbolSamples)
                 continue
             }
-            let guardStartBit = preambleBits.count
-            let payloadStartBit = guardStartBit + 8
+
             let searchFrom = max(0, refinedStart - (symbolSamples / 2))
-            let searchTo = min(rxBuffer.count - (preambleBits.count * symbolSamples), refinedStart + (symbolSamples / 2))
-            var acceptedFrame: (payload: Data, frameEnd: Int)?
-            for candidateStart in searchFrom...searchTo {
-                let preambleScore = scorePreamble(at: candidateStart)
-                if preambleScore < minPreambleScore - 1 {
-                    continue
-                }
-                _ = decodeByte(at: candidateStart, startBit: guardStartBit)
-                guard let length = decodeByte(at: candidateStart, startBit: payloadStartBit) else {
-                    continue
-                }
-                if Int(length) > maxCandidatePayloadBytes {
-                    continue
-                }
-                let totalFrameBytes = Int(length) + 3
-                let totalBits = preambleBits.count + (totalFrameBytes * 8)
-                let frameEnd = candidateStart + (totalBits * symbolSamples)
-                if rxBuffer.count < frameEnd {
-                    continue
-                }
-
-                var frame = [UInt8](repeating: 0, count: totalFrameBytes)
-                var valid = true
-                for index in 0..<totalFrameBytes {
-                    guard let byte = decodeByte(at: candidateStart, startBit: payloadStartBit + (index * 8)) else {
-                        valid = false
-                        break
+            let searchTo = min(rxBuffer.count - (totalBits * symbolSamples), refinedStart + (symbolSamples / 2))
+            var accepted: (payload: Data, frameEnd: Int)?
+            if searchFrom <= searchTo {
+                for candidateStart in searchFrom...searchTo {
+                    let preambleScore = scorePreamble(at: candidateStart)
+                    if preambleScore < minPreambleScore - 1 {
+                        continue
                     }
-                    frame[index] = byte
-                }
-                if !valid {
-                    continue
-                }
+                    var frame = [UInt8](repeating: 0, count: frameBytes)
+                    var valid = true
+                    for index in 0..<frameBytes {
+                        guard let byte = decodeByte(at: candidateStart, startBit: preambleBits.count + (index * 8)) else {
+                            valid = false
+                            break
+                        }
+                        frame[index] = byte
+                    }
+                    if !valid {
+                        continue
+                    }
 
-                let expected = Self.crc8(frame.dropFirst().dropLast())
-                let actual = Int(frame.last ?? 0)
-                if expected != actual {
-                    continue
+                    let payloadTriples = frame[guardBytes.count..<(guardBytes.count + (fixedPayloadBytes * repetitionCount))]
+                    var correctedPayload = [UInt8]()
+                    correctedPayload.reserveCapacity(fixedPayloadBytes)
+                    for index in 0..<fixedPayloadBytes {
+                        let start = payloadTriples.startIndex + (index * repetitionCount)
+                        let end = start + repetitionCount
+                        correctedPayload.append(majorityByte(Array(payloadTriples[start..<end])))
+                    }
+
+                    let lengthBase = guardBytes.count + (fixedPayloadBytes * repetitionCount)
+                    let length = Int(majorityByte(Array(frame[lengthBase..<(lengthBase + repetitionCount)])))
+                    if length > fixedPayloadBytes {
+                        continue
+                    }
+
+                    let crcBase = lengthBase + repetitionCount
+                    let actual = Int(majorityByte(Array(frame[crcBase..<(crcBase + repetitionCount)])))
+                    let expected = Self.crc8(correctedPayload + [UInt8(length)])
+                    if expected != actual {
+                        continue
+                    }
+
+                    accepted = (
+                        Data(correctedPayload[0..<length]),
+                        candidateStart + (totalBits * symbolSamples)
+                    )
+                    break
                 }
-                acceptedFrame = (Data(frame[2..<frame.count - 1]), frameEnd)
-                break
             }
-            guard let acceptedFrame else {
+
+            guard let accepted else {
                 dropFront(leaderStart + symbolSamples)
                 continue
             }
-
-            decoded.append(acceptedFrame.payload)
-            dropFront(acceptedFrame.frameEnd)
+            decoded.append(accepted.payload)
+            dropFront(accepted.frameEnd)
         }
 
         let keep = max(symbolSamples * 16, minSamples * 2)
@@ -308,8 +324,7 @@ struct BasicToneCodec {
         if count <= 0 || rxBuffer.isEmpty {
             return
         }
-        let clamped = min(count, rxBuffer.count)
-        rxBuffer.removeFirst(clamped)
+        rxBuffer.removeFirst(min(count, rxBuffer.count))
     }
 
     private func windowRms(start: Int) -> Float {
@@ -319,10 +334,22 @@ struct BasicToneCodec {
         }
         var energy: Float = 0
         for index in start..<end {
-            let sample = rxBuffer[index]
-            energy += sample * sample
+            energy += rxBuffer[index] * rxBuffer[index]
         }
         return sqrt(energy / Float(symbolSamples))
+    }
+
+    private func majorityByte(_ bytes: [UInt8]) -> UInt8 {
+        precondition(!bytes.isEmpty)
+        var value: UInt8 = 0
+        for bitIndex in 0..<8 {
+            let mask = UInt8(1 << UInt8(7 - bitIndex))
+            let ones = bytes.reduce(0) { count, byte in count + ((byte & mask) == 0 ? 0 : 1) }
+            if ones * 2 >= bytes.count {
+                value |= mask
+            }
+        }
+        return value
     }
 
     private static func makeReference(
@@ -349,63 +376,5 @@ struct BasicToneCodec {
             crc ^= Int(byte)
         }
         return crc & 0xFF
-    }
-}
-
-public enum RawAcousticDebug {
-    public static func encodeWaveform(
-        config: Config,
-        payload: Data,
-        symbolSamples: Int,
-        rawCodec: RawAcousticCodec = .auto
-    ) -> [Float] {
-        switch RawAcousticCodec.resolved(rawCodec, config: config) {
-        case .ook:
-            var codec = OOKToneCodec(config: config, symbolSamples: symbolSamples)
-            return codec.encode(payload: payload)
-        case .morse:
-            var codec = MorseToneCodec(config: config, symbolSamples: symbolSamples)
-            return codec.encode(payload: payload)
-        case .reverseBurst:
-            var codec = ReverseBurstCodec(config: config, symbolSamples: symbolSamples)
-            return codec.encode(payload: payload)
-        case .dtmf:
-            var codec = DTMFCodec(config: config, symbolSamples: symbolSamples)
-            return codec.encode(payload: payload)
-        case .nibble:
-            var codec = NibbleToneCodec(config: config, symbolSamples: symbolSamples)
-            return codec.encode(payload: payload)
-        case .basic, .auto:
-            var codec = BasicToneCodec(config: config, symbolSamples: symbolSamples)
-            return codec.encode(payload: payload)
-        }
-    }
-
-    public static func decodeWaveform(
-        config: Config,
-        samples: [Float],
-        symbolSamples: Int,
-        rawCodec: RawAcousticCodec = .auto
-    ) -> [Data] {
-        switch RawAcousticCodec.resolved(rawCodec, config: config) {
-        case .ook:
-            var codec = OOKToneCodec(config: config, symbolSamples: symbolSamples)
-            return codec.decodeWaveform(samples)
-        case .morse:
-            var codec = MorseToneCodec(config: config, symbolSamples: symbolSamples)
-            return codec.decodeWaveform(samples)
-        case .reverseBurst:
-            var codec = ReverseBurstCodec(config: config, symbolSamples: symbolSamples)
-            return codec.decodeWaveform(samples)
-        case .dtmf:
-            var codec = DTMFCodec(config: config, symbolSamples: symbolSamples)
-            return codec.decodeWaveform(samples)
-        case .nibble:
-            var codec = NibbleToneCodec(config: config, symbolSamples: symbolSamples)
-            return codec.decodeWaveform(samples)
-        case .basic, .auto:
-            var codec = BasicToneCodec(config: config, symbolSamples: symbolSamples)
-            return codec.decodeWaveform(samples)
-        }
     }
 }

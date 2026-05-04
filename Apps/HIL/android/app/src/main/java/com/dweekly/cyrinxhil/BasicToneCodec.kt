@@ -8,6 +8,7 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 private const val BASIC_TONE_SYNC_BYTE = 0x7E
+private const val BASIC_TONE_GUARD_BYTE = 0xA5
 
 private data class BasicToneConfig(
     val sampleRateHz: Int,
@@ -37,10 +38,11 @@ class BasicToneCodec(config: SessionConfig) {
 
     fun encode(payload: ByteArray): FloatArray {
         val trimmed = payload.copyOfRange(0, minOf(payload.size, 255))
-        val frame = ByteArray(trimmed.size + 2)
-        frame[0] = trimmed.size.toByte()
-        System.arraycopy(trimmed, 0, frame, 1, trimmed.size)
-        frame[frame.lastIndex] = crc8(frame, 0, frame.lastIndex).toByte()
+        val frame = ByteArray(trimmed.size + 3)
+        frame[0] = BASIC_TONE_GUARD_BYTE.toByte()
+        frame[1] = trimmed.size.toByte()
+        System.arraycopy(trimmed, 0, frame, 2, trimmed.size)
+        frame[frame.lastIndex] = crc8(frame, 1, frame.lastIndex - 1).toByte()
 
         val bits = ArrayList<Int>(preambleBits.size + (frame.size * 8))
         for (bit in preambleBits) {
@@ -81,23 +83,25 @@ class BasicToneCodec(config: SessionConfig) {
 
     private fun decodeAvailable(): List<ByteArray> {
         val decoded = ArrayList<ByteArray>()
-        val minBits = preambleBits.size + 16
+        val minBits = preambleBits.size + 24
         val minSamples = (leaderSymbols + gapSymbols + minBits) * toneConfig.symbolSamples
 
         while (rxBuffer.size >= minSamples) {
             val leaderStart = findLeaderStart() ?: break
-            val start = leaderStart + ((leaderSymbols + gapSymbols) * toneConfig.symbolSamples)
-            val payloadStartBit = preambleBits.size
+            val nominalStart = leaderStart + ((leaderSymbols + gapSymbols) * toneConfig.symbolSamples)
+            val start = refinePayloadStart(nominalStart)
+            if (start == null) {
+                dropFront(leaderStart + toneConfig.symbolSamples)
+                continue
+            }
+            val guardStartBit = preambleBits.size
+            val payloadStartBit = guardStartBit + 8
             val length = decodeByteAt(start, payloadStartBit)
             if (length == null) {
                 dropFront(leaderStart + toneConfig.symbolSamples)
                 continue
             }
-            if (scorePreambleAt(start) < minPreambleScore) {
-                dropFront(leaderStart + toneConfig.symbolSamples)
-                continue
-            }
-            val totalFrameBytes = length + 2
+            val totalFrameBytes = length + 3
             val totalBits = preambleBits.size + (totalFrameBytes * 8)
             val frameEnd = start + (totalBits * toneConfig.symbolSamples)
             if (rxBuffer.size < frameEnd) {
@@ -122,14 +126,14 @@ class BasicToneCodec(config: SessionConfig) {
                 continue
             }
 
-            val expectedCrc = crc8(frame, 0, frame.size - 1)
+            val expectedCrc = crc8(frame, 1, frame.size - 2)
             val actualCrc = frame.last().toInt() and 0xFF
             if (expectedCrc != actualCrc) {
                 dropFront(leaderStart + toneConfig.symbolSamples)
                 continue
             }
 
-            decoded.add(frame.copyOfRange(1, frame.lastIndex))
+            decoded.add(frame.copyOfRange(2, frame.lastIndex))
             dropFront(frameEnd)
         }
 
@@ -200,6 +204,30 @@ class BasicToneCodec(config: SessionConfig) {
             }
         }
         return score
+    }
+
+    private fun refinePayloadStart(nominalStart: Int): Int? {
+        val maxStart = rxBuffer.size - (preambleBits.size * toneConfig.symbolSamples)
+        if (maxStart <= 0) {
+            return null
+        }
+        val searchRadius = toneConfig.symbolSamples
+        val from = max(0, nominalStart - searchRadius)
+        val to = minOf(maxStart, nominalStart + searchRadius)
+        if (from > to) {
+            return null
+        }
+
+        var bestStart = -1
+        var bestScore = Int.MIN_VALUE
+        for (candidate in from..to) {
+            val score = scorePreambleAt(candidate)
+            if (score > bestScore) {
+                bestScore = score
+                bestStart = candidate
+            }
+        }
+        return if (bestScore >= minPreambleScore) bestStart else null
     }
 
     private fun decodeByteAt(startSample: Int, startBit: Int): Int? {
