@@ -71,29 +71,23 @@ class NibbleToneCodec(config: SessionConfig) {
 
     private fun decodeAvailable(): List<ByteArray> {
         val decoded = ArrayList<ByteArray>()
-        val minSymbols = leaderSymbols + gapSymbols + syncNibbles.size + 4
+        val minSymbols = syncNibbles.size + 4
         val minSamples = minSymbols * symbolSamples
 
         while (rxBuffer.size >= minSamples) {
-            val leaderStart = findLeaderStart() ?: break
-            val nominalStart = leaderStart + ((leaderSymbols + gapSymbols) * symbolSamples)
-            val start = refineSyncStart(nominalStart)
-            if (start == null) {
-                dropFront(leaderStart + symbolSamples)
-                continue
-            }
+            val start = findSyncStart() ?: break
             val lenHi = decodeNibbleAt(start, syncNibbles.size)
             val lenLo = decodeNibbleAt(start, syncNibbles.size + 1)
             if (lenHi == null || lenLo == null) {
-                dropFront(leaderStart + symbolSamples)
+                dropFront(start + symbolSamples)
                 continue
             }
             val length = ((lenHi shl 4) or lenLo) and 0xFF
             val totalNibbles = syncNibbles.size + 2 + (length * 2) + 2
             val frameEnd = start + (totalNibbles * symbolSamples)
             if (rxBuffer.size < frameEnd) {
-                if (leaderStart > 0) {
-                    dropFront(leaderStart)
+                if (start > 0) {
+                    dropFront(start)
                 }
                 break
             }
@@ -112,14 +106,14 @@ class NibbleToneCodec(config: SessionConfig) {
                 nibbleIndex += 2
             }
             if (!valid) {
-                dropFront(leaderStart + symbolSamples)
+                dropFront(start + symbolSamples)
                 continue
             }
 
             val crcHi = decodeNibbleAt(start, nibbleIndex)
             val crcLo = decodeNibbleAt(start, nibbleIndex + 1)
             if (crcHi == null || crcLo == null) {
-                dropFront(leaderStart + symbolSamples)
+                dropFront(start + symbolSamples)
                 continue
             }
             val actualCrc = ((crcHi shl 4) or crcLo) and 0xFF
@@ -128,7 +122,7 @@ class NibbleToneCodec(config: SessionConfig) {
             System.arraycopy(payload, 0, crcInput, 1, payload.size)
             val expectedCrc = crc8(crcInput, 0, crcInput.size)
             if (expectedCrc != actualCrc) {
-                dropFront(leaderStart + symbolSamples)
+                dropFront(start + symbolSamples)
                 continue
             }
 
@@ -165,12 +159,15 @@ class NibbleToneCodec(config: SessionConfig) {
         }
         val refineFrom = max(0, bestStart - coarseStep)
         val refineTo = min(maxStart, bestStart + coarseStep)
-        for (candidate in refineFrom..refineTo) {
+        val refineStep = max(1, coarseStep / 32)
+        var candidate = refineFrom
+        while (candidate <= refineTo) {
             val score = scoreLeaderAt(candidate)
             if (score > bestScore) {
                 bestScore = score
                 bestStart = candidate
             }
+            candidate += refineStep
         }
         return if (bestScore >= leaderSymbols) bestStart else null
     }
@@ -200,14 +197,35 @@ class NibbleToneCodec(config: SessionConfig) {
         val to = min(maxStart, nominalStart + searchRadius)
         var bestStart = -1
         var bestScore = Int.MIN_VALUE
-        for (candidate in from..to) {
+        val coarseStep = max(16, symbolSamples / 6)
+        var candidate = from
+        while (candidate <= to) {
             val score = scoreSyncAt(candidate)
-            if (score > bestScore) {
+            if (score > bestScore || (score == bestScore && isCloser(candidate, bestStart, nominalStart))) {
                 bestScore = score
                 bestStart = candidate
             }
+            candidate += coarseStep
+        }
+        if (bestStart >= 0) {
+            val fineFrom = max(from, bestStart - coarseStep)
+            val fineTo = min(to, bestStart + coarseStep)
+            for (fineCandidate in fineFrom..fineTo) {
+                val score = scoreSyncAt(fineCandidate)
+                if (score > bestScore || (score == bestScore && isCloser(fineCandidate, bestStart, nominalStart))) {
+                    bestScore = score
+                    bestStart = fineCandidate
+                }
+            }
         }
         return if (bestScore >= syncNibbles.size - 1) bestStart else null
+    }
+
+    private fun isCloser(candidate: Int, current: Int, target: Int): Boolean {
+        if (current < 0) {
+            return true
+        }
+        return kotlin.math.abs(candidate - target) < kotlin.math.abs(current - target)
     }
 
     private fun scoreSyncAt(start: Int): Int {
@@ -219,6 +237,58 @@ class NibbleToneCodec(config: SessionConfig) {
             }
         }
         return score
+    }
+
+    private fun findSyncStart(): Int? {
+        val maxStart = rxBuffer.size - (syncNibbles.size * symbolSamples)
+        if (maxStart <= 0) {
+            return null
+        }
+        val coarseStep = max(4, symbolSamples / 24)
+        var bestStart = -1
+        var bestScore = Int.MIN_VALUE
+        var bestMagnitude = -Float.MAX_VALUE
+        var candidate = 0
+        while (candidate <= maxStart) {
+            if (windowRms(candidate) >= minLeaderRms) {
+                val scored = scoreSyncWithMagnitude(candidate)
+                if (scored.score > bestScore || (scored.score == bestScore && scored.magnitude > bestMagnitude)) {
+                    bestScore = scored.score
+                    bestMagnitude = scored.magnitude
+                    bestStart = candidate
+                }
+            }
+            candidate += coarseStep
+        }
+        if (bestStart >= 0) {
+            val fineFrom = max(0, bestStart - coarseStep)
+            val fineTo = min(maxStart, bestStart + coarseStep)
+            for (fineCandidate in fineFrom..fineTo) {
+                val scored = scoreSyncWithMagnitude(fineCandidate)
+                if (scored.score > bestScore || (scored.score == bestScore && scored.magnitude > bestMagnitude)) {
+                    bestScore = scored.score
+                    bestMagnitude = scored.magnitude
+                    bestStart = fineCandidate
+                }
+            }
+        }
+        return if (bestScore >= syncNibbles.size - 1) bestStart else null
+    }
+
+    private data class SyncScore(val score: Int, val magnitude: Float)
+
+    private fun scoreSyncWithMagnitude(start: Int): SyncScore {
+        var score = 0
+        var magnitude = 0f
+        for (index in syncNibbles.indices) {
+            val windowStart = start + (index * symbolSamples)
+            val nibble = decodeNibbleAtSample(windowStart) ?: return SyncScore(Int.MIN_VALUE, 0f)
+            if (nibble == syncNibbles[index]) {
+                score += 1
+            }
+            magnitude += magnitudeForNibbleAtSample(windowStart, syncNibbles[index])
+        }
+        return SyncScore(score, magnitude)
     }
 
     private fun decodeNibbleAt(start: Int, nibbleIndex: Int): Int? {
@@ -248,6 +318,22 @@ class NibbleToneCodec(config: SessionConfig) {
             }
         }
         return bestNibble and 0xF
+    }
+
+    private fun magnitudeForNibbleAtSample(windowStart: Int, nibble: Int): Float {
+        val windowEnd = windowStart + symbolSamples
+        if (windowStart < 0 || windowEnd > rxBuffer.size) {
+            return 0f
+        }
+        val ref = toneRefs[nibble and 0xF]
+        var iAcc = 0f
+        var qAcc = 0f
+        for (sampleIndex in 0 until symbolSamples) {
+            val sample = rxBuffer[windowStart + sampleIndex]
+            iAcc += sample * ref[sampleIndex]
+            qAcc += sample * ref[sampleIndex + symbolSamples]
+        }
+        return sqrt((iAcc * iAcc) + (qAcc * qAcc))
     }
 
     private fun makeReference(freqHz: Int): FloatArray {

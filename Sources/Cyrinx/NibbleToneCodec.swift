@@ -81,31 +81,26 @@ struct NibbleToneCodec {
 
     private mutating func decodeAvailable() -> [Data] {
         var decoded: [Data] = []
-        let minSymbols = leaderSymbols + gapSymbols + syncNibbles.count + 4
+        let minSymbols = syncNibbles.count + 4
         let minSamples = minSymbols * symbolSamples
 
         while rxBuffer.count >= minSamples {
-            guard let leaderStart = findLeaderStart() else {
+            guard let start = findSyncStart() else {
                 break
-            }
-            let nominalStart = leaderStart + ((leaderSymbols + gapSymbols) * symbolSamples)
-            guard let start = refineSyncStart(near: nominalStart) else {
-                dropFront(leaderStart + symbolSamples)
-                continue
             }
             guard
                 let lenHi = decodeNibble(at: start, nibbleIndex: syncNibbles.count),
                 let lenLo = decodeNibble(at: start, nibbleIndex: syncNibbles.count + 1)
             else {
-                dropFront(leaderStart + symbolSamples)
+                dropFront(start + symbolSamples)
                 continue
             }
             let length = Int((lenHi << 4) | lenLo)
             let totalNibbles = syncNibbles.count + 2 + (length * 2) + 2
             let frameEnd = start + (totalNibbles * symbolSamples)
             if rxBuffer.count < frameEnd {
-                if leaderStart > 0 {
-                    dropFront(leaderStart)
+                if start > 0 {
+                    dropFront(start)
                 }
                 break
             }
@@ -125,14 +120,14 @@ struct NibbleToneCodec {
                 payloadNibbleIndex += 2
             }
             guard valid else {
-                dropFront(leaderStart + symbolSamples)
+                dropFront(start + symbolSamples)
                 continue
             }
             guard
                 let crcHi = decodeNibble(at: start, nibbleIndex: payloadNibbleIndex),
                 let crcLo = decodeNibble(at: start, nibbleIndex: payloadNibbleIndex + 1)
             else {
-                dropFront(leaderStart + symbolSamples)
+                dropFront(start + symbolSamples)
                 continue
             }
 
@@ -141,7 +136,7 @@ struct NibbleToneCodec {
             crcFrame.append(payload)
             let expectedCRC = Self.crc8(crcFrame)
             if expectedCRC != actualCRC {
-                dropFront(leaderStart + symbolSamples)
+                dropFront(start + symbolSamples)
                 continue
             }
 
@@ -178,12 +173,15 @@ struct NibbleToneCodec {
         }
         let refineFrom = max(0, bestStart - coarseStep)
         let refineTo = min(maxStart, bestStart + coarseStep)
-        for candidate in refineFrom...refineTo {
+        let refineStep = max(1, coarseStep / 32)
+        var candidate = refineFrom
+        while candidate <= refineTo {
             let score = scoreLeader(at: candidate)
             if score > bestScore {
                 bestScore = score
                 bestStart = candidate
             }
+            candidate += refineStep
         }
         return bestScore >= leaderSymbols ? bestStart : nil
     }
@@ -195,10 +193,10 @@ struct NibbleToneCodec {
             if windowRms(start: windowStart) < minLeaderRms {
                 return Int.min
             }
-            guard let nibble = decodeNibbleAtSample(start + (symbolIndex * symbolSamples)) else {
+            guard let decoded = decodeNibbleAtSample(start + (symbolIndex * symbolSamples)) else {
                 return Int.min
             }
-            if nibble == 0 {
+            if decoded.nibble == 0 {
                 score += 1
             }
         }
@@ -215,34 +213,101 @@ struct NibbleToneCodec {
         let to = min(maxStart, nominalStart + searchRadius)
         var bestStart = -1
         var bestScore = Int.min
-        for candidate in from...to {
+        let coarseStep = max(16, symbolSamples / 6)
+        var candidate = from
+        while candidate <= to {
             let score = scoreSync(at: candidate)
-            if score > bestScore {
+            if score > bestScore || (score == bestScore && isCloser(candidate, than: bestStart, to: nominalStart)) {
                 bestScore = score
                 bestStart = candidate
+            }
+            candidate += coarseStep
+        }
+        if bestStart >= 0 {
+            let fineFrom = max(from, bestStart - coarseStep)
+            let fineTo = min(to, bestStart + coarseStep)
+            for candidate in fineFrom...fineTo {
+                let score = scoreSync(at: candidate)
+                if score > bestScore || (score == bestScore && isCloser(candidate, than: bestStart, to: nominalStart)) {
+                    bestScore = score
+                    bestStart = candidate
+                }
             }
         }
         return bestScore >= syncNibbles.count - 1 ? bestStart : nil
     }
 
+    private func isCloser(_ candidate: Int, than current: Int, to target: Int) -> Bool {
+        if current < 0 {
+            return true
+        }
+        return abs(candidate - target) < abs(current - target)
+    }
+
     private func scoreSync(at start: Int) -> Int {
-        var score = 0
-        for (index, expected) in syncNibbles.enumerated() {
-            guard let nibble = decodeNibble(at: start, nibbleIndex: index) else {
-                return Int.min
+        scoreSyncWithMagnitude(at: start).score
+    }
+
+    private func findSyncStart() -> Int? {
+        let maxStart = rxBuffer.count - (syncNibbles.count * symbolSamples)
+        if maxStart <= 0 {
+            return nil
+        }
+        let coarseStep = max(4, symbolSamples / 24)
+        var bestStart = -1
+        var bestScore = Int.min
+        var bestMagnitude = -Float.greatestFiniteMagnitude
+        var candidate = 0
+        while candidate <= maxStart {
+            if windowRms(start: candidate) >= minLeaderRms {
+                let scored = scoreSyncWithMagnitude(at: candidate)
+                if scored.score > bestScore || (scored.score == bestScore && scored.magnitude > bestMagnitude) {
+                    bestScore = scored.score
+                    bestMagnitude = scored.magnitude
+                    bestStart = candidate
+                }
             }
-            if nibble == expected {
-                score += 1
+            candidate += coarseStep
+        }
+        if bestStart >= 0 {
+            let fineFrom = max(0, bestStart - coarseStep)
+            let fineTo = min(maxStart, bestStart + coarseStep)
+            for candidate in fineFrom...fineTo {
+                let scored = scoreSyncWithMagnitude(at: candidate)
+                if scored.score > bestScore || (scored.score == bestScore && scored.magnitude > bestMagnitude) {
+                    bestScore = scored.score
+                    bestMagnitude = scored.magnitude
+                    bestStart = candidate
+                }
             }
         }
-        return score
+        return bestScore >= syncNibbles.count - 1 ? bestStart : nil
+    }
+
+    private func scoreSyncWithMagnitude(at start: Int) -> (score: Int, magnitude: Float) {
+        var score = 0
+        var magnitude: Float = 0
+        for (index, expected) in syncNibbles.enumerated() {
+            guard let decoded = decodeNibbleWithMagnitude(at: start, nibbleIndex: index) else {
+                return (Int.min, 0)
+            }
+            if decoded.nibble == expected {
+                score += 1
+            }
+            magnitude += decoded.magnitude
+        }
+        return (score, magnitude)
     }
 
     private func decodeNibble(at start: Int, nibbleIndex: Int) -> UInt8? {
+        decodeNibbleWithMagnitude(at: start, nibbleIndex: nibbleIndex)?.nibble
+    }
+
+    private func decodeNibbleWithMagnitude(at start: Int, nibbleIndex: Int) -> (nibble: UInt8, magnitude: Float)? {
         decodeNibbleAtSample(start + (nibbleIndex * symbolSamples))
     }
 
-    private func decodeNibbleAtSample(_ windowStart: Int) -> UInt8? {
+    private func decodeNibbleAtSample(_ windowStart: Int) -> (nibble: UInt8, magnitude: Float)? {
         let windowEnd = windowStart + symbolSamples
         if windowStart < 0 || windowEnd > rxBuffer.count {
             return nil
@@ -264,7 +329,7 @@ struct NibbleToneCodec {
                 bestNibble = index
             }
         }
-        return UInt8(bestNibble & 0xF)
+        return (UInt8(bestNibble & 0xF), bestMagnitude)
     }
 
     private mutating func dropFront(_ count: Int) {

@@ -186,8 +186,9 @@ class BasicToneAndroidBackend(
         }
 
         rxThread?.join(1_000)
-        rxDecodeThread?.join(1_000)
         txThread?.join(1_000)
+        rxDecodeThread?.join(3_000)
+        drainDecodeQueue()
 
         audioRecord?.release()
         audioTrack?.release()
@@ -270,19 +271,30 @@ class BasicToneAndroidBackend(
         try {
             while (running.get()) {
                 val samples = rxDecodeQueue.poll(120, TimeUnit.MILLISECONDS) ?: continue
-                val decoded = when (rawCodec) {
-                    RawCodec.OOK -> ookCodec.ingest(samples)
-                    RawCodec.MORSE -> morseCodec.ingest(samples)
-                    RawCodec.REVERSE_BURST -> reverseBurstCodec.ingest(samples)
-                    RawCodec.DTMF -> dtmfCodec.ingest(samples)
-                    RawCodec.NIBBLE -> nibbleCodec.ingest(samples)
-                    RawCodec.BASIC, RawCodec.AUTO -> bitCodec.ingest(samples)
-                }
-                for (frame in decoded) {
-                    frameIngress(frame)
-                }
+                decodeSamples(samples)
             }
         } catch (_: InterruptedException) {
+        }
+    }
+
+    private fun drainDecodeQueue() {
+        while (true) {
+            val samples = rxDecodeQueue.poll() ?: break
+            decodeSamples(samples)
+        }
+    }
+
+    private fun decodeSamples(samples: FloatArray) {
+        val decoded = when (rawCodec) {
+            RawCodec.OOK -> ookCodec.ingest(samples)
+            RawCodec.MORSE -> morseCodec.ingest(samples)
+            RawCodec.REVERSE_BURST -> reverseBurstCodec.ingest(samples)
+            RawCodec.DTMF -> dtmfCodec.ingest(samples)
+            RawCodec.NIBBLE -> nibbleCodec.ingest(samples)
+            RawCodec.BASIC, RawCodec.AUTO -> bitCodec.ingest(samples)
+        }
+        for (frame in decoded) {
+            frameIngress(frame)
         }
     }
 
