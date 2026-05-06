@@ -15,8 +15,18 @@ struct NibbleToneCodec {
         sampleRateHz = Int(min(max(config.sampleRateHz, 8_000), 192_000))
         self.symbolSamples = min(max(symbolSamples, 240), 4096)
         txGainCap = min(max(config.txGainCap, 0.01), 0.80)
-        let lowHz = 700
-        let highHz = min(3_400, (sampleRateHz / 2) - 500)
+        let nyquistGuardHz = max(1_000, (sampleRateHz / 2) - 500)
+        let fallbackLowHz = 700
+        let fallbackHighHz = min(3_400, nyquistGuardHz)
+        let requestedLowHz = Int(config.bandStartHz)
+        let requestedHighHz = Int(config.bandEndHz)
+        let usesConfiguredAudibleBand = requestedLowHz >= 300 && requestedLowHz < 8_000 && requestedHighHz > requestedLowHz
+        let lowHz = usesConfiguredAudibleBand
+            ? min(max(requestedLowHz, 300), max(300, nyquistGuardHz - 450))
+            : fallbackLowHz
+        let highHz = usesConfiguredAudibleBand
+            ? max(lowHz + 450, min(nyquistGuardHz, requestedHighHz))
+            : fallbackHighHz
         let span = max(15, highHz - lowHz)
         let symbolCount = self.symbolSamples
         let gain = txGainCap
@@ -144,7 +154,8 @@ struct NibbleToneCodec {
             dropFront(frameEnd)
         }
 
-        let keep = max(symbolSamples * 16, minSamples * 2)
+        let maxFrameNibbles = syncNibbles.count + 2 + (255 * 2) + 2
+        let keep = max(symbolSamples * maxFrameNibbles, minSamples * 2)
         if rxBuffer.count > keep {
             dropFront(rxBuffer.count - keep)
         }

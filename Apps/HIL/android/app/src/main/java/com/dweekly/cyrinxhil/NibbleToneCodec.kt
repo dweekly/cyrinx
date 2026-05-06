@@ -11,8 +11,20 @@ class NibbleToneCodec(config: SessionConfig) {
     private val sampleRateHz = config.sampleRateHz.coerceIn(8_000, 192_000)
     private val symbolSamples = config.dcssSymbolSamples.coerceIn(240, 4096)
     private val txGainCap = config.txGainCap.coerceIn(0.01f, 0.80f)
-    private val lowHz = 700
-    private val highHz = min(3_400, (sampleRateHz / 2) - 500)
+    private val nyquistGuardHz = max(1_000, (sampleRateHz / 2) - 500)
+    private val usesConfiguredAudibleBand = config.bandStartHz >= 300 &&
+        config.bandStartHz < 8_000 &&
+        config.bandEndHz > config.bandStartHz
+    private val lowHz = if (usesConfiguredAudibleBand) {
+        config.bandStartHz.coerceIn(300, max(300, nyquistGuardHz - 450))
+    } else {
+        700
+    }
+    private val highHz = if (usesConfiguredAudibleBand) {
+        max(lowHz + 450, min(nyquistGuardHz, config.bandEndHz))
+    } else {
+        min(3_400, nyquistGuardHz)
+    }
     private val leaderSymbols = 4
     private val gapSymbols = 1
     private val minLeaderRms = 0.0025f
@@ -130,7 +142,8 @@ class NibbleToneCodec(config: SessionConfig) {
             dropFront(frameEnd)
         }
 
-        val keep = max(symbolSamples * 16, minSamples * 2)
+        val maxFrameNibbles = syncNibbles.size + 2 + (255 * 2) + 2
+        val keep = max(symbolSamples * maxFrameNibbles, minSamples * 2)
         if (rxBuffer.size > keep) {
             dropFront(rxBuffer.size - keep)
         }

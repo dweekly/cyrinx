@@ -43,8 +43,10 @@ class BasicToneAndroidBackend(
     private val dtmfCodec = DTMFCodec(config)
     private val nibbleCodec = NibbleToneCodec(config)
     private val rawCodec = resolveRawCodec(config)
+    private val decodeOnBurstClose = rawCodec == RawCodec.NIBBLE
     private val activityThreshold = when (rawCodec) {
-        RawCodec.DTMF, RawCodec.NIBBLE, RawCodec.OOK, RawCodec.MORSE -> 0.0020f
+        RawCodec.NIBBLE -> 0.0030f
+        RawCodec.DTMF, RawCodec.OOK, RawCodec.MORSE -> 0.0020f
         RawCodec.REVERSE_BURST -> 0.0018f
         RawCodec.BASIC, RawCodec.AUTO -> 0.0015f
     }
@@ -53,6 +55,8 @@ class BasicToneAndroidBackend(
     private val captureLock = Object()
     private val capturedInputSamples = ArrayList<Float>()
     private val maxCaptureSamples = config.sampleRateHz * 60
+    private val rxBurstSamples = ArrayList<Float>()
+    private val maxBurstSamples = config.sampleRateHz * 8
     private var rxPreRoll = FloatArray(0)
     private var rxBurstOpen = false
     private var rxHangoverChunks = 0
@@ -188,6 +192,7 @@ class BasicToneAndroidBackend(
         rxThread?.join(1_000)
         txThread?.join(1_000)
         rxDecodeThread?.join(3_000)
+        flushDecodeBurst()?.let { decodeSamples(it) }
         drainDecodeQueue()
 
         audioRecord?.release()
@@ -336,6 +341,10 @@ class BasicToneAndroidBackend(
     }
 
     private fun prepareDecodeChunk(samples: FloatArray, rms: Float): FloatArray? {
+        if (decodeOnBurstClose) {
+            return prepareBurstDecodeChunk(samples, rms)
+        }
+
         if (rms >= activityThreshold) {
             val combined = if (!rxBurstOpen && rxPreRoll.isNotEmpty()) {
                 concat(rxPreRoll, samples)
@@ -364,6 +373,69 @@ class BasicToneAndroidBackend(
             samples.copyOfRange(samples.size - preRollSamples, samples.size)
         }
         return null
+    }
+
+    private fun prepareBurstDecodeChunk(samples: FloatArray, rms: Float): FloatArray? {
+        if (rms >= activityThreshold) {
+            if (!rxBurstOpen && rxPreRoll.isNotEmpty()) {
+                appendBurstSamples(rxPreRoll)
+            }
+            appendBurstSamples(samples)
+            rxBurstOpen = true
+            rxHangoverChunks = postRollChunks
+            rxPreRoll = FloatArray(0)
+            return null
+        }
+
+        if (rxBurstOpen) {
+            appendBurstSamples(samples)
+            rxHangoverChunks -= 1
+            if (rxHangoverChunks <= 0) {
+                rxBurstOpen = false
+                rxHangoverChunks = 0
+                return flushDecodeBurst()
+            }
+            return null
+        }
+
+        rxBurstOpen = false
+        rxHangoverChunks = 0
+        rxPreRoll = if (samples.size <= preRollSamples) {
+            samples.copyOf()
+        } else {
+            samples.copyOfRange(samples.size - preRollSamples, samples.size)
+        }
+        return null
+    }
+
+    private fun appendBurstSamples(samples: FloatArray) {
+        if (samples.isEmpty()) {
+            return
+        }
+        if (samples.size >= maxBurstSamples) {
+            rxBurstSamples.clear()
+            for (i in samples.size - maxBurstSamples until samples.size) {
+                rxBurstSamples.add(samples[i])
+            }
+            return
+        }
+        val overflow = (rxBurstSamples.size + samples.size) - maxBurstSamples
+        if (overflow > 0) {
+            rxBurstSamples.subList(0, minOf(overflow, rxBurstSamples.size)).clear()
+        }
+        for (sample in samples) {
+            rxBurstSamples.add(sample)
+        }
+    }
+
+    private fun flushDecodeBurst(): FloatArray? {
+        if (!decodeOnBurstClose || rxBurstSamples.isEmpty()) {
+            return null
+        }
+        val samples = rxBurstSamples.toFloatArray()
+        rxBurstSamples.clear()
+        logSink("basic tone rx burst samples=${samples.size}")
+        return samples
     }
 
     private fun concat(prefix: FloatArray, suffix: FloatArray): FloatArray {

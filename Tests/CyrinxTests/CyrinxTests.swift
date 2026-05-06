@@ -138,6 +138,25 @@ final class CyrinxTests: XCTestCase {
         }
     }
 
+    func testRawNibbleConfiguredAudibleBandRoundTrip() {
+        let config = Config(
+            role: .master,
+            transportBackend: .inMemory,
+            sampleRateHz: 44_100,
+            bandStartHz: 1_200,
+            bandEndHz: 2_200,
+            txGainCap: 0.80
+        )
+        let payload = Data("hi".utf8)
+        var txCodec = NibbleToneCodec(config: config, symbolSamples: 1_920)
+        let waveform = txCodec.encode(payload: payload)
+        var rxCodec = NibbleToneCodec(config: config, symbolSamples: 1_920)
+        let burst = [Float](repeating: 0, count: 4_096) + waveform + [Float](repeating: 0, count: 4_096)
+        let decoded = rxCodec.decodeWaveform(burst)
+
+        XCTAssertEqual(decoded, [payload])
+    }
+
     func testARCSelectGearTransitions() {
         var metrics = cyrinx_metrics_t()
         var policy = cyrinx_arc_policy_t()

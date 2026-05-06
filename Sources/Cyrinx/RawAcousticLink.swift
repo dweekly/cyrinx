@@ -33,8 +33,11 @@ public final class RawAcousticMacLink: @unchecked Sendable {
     private var recentInputRms: Float = 0
     private let activityThreshold: Float
     private let preRollSamples: Int
+    private let decodeOnBurstClose: Bool
+    private let maxBurstSamples: Int
     private let postRollBuffers = 3
     private var rxPreRoll: [Float] = []
+    private var rxBurstSamples: [Float] = []
     private var rxBurstOpen = false
     private var rxHangoverBuffers = 0
     private var basicCodec: BasicToneCodec?
@@ -60,8 +63,11 @@ public final class RawAcousticMacLink: @unchecked Sendable {
     ) {
         self.config = config
         codecKind = RawAcousticCodec.resolved(rawCodec, config: config)
+        decodeOnBurstClose = codecKind == .nibble
         switch codecKind {
-        case .dtmf, .nibble, .ook, .morse:
+        case .nibble:
+            activityThreshold = 0.0030
+        case .dtmf, .ook, .morse:
             activityThreshold = 0.0020
         case .reverseBurst:
             activityThreshold = 0.0018
@@ -69,6 +75,7 @@ public final class RawAcousticMacLink: @unchecked Sendable {
             activityThreshold = 0.0015
         }
         preRollSamples = max(4096, min(32_768, (dcssSymbolSamples ?? 960) * 12))
+        maxBurstSamples = Int(config.sampleRateHz) * 8
         if codecKind == .ook {
             ookCodec = OOKToneCodec(config: config, symbolSamples: dcssSymbolSamples ?? 960)
         } else if codecKind == .morse {
@@ -126,6 +133,10 @@ public final class RawAcousticMacLink: @unchecked Sendable {
     public func stop() {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
+        decodeQueue.sync {}
+        if let pendingBurst = takePendingDecodeBurst() {
+            decodeInboundSamples(pendingBurst)
+        }
         decodeQueue.sync {}
         clearTxQueue()
         receiveHandler = nil
@@ -297,6 +308,10 @@ public final class RawAcousticMacLink: @unchecked Sendable {
         gateLock.lock()
         defer { gateLock.unlock() }
 
+        if decodeOnBurstClose {
+            return prepareBurstDecodeSamplesLocked(samples, rms: rms)
+        }
+
         if rms >= activityThreshold {
             let combined = (!rxBurstOpen && !rxPreRoll.isEmpty) ? (rxPreRoll + samples) : samples
             rxBurstOpen = true
@@ -321,6 +336,69 @@ public final class RawAcousticMacLink: @unchecked Sendable {
             rxPreRoll = samples
         }
         return nil
+    }
+
+    private func prepareBurstDecodeSamplesLocked(_ samples: [Float], rms: Float) -> [Float]? {
+        if rms >= activityThreshold {
+            if !rxBurstOpen, !rxPreRoll.isEmpty {
+                appendBurstSamplesLocked(rxPreRoll)
+            }
+            appendBurstSamplesLocked(samples)
+            rxBurstOpen = true
+            rxHangoverBuffers = postRollBuffers
+            rxPreRoll.removeAll(keepingCapacity: false)
+            return nil
+        }
+
+        if rxBurstOpen {
+            appendBurstSamplesLocked(samples)
+            rxHangoverBuffers -= 1
+            if rxHangoverBuffers <= 0 {
+                rxBurstOpen = false
+                rxHangoverBuffers = 0
+                return flushDecodeBurstLocked()
+            }
+            return nil
+        }
+
+        rxBurstOpen = false
+        rxHangoverBuffers = 0
+        if samples.count > preRollSamples {
+            rxPreRoll = Array(samples.suffix(preRollSamples))
+        } else {
+            rxPreRoll = samples
+        }
+        return nil
+    }
+
+    private func appendBurstSamplesLocked(_ samples: [Float]) {
+        guard !samples.isEmpty else {
+            return
+        }
+        if samples.count >= maxBurstSamples {
+            rxBurstSamples = Array(samples.suffix(maxBurstSamples))
+            return
+        }
+        let overflow = (rxBurstSamples.count + samples.count) - maxBurstSamples
+        if overflow > 0 {
+            rxBurstSamples.removeFirst(min(overflow, rxBurstSamples.count))
+        }
+        rxBurstSamples.append(contentsOf: samples)
+    }
+
+    private func takePendingDecodeBurst() -> [Float]? {
+        gateLock.lock()
+        defer { gateLock.unlock() }
+        return flushDecodeBurstLocked()
+    }
+
+    private func flushDecodeBurstLocked() -> [Float]? {
+        guard decodeOnBurstClose, !rxBurstSamples.isEmpty else {
+            return nil
+        }
+        let samples = rxBurstSamples
+        rxBurstSamples.removeAll(keepingCapacity: false)
+        return samples
     }
 
     private func decodeInboundSamples(_ samples: [Float]) {
