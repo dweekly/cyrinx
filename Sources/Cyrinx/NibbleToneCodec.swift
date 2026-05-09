@@ -7,7 +7,9 @@ struct NibbleToneCodec {
     private let leaderSymbols = 4
     private let gapSymbols = 1
     private let minLeaderRms: Float = 0.0025
-    private let syncNibbles: [UInt8] = [0xA, 0x5, 0xC, 0x3]
+    private let repetitionCount = 3
+    private let symbolsPerNibble: Int
+    private let syncSymbols: [UInt8] = [2, 2, 1, 1, 3, 0, 0, 3]
     private let toneRefs: [(sin: [Float], cos: [Float])]
     private var rxBuffer: [Float] = []
 
@@ -15,6 +17,7 @@ struct NibbleToneCodec {
         sampleRateHz = Int(min(max(config.sampleRateHz, 8_000), 192_000))
         self.symbolSamples = min(max(symbolSamples, 240), 4096)
         txGainCap = min(max(config.txGainCap, 0.01), 0.80)
+        symbolsPerNibble = 2 * repetitionCount
         let nyquistGuardHz = max(1_000, (sampleRateHz / 2) - 500)
         let fallbackLowHz = 700
         let fallbackHighHz = min(3_400, nyquistGuardHz)
@@ -31,9 +34,9 @@ struct NibbleToneCodec {
         let symbolCount = self.symbolSamples
         let gain = txGainCap
         var refs: [(sin: [Float], cos: [Float])] = []
-        refs.reserveCapacity(16)
-        for index in 0..<16 {
-            let freq = lowHz + ((span * index) / 15)
+        refs.reserveCapacity(4)
+        for index in 0..<4 {
+            let freq = lowHz + ((span * index) / 3)
             refs.append(Self.makeReference(
                 freqHz: freq,
                 sampleRateHz: sampleRateHz,
@@ -48,20 +51,26 @@ struct NibbleToneCodec {
         let trimmed = Data(payload.prefix(255))
         var frame = Data([UInt8(trimmed.count)])
         frame.append(trimmed)
-        frame.append(UInt8(Self.crc8(frame)))
+        let crc = UInt8(Self.crc8(frame))
 
-        var nibbles = syncNibbles
+        var nibbles: [UInt8] = []
         nibbles.append(UInt8((trimmed.count >> 4) & 0xF))
         nibbles.append(UInt8(trimmed.count & 0xF))
         for byte in trimmed {
             nibbles.append(UInt8((byte >> 4) & 0xF))
             nibbles.append(UInt8(byte & 0xF))
         }
-        let crc = UInt8(Self.crc8(frame.dropLast()))
-        nibbles.append(UInt8((crc >> 4) & 0xF))
-        nibbles.append(UInt8(crc & 0xF))
+        let crcHi = UInt8((crc >> 4) & 0xF)
+        let crcLo = UInt8(crc & 0xF)
 
-        let totalSymbols = leaderSymbols + gapSymbols + nibbles.count
+        var symbols = syncSymbols
+        for nibble in nibbles {
+            appendRepeatedNibble(nibble, to: &symbols)
+        }
+        appendRepeatedNibble(crcHi, to: &symbols)
+        appendRepeatedNibble(crcLo, to: &symbols)
+
+        let totalSymbols = leaderSymbols + gapSymbols + symbols.count
         var output = [Float](repeating: 0, count: totalSymbols * symbolSamples)
         var cursor = 0
         for _ in 0..<leaderSymbols {
@@ -69,8 +78,8 @@ struct NibbleToneCodec {
             cursor += symbolSamples
         }
         cursor += gapSymbols * symbolSamples
-        for nibble in nibbles {
-            let ref = toneRefs[Int(nibble)].sin
+        for symbol in symbols {
+            let ref = toneRefs[Int(symbol)].sin
             writeWaveform(ref, into: &output, offset: cursor)
             cursor += symbolSamples
         }
@@ -91,7 +100,7 @@ struct NibbleToneCodec {
 
     private mutating func decodeAvailable() -> [Data] {
         var decoded: [Data] = []
-        let minSymbols = syncNibbles.count + 4
+        let minSymbols = syncSymbols.count + (4 * symbolsPerNibble)
         let minSamples = minSymbols * symbolSamples
 
         while rxBuffer.count >= minSamples {
@@ -99,15 +108,16 @@ struct NibbleToneCodec {
                 break
             }
             guard
-                let lenHi = decodeNibble(at: start, nibbleIndex: syncNibbles.count),
-                let lenLo = decodeNibble(at: start, nibbleIndex: syncNibbles.count + 1)
+                let lenHi = decodeRepeatedNibble(at: start, symbolIndex: syncSymbols.count),
+                let lenLo = decodeRepeatedNibble(at: start, symbolIndex: syncSymbols.count + symbolsPerNibble)
             else {
                 dropFront(start + symbolSamples)
                 continue
             }
             let length = Int((lenHi << 4) | lenLo)
-            let totalNibbles = syncNibbles.count + 2 + (length * 2) + 2
-            let frameEnd = start + (totalNibbles * symbolSamples)
+            let totalFrameNibbles = 2 + (length * 2) + 2
+            let totalSymbols = syncSymbols.count + (totalFrameNibbles * symbolsPerNibble)
+            let frameEnd = start + (totalSymbols * symbolSamples)
             if rxBuffer.count < frameEnd {
                 if start > 0 {
                     dropFront(start)
@@ -116,26 +126,26 @@ struct NibbleToneCodec {
             }
 
             var payload = Data(capacity: length)
-            var payloadNibbleIndex = syncNibbles.count + 2
+            var payloadSymbolIndex = syncSymbols.count + (2 * symbolsPerNibble)
             var valid = true
             for _ in 0..<length {
                 guard
-                    let hi = decodeNibble(at: start, nibbleIndex: payloadNibbleIndex),
-                    let lo = decodeNibble(at: start, nibbleIndex: payloadNibbleIndex + 1)
+                    let hi = decodeRepeatedNibble(at: start, symbolIndex: payloadSymbolIndex),
+                    let lo = decodeRepeatedNibble(at: start, symbolIndex: payloadSymbolIndex + symbolsPerNibble)
                 else {
                     valid = false
                     break
                 }
                 payload.append((hi << 4) | lo)
-                payloadNibbleIndex += 2
+                payloadSymbolIndex += 2 * symbolsPerNibble
             }
             guard valid else {
                 dropFront(start + symbolSamples)
                 continue
             }
             guard
-                let crcHi = decodeNibble(at: start, nibbleIndex: payloadNibbleIndex),
-                let crcLo = decodeNibble(at: start, nibbleIndex: payloadNibbleIndex + 1)
+                let crcHi = decodeRepeatedNibble(at: start, symbolIndex: payloadSymbolIndex),
+                let crcLo = decodeRepeatedNibble(at: start, symbolIndex: payloadSymbolIndex + symbolsPerNibble)
             else {
                 dropFront(start + symbolSamples)
                 continue
@@ -154,113 +164,17 @@ struct NibbleToneCodec {
             dropFront(frameEnd)
         }
 
-        let maxFrameNibbles = syncNibbles.count + 2 + (255 * 2) + 2
-        let keep = max(symbolSamples * maxFrameNibbles, minSamples * 2)
+        let maxFrameNibbles = 2 + (255 * 2) + 2
+        let maxFrameSymbols = syncSymbols.count + (maxFrameNibbles * symbolsPerNibble)
+        let keep = max(symbolSamples * maxFrameSymbols, minSamples * 2)
         if rxBuffer.count > keep {
             dropFront(rxBuffer.count - keep)
         }
         return decoded
     }
 
-    private func findLeaderStart() -> Int? {
-        let maxStart = rxBuffer.count - ((leaderSymbols + gapSymbols + syncNibbles.count) * symbolSamples)
-        if maxStart <= 0 {
-            return nil
-        }
-        var bestStart = -1
-        var bestScore = Int.min
-        let coarseStep = max(8, symbolSamples / 6)
-        var coarse = 0
-        while coarse <= maxStart {
-            let score = scoreLeader(at: coarse)
-            if score > bestScore {
-                bestScore = score
-                bestStart = coarse
-            }
-            coarse += coarseStep
-        }
-        if bestStart < 0 {
-            return nil
-        }
-        let refineFrom = max(0, bestStart - coarseStep)
-        let refineTo = min(maxStart, bestStart + coarseStep)
-        let refineStep = max(1, coarseStep / 32)
-        var candidate = refineFrom
-        while candidate <= refineTo {
-            let score = scoreLeader(at: candidate)
-            if score > bestScore {
-                bestScore = score
-                bestStart = candidate
-            }
-            candidate += refineStep
-        }
-        return bestScore >= leaderSymbols ? bestStart : nil
-    }
-
-    private func scoreLeader(at start: Int) -> Int {
-        var score = 0
-        for symbolIndex in 0..<leaderSymbols {
-            let windowStart = start + (symbolIndex * symbolSamples)
-            if windowRms(start: windowStart) < minLeaderRms {
-                return Int.min
-            }
-            guard let decoded = decodeNibbleAtSample(start + (symbolIndex * symbolSamples)) else {
-                return Int.min
-            }
-            if decoded.nibble == 0 {
-                score += 1
-            }
-        }
-        return score
-    }
-
-    private func refineSyncStart(near nominalStart: Int) -> Int? {
-        let maxStart = rxBuffer.count - (syncNibbles.count * symbolSamples)
-        if maxStart <= 0 {
-            return nil
-        }
-        let searchRadius = symbolSamples
-        let from = max(0, nominalStart - searchRadius)
-        let to = min(maxStart, nominalStart + searchRadius)
-        var bestStart = -1
-        var bestScore = Int.min
-        let coarseStep = max(16, symbolSamples / 6)
-        var candidate = from
-        while candidate <= to {
-            let score = scoreSync(at: candidate)
-            if score > bestScore || (score == bestScore && isCloser(candidate, than: bestStart, to: nominalStart)) {
-                bestScore = score
-                bestStart = candidate
-            }
-            candidate += coarseStep
-        }
-        if bestStart >= 0 {
-            let fineFrom = max(from, bestStart - coarseStep)
-            let fineTo = min(to, bestStart + coarseStep)
-            for candidate in fineFrom...fineTo {
-                let score = scoreSync(at: candidate)
-                if score > bestScore || (score == bestScore && isCloser(candidate, than: bestStart, to: nominalStart)) {
-                    bestScore = score
-                    bestStart = candidate
-                }
-            }
-        }
-        return bestScore >= syncNibbles.count - 1 ? bestStart : nil
-    }
-
-    private func isCloser(_ candidate: Int, than current: Int, to target: Int) -> Bool {
-        if current < 0 {
-            return true
-        }
-        return abs(candidate - target) < abs(current - target)
-    }
-
-    private func scoreSync(at start: Int) -> Int {
-        scoreSyncWithMagnitude(at: start).score
-    }
-
     private func findSyncStart() -> Int? {
-        let maxStart = rxBuffer.count - (syncNibbles.count * symbolSamples)
+        let maxStart = rxBuffer.count - (syncSymbols.count * symbolSamples)
         if maxStart <= 0 {
             return nil
         }
@@ -292,17 +206,17 @@ struct NibbleToneCodec {
                 }
             }
         }
-        return bestScore >= syncNibbles.count - 1 ? bestStart : nil
+        return bestScore >= syncSymbols.count - 1 ? bestStart : nil
     }
 
     private func scoreSyncWithMagnitude(at start: Int) -> (score: Int, magnitude: Float) {
         var score = 0
         var magnitude: Float = 0
-        for (index, expected) in syncNibbles.enumerated() {
-            guard let decoded = decodeNibbleWithMagnitude(at: start, nibbleIndex: index) else {
+        for (index, expected) in syncSymbols.enumerated() {
+            guard let decoded = decodeSymbolWithMagnitude(at: start, symbolIndex: index) else {
                 return (Int.min, 0)
             }
-            if decoded.nibble == expected {
+            if decoded.symbol == expected {
                 score += 1
             }
             magnitude += decoded.magnitude
@@ -310,21 +224,43 @@ struct NibbleToneCodec {
         return (score, magnitude)
     }
 
-    private func decodeNibble(at start: Int, nibbleIndex: Int) -> UInt8? {
-        decodeNibbleWithMagnitude(at: start, nibbleIndex: nibbleIndex)?.nibble
+    private func decodeRepeatedNibble(at start: Int, symbolIndex: Int) -> UInt8? {
+        guard
+            let high = decodeRepeatedSymbol(at: start, symbolIndex: symbolIndex),
+            let low = decodeRepeatedSymbol(at: start, symbolIndex: symbolIndex + repetitionCount)
+        else {
+            return nil
+        }
+        return ((high & 0x3) << 2) | (low & 0x3)
     }
 
-    private func decodeNibbleWithMagnitude(at start: Int, nibbleIndex: Int) -> (nibble: UInt8, magnitude: Float)? {
-        decodeNibbleAtSample(start + (nibbleIndex * symbolSamples))
+    private func decodeRepeatedSymbol(at start: Int, symbolIndex: Int) -> UInt8? {
+        var values: [UInt8] = []
+        values.reserveCapacity(repetitionCount)
+        for offset in 0..<repetitionCount {
+            guard let symbol = decodeSymbol(at: start, symbolIndex: symbolIndex + offset) else {
+                return nil
+            }
+            values.append(symbol)
+        }
+        return Self.majoritySymbol(values)
     }
 
-    private func decodeNibbleAtSample(_ windowStart: Int) -> (nibble: UInt8, magnitude: Float)? {
+    private func decodeSymbol(at start: Int, symbolIndex: Int) -> UInt8? {
+        decodeSymbolWithMagnitude(at: start, symbolIndex: symbolIndex)?.symbol
+    }
+
+    private func decodeSymbolWithMagnitude(at start: Int, symbolIndex: Int) -> (symbol: UInt8, magnitude: Float)? {
+        decodeSymbolAtSample(start + (symbolIndex * symbolSamples))
+    }
+
+    private func decodeSymbolAtSample(_ windowStart: Int) -> (symbol: UInt8, magnitude: Float)? {
         let windowEnd = windowStart + symbolSamples
         if windowStart < 0 || windowEnd > rxBuffer.count {
             return nil
         }
 
-        var bestNibble = 0
+        var bestSymbol = 0
         var bestMagnitude = -Float.greatestFiniteMagnitude
         for (index, ref) in toneRefs.enumerated() {
             var iAcc: Float = 0
@@ -337,10 +273,10 @@ struct NibbleToneCodec {
             let magnitude = sqrt((iAcc * iAcc) + (qAcc * qAcc))
             if magnitude > bestMagnitude {
                 bestMagnitude = magnitude
-                bestNibble = index
+                bestSymbol = index
             }
         }
-        return (UInt8(bestNibble & 0xF), bestMagnitude)
+        return (UInt8(bestSymbol & 0x3), bestMagnitude)
     }
 
     private mutating func dropFront(_ count: Int) {
@@ -376,11 +312,38 @@ struct NibbleToneCodec {
         return (values.map(\.0), values.map(\.1))
     }
 
+    private func appendRepeatedNibble(_ nibble: UInt8, to symbols: inout [UInt8]) {
+        let high = (nibble >> 2) & 0x3
+        let low = nibble & 0x3
+        for _ in 0..<repetitionCount {
+            symbols.append(high)
+        }
+        for _ in 0..<repetitionCount {
+            symbols.append(low)
+        }
+    }
+
     private static func crc8<S: Sequence>(_ bytes: S) -> Int where S.Element == UInt8 {
         var crc = 0
         for byte in bytes {
             crc ^= Int(byte)
         }
         return crc & 0xFF
+    }
+
+    private static func majoritySymbol(_ values: [UInt8]) -> UInt8? {
+        guard !values.isEmpty else {
+            return nil
+        }
+        var counts = [UInt8: Int]()
+        for value in values {
+            counts[value, default: 0] += 1
+        }
+        return counts.max { lhs, rhs in
+            if lhs.value == rhs.value {
+                return lhs.key > rhs.key
+            }
+            return lhs.value < rhs.value
+        }?.key
     }
 }
