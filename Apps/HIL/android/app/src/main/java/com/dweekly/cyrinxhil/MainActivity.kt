@@ -1,6 +1,10 @@
 package com.dweekly.cyrinxhil
 
 import android.Manifest
+import android.content.Context
+import android.os.Vibrator
+import android.os.VibrationEffect
+import android.os.Build
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Handler
@@ -496,6 +500,17 @@ class MainActivity : ComponentActivity() {
                 "capturePath=${overrideRawCapturePath ?: "none"} channels=${overrideChannels ?: 1}",
         )
         when (cmd) {
+            "vibrate" -> runOnUiThread {
+                val durationMs = intent.getIntExtra("duration_ms", 1000).toLong()
+                val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    vibrator.vibrate(VibrationEffect.createOneShot(durationMs, VibrationEffect.DEFAULT_AMPLITUDE))
+                } else {
+                    @Suppress("DEPRECATION")
+                    vibrator.vibrate(durationMs)
+                }
+                appendLog("vibration triggered: ${durationMs}ms")
+            }
             "start" -> runOnUiThread { startSession(role ?: selectedRole()) }
             "stop" -> runOnUiThread {
                 stopSession()
