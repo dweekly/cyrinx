@@ -104,8 +104,9 @@ class AndroidAudioBackend(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 add(MediaRecorder.AudioSource.UNPROCESSED)
             }
-            add(MediaRecorder.AudioSource.VOICE_RECOGNITION)
             add(MediaRecorder.AudioSource.MIC)
+            add(MediaRecorder.AudioSource.CAMCORDER)
+            add(MediaRecorder.AudioSource.VOICE_RECOGNITION)
         }
 
         var chosenSource: Int? = null
@@ -297,57 +298,65 @@ class AndroidAudioBackend(
     }
 
     private fun rxDecodeLoop() {
-        Process.setThreadPriority(Process.THREAD_PRIORITY_DEFAULT)
-        while (running.get()) {
-            val first = rxDecodeQueue.poll(120, TimeUnit.MILLISECONDS) ?: continue
-            val batch = ArrayList<FloatArray>(8)
-            batch.add(first)
-            rxDecodeQueue.drainTo(batch, 7)
+        Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
+        try {
+            while (running.get()) {
+                val first = rxDecodeQueue.poll(120, TimeUnit.MILLISECONDS) ?: continue
+                val batch = ArrayList<FloatArray>(8)
+                batch.add(first)
+                rxDecodeQueue.drainTo(batch, 7)
 
-            val totalSamples = batch.sumOf { it.size }
-            val samples = FloatArray(totalSamples)
-            var cursor = 0
-            for (chunk in batch) {
-                System.arraycopy(chunk, 0, samples, cursor, chunk.size)
-                cursor += chunk.size
-            }
+                val totalSamples = batch.sumOf { it.size }
+                val samples = FloatArray(totalSamples)
+                var cursor = 0
+                for (chunk in batch) {
+                    System.arraycopy(chunk, 0, samples, cursor, chunk.size)
+                    cursor += chunk.size
+                }
 
-            val decoded = try {
-                phy.ingest(samples)
-            } catch (t: Throwable) {
-                Log.e(TAG, "ingest failed", t)
-                continue
+                val decoded = try {
+                    phy.ingest(samples)
+                } catch (t: Throwable) {
+                    Log.e(TAG, "ingest failed", t)
+                    continue
+                }
+                if (decoded.isNotEmpty()) {
+                    rxDecodedFrameCount.addAndGet(decoded.size.toLong())
+                    logSink("decoded acoustic frames=${decoded.size} total=${rxDecodedFrameCount.get()}")
+                }
+                for (frame in decoded) {
+                    frameIngress(frame.frame, frame.report)
+                }
             }
-            if (decoded.isNotEmpty()) {
-                rxDecodedFrameCount.addAndGet(decoded.size.toLong())
-                logSink("decoded acoustic frames=${decoded.size} total=${rxDecodedFrameCount.get()}")
-            }
-            for (frame in decoded) {
-                frameIngress(frame.frame, frame.report)
-            }
+        } catch (_: InterruptedException) {
+            // Thread was interrupted, exit gracefully
         }
     }
 
     private fun txLoop(track: AudioTrack) {
         Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
-        while (running.get()) {
-            val waveform = txQueue.poll(100, TimeUnit.MILLISECONDS) ?: continue
-            val pcm = ShortArray(waveform.size)
-            for (i in waveform.indices) {
-                val clamped = waveform[i].coerceIn(-1f, 1f)
-                pcm[i] = (clamped * 32767.0f).toInt().toShort()
-            }
-
-            var offset = 0
-            while (offset < pcm.size && running.get()) {
-                val wrote = track.write(pcm, offset, pcm.size - offset, AudioTrack.WRITE_BLOCKING)
-                if (wrote <= 0) {
-                    break
+        try {
+            while (running.get()) {
+                val waveform = txQueue.poll(100, TimeUnit.MILLISECONDS) ?: continue
+                val pcm = ShortArray(waveform.size)
+                for (i in waveform.indices) {
+                    val clamped = waveform[i].coerceIn(-1f, 1f)
+                    pcm[i] = (clamped * 32767.0f).toInt().toShort()
                 }
-                offset += wrote
-                outputCallbackCount.incrementAndGet()
-                pendingOutputSampleCount.addAndGet(-wrote.toLong())
+
+                var offset = 0
+                while (offset < pcm.size && running.get()) {
+                    val wrote = track.write(pcm, offset, pcm.size - offset, AudioTrack.WRITE_BLOCKING)
+                    if (wrote <= 0) {
+                        break
+                    }
+                    offset += wrote
+                    outputCallbackCount.incrementAndGet()
+                    pendingOutputSampleCount.addAndGet(-wrote.toLong())
+                }
             }
+        } catch (_: InterruptedException) {
+            // Thread was interrupted, exit gracefully
         }
     }
 

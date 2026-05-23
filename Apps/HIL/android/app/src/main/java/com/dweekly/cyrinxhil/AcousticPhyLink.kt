@@ -15,6 +15,7 @@ private const val ACOUSTIC_FRAME_MAX_BYTES = 2048
 private const val ACOUSTIC_HEADER_BYTES = 7
 private const val ACOUSTIC_HEADER_MAGIC0 = 0xAC
 private const val ACOUSTIC_HEADER_MAGIC1 = 0x51
+private const val CYRINX_OFDM_FFT_SIZE = 1024
 
 private enum class AcousticBodyMode(val value: Int) {
     ROBUST_DCSS(0),
@@ -93,9 +94,9 @@ private class DcssModem(private val config: DcssConfig) {
         return out
     }
 
-    fun demodulate(samples: FloatArray): ByteArray {
+    fun demodulate(samples: FloatArray): ByteArray? {
         if (samples.size < config.symbolSamples) {
-            throw IllegalStateException("not enough samples for D-CSS demod")
+            return null
         }
         val symbolCount = samples.size / config.symbolSamples
         val decoded = ByteArray(symbolCount)
@@ -155,14 +156,14 @@ private class DcssModem(private val config: DcssConfig) {
         return out
     }
 
-    private fun unprefixLengthBytes(bytes: ByteArray): ByteArray {
+    private fun unprefixLengthBytes(bytes: ByteArray): ByteArray? {
         if (bytes.size < 2) {
-            throw IllegalStateException("missing D-CSS length prefix")
+            return null
         }
         val length = ((bytes[0].toInt() and 0xFF) shl 8) or (bytes[1].toInt() and 0xFF)
         val required = 2 + length
         if (bytes.size < required) {
-            throw IllegalStateException("incomplete D-CSS payload")
+            return null
         }
         return bytes.copyOfRange(2, required)
     }
@@ -172,7 +173,10 @@ class AcousticPhyLink(private val config: SessionConfig) {
     private val lock = Object()
 
     private val sampleRateHz = config.sampleRateHz.coerceIn(8_000, 192_000)
-    private val cappedGain = min(max(config.txGainCap, 0f), 0.12f)
+    private val cappedGain = run {
+        val maxCap = if (config.bandStartHz >= 18000) 0.70f else 0.12f
+        min(max(config.txGainCap, 0f), maxCap)
+    }
 
     private val dcssSymbolSamples = config.dcssSymbolSamples.coerceIn(64, 4096)
     private val robustConfig = DcssConfig(
@@ -188,6 +192,21 @@ class AcousticPhyLink(private val config: SessionConfig) {
     private val robustModem = DcssModem(robustConfig)
     private val headerModem = DcssModem(headerConfig)
 
+    private val ofdmFftSize = CYRINX_OFDM_FFT_SIZE
+    private val ofdmCpSamples = 96
+    private val fft = FFT(ofdmFftSize)
+    private val ofdmActiveBins = run {
+        val binWidth = sampleRateHz.toFloat() / ofdmFftSize.toFloat()
+        val start = max(1, ceil(config.bandStartHz.toFloat() / binWidth).toInt())
+        val end = min((ofdmFftSize / 2) - 1, kotlin.math.floor(config.bandEndHz.toFloat() / binWidth).toInt())
+        if (start <= end) {
+            IntArray(end - start + 1) { i -> start + i }
+        } else {
+            intArrayOf()
+        }
+    }
+    private val ofdmActiveCarrierCount = ofdmActiveBins.size
+
     private val preambleBlock = makePreambleBlock(
         sampleRateHz = sampleRateHz,
         bandStartHz = config.bandStartHz,
@@ -201,7 +220,7 @@ class AcousticPhyLink(private val config: SessionConfig) {
     private val preambleEnergy = max(1e-7f, preamble.fold(0f) { acc, v -> acc + (v * v) })
     private val syncThreshold = config.preambleSyncThreshold.coerceIn(0.10f, 0.98f)
 
-    private val rxBuffer = ArrayList<Float>()
+    private val rxBuffer = FloatBuffer(131072)
     private var rxSearchStart = 0
 
     fun encode(frame: ByteArray): FloatArray {
@@ -213,8 +232,11 @@ class AcousticPhyLink(private val config: SessionConfig) {
         val header = AcousticHeader(mode = mode, payloadLength = frame.size).encode()
         val headerWave = headerModem.modulate(header)
 
-        // Android port currently emits robust D-CSS body mode for interoperability.
-        val bodyWave = robustModem.modulate(frame)
+        val bodyWave = if (mode == AcousticBodyMode.TURBO_OFDM) {
+            modulateOfdm(frame)
+        } else {
+            robustModem.modulate(frame)
+        }
 
         val out = FloatArray(preamble.size + headerWave.size + bodyWave.size)
         var cursor = 0
@@ -231,9 +253,7 @@ class AcousticPhyLink(private val config: SessionConfig) {
             return emptyList()
         }
         synchronized(lock) {
-            for (sample in samples) {
-                rxBuffer.add(sample)
-            }
+            rxBuffer.addAll(samples)
             return decodeAvailableLocked()
         }
     }
@@ -250,6 +270,15 @@ class AcousticPhyLink(private val config: SessionConfig) {
             }
 
             val syncStart = lockResult.index
+            val minRequired = syncStart + preamble.size + headerSamples + 32
+            if (rxBuffer.size < minRequired) {
+                if (syncStart > 0) {
+                    dropFront(syncStart)
+                    rxSearchStart = 0
+                }
+                break
+            }
+
             val headerLock = decodeHeaderAround(syncStart, headerSamples)
             if (headerLock == null) {
                 dropFront(syncStart + 1)
@@ -260,22 +289,11 @@ class AcousticPhyLink(private val config: SessionConfig) {
             val headerStart = headerLock.start
             val headerEnd = headerLock.end
 
-            if (rxBuffer.size < headerEnd) {
-                if (syncStart > 0) {
-                    dropFront(syncStart)
-                    rxSearchStart = 0
-                }
-                break
+            val bodySamples = if (packetHeader.mode == AcousticBodyMode.TURBO_OFDM) {
+                expectedOfdmSamples(packetHeader.payloadLength)
+            } else {
+                expectedDcssSamples(packetHeader.payloadLength, robustConfig)
             }
-
-            if (packetHeader.mode != AcousticBodyMode.ROBUST_DCSS) {
-                // Turbo mode is intentionally not decoded in this Android port.
-                dropFront(syncStart + 1)
-                rxSearchStart = 0
-                continue
-            }
-
-            val bodySamples = expectedDcssSamples(packetHeader.payloadLength, robustConfig)
             val bodyStart = headerEnd
             val bodyEnd = bodyStart + bodySamples
             if (rxBuffer.size < bodyEnd) {
@@ -288,7 +306,11 @@ class AcousticPhyLink(private val config: SessionConfig) {
 
             val bodyWindow = sliceToFloatArray(rxBuffer, bodyStart, bodyEnd)
             val bodyPayload = try {
-                robustModem.demodulate(bodyWindow)
+                if (packetHeader.mode == AcousticBodyMode.TURBO_OFDM) {
+                    demodulateOfdm(bodyWindow)
+                } else {
+                    robustModem.demodulate(bodyWindow)
+                }
             } catch (_: Throwable) {
                 null
             }
@@ -337,15 +359,12 @@ class AcousticPhyLink(private val config: SessionConfig) {
                 continue
             }
             val headerWindow = sliceToFloatArray(rxBuffer, headerStart, headerEnd)
-            val decodedHeader = try {
-                headerModem.demodulate(headerWindow)
-            } catch (_: Throwable) {
-                null
-            } ?: continue
+            val decodedHeader = headerModem.demodulate(headerWindow) ?: continue
             val packetHeader = AcousticHeader.decode(decodedHeader) ?: continue
             if (packetHeader.payloadLength <= 0 || packetHeader.payloadLength > ACOUSTIC_FRAME_MAX_BYTES) {
                 continue
             }
+            android.util.Log.i("CyrinxHILAndroid", "Header DECODED SUCCESSFULLY! shift=$shift length=${packetHeader.payloadLength} mode=${packetHeader.mode}")
             return HeaderLock(start = headerStart, end = headerEnd, header = packetHeader)
         }
         return null
@@ -362,7 +381,7 @@ class AcousticPhyLink(private val config: SessionConfig) {
         }
         val gearId = readBitsMsb(header, 64, 3)
         return if (gearId >= 2) {
-            AcousticBodyMode.ROBUST_DCSS
+            AcousticBodyMode.TURBO_OFDM
         } else {
             AcousticBodyMode.ROBUST_DCSS
         }
@@ -382,33 +401,66 @@ class AcousticPhyLink(private val config: SessionConfig) {
         val evmPct: Float,
     )
 
-    private fun findBestPreambleLock(buffer: List<Float>, startAt: Int): PreambleLock? {
+    private fun findBestPreambleLock(buffer: FloatBuffer, startAt: Int): PreambleLock? {
         if (buffer.size < preamble.size) {
             return null
         }
         val searchLimit = buffer.size - preamble.size
         val lowerBound = startAt.coerceIn(0, searchLimit)
 
-        fun evaluateAt(start: Int): PreambleLock? {
+        var maxCorrObserved = 0f
+        var maxCorrIndex = -1
+
+        for (start in lowerBound..searchLimit) {
             var dot = 0f
             var segmentEnergy = 0f
             for (idx in preamble.indices) {
-                val sample = buffer[start + idx]
+                val sample = buffer.array[start + idx]
                 val reference = preamble[idx]
                 dot += sample * reference
                 segmentEnergy += sample * sample
             }
             val norm = sqrt(max(segmentEnergy * preambleEnergy, 1e-7f))
             val corr = dot / norm
+            if (corr > maxCorrObserved) {
+                maxCorrObserved = corr
+                maxCorrIndex = start
+            }
             if (corr < syncThreshold) {
-                return null
+                continue
             }
 
-            val scale = dot / preambleEnergy
+            // We crossed the syncThreshold! Search a local window ahead (48 samples / 12 chips)
+            // to find the absolute maximum peak and prevent locking on rising-edge sidelobes.
+            var bestStart = start
+            var bestCorr = corr
+            var bestDot = dot
+
+            val windowSize = 48
+            val peakSearchLimit = min(start + windowSize, searchLimit)
+            for (candidateStart in (start + 1)..peakSearchLimit) {
+                var candidateDot = 0f
+                var candidateEnergy = 0f
+                for (idx in preamble.indices) {
+                    val sample = buffer.array[candidateStart + idx]
+                    val reference = preamble[idx]
+                    candidateDot += sample * reference
+                    candidateEnergy += sample * sample
+                }
+                val candidateNorm = sqrt(max(candidateEnergy * preambleEnergy, 1e-7f))
+                val candidateCorr = candidateDot / candidateNorm
+                if (candidateCorr > bestCorr) {
+                    bestCorr = candidateCorr
+                    bestStart = candidateStart
+                    bestDot = candidateDot
+                }
+            }
+
+            val scale = bestDot / preambleEnergy
             var errorEnergy = 0f
             for (idx in preamble.indices) {
                 val estimate = scale * preamble[idx]
-                val err = buffer[start + idx] - estimate
+                val err = buffer.array[bestStart + idx] - estimate
                 errorEnergy += err * err
             }
 
@@ -416,25 +468,11 @@ class AcousticPhyLink(private val config: SessionConfig) {
             val noisePower = max(1e-7f, errorEnergy / preamble.size)
             val snrDb = 10.0f * log10(signalPower / noisePower)
             val evmPct = sqrt(noisePower / signalPower) * 100.0f
-            return PreambleLock(index = start, correlation = corr, snrDb = snrDb, evmPct = evmPct)
+            android.util.Log.i("CyrinxHILAndroid", "Preamble lock found! start=$bestStart (first crossing=$start) corr=$bestCorr snrDb=$snrDb")
+            return PreambleLock(index = bestStart, correlation = bestCorr, snrDb = snrDb, evmPct = evmPct)
         }
-
-        val coarseStride = if ((searchLimit - lowerBound) > 256) 4 else 1
-        var coarse = lowerBound
-        while (coarse <= searchLimit) {
-            val coarseLock = evaluateAt(coarse)
-            if (coarseLock != null) {
-                val refineFrom = max(lowerBound, coarse - (coarseStride - 1))
-                val refineTo = min(searchLimit, coarse + (coarseStride - 1))
-                for (start in refineFrom..refineTo) {
-                    val refined = evaluateAt(start)
-                    if (refined != null) {
-                        return refined
-                    }
-                }
-                return coarseLock
-            }
-            coarse += coarseStride
+        if (maxCorrObserved > 0.01f) {
+            android.util.Log.d("CyrinxHILAndroid", "maxCorrObserved=$maxCorrObserved at index $maxCorrIndex (threshold=$syncThreshold, searchSize=${searchLimit - lowerBound + 1}, bufferSize=${buffer.size})")
         }
         return null
     }
@@ -464,11 +502,7 @@ class AcousticPhyLink(private val config: SessionConfig) {
     }
 
     private fun dropFront(count: Int) {
-        if (count <= 0 || rxBuffer.isEmpty()) {
-            return
-        }
-        val clamped = min(count, rxBuffer.size)
-        rxBuffer.subList(0, clamped).clear()
+        rxBuffer.dropFront(count)
     }
 
     private fun makePreambleBlock(
@@ -485,7 +519,8 @@ class AcousticPhyLink(private val config: SessionConfig) {
 
         val centerHz = (bandStartHz + bandEndHz) * 0.5f
         val chipSpan = 4
-        val amplitude = min(max(txGainCap, 0f), 0.12f)
+        val maxCap = if (bandStartHz >= 18000) 0.70f else 0.12f
+        val amplitude = min(max(txGainCap, 0f), maxCap)
         val out = FloatArray(zc.size * chipSpan)
         var sampleIndex = 0
         for (chip in zc) {
@@ -523,12 +558,8 @@ class AcousticPhyLink(private val config: SessionConfig) {
         }
     }
 
-    private fun sliceToFloatArray(source: List<Float>, start: Int, end: Int): FloatArray {
-        val out = FloatArray(end - start)
-        for (i in start until end) {
-            out[i - start] = source[i]
-        }
-        return out
+    private fun sliceToFloatArray(source: FloatBuffer, start: Int, end: Int): FloatArray {
+        return source.slice(start, end)
     }
 
     private fun readBitsMsb(bytes: ByteArray, startBit: Int, bitCount: Int): Int {
@@ -549,6 +580,209 @@ class AcousticPhyLink(private val config: SessionConfig) {
         }
         return value
     }
+
+    private fun modulateOfdm(payload: ByteArray): FloatArray {
+        val bits = BitPacking.encodeLengthPrefixed(payload)
+        val qpskSymbols = mapBitsToQpsk(bits)
+        val activeCount = ofdmActiveCarrierCount
+        if (activeCount <= 0) {
+            return FloatArray(0)
+        }
+        val frameCount = ceil(qpskSymbols.size.toDouble() / activeCount.toDouble()).toInt()
+        val symbolLength = ofdmFftSize + ofdmCpSamples
+        val out = FloatArray(frameCount * symbolLength)
+
+        val re = FloatArray(ofdmFftSize)
+        val im = FloatArray(ofdmFftSize)
+        val timeRe = FloatArray(ofdmFftSize)
+        val timeIm = FloatArray(ofdmFftSize)
+
+        val amplitude = min(max(cappedGain, 0f), 0.95f)
+        val fftScale = 1.0f / ofdmFftSize.toFloat()
+        val scale = amplitude * fftScale
+
+        for (frameIdx in 0 until frameCount) {
+            val start = frameIdx * activeCount
+            val end = min(start + activeCount, qpskSymbols.size)
+
+            re.fill(0f)
+            im.fill(0f)
+
+            for (idx in 0 until activeCount) {
+                val symbol = if (start + idx < end) qpskSymbols[start + idx] else 0.toByte()
+                val bin = ofdmActiveBins[idx]
+
+                val norm = 0.70710677f
+                when (symbol.toInt() and 0x3) {
+                    0 -> {
+                        re[bin] = norm
+                        im[bin] = norm
+                    }
+                    1 -> {
+                        re[bin] = -norm
+                        im[bin] = norm
+                    }
+                    2 -> {
+                        re[bin] = norm
+                        im[bin] = -norm
+                    }
+                    else -> {
+                        re[bin] = -norm
+                        im[bin] = -norm
+                    }
+                }
+
+                val mirror = (ofdmFftSize - bin) % ofdmFftSize
+                if (mirror != bin) {
+                    re[mirror] = re[bin]
+                    im[mirror] = -im[bin]
+                }
+            }
+
+            timeRe.fill(0f)
+            timeIm.fill(0f)
+            System.arraycopy(re, 0, timeRe, 0, ofdmFftSize)
+            System.arraycopy(im, 0, timeIm, 0, ofdmFftSize)
+            fft.transform(timeRe, timeIm, forward = false)
+
+            val outStart = frameIdx * symbolLength
+            val cpStart = ofdmFftSize - ofdmCpSamples
+            for (i in 0 until ofdmCpSamples) {
+                out[outStart + i] = timeRe[cpStart + i] * scale
+            }
+            for (i in 0 until ofdmFftSize) {
+                out[outStart + ofdmCpSamples + i] = timeRe[i] * scale
+            }
+        }
+        return out
+    }
+
+    private fun demodulateOfdm(samples: FloatArray): ByteArray? {
+        val symbolLength = ofdmFftSize + ofdmCpSamples
+        if (samples.size < symbolLength) {
+            return null
+        }
+        val frameCount = samples.size / symbolLength
+        val activeCount = ofdmActiveCarrierCount
+        val totalBits = frameCount * activeCount * 2
+        val bits = ByteArray(totalBits)
+        var bitIdx = 0
+
+        val re = FloatArray(ofdmFftSize)
+        val im = FloatArray(ofdmFftSize)
+
+        for (frameIdx in 0 until frameCount) {
+            val start = (frameIdx * symbolLength) + ofdmCpSamples
+
+            System.arraycopy(samples, start, re, 0, ofdmFftSize)
+            im.fill(0f)
+
+            fft.transform(re, im, forward = true)
+
+            for (idx in 0 until activeCount) {
+                val bin = ofdmActiveBins[idx]
+                val symbol = demapQpsk(re[bin], im[bin]).toInt()
+                bits[bitIdx++] = ((symbol ushr 1) and 1).toByte()
+                bits[bitIdx++] = (symbol and 1).toByte()
+            }
+        }
+
+        return BitPacking.decodeLengthPrefixed(bits)
+    }
+
+    private fun expectedOfdmSamples(payloadBytes: Int): Int {
+        if (payloadBytes < 0 || ofdmFftSize <= 0 || ofdmCpSamples <= 0) {
+            return 0
+        }
+        if (ofdmActiveCarrierCount <= 0) {
+            return 0
+        }
+        val bitCount = (payloadBytes + 2) * 8
+        val qpskSymbols = (bitCount + 1) / 2
+        val frameCount = max(1, (qpskSymbols + ofdmActiveCarrierCount - 1) / ofdmActiveCarrierCount)
+        return frameCount * (ofdmFftSize + ofdmCpSamples)
+    }
+
+    private fun demapQpsk(re: Float, im: Float): Byte {
+        if (re >= 0f && im >= 0f) return 0
+        if (re < 0f && im >= 0f) return 1
+        if (re >= 0f && im < 0f) return 2
+        return 3
+    }
+
+    private fun mapBitsToQpsk(bits: ByteArray): ByteArray {
+        if (bits.isEmpty()) {
+            return byteArrayOf()
+        }
+        val symbols = ByteArray((bits.size + 1) / 2)
+        var index = 0
+        var symIdx = 0
+        while (index < bits.size) {
+            val high = bits[index].toInt() and 1
+            val low = if (index + 1 < bits.size) (bits[index + 1].toInt() and 1) else 0
+            symbols[symIdx++] = ((high shl 1) or low).toByte()
+            index += 2
+        }
+        return symbols
+    }
+
+    private object BitPacking {
+        fun encodeLengthPrefixed(payload: ByteArray): ByteArray {
+            val prefix = prefixLengthBytes(payload)
+            val bits = ByteArray(prefix.size * 8)
+            var bitIdx = 0
+            for (byte in prefix) {
+                val b = byte.toInt() and 0xFF
+                for (shift in 7 downTo 0) {
+                    bits[bitIdx++] = ((b ushr shift) and 1).toByte()
+                }
+            }
+            return bits
+        }
+
+        fun decodeLengthPrefixed(bits: ByteArray): ByteArray? {
+            if (bits.size < 16) {
+                return null
+            }
+            val length = bitsToUInt16(bits, 0)
+            val requiredBits = 16 + (length * 8)
+            if (bits.size < requiredBits) {
+                return null
+            }
+            return bitsToBytes(bits, 16, requiredBits)
+        }
+
+        fun prefixLengthBytes(payload: ByteArray): ByteArray {
+            val clampedSize = min(payload.size, 0xFFFF)
+            val out = ByteArray(clampedSize + 2)
+            out[0] = ((clampedSize ushr 8) and 0xFF).toByte()
+            out[1] = (clampedSize and 0xFF).toByte()
+            System.arraycopy(payload, 0, out, 2, clampedSize)
+            return out
+        }
+
+        private fun bitsToUInt16(bits: ByteArray, startOffset: Int): Int {
+            var value = 0
+            for (i in 0 until 16) {
+                value = (value shl 1) or (bits[startOffset + i].toInt() and 1)
+            }
+            return value
+        }
+
+        private fun bitsToBytes(bits: ByteArray, startOffset: Int, endOffset: Int): ByteArray {
+            val bitCount = endOffset - startOffset
+            val byteCount = bitCount / 8
+            val out = ByteArray(byteCount)
+            for (idx in 0 until byteCount) {
+                var value = 0
+                for (bitIdx in 0 until 8) {
+                    value = (value shl 1) or (bits[startOffset + (idx * 8) + bitIdx].toInt() and 1)
+                }
+                out[idx] = value.toByte()
+            }
+            return out
+        }
+    }
 }
 
 private fun crc16Ccitt(data: ByteArray, start: Int, len: Int): Int {
@@ -567,3 +801,50 @@ private fun crc16Ccitt(data: ByteArray, start: Int, len: Int): Int {
 }
 
 private fun log10(value: Float): Float = (ln(value.toDouble()) / ln(10.0)).toFloat()
+
+class FloatBuffer(initialCapacity: Int = 131072) {
+    var array = FloatArray(initialCapacity)
+    var size = 0
+        private set
+
+    fun isEmpty(): Boolean = size == 0
+
+    fun addAll(values: FloatArray) {
+        ensureCapacity(size + values.size)
+        System.arraycopy(values, 0, array, size, values.size)
+        size += values.size
+    }
+
+    fun slice(start: Int, end: Int): FloatArray {
+        val len = end - start
+        val result = FloatArray(len)
+        System.arraycopy(array, start, result, 0, len)
+        return result
+    }
+
+    fun dropFront(count: Int) {
+        if (count <= 0) return
+        val toDrop = min(count, size)
+        val remaining = size - toDrop
+        if (remaining > 0) {
+            System.arraycopy(array, toDrop, array, 0, remaining)
+        }
+        size = remaining
+    }
+
+    fun clear() {
+        size = 0
+    }
+
+    private fun ensureCapacity(minCapacity: Int) {
+        if (minCapacity > array.size) {
+            var newCap = array.size * 2
+            if (newCap < minCapacity) {
+                newCap = minCapacity
+            }
+            val newArray = FloatArray(newCap)
+            System.arraycopy(array, 0, newArray, 0, size)
+            array = newArray
+        }
+    }
+}

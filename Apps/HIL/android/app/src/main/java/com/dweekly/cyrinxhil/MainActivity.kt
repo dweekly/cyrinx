@@ -524,14 +524,27 @@ class MainActivity : ComponentActivity() {
         ioExecutor.execute {
             val cfg = buildSessionConfig(role)
             val phy = AcousticPhyLink(cfg)
-            val frame = ByteArray(48) { idx -> ((idx * 13) and 0xFF).toByte() }
-            val encoded = phy.encode(frame)
-            val decoded = phy.ingest(encoded)
-            val ok = decoded.firstOrNull()?.frame?.contentEquals(frame) == true
+
+            // Test DCSS Robust Mode (Gear 0)
+            val dcssFrame = ByteArray(48) { idx -> ((idx * 13) and 0xFF).toByte() }
+            dcssFrame[2] = (dcssFrame[2].toInt() and 0xF0).toByte() // frameType = 0
+            dcssFrame[10] = 0 // gearId = 0
+            val encodedDcss = phy.encode(dcssFrame)
+            val decodedDcss = phy.ingest(encodedDcss)
+            val dcssOk = decodedDcss.firstOrNull()?.frame?.contentEquals(dcssFrame) == true
+
+            // Test OFDM Turbo Mode (Gear 3)
+            val ofdmFrame = ByteArray(48) { idx -> ((idx * 17) and 0xFF).toByte() }
+            ofdmFrame[2] = (ofdmFrame[2].toInt() and 0xF0).toByte() // frameType = 0
+            ofdmFrame[10] = (3 shl 5).toByte() // gearId = 3
+            val encodedOfdm = phy.encode(ofdmFrame)
+            val decodedOfdm = phy.ingest(encodedOfdm)
+            val ofdmOk = decodedOfdm.firstOrNull()?.frame?.contentEquals(ofdmFrame) == true
+
+            val allOk = dcssOk && ofdmOk
             appendLog(
-                "self_test ok=$ok encodedSamples=${encoded.size} decodedFrames=${decoded.size} " +
-                    "sampleRate=${cfg.sampleRateHz} band=${cfg.bandStartHz}...${cfg.bandEndHz} dcss=${cfg.dcssSymbolSamples} " +
-                    "sync=${cfg.preambleSyncThreshold}",
+                "self_test ok=$allOk dcssOk=$dcssOk (samples=${encodedDcss.size}) ofdmOk=$ofdmOk (samples=${encodedOfdm.size}) " +
+                    "sampleRate=${cfg.sampleRateHz} band=${cfg.bandStartHz}...${cfg.bandEndHz}",
             )
         }
     }

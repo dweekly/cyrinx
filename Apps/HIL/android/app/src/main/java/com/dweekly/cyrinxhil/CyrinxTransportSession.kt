@@ -277,10 +277,22 @@ class CyrinxTransportSession(
             }
             lastRxSeq = header.seq
             metricsState.rxFrames += 1
-            if (currentGear == 0) {
-                currentGear = 1
-                metricsState.currentGear = 1
-                log("event=linked")
+            val oldGear = currentGear
+            if (config.role == Role.SLAVE) {
+                if (currentGear != header.gearId) {
+                    currentGear = header.gearId
+                    metricsState.currentGear = header.gearId
+                    log("slave shifting gear from $oldGear to $currentGear")
+                }
+                if (oldGear == 0) {
+                    log("event=linked")
+                }
+            } else {
+                if (currentGear == 0) {
+                    currentGear = 1
+                    metricsState.currentGear = 1
+                    log("event=linked")
+                }
             }
         }
 

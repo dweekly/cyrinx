@@ -336,11 +336,37 @@ final class AcousticPHYLink {
                 continue
             }
 
-            let scale = dot / preambleEnergy
+            // We crossed the syncThreshold! Search a local window ahead (48 samples)
+            // to find the absolute maximum peak and prevent locking on rising-edge sidelobes.
+            var bestStart = start
+            var bestCorr = corr
+            var bestDot = dot
+
+            let windowSize = 48
+            let peakSearchLimit = min(start + windowSize, searchLimit)
+            for candidateStart in (start + 1)...peakSearchLimit {
+                var candidateDot: Float = 0
+                var candidateEnergy: Float = 0
+                for idx in 0..<preamble.count {
+                    let sample = buffer[candidateStart + idx]
+                    let reference = preamble[idx]
+                    candidateDot += sample * reference
+                    candidateEnergy += sample * sample
+                }
+                let candidateNorm = sqrt(max(candidateEnergy * preambleEnergy, 1e-7))
+                let candidateCorr = candidateDot / candidateNorm
+                if candidateCorr > bestCorr {
+                    bestCorr = candidateCorr
+                    bestStart = candidateStart
+                    bestDot = candidateDot
+                }
+            }
+
+            let scale = bestDot / preambleEnergy
             var errorEnergy: Float = 0
             for idx in 0..<preamble.count {
                 let estimate = scale * preamble[idx]
-                let err = buffer[start + idx] - estimate
+                let err = buffer[bestStart + idx] - estimate
                 errorEnergy += err * err
             }
 
@@ -348,7 +374,7 @@ final class AcousticPHYLink {
             let noisePower = max(1e-7, errorEnergy / Float(preamble.count))
             let snr = 10.0 * log10(signalPower / noisePower)
             let evm = sqrt(noisePower / signalPower) * 100.0
-            return PreambleLock(index: start, correlation: corr, snrDB: snr, evmPct: evm)
+            return PreambleLock(index: bestStart, correlation: bestCorr, snrDB: snr, evmPct: evm)
         }
 
         return nil
@@ -400,7 +426,8 @@ final class AcousticPHYLink {
 
         let centerHz = Float(bandStartHz + bandEndHz) * 0.5
         let chipSpan = 4
-        let amplitude = min(max(txGainCap, 0), 0.12)
+        let maxCap = bandStartHz >= 18000 ? Float(0.70) : Float(0.12)
+        let amplitude = min(max(txGainCap, 0), maxCap)
         var out = [Float]()
         out.reserveCapacity(zc.count * chipSpan)
         var sampleIndex = 0

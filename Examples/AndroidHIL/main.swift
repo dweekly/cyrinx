@@ -614,6 +614,16 @@ struct AndroidHILRunner {
             txGainCap: opts.txGainCap
         )
 
+#if os(macOS)
+        var rateOverride: MacDefaultAudioRateOverride? = nil
+        do {
+            rateOverride = try MacDefaultAudioRateOverride(requestedHz: Double(opts.sampleRateHz))
+        } catch {
+            logLine("[mac-audio-device-error] failed to override sample rate: \(error)")
+        }
+        defer { rateOverride?.restore() }
+#endif
+
         do {
             let session = try CyrinxSession(config: config)
             try session.start()

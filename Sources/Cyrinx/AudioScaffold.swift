@@ -1670,7 +1670,7 @@ enum AudioBackendFactory {
                     cyrinx_ingest_frame(sessionHandle, ptr.baseAddress, ptr.count, &report)
                 }
                 if rc != CYRINX_OK.rawValue {
-                    state = .failed
+                    log.warning("cyrinx_ingest_frame non-success code: \(rc)")
                 }
             }
         }
@@ -1730,6 +1730,7 @@ enum AudioBackendFactory {
         private let phyLink: AcousticPHYLink
         private let engine = AVAudioEngine()
         private let txQueueLock = NSLock()
+        private let rxQueue = DispatchQueue(label: "com.dweekly.cyrinx.macos-engine-rx", qos: .userInitiated)
         private var sessionHandle: OpaquePointer?
         private var state: AudioBackendState = .idle
         private var observedInputSampleRateHz: UInt32 = 0
@@ -1790,7 +1791,14 @@ enum AudioBackendFactory {
                 format: engine.inputNode.inputFormat(forBus: 0)
             ) { [weak self] buffer, _ in
                 self?.counters.recordRxCallback()
-                self?.ingestInboundBuffer(buffer)
+                guard let self else { return }
+                guard let channel = buffer.floatChannelData?.pointee else { return }
+                let frameLength = Int(buffer.frameLength)
+                guard frameLength > 0 else { return }
+                let samples = Array(UnsafeBufferPointer(start: channel, count: frameLength))
+                self.rxQueue.async { [weak self] in
+                    self?.ingestInboundSamples(samples)
+                }
             }
 
             do {
@@ -1950,24 +1958,18 @@ enum AudioBackendFactory {
             txQueueLock.unlock()
         }
 
-        private func ingestInboundBuffer(_ buffer: AVAudioPCMBuffer) {
-            guard let sessionHandle, let channel = buffer.floatChannelData?.pointee else {
-                return
-            }
-            let frameLength = Int(buffer.frameLength)
-            if frameLength == 0 {
+        private func ingestInboundSamples(_ samples: [Float]) {
+            guard let sessionHandle else {
                 return
             }
             let decodedFrames: [AcousticDecodedFrame]
             if let rxResampler {
-                let source = UnsafeBufferPointer(start: channel, count: frameLength)
-                let modemRateSamples = rxResampler.process(source)
+                let modemRateSamples = rxResampler.process(samples)
                 if modemRateSamples.isEmpty {
                     return
                 }
                 decodedFrames = phyLink.ingest(samples: modemRateSamples)
             } else {
-                let samples = UnsafeBufferPointer(start: channel, count: frameLength)
                 decodedFrames = phyLink.ingest(samples: samples)
             }
             for decoded in decodedFrames where !decoded.frame.isEmpty {
@@ -1976,7 +1978,8 @@ enum AudioBackendFactory {
                     cyrinx_ingest_frame(sessionHandle, ptr.baseAddress, ptr.count, &report)
                 }
                 if rc != CYRINX_OK.rawValue {
-                    state = .failed
+                    // Non-fatal, e.g. CRC error under noise or duplicate frames.
+                    print("cyrinx_ingest_frame non-success code: \(rc)")
                 }
             }
         }
