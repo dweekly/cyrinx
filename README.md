@@ -119,14 +119,9 @@ swift run cyrinx-sim-bench --profile quiet --out artifacts/bench/sim-quiet.json
 - `probe-macos-audio-rates.sh`: probes default macOS input/output sample-rate capability (including 96 kHz support) and writes JSON.
 - `hil-96k-smoke.sh`: runs macOS capability probe, generates HIL project, builds macOS+iOS HIL apps, and prints 96 kHz validation steps.
 
-## Current Scope and Next Steps
+## Current Scope & Future Roadmap
 
-This implementation now includes a real TX/RX acoustic PHY pipeline in Swift for Apple backends, plus full simulation and in-memory transport.
+This implementation includes a real-time TX/RX acoustic physical layer in Swift for Apple audio backends, paired with a robust Kotlin companion target for physical Android devices, plus a comprehensive local-first simulation and benchmark suite.
 
-Planned next layers:
+For our long-term, multi-antenna architectural vision and stack-ranked priorities organized around environmental sensing, capabilities handshaking, and SVD spatial sounding, please see the complete [ROADMAP.md](file:///Users/dew/dev/cyrinx/ROADMAP.md).
 
-1. Add pilot tracking, channel estimation, and equalization for non-ideal OFDM channels
-2. Improve Doppler/CFO estimation and compensation in the live RX path
-3. Harden D-CSS synchronization and multipath tolerance under office-noise profiles
-4. Hardware-in-the-loop channel calibration for MacBook Pro <-> iPhone Pro Max
-5. Security envelope integration in host app (Encrypt-then-MAC payloads)
