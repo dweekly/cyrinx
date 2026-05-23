@@ -166,6 +166,7 @@ public struct Config {
     public var sensorAssistedARC: Bool
     public var dynamicCP: Bool
     public var sfbcStaticMode: Bool
+    public var channels: UInt32
 
     /// Creates a PRD-aligned session configuration.
     ///
@@ -183,7 +184,8 @@ public struct Config {
         ofdmCPSamplesMin: UInt16 = 10,
         sensorAssistedARC: Bool = true,
         dynamicCP: Bool = true,
-        sfbcStaticMode: Bool = true
+        sfbcStaticMode: Bool = true,
+        channels: UInt32 = 1
     ) {
         self.role = role
         self.transportBackend = transportBackend
@@ -197,6 +199,7 @@ public struct Config {
         self.sensorAssistedARC = sensorAssistedARC
         self.dynamicCP = dynamicCP
         self.sfbcStaticMode = sfbcStaticMode
+        self.channels = channels
     }
 
     fileprivate func toC(
@@ -222,6 +225,8 @@ public struct Config {
         c.tx_callback = txCallback
         c.event_callback = eventCallback
         c.user_data = userData
+        c.mics_count = UInt8(channels)
+        c.speakers_count = UInt8(channels)
         return c
     }
 }
@@ -278,6 +283,8 @@ public struct Metrics {
     public let rxFrames: UInt32
     public let crcFailures: UInt32
     public let linkResets: UInt32
+    public let peerMicsCount: UInt8
+    public let peerSpeakersCount: UInt8
 
     fileprivate init(c: cyrinx_metrics_t) {
         gear = Gear(cValue: c.current_gear)
@@ -291,6 +298,8 @@ public struct Metrics {
         rxFrames = c.rx_frames
         crcFailures = c.crc_failures
         linkResets = c.link_resets
+        peerMicsCount = c.peer_mics_count
+        peerSpeakersCount = c.peer_speakers_count
     }
 }
 

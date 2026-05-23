@@ -102,6 +102,7 @@ data class SessionConfig(
     val dcssSymbolSamples: Int = 256,
     val preambleSyncThreshold: Float = 0.25f,
     val rawCodec: RawCodec = RawCodec.AUTO,
+    val channels: Int = 1,
 )
 
 interface FrameTxSink {

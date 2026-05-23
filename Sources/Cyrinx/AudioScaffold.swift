@@ -1743,7 +1743,7 @@ enum AudioBackendFactory {
             AVAudioFormat(
                 commonFormat: .pcmFormatFloat32,
                 sampleRate: Double(config.sampleRateHz),
-                channels: 1,
+                channels: config.channels == 2 ? 2 : 1,
                 interleaved: false
             )
         }()
@@ -1792,12 +1792,28 @@ enum AudioBackendFactory {
             ) { [weak self] buffer, _ in
                 self?.counters.recordRxCallback()
                 guard let self else { return }
-                guard let channel = buffer.floatChannelData?.pointee else { return }
                 let frameLength = Int(buffer.frameLength)
                 guard frameLength > 0 else { return }
-                let samples = Array(UnsafeBufferPointer(start: channel, count: frameLength))
-                self.rxQueue.async { [weak self] in
-                    self?.ingestInboundSamples(samples)
+                
+                if self.config.channels == 2 {
+                    guard let channelData = buffer.floatChannelData else { return }
+                    let leftPtr = channelData[0]
+                    let rightPtr = buffer.format.channelCount >= 2 ? channelData[1] : channelData[0]
+                    
+                    var interleaved = [Float](repeating: 0, count: frameLength * 2)
+                    for i in 0..<frameLength {
+                        interleaved[i * 2] = leftPtr[i]
+                        interleaved[i * 2 + 1] = rightPtr[i]
+                    }
+                    self.rxQueue.async { [weak self] in
+                        self?.ingestInboundSamples(interleaved)
+                    }
+                } else {
+                    guard let channel = buffer.floatChannelData?.pointee else { return }
+                    let samples = Array(UnsafeBufferPointer(start: channel, count: frameLength))
+                    self.rxQueue.async { [weak self] in
+                        self?.ingestInboundSamples(samples)
+                    }
                 }
             }
 
@@ -1897,22 +1913,70 @@ enum AudioBackendFactory {
             _ buffers: UnsafeMutableAudioBufferListPointer,
             frameCount: Int
         ) {
-            var mono = [Float](repeating: 0, count: frameCount)
-            _ = mono.withUnsafeMutableBufferPointer { ptr in
-                dequeueTxSamples(into: ptr.baseAddress!, sampleCount: frameCount)
-            }
-            for buffer in buffers {
-                guard let data = buffer.mData else {
-                    continue
+            if config.channels == 2 {
+                var stereo = [Float](repeating: 0, count: frameCount * 2)
+                let copied = stereo.withUnsafeMutableBufferPointer { ptr in
+                    dequeueTxSamples(into: ptr.baseAddress!, sampleCount: frameCount * 2)
                 }
-                let out = data.assumingMemoryBound(to: Float.self)
-                let sampleCount = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
-                let toCopy = min(sampleCount, frameCount)
-                for idx in 0..<toCopy {
-                    out[idx] = mono[idx]
+                
+                if buffers.count >= 2 {
+                    for ch in 0..<2 {
+                        let buffer = buffers[ch]
+                        guard let data = buffer.mData else { continue }
+                        let out = data.assumingMemoryBound(to: Float.self)
+                        let sampleCount = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
+                        let toCopy = min(sampleCount, frameCount)
+                        for idx in 0..<toCopy {
+                            out[idx] = (idx * 2 + ch < copied) ? stereo[idx * 2 + ch] : 0.0
+                        }
+                        if toCopy < sampleCount {
+                            (out + toCopy).initialize(repeating: 0, count: sampleCount - toCopy)
+                        }
+                    }
+                    if buffers.count > 2 {
+                        for ch in 2..<buffers.count {
+                            let buffer = buffers[ch]
+                            guard let data = buffer.mData else { continue }
+                            let out = data.assumingMemoryBound(to: Float.self)
+                            let sampleCount = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
+                            out.initialize(repeating: 0, count: sampleCount)
+                        }
+                    }
+                } else {
+                    let buffer = buffers[0]
+                    guard let data = buffer.mData else { return }
+                    let out = data.assumingMemoryBound(to: Float.self)
+                    let sampleCount = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
+                    let toCopy = min(sampleCount, frameCount)
+                    for idx in 0..<toCopy {
+                        let leftIdx = idx * 2
+                        let rightIdx = idx * 2 + 1
+                        let leftVal = leftIdx < copied ? stereo[leftIdx] : 0.0
+                        let rightVal = rightIdx < copied ? stereo[rightIdx] : 0.0
+                        out[idx] = (leftVal + rightVal) * 0.5
+                    }
+                    if toCopy < sampleCount {
+                        (out + toCopy).initialize(repeating: 0, count: sampleCount - toCopy)
+                    }
                 }
-                if toCopy < sampleCount {
-                    (out + toCopy).initialize(repeating: 0, count: sampleCount - toCopy)
+            } else {
+                var mono = [Float](repeating: 0, count: frameCount)
+                _ = mono.withUnsafeMutableBufferPointer { ptr in
+                    dequeueTxSamples(into: ptr.baseAddress!, sampleCount: frameCount)
+                }
+                for buffer in buffers {
+                    guard let data = buffer.mData else {
+                        continue
+                    }
+                    let out = data.assumingMemoryBound(to: Float.self)
+                    let sampleCount = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
+                    let toCopy = min(sampleCount, frameCount)
+                    for idx in 0..<toCopy {
+                        out[idx] = mono[idx]
+                    }
+                    if toCopy < sampleCount {
+                        (out + toCopy).initialize(repeating: 0, count: sampleCount - toCopy)
+                    }
                 }
             }
         }

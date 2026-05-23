@@ -32,6 +32,12 @@ class CyrinxTransportSession(
     private var nextTxSeq = 0
     private var lastRxSeq = 0
 
+    var peerMicsCount = 1
+        private set
+    var peerSpeakersCount = 1
+        private set
+    private var lastReplyMs = 0L
+
     private var awaitingAck = false
     private var awaitingAckSeq = 0
     private var ackDeadlineMs = 0L
@@ -271,6 +277,64 @@ class CyrinxTransportSession(
         }
         val payload = frame.copyOfRange(payloadStart, payloadEnd)
 
+        if (header.frameType == CyrinxConstants.FRAME_DATA) {
+            if (header.streamId == CyrinxConstants.STREAM_CONTROL && payload.size == 4 && payload[0] == 0xE1.toByte()) {
+                // Handshake message! Save peer capacities.
+                synchronized(signal) {
+                    peerMicsCount = payload[2].toInt() and 0xFF
+                    peerSpeakersCount = payload[3].toInt() and 0xFF
+                }
+                log("handshake received from peer: mics=$peerMicsCount, speakers=$peerSpeakersCount")
+
+                // Reply with our own capacities if peer initiated
+                val now = SystemClock.elapsedRealtime()
+                if (now - lastReplyMs > 1000) {
+                    lastReplyMs = now
+                    val capPayload = byteArrayOf(
+                        0xE1.toByte(),
+                        1.toByte(),
+                        config.channels.toByte(),
+                        config.channels.toByte()
+                    )
+                    val seq = synchronized(signal) {
+                        val s = nextTxSeq
+                        nextTxSeq = (nextTxSeq + 1) and 0xFFFF
+                        s
+                    }
+                    sendInternal(
+                        frameType = CyrinxConstants.FRAME_DATA,
+                        seq = seq,
+                        ack = header.seq,
+                        streamId = CyrinxConstants.STREAM_CONTROL,
+                        priority = 3,
+                        flags = 0,
+                        payload = capPayload,
+                        trackAck = false
+                    )
+                }
+
+                // Send immediate ACK
+                val lastReportSnapshot = synchronized(signal) { lastReport }
+                val ackPayload = encodeAckReport(lastReportSnapshot)
+                val seq = synchronized(signal) {
+                    val s = nextTxSeq
+                    nextTxSeq = (nextTxSeq + 1) and 0xFFFF
+                    s
+                }
+                sendInternal(
+                    frameType = CyrinxConstants.FRAME_ACK,
+                    seq = seq,
+                    ack = header.seq,
+                    streamId = CyrinxConstants.STREAM_CONTROL,
+                    priority = 3,
+                    flags = 0,
+                    payload = ackPayload,
+                    trackAck = false
+                )
+                return CyrinxStatus.OK
+            }
+        }
+
         synchronized(signal) {
             if (report != null) {
                 applyChannelReportLocked(report)
@@ -278,6 +342,7 @@ class CyrinxTransportSession(
             lastRxSeq = header.seq
             metricsState.rxFrames += 1
             val oldGear = currentGear
+            var triggerBroadcast = false
             if (config.role == Role.SLAVE) {
                 if (currentGear != header.gearId) {
                     currentGear = header.gearId
@@ -286,13 +351,35 @@ class CyrinxTransportSession(
                 }
                 if (oldGear == 0) {
                     log("event=linked")
+                    triggerBroadcast = true
                 }
             } else {
                 if (currentGear == 0) {
                     currentGear = 1
                     metricsState.currentGear = 1
                     log("event=linked")
+                    triggerBroadcast = true
                 }
+            }
+            if (triggerBroadcast) {
+                val capPayload = byteArrayOf(
+                    0xE1.toByte(),
+                    1.toByte(),
+                    config.channels.toByte(),
+                    config.channels.toByte()
+                )
+                val seq = nextTxSeq
+                nextTxSeq = (nextTxSeq + 1) and 0xFFFF
+                sendInternal(
+                    frameType = CyrinxConstants.FRAME_DATA,
+                    seq = seq,
+                    ack = header.seq,
+                    streamId = CyrinxConstants.STREAM_CONTROL,
+                    priority = 3,
+                    flags = 0,
+                    payload = capPayload,
+                    trackAck = false
+                )
             }
         }
 

@@ -57,6 +57,8 @@ class MainActivity : ComponentActivity() {
     private var overrideRawCodec: RawCodec? = null
     @Volatile
     private var overrideRawCapturePath: String? = null
+    @Volatile
+    private var overrideChannels: Int? = null
 
     private val periodicRefresh = object : Runnable {
         override fun run() {
@@ -86,7 +88,90 @@ class MainActivity : ComponentActivity() {
         ensureMicPermission()
         mainHandler.post(periodicRefresh)
 
+        runMIMOSelfTests()
+
         handleAutomationIntent(intent)
+    }
+
+    private fun runMIMOSelfTests() {
+        try {
+            // 1. Verify SVD solver on high condition number (highly correlated MIMO channel, should choose Diversity)
+            val configStereo = SessionConfig(
+                role = Role.SLAVE,
+                sampleRateHz = 48000,
+                bandStartHz = 18500,
+                bandEndHz = 21000,
+                txGainCap = 0.5f,
+                preambleSyncThreshold = 0.52f,
+                channels = 2
+            )
+            val linkStereo = AcousticPhyLink(configStereo)
+            val pL = linkStereo.encode(byteArrayOf(1, 2, 3))
+            val preambleLen = 1016
+            val mockLeft = FloatArray(preambleLen)
+            val mockRight = FloatArray(preambleLen)
+            
+            val x1 = FloatArray(preambleLen)
+            val x2 = FloatArray(preambleLen)
+            for (i in 0 until preambleLen) {
+                x1[i] = pL[i * 2]
+                x2[i] = pL[i * 2 + 1]
+            }
+            
+            for (i in 0 until preambleLen) {
+                mockLeft[i] = 1.0f * x1[i] + 0.95f * x2[i]
+                mockRight[i] = 0.95f * x1[i] + 1.0f * x2[i]
+            }
+            
+            val mockInterleaved = FloatArray(preambleLen * 2)
+            for (i in 0 until preambleLen) {
+                mockInterleaved[i * 2] = mockLeft[i]
+                mockInterleaved[i * 2 + 1] = mockRight[i]
+            }
+            
+            linkStereo.ingest(mockInterleaved)
+            
+            check(linkStereo.lastH11 > 0.65f) { "H11 check failed: ${linkStereo.lastH11}" }
+            check(linkStereo.lastH22 > 0.65f) { "H22 check failed: ${linkStereo.lastH22}" }
+            check(linkStereo.lastH12 > 0.60f) { "H12 check failed: ${linkStereo.lastH12}" }
+            check(linkStereo.lastH21 > 0.60f) { "H21 check failed: ${linkStereo.lastH21}" }
+            check(linkStereo.lastSpatialMode == 0) { "SpatialMode check failed (correlated): ${linkStereo.lastSpatialMode}" }
+            
+            // 2. Verify SVD solver on orthogonal/low condition number (should choose Multiplexing)
+            val linkStereo2 = AcousticPhyLink(configStereo)
+            for (i in 0 until preambleLen) {
+                mockLeft[i] = 1.0f * x1[i] + 0.05f * x2[i]
+                mockRight[i] = 0.05f * x1[i] + 1.0f * x2[i]
+            }
+            for (i in 0 until preambleLen) {
+                mockInterleaved[i * 2] = mockLeft[i]
+                mockInterleaved[i * 2 + 1] = mockRight[i]
+            }
+            linkStereo2.ingest(mockInterleaved)
+            check(linkStereo2.lastSpatialMode == 1) { "SpatialMode check failed (orthogonal): ${linkStereo2.lastSpatialMode}" }
+            
+            // 3. Verify THD measurement math on a pure 3kHz sine tone vs distorted tone
+            val fs = 48000f
+            val f0 = 3000f
+            val cleanTone = linkStereo.generateSineTone(f0, 0.1f, fs, 0.5f)
+            val cleanTHD = linkStereo.calculateTHD(cleanTone, fs.toInt(), f0)
+            check(cleanTHD < 0.5f) { "Clean THD check failed: $cleanTHD" }
+            
+            val distortedTone = cleanTone.clone()
+            val h2Tone = linkStereo.generateSineTone(f0 * 2f, 0.1f, fs, 0.05f)
+            val h3Tone = linkStereo.generateSineTone(f0 * 3f, 0.1f, fs, 0.025f)
+            for (i in distortedTone.indices) {
+                distortedTone[i] += h2Tone[i] + h3Tone[i]
+            }
+            val distTHD = linkStereo.calculateTHD(distortedTone, fs.toInt(), f0)
+            check(distTHD in 9.0f..13.0f) { "Distorted THD check failed: $distTHD" }
+            
+            appendLog("MIMO 2x2 SVD & THD self-tests passed successfully!")
+            Log.i(TAG, "MIMO 2x2 SVD & THD self-tests passed successfully!")
+        } catch (e: Exception) {
+            appendLog("MIMO self-tests failed: ${e.message}")
+            Log.e(TAG, "MIMO self-tests failed", e)
+        }
     }
 
     override fun onNewIntent(intent: android.content.Intent) {
@@ -401,13 +486,14 @@ class MainActivity : ComponentActivity() {
         overrideSyncThreshold = intent.getFloatExtra("sync_threshold", -1f).takeIf { it > 0f } ?: overrideSyncThreshold
         overrideRawCodec = parseRawCodec(intent.getStringExtra("raw_codec")) ?: overrideRawCodec
         overrideRawCapturePath = intent.getStringExtra("capture_path")?.takeIf { it.isNotBlank() } ?: overrideRawCapturePath
+        overrideChannels = intent.getIntExtra("channels", -1).takeIf { it > 0 } ?: overrideChannels
 
         appendLog(
             "automation cmd=$cmd role=${role?.name ?: "unchanged"} sampleRate=${overrideSampleRateHz ?: 48_000} " +
                 "band=${overrideBandStartHz ?: 18_500}...${overrideBandEndHz ?: 21_000} " +
                 "gain=${overrideTxGainCap ?: 0.70f} dcss=${overrideDcssSymbolSamples ?: 256} " +
                 "sync=${overrideSyncThreshold ?: 0.25f} rawCodec=${overrideRawCodec ?: RawCodec.AUTO} " +
-                "capturePath=${overrideRawCapturePath ?: "none"}",
+                "capturePath=${overrideRawCapturePath ?: "none"} channels=${overrideChannels ?: 1}",
         )
         when (cmd) {
             "start" -> runOnUiThread { startSession(role ?: selectedRole()) }
@@ -493,6 +579,7 @@ class MainActivity : ComponentActivity() {
             dcssSymbolSamples = overrideDcssSymbolSamples ?: 256,
             preambleSyncThreshold = overrideSyncThreshold ?: 0.25f,
             rawCodec = overrideRawCodec ?: RawCodec.AUTO,
+            channels = overrideChannels ?: 1,
         )
     }
 

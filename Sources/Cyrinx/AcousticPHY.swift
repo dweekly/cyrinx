@@ -61,21 +61,41 @@ final class AcousticPHYLink {
     private let preambleEnergy: Float
     private let syncThreshold: Float
     private let forceRobustMode: Bool
+    private let config: Config
     private let robustConfig: VDSPDCSSConfig
     private let headerConfig: VDSPDCSSConfig
     private let turboConfig: VDSPOFDMConfig
     private let lock = NSLock()
     private var rxBuffer: [Float] = []
+    private var rxBufferRight: [Float] = []
     private var rxSearchStart: Int = 0
+
+    // MIMO 2x2 tracking properties:
+    public private(set) var lastH11: Float = 0
+    public private(set) var lastH12: Float = 0
+    public private(set) var lastH21: Float = 0
+    public private(set) var lastH22: Float = 0
+    public private(set) var lastSigma1: Float = 0
+    public private(set) var lastSigma2: Float = 0
+    public private(set) var lastKappaDb: Float = 0
+    public private(set) var lastSpatialMode: Int = 0
+
+    // MIMO 2x2 preambles:
+    private let preambleBlockL: [Float]
+    private let preambleBlockR: [Float]
+    private let preambleL: [Float]
+    private let preambleR: [Float]
 
     init(
         config: Config,
         dcssSymbolSamplesOverride: Int? = nil,
         preambleSyncThresholdOverride: Float? = nil
     ) {
+        self.config = config
         let boundedSampleRate = min(max(config.sampleRateHz, 8_000), 192_000)
         sampleRateHz = boundedSampleRate
-        let boundedGain = min(max(config.txGainCap, 0), 0.12)
+        let maxGainCap = config.bandStartHz >= 18000 ? Float(0.70) : Float(0.12)
+        let boundedGain = min(max(config.txGainCap, 0), maxGainCap)
         let fftSize = Int(CYRINX_OFDM_FFT_SIZE)
         let requestedCP = max(Int(config.ofdmCPSamplesDefault), Int(config.ofdmCPSamplesMin))
         let clampedCP = min(max(8, requestedCP), fftSize - 1)
@@ -106,13 +126,25 @@ final class AcousticPHYLink {
             txGainCap: boundedGain
         )
 
-        preambleBlock = AcousticPHYLink.makePreambleBlock(
+        preambleBlockL = AcousticPHYLink.makePreambleBlock(
             sampleRateHz: boundedSampleRate,
             bandStartHz: config.bandStartHz,
             bandEndHz: config.bandEndHz,
-            txGainCap: boundedGain
+            txGainCap: boundedGain,
+            root: 29
         )
-        preamble = preambleBlock + preambleBlock
+        preambleBlockR = AcousticPHYLink.makePreambleBlock(
+            sampleRateHz: boundedSampleRate,
+            bandStartHz: config.bandStartHz,
+            bandEndHz: config.bandEndHz,
+            txGainCap: boundedGain,
+            root: 31
+        )
+        preambleL = preambleBlockL + preambleBlockL
+        preambleR = preambleBlockR + preambleBlockR
+
+        preambleBlock = preambleBlockL
+        preamble = preambleL
         preambleEnergy = max(1e-7, preamble.reduce(0) { $0 + ($1 * $1) })
         syncThreshold = min(max(preambleSyncThresholdOverride ?? AcousticPHYLink.runtimeSyncThreshold(), 0.10), 0.98)
         forceRobustMode = AcousticPHYLink.runtimeForceRobustMode()
@@ -134,12 +166,30 @@ final class AcousticPHYLink {
             bodyWave = try VDSPPHY.modulateOFDMQPSK(payload: frame, config: turboConfig)
         }
 
-        var out: [Float] = []
-        out.reserveCapacity(preamble.count + headerWave.count + bodyWave.count)
-        out.append(contentsOf: preamble)
-        out.append(contentsOf: headerWave)
-        out.append(contentsOf: bodyWave)
-        return out
+        if config.channels == 2 {
+            let totalLen = preambleL.count + headerWave.count + bodyWave.count
+            var out = [Float](repeating: 0, count: totalLen * 2)
+            for i in 0..<preambleL.count {
+                out[i * 2] = preambleL[i]
+                out[i * 2 + 1] = preambleR[i]
+            }
+            for i in 0..<headerWave.count {
+                out[(preambleL.count + i) * 2] = headerWave[i]
+                out[(preambleL.count + i) * 2 + 1] = 0.0
+            }
+            for i in 0..<bodyWave.count {
+                out[(preambleL.count + headerWave.count + i) * 2] = bodyWave[i]
+                out[(preambleL.count + headerWave.count + i) * 2 + 1] = 0.0
+            }
+            return out
+        } else {
+            var out: [Float] = []
+            out.reserveCapacity(preamble.count + headerWave.count + bodyWave.count)
+            out.append(contentsOf: preamble)
+            out.append(contentsOf: headerWave)
+            out.append(contentsOf: bodyWave)
+            return out
+        }
     }
 
     func ingest(samples: UnsafeBufferPointer<Float>) -> [AcousticDecodedFrame] {
@@ -147,7 +197,19 @@ final class AcousticPHYLink {
             return []
         }
         lock.lock()
-        rxBuffer.append(contentsOf: samples)
+        if config.channels == 2 {
+            let halfLen = samples.count / 2
+            var left = [Float](repeating: 0, count: halfLen)
+            var right = [Float](repeating: 0, count: halfLen)
+            for i in 0..<halfLen {
+                left[i] = samples[i * 2]
+                right[i] = samples[i * 2 + 1]
+            }
+            rxBuffer.append(contentsOf: left)
+            rxBufferRight.append(contentsOf: right)
+        } else {
+            rxBuffer.append(contentsOf: samples)
+        }
         let decoded = decodeAvailableLocked()
         lock.unlock()
         return decoded
@@ -174,7 +236,7 @@ final class AcousticPHYLink {
 
             if rxBuffer.count < headerEnd {
                 if syncStart > 0 {
-                    rxBuffer.removeFirst(syncStart)
+                    removeFirstSamples(syncStart)
                     rxSearchStart = 0
                 }
                 break
@@ -190,7 +252,7 @@ final class AcousticPHYLink {
                 packetHeader.payloadLength > 0,
                 packetHeader.payloadLength <= acousticFrameMaxBytes
             else {
-                rxBuffer.removeFirst(syncStart + 1)
+                removeFirstSamples(syncStart + 1)
                 rxSearchStart = 0
                 continue
             }
@@ -200,7 +262,7 @@ final class AcousticPHYLink {
                 payloadBytes: Int(packetHeader.payloadLength)
             )
             if bodySamples == 0 {
-                rxBuffer.removeFirst(syncStart + 1)
+                removeFirstSamples(syncStart + 1)
                 rxSearchStart = 0
                 continue
             }
@@ -209,7 +271,7 @@ final class AcousticPHYLink {
             let bodyEnd = bodyStart + bodySamples
             if rxBuffer.count < bodyEnd {
                 if syncStart > 0 {
-                    rxBuffer.removeFirst(syncStart)
+                    removeFirstSamples(syncStart)
                     rxSearchStart = 0
                 }
                 break
@@ -225,14 +287,14 @@ final class AcousticPHYLink {
             }
 
             guard let frame = bodyPayload, frame.count == Int(packetHeader.payloadLength) else {
-                rxBuffer.removeFirst(syncStart + 1)
+                removeFirstSamples(syncStart + 1)
                 rxSearchStart = 0
                 continue
             }
 
             let report = channelReport(for: lockResult)
             decoded.append(AcousticDecodedFrame(frame: frame, report: report))
-            rxBuffer.removeFirst(bodyEnd)
+            removeFirstSamples(bodyEnd)
             rxSearchStart = 0
         }
 
@@ -344,22 +406,101 @@ final class AcousticPHYLink {
 
             let windowSize = 48
             let peakSearchLimit = min(start + windowSize, searchLimit)
-            for candidateStart in (start + 1)...peakSearchLimit {
-                var candidateDot: Float = 0
-                var candidateEnergy: Float = 0
+            if start + 1 <= peakSearchLimit {
+                for candidateStart in (start + 1)...peakSearchLimit {
+                    var candidateDot: Float = 0
+                    var candidateEnergy: Float = 0
+                    for idx in 0..<preamble.count {
+                        let sample = buffer[candidateStart + idx]
+                        let reference = preamble[idx]
+                        candidateDot += sample * reference
+                        candidateEnergy += sample * sample
+                    }
+                    let candidateNorm = sqrt(max(candidateEnergy * preambleEnergy, 1e-7))
+                    let candidateCorr = candidateDot / candidateNorm
+                    if candidateCorr > bestCorr {
+                        bestCorr = candidateCorr
+                        bestStart = candidateStart
+                        bestDot = candidateDot
+                    }
+                }
+            }
+
+            // MIMO 2x2 channel sounding and SVD solver
+            if config.channels == 2 {
+                var dot11: Float = 0
+                var dot12: Float = 0
+                var dot21: Float = 0
+                var dot22: Float = 0
+                var energyY1: Float = 0
+                var energyY2: Float = 0
+                var energyX1: Float = 0
+                var energyX2: Float = 0
+
                 for idx in 0..<preamble.count {
-                    let sample = buffer[candidateStart + idx]
-                    let reference = preamble[idx]
-                    candidateDot += sample * reference
-                    candidateEnergy += sample * sample
+                    let y1 = buffer[bestStart + idx]
+                    let y2 = (bestStart + idx < rxBufferRight.count) ? rxBufferRight[bestStart + idx] : 0.0
+                    let x1 = preambleL[idx]
+                    let x2 = preambleR[idx]
+
+                    dot11 += y1 * x1
+                    dot12 += y1 * x2
+                    dot21 += y2 * x1
+                    dot22 += y2 * x2
+
+                    energyY1 += y1 * y1
+                    energyY2 += y2 * y2
+                    energyX1 += x1 * x1
+                    energyX2 += x2 * x2
                 }
-                let candidateNorm = sqrt(max(candidateEnergy * preambleEnergy, 1e-7))
-                let candidateCorr = candidateDot / candidateNorm
-                if candidateCorr > bestCorr {
-                    bestCorr = candidateCorr
-                    bestStart = candidateStart
-                    bestDot = candidateDot
+
+                let h11 = dot11 / sqrt(max(energyY1 * energyX1, 1e-7))
+                let h12 = dot12 / sqrt(max(energyY1 * energyX2, 1e-7))
+                let h21 = dot21 / sqrt(max(energyY2 * energyX1, 1e-7))
+                let h22 = dot22 / sqrt(max(energyY2 * energyX2, 1e-7))
+
+                self.lastH11 = h11
+                self.lastH12 = h12
+                self.lastH21 = h21
+                self.lastH22 = h22
+
+                // SVD Solver
+                let s1 = h11 * h11 + h12 * h12 + h21 * h21 + h22 * h22
+                let det = h11 * h22 - h12 * h21
+                let term = max(0.0, s1 * s1 - 4.0 * det * det)
+                let sqrtTerm = sqrt(term)
+                let l1 = (s1 + sqrtTerm) * 0.5
+                let l2 = max(0.0, (s1 - sqrtTerm) * 0.5)
+                let sigma1 = sqrt(l1)
+                let sigma2 = sqrt(l2)
+
+                self.lastSigma1 = sigma1
+                self.lastSigma2 = sigma2
+
+                let kappaDb = sigma2 > 1e-5 ? 20.0 * log10(sigma1 / sigma2) : 99.0
+                self.lastKappaDb = kappaDb
+                self.lastSpatialMode = (kappaDb < 6.0) ? 1 : 0
+            } else {
+                // Mono mode
+                var dot11: Float = 0
+                var energyY1: Float = 0
+                var energyX1: Float = 0
+                for idx in 0..<preamble.count {
+                    let y1 = buffer[bestStart + idx]
+                    let x1 = preambleL[idx]
+                    dot11 += y1 * x1
+                    energyY1 += y1 * y1
+                    energyX1 += x1 * x1
                 }
+                let h11 = dot11 / sqrt(max(energyY1 * energyX1, 1e-7))
+                self.lastH11 = h11
+                self.lastH12 = 0
+                self.lastH21 = 0
+                self.lastH22 = 0
+                self.lastSigma1 = h11
+                self.lastSigma2 = 0
+                self.lastKappaDb = 99.0
+                self.lastSpatialMode = 0
             }
 
             let scale = bestDot / preambleEnergy
@@ -396,7 +537,7 @@ final class AcousticPHYLink {
         let keep = max(preamble.count * 2, headerWindow)
         if rxBuffer.count > keep {
             let dropped = rxBuffer.count - keep
-            rxBuffer.removeFirst(dropped)
+            removeFirstSamples(dropped)
             rxSearchStart = max(0, rxSearchStart - dropped)
         }
         let maxStart = max(0, rxBuffer.count - preamble.count)
@@ -405,14 +546,22 @@ final class AcousticPHYLink {
         }
     }
 
+    private func removeFirstSamples(_ count: Int) {
+        rxBuffer.removeFirst(count)
+        if config.channels == 2 {
+            rxBufferRight.removeFirst(count)
+        }
+    }
+
     private static func makePreambleBlock(
         sampleRateHz: UInt32,
         bandStartHz: UInt32,
         bandEndHz: UInt32,
-        txGainCap: Float
+        txGainCap: Float,
+        root: UInt16 = 29
     ) -> [Float] {
         let zcLength: UInt16 = 127
-        let zcRoot: UInt16 = 29
+        let zcRoot: UInt16 = root
         var zc = [cyrinx_complex_f32_t](repeating: cyrinx_complex_f32_t(re: 0, im: 0), count: Int(zcLength))
         let rc = cyrinx_zc_generate(zcRoot, zcLength, &zc, zc.count)
         if rc != CYRINX_OK.rawValue {
@@ -474,6 +623,137 @@ final class AcousticPHYLink {
         }
         let normalized = env.lowercased()
         return normalized == "1" || normalized == "true" || normalized == "yes" || normalized == "on"
+    }
+
+    public static func generateSineTone(frequencyHz: Float, durationSecs: Float, sampleRateHz: Float, amplitude: Float) -> [Float] {
+        let count = Int(sampleRateHz * durationSecs)
+        return (0..<count).map { idx in
+            let phase = 2.0 * Float.pi * frequencyHz * Float(idx) / sampleRateHz
+            return amplitude * sin(phase)
+        }
+    }
+
+    public static func calculateTHD(samples: [Float], sampleRateHz: Int, fundamentalHz: Float) -> Float {
+        let n = 2048
+        if samples.count < n { return 0.0 }
+        
+        var real = Array(samples[0..<n])
+        var imag = [Float](repeating: 0, count: n)
+        
+        let fft = CyrinxFFT(size: n)
+        fft.transform(real: &real, imag: &imag, forward: true)
+        
+        let binWidth = Float(sampleRateHz) / Float(n)
+        
+        func getPowerAtFreq(_ freq: Float) -> Float {
+            let centerBin = Int(round(freq / binWidth))
+            var powerSum: Float = 0
+            for b in (centerBin - 1)...(centerBin + 1) {
+                if b >= 0 && b < (n / 2) {
+                    powerSum += real[b] * real[b] + imag[b] * imag[b]
+                }
+            }
+            return powerSum
+        }
+        
+        let pFund = getPowerAtFreq(fundamentalHz)
+        if pFund <= 1e-9 { return 0.0 }
+        
+        var pHarmonics: Float = 0
+        var harmonicMultiplier = 2
+        while true {
+            let harmFreq = fundamentalHz * Float(harmonicMultiplier)
+            if harmFreq >= Float(sampleRateHz) / 2.0 {
+                break
+            }
+            pHarmonics += getPowerAtFreq(harmFreq)
+            harmonicMultiplier += 1
+        }
+        
+        return sqrt(pHarmonics / pFund) * 100.0
+    }
+}
+
+final class CyrinxFFT {
+    let size: Int
+    private let log2N: Int
+    private let bitReversalTable: [Int]
+    private let cosTable: [Float]
+    private let sinTable: [Float]
+    
+    init(size: Int) {
+        self.size = size
+        var temp = size
+        var count = 0
+        while temp > 1 {
+            precondition(temp % 2 == 0, "FFT size must be a power of 2")
+            temp /= 2
+            count += 1
+        }
+        self.log2N = count
+        
+        var revTable = [Int](repeating: 0, count: size)
+        for i in 0..<size {
+            var rev = 0
+            var t = i
+            for _ in 0..<count {
+                rev = (rev << 1) | (t & 1)
+                t >>= 1
+            }
+            revTable[i] = rev
+        }
+        self.bitReversalTable = revTable
+        
+        var cTable = [Float](repeating: 0, count: size / 2)
+        var sTable = [Float](repeating: 0, count: size / 2)
+        for k in 0..<(size / 2) {
+            let angle = 2.0 * Double.pi * Double(k) / Double(size)
+            cTable[k] = Float(cos(angle))
+            sTable[k] = Float(sin(angle))
+        }
+        self.cosTable = cTable
+        self.sinTable = sTable
+    }
+    
+    func transform(real: inout [Float], imag: inout [Float], forward: Bool) {
+        precondition(real.count == size && imag.count == size, "Input arrays must be of size \(size)")
+        
+        // 1. Bit-reversal sorting
+        for i in 0..<size {
+            let j = bitReversalTable[i]
+            if i < j {
+                real.swapAt(i, j)
+                imag.swapAt(i, j)
+            }
+        }
+        
+        // 2. Butterfly stages
+        var len = 2
+        while len <= size {
+            let halfLen = len / 2
+            let twiddleStep = size / len
+            
+            for i in stride(from: 0, to: size, by: len) {
+                for j in 0..<halfLen {
+                    let k = i + j
+                    let l = k + halfLen
+                    
+                    let twiddleIdx = j * twiddleStep
+                    let wr = cosTable[twiddleIdx]
+                    let wi = forward ? -sinTable[twiddleIdx] : sinTable[twiddleIdx]
+                    
+                    let tRe = real[l] * wr - imag[l] * wi
+                    let tIm = real[l] * wi + imag[l] * wr
+                    
+                    real[l] = real[k] - tRe
+                    imag[l] = imag[k] - tIm
+                    
+                    real[k] += tRe
+                    imag[k] += tIm
+                }
+            }
+            len <<= 1
+        }
     }
 }
 // swiftlint:enable type_body_length

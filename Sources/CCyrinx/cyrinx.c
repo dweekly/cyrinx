@@ -63,6 +63,10 @@ typedef struct cyrinx_message_node {
     struct cyrinx_message_node *next;
 } cyrinx_message_node_t;
 
+static int cyrinx_send_internal(cyrinx_session_t *session, cyrinx_frame_type_t frame_type, uint16_t seq,
+                                uint16_t ack, uint16_t stream_id, uint8_t priority, uint8_t flags,
+                                const uint8_t *payload, size_t payload_len, bool track_ack);
+
 struct cyrinx_session {
     cyrinx_config_t config;
     cyrinx_arc_policy_t policy;
@@ -96,6 +100,9 @@ struct cyrinx_session {
 
     cyrinx_message_node_t *rx_head;
     cyrinx_message_node_t *rx_tail;
+
+    uint8_t peer_mics_count;
+    uint8_t peer_speakers_count;
 
     struct cyrinx_session *linked_peer;
 };
@@ -372,6 +379,15 @@ static void cyrinx_set_gear(cyrinx_session_t *session, cyrinx_gear_t next) {
         cyrinx_emit_event(session, CYRINX_EVENT_DISCOVERY);
     } else if (next == CYRINX_GEAR_G2_ROBUST) {
         cyrinx_emit_event(session, CYRINX_EVENT_DEGRADED);
+        
+        /* Auto-broadcast our channel capacity handshake message! */
+        uint8_t cap_payload[4];
+        cap_payload[0] = 0xE1; // magic
+        cap_payload[1] = 1;    // version
+        cap_payload[2] = session->config.mics_count;
+        cap_payload[3] = session->config.speakers_count;
+        (void)cyrinx_send_internal(session, CYRINX_FRAME_DATA, session->next_tx_seq++, 0,
+                                   CYRINX_STREAM_CONTROL, 3u, 0u, cap_payload, 4, false);
     } else {
         cyrinx_emit_event(session, CYRINX_EVENT_LINKED);
     }
@@ -579,6 +595,8 @@ void cyrinx_default_config(cyrinx_config_t *out_config) {
     out_config->enable_dynamic_cp = 1u;
     out_config->enable_sfbc_static_mode = 1u;
     out_config->security_mode = CYRINX_SECURITY_EXTERNAL;
+    out_config->mics_count = 1;
+    out_config->speakers_count = 1;
 }
 
 void cyrinx_default_arc_policy(cyrinx_arc_policy_t *out_policy) {
@@ -888,6 +906,8 @@ int cyrinx_get_metrics(cyrinx_session_t *session, cyrinx_metrics_t *out) {
         return CYRINX_ERR_INVALID_ARGUMENT;
     }
     *out = session->metrics;
+    out->peer_mics_count = session->peer_mics_count;
+    out->peer_speakers_count = session->peer_speakers_count;
     return CYRINX_OK;
 }
 
@@ -973,6 +993,34 @@ int cyrinx_ingest_frame(cyrinx_session_t *session, const uint8_t *frame, size_t 
     }
 
     if (h.frame_type == CYRINX_FRAME_DATA) {
+        if (h.stream_id == CYRINX_STREAM_CONTROL && payload_len == 4 && payload[0] == 0xE1) {
+            /* Handshake message! Save peer capacities. */
+            session->peer_mics_count = payload[2];
+            session->peer_speakers_count = payload[3];
+            
+            /* Respond with our own capacities if peer initiated. */
+            static uint64_t last_reply_ms = 0;
+            uint64_t now = cyrinx_now_ms();
+            if (now - last_reply_ms > 1000) {
+                last_reply_ms = now;
+                uint8_t cap_payload[4];
+                cap_payload[0] = 0xE1;
+                cap_payload[1] = 1;
+                cap_payload[2] = session->config.mics_count;
+                cap_payload[3] = session->config.speakers_count;
+                (void)cyrinx_send_internal(session, CYRINX_FRAME_DATA, session->next_tx_seq++, h.seq,
+                                           CYRINX_STREAM_CONTROL, 3u, 0u, cap_payload, 4, false);
+            }
+            
+            /* Immediate ACK */
+            uint8_t ack_payload[CYRINX_ACK_REPORT_PAYLOAD_BYTES];
+            cyrinx_encode_ack_report(&session->last_report, ack_payload);
+            int rc = cyrinx_send_internal(session, CYRINX_FRAME_ACK, session->next_tx_seq++, h.seq,
+                                          CYRINX_STREAM_CONTROL, 3u, 0u, ack_payload,
+                                          CYRINX_ACK_REPORT_PAYLOAD_BYTES, false);
+            return rc;
+        }
+
         /* Reassembly accumulates fragments until FRAG_END flag arrives. */
         if ((h.flags & CYRINX_FLAG_FRAG_START) != 0u) {
             session->reassembly_len = 0;

@@ -324,4 +324,31 @@ final class CyrinxTests: XCTestCase {
         XCTAssertTrue(json.contains("\"packetsFailed\""))
     }
 
+    func testHandshakeCapacityExchange() throws {
+        let a = try CyrinxSession(config: Config(role: .master, channels: 2))
+        let b = try CyrinxSession(config: Config(role: .slave, channels: 1))
+
+        try CyrinxSession.linkInMemory(a, b)
+        try a.start()
+        try b.start()
+
+        // Initially we are in discovery gear, peer counts should be 0
+        XCTAssertEqual(a.metrics.peerMicsCount, 0)
+        XCTAssertEqual(a.metrics.peerSpeakersCount, 0)
+        XCTAssertEqual(b.metrics.peerMicsCount, 0)
+        XCTAssertEqual(b.metrics.peerSpeakersCount, 0)
+
+        // Master sends a packet to trigger transition to Gear 2 Robust Mode
+        try a.send(Data("hello".utf8), streamID: 1, qos: .bestEffort, priority: .normal, flags: [.fin])
+        
+        // Drain b
+        _ = try b.receive(timeoutMS: 150)
+
+        // Now verify both sessions have exchanged and saved the peer capacities
+        XCTAssertEqual(a.metrics.peerMicsCount, 1)
+        XCTAssertEqual(a.metrics.peerSpeakersCount, 1)
+        XCTAssertEqual(b.metrics.peerMicsCount, 2)
+        XCTAssertEqual(b.metrics.peerSpeakersCount, 2)
+    }
+
 }

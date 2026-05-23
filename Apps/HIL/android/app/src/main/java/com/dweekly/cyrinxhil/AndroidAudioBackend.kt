@@ -81,14 +81,18 @@ class AndroidAudioBackend(
         }
 
         val sampleRate = config.sampleRateHz
+        val channels = config.channels
+        val channelInMask = if (channels == 2) AudioFormat.CHANNEL_IN_STEREO else AudioFormat.CHANNEL_IN_MONO
+        val channelOutMask = if (channels == 2) AudioFormat.CHANNEL_OUT_STEREO else AudioFormat.CHANNEL_OUT_MONO
+
         val inMin = AudioRecord.getMinBufferSize(
             sampleRate,
-            AudioFormat.CHANNEL_IN_MONO,
+            channelInMask,
             AudioFormat.ENCODING_PCM_16BIT,
         )
         val outMin = AudioTrack.getMinBufferSize(
             sampleRate,
-            AudioFormat.CHANNEL_OUT_MONO,
+            channelOutMask,
             AudioFormat.ENCODING_PCM_16BIT,
         )
 
@@ -97,8 +101,8 @@ class AndroidAudioBackend(
             return CyrinxStatus.ERR_INTERNAL
         }
 
-        val recordBufferSize = max(inMin * 4, sampleRate / 2)
-        val trackBufferSize = max(outMin * 4, sampleRate / 2)
+        val recordBufferSize = max(inMin * 4, sampleRate * channels / 2)
+        val trackBufferSize = max(outMin * 4, sampleRate * channels / 2)
 
         val sourceCandidates = buildList {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -115,7 +119,7 @@ class AndroidAudioBackend(
             val attempt = AudioRecord(
                 candidate,
                 sampleRate,
-                AudioFormat.CHANNEL_IN_MONO,
+                channelInMask,
                 AudioFormat.ENCODING_PCM_16BIT,
                 recordBufferSize,
             )
@@ -139,7 +143,7 @@ class AndroidAudioBackend(
             AudioFormat.Builder()
                 .setSampleRate(sampleRate)
                 .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                .setChannelMask(channelOutMask)
                 .build(),
             trackBufferSize,
             AudioTrack.MODE_STREAM,

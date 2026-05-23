@@ -113,6 +113,8 @@ typedef struct {
     uint32_t crc_failures;
     uint32_t link_resets;
     uint8_t retransmission_active;
+    uint8_t peer_mics_count;
+    uint8_t peer_speakers_count;
 } cyrinx_metrics_t;
 
 typedef struct {
@@ -174,6 +176,8 @@ typedef struct {
     cyrinx_tx_callback_t tx_callback;
     cyrinx_event_callback_t event_callback;
     void *user_data;
+    uint8_t mics_count;
+    uint8_t speakers_count;
 } cyrinx_config_t;
 
 /* Returns the semantic version string of the linked cyrinx core. */

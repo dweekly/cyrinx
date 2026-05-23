@@ -207,20 +207,51 @@ class AcousticPhyLink(private val config: SessionConfig) {
     }
     private val ofdmActiveCarrierCount = ofdmActiveBins.size
 
+    // MIMO 2x2 tracking properties:
+    var lastH11 = 0f
+        private set
+    var lastH12 = 0f
+        private set
+    var lastH21 = 0f
+        private set
+    var lastH22 = 0f
+        private set
+    var lastSigma1 = 0f
+        private set
+    var lastSigma2 = 0f
+        private set
+    var lastKappaDb = 0f
+        private set
+    var lastSpatialMode = 0
+        private set
+
     private val preambleBlock = makePreambleBlock(
         sampleRateHz = sampleRateHz,
         bandStartHz = config.bandStartHz,
         bandEndHz = config.bandEndHz,
         txGainCap = cappedGain,
+        root = 29
+    )
+    private val preambleBlockR = makePreambleBlock(
+        sampleRateHz = sampleRateHz,
+        bandStartHz = config.bandStartHz,
+        bandEndHz = config.bandEndHz,
+        txGainCap = cappedGain,
+        root = 31
     )
     private val preamble = FloatArray(preambleBlock.size * 2).also {
         System.arraycopy(preambleBlock, 0, it, 0, preambleBlock.size)
         System.arraycopy(preambleBlock, 0, it, preambleBlock.size, preambleBlock.size)
     }
+    private val preambleR = FloatArray(preambleBlockR.size * 2).also {
+        System.arraycopy(preambleBlockR, 0, it, 0, preambleBlockR.size)
+        System.arraycopy(preambleBlockR, 0, it, preambleBlockR.size, preambleBlockR.size)
+    }
     private val preambleEnergy = max(1e-7f, preamble.fold(0f) { acc, v -> acc + (v * v) })
     private val syncThreshold = config.preambleSyncThreshold.coerceIn(0.10f, 0.98f)
 
     private val rxBuffer = FloatBuffer(131072)
+    private val rxBufferRight = FloatBuffer(131072)
     private var rxSearchStart = 0
 
     fun encode(frame: ByteArray): FloatArray {
@@ -238,14 +269,32 @@ class AcousticPhyLink(private val config: SessionConfig) {
             robustModem.modulate(frame)
         }
 
-        val out = FloatArray(preamble.size + headerWave.size + bodyWave.size)
-        var cursor = 0
-        System.arraycopy(preamble, 0, out, cursor, preamble.size)
-        cursor += preamble.size
-        System.arraycopy(headerWave, 0, out, cursor, headerWave.size)
-        cursor += headerWave.size
-        System.arraycopy(bodyWave, 0, out, cursor, bodyWave.size)
-        return out
+        if (config.channels == 2) {
+            val totalLen = preamble.size + headerWave.size + bodyWave.size
+            val out = FloatArray(totalLen * 2)
+            for (i in 0 until preamble.size) {
+                out[i * 2] = preamble[i]
+                out[i * 2 + 1] = preambleR[i]
+            }
+            for (i in 0 until headerWave.size) {
+                out[(preamble.size + i) * 2] = headerWave[i]
+                out[(preamble.size + i) * 2 + 1] = 0.0f
+            }
+            for (i in 0 until bodyWave.size) {
+                out[(preamble.size + headerWave.size + i) * 2] = bodyWave[i]
+                out[(preamble.size + headerWave.size + i) * 2 + 1] = 0.0f
+            }
+            return out
+        } else {
+            val out = FloatArray(preamble.size + headerWave.size + bodyWave.size)
+            var cursor = 0
+            System.arraycopy(preamble, 0, out, cursor, preamble.size)
+            cursor += preamble.size
+            System.arraycopy(headerWave, 0, out, cursor, headerWave.size)
+            cursor += headerWave.size
+            System.arraycopy(bodyWave, 0, out, cursor, bodyWave.size)
+            return out
+        }
     }
 
     fun ingest(samples: FloatArray): List<AcousticDecodedFrame> {
@@ -253,7 +302,19 @@ class AcousticPhyLink(private val config: SessionConfig) {
             return emptyList()
         }
         synchronized(lock) {
-            rxBuffer.addAll(samples)
+            if (config.channels == 2) {
+                val halfLen = samples.size / 2
+                val left = FloatArray(halfLen)
+                val right = FloatArray(halfLen)
+                for (i in 0 until halfLen) {
+                    left[i] = samples[i * 2]
+                    right[i] = samples[i * 2 + 1]
+                }
+                rxBuffer.addAll(left)
+                rxBufferRight.addAll(right)
+            } else {
+                rxBuffer.addAll(samples)
+            }
             return decodeAvailableLocked()
         }
     }
@@ -438,22 +499,101 @@ class AcousticPhyLink(private val config: SessionConfig) {
 
             val windowSize = 48
             val peakSearchLimit = min(start + windowSize, searchLimit)
-            for (candidateStart in (start + 1)..peakSearchLimit) {
-                var candidateDot = 0f
-                var candidateEnergy = 0f
+            if (start + 1 <= peakSearchLimit) {
+                for (candidateStart in (start + 1)..peakSearchLimit) {
+                    var candidateDot = 0f
+                    var candidateEnergy = 0f
+                    for (idx in preamble.indices) {
+                        val sample = buffer.array[candidateStart + idx]
+                        val reference = preamble[idx]
+                        candidateDot += sample * reference
+                        candidateEnergy += sample * sample
+                    }
+                    val candidateNorm = sqrt(max(candidateEnergy * preambleEnergy, 1e-7f))
+                    val candidateCorr = candidateDot / candidateNorm
+                    if (candidateCorr > bestCorr) {
+                        bestCorr = candidateCorr
+                        bestStart = candidateStart
+                        bestDot = candidateDot
+                    }
+                }
+            }
+
+            // MIMO 2x2 channel sounding and SVD solver
+            if (config.channels == 2) {
+                var dot11 = 0f
+                var dot12 = 0f
+                var dot21 = 0f
+                var dot22 = 0f
+                var energyY1 = 0f
+                var energyY2 = 0f
+                var energyX1 = 0f
+                var energyX2 = 0f
+
                 for (idx in preamble.indices) {
-                    val sample = buffer.array[candidateStart + idx]
-                    val reference = preamble[idx]
-                    candidateDot += sample * reference
-                    candidateEnergy += sample * sample
+                    val y1 = buffer.array[bestStart + idx]
+                    val y2 = if (bestStart + idx < rxBufferRight.size) rxBufferRight.array[bestStart + idx] else 0f
+                    val x1 = preamble[idx]
+                    val x2 = preambleR[idx]
+
+                    dot11 += y1 * x1
+                    dot12 += y1 * x2
+                    dot21 += y2 * x1
+                    dot22 += y2 * x2
+
+                    energyY1 += y1 * y1
+                    energyY2 += y2 * y2
+                    energyX1 += x1 * x1
+                    energyX2 += x2 * x2
                 }
-                val candidateNorm = sqrt(max(candidateEnergy * preambleEnergy, 1e-7f))
-                val candidateCorr = candidateDot / candidateNorm
-                if (candidateCorr > bestCorr) {
-                    bestCorr = candidateCorr
-                    bestStart = candidateStart
-                    bestDot = candidateDot
+
+                val h11 = dot11 / sqrt(max(energyY1 * energyX1, 1e-7f))
+                val h12 = dot12 / sqrt(max(energyY1 * energyX2, 1e-7f))
+                val h21 = dot21 / sqrt(max(energyY2 * energyX1, 1e-7f))
+                val h22 = dot22 / sqrt(max(energyY2 * energyX2, 1e-7f))
+
+                this.lastH11 = h11
+                this.lastH12 = h12
+                this.lastH21 = h21
+                this.lastH22 = h22
+
+                // SVD Solver
+                val s1 = h11 * h11 + h12 * h12 + h21 * h21 + h22 * h22
+                val det = h11 * h22 - h12 * h21
+                val term = max(0f, s1 * s1 - 4f * det * det)
+                val sqrtTerm = sqrt(term)
+                val l1 = (s1 + sqrtTerm) * 0.5f
+                val l2 = max(0f, (s1 - sqrtTerm) * 0.5f)
+                val sigma1 = sqrt(l1)
+                val sigma2 = sqrt(l2)
+
+                this.lastSigma1 = sigma1
+                this.lastSigma2 = sigma2
+
+                val kappaDb = if (sigma2 > 1e-5f) 20f * log10(sigma1 / sigma2) else 99f
+                this.lastKappaDb = kappaDb
+                this.lastSpatialMode = if (kappaDb < 6f) 1 else 0
+            } else {
+                // Mono mode
+                var dot11 = 0f
+                var energyY1 = 0f
+                var energyX1 = 0f
+                for (idx in preamble.indices) {
+                    val y1 = buffer.array[bestStart + idx]
+                    val x1 = preamble[idx]
+                    dot11 += y1 * x1
+                    energyY1 += y1 * y1
+                    energyX1 += x1 * x1
                 }
+                val h11 = dot11 / sqrt(max(energyY1 * energyX1, 1e-7f))
+                this.lastH11 = h11
+                this.lastH12 = 0f
+                this.lastH21 = 0f
+                this.lastH22 = 0f
+                this.lastSigma1 = h11
+                this.lastSigma2 = 0f
+                this.lastKappaDb = 99f
+                this.lastSpatialMode = 0
             }
 
             val scale = bestDot / preambleEnergy
@@ -503,6 +643,9 @@ class AcousticPhyLink(private val config: SessionConfig) {
 
     private fun dropFront(count: Int) {
         rxBuffer.dropFront(count)
+        if (config.channels == 2) {
+            rxBufferRight.dropFront(count)
+        }
     }
 
     private fun makePreambleBlock(
@@ -510,8 +653,9 @@ class AcousticPhyLink(private val config: SessionConfig) {
         bandStartHz: Int,
         bandEndHz: Int,
         txGainCap: Float,
+        root: Int = 29
     ): FloatArray {
-        val zc = zcGenerate(root = 29, length = 127) ?: return fallbackPreamble(sampleRateHz, txGainCap)
+        val zc = zcGenerate(root = root, length = 127) ?: return fallbackPreamble(sampleRateHz, txGainCap)
         val fs = sampleRateHz.toFloat()
         if (fs <= 0f) {
             return fallbackPreamble(48_000, txGainCap)
@@ -781,6 +925,54 @@ class AcousticPhyLink(private val config: SessionConfig) {
                 out[idx] = value.toByte()
             }
             return out
+        }
+    }
+
+    fun calculateTHD(samples: FloatArray, sampleRateHz: Int, fundamentalHz: Float): Float {
+        val n = 2048
+        if (samples.size < n) return 0f
+
+        val real = FloatArray(n) { i -> samples[i] }
+        val imag = FloatArray(n) { 0f }
+
+        val fft = FFT(n)
+        fft.transform(real, imag, forward = true)
+
+        val binWidth = sampleRateHz.toFloat() / n.toFloat()
+
+        fun getPowerAtFreq(freq: Float): Float {
+            val centerBin = kotlin.math.round(freq / binWidth).toInt()
+            var powerSum = 0f
+            for (b in (centerBin - 1)..(centerBin + 1)) {
+                if (b in 0 until (n / 2)) {
+                    powerSum += real[b] * real[b] + imag[b] * imag[b]
+                }
+            }
+            return powerSum
+        }
+
+        val pFund = getPowerAtFreq(fundamentalHz)
+        if (pFund <= 1e-9f) return 0f
+
+        var pHarmonics = 0f
+        var harmonicMultiplier = 2
+        while (true) {
+            val harmFreq = fundamentalHz * harmonicMultiplier
+            if (harmFreq >= sampleRateHz / 2.0f) {
+                break
+            }
+            pHarmonics += getPowerAtFreq(harmFreq)
+            harmonicMultiplier++
+        }
+
+        return kotlin.math.sqrt(pHarmonics / pFund) * 100.0f
+    }
+
+    fun generateSineTone(frequencyHz: Float, durationSecs: Float, sampleRateHz: Float, amplitude: Float): FloatArray {
+        val count = (sampleRateHz * durationSecs).toInt()
+        return FloatArray(count) { idx ->
+            val phase = 2.0f * Math.PI.toFloat() * frequencyHz * idx / sampleRateHz
+            amplitude * kotlin.math.sin(phase)
         }
     }
 }

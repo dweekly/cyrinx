@@ -128,6 +128,73 @@ final class CyrinxAcousticPHYTests: XCTestCase {
         XCTAssertEqual(meta.flags, UInt8(CYRINX_STREAM_FLAG_FIN))
     }
 
+    func testMIMOSVDAndTHD() throws {
+        // 1. Verify SVD solver on high condition number (highly correlated MIMO channel, should choose Diversity)
+        let configStereo = Config(sampleRateHz: 48_000, channels: 2)
+        let linkStereo = AcousticPHYLink(config: configStereo)
+        
+        let pL = try linkStereo.encode(frame: [1, 2, 3])
+        let preambleLen = 1016
+        var mockLeft = [Float](repeating: 0, count: preambleLen)
+        var mockRight = [Float](repeating: 0, count: preambleLen)
+        
+        var x1 = [Float](repeating: 0, count: preambleLen)
+        var x2 = [Float](repeating: 0, count: preambleLen)
+        for i in 0..<preambleLen {
+            x1[i] = pL[i * 2]
+            x2[i] = pL[i * 2 + 1]
+        }
+        
+        for i in 0..<preambleLen {
+            mockLeft[i] = 1.0 * x1[i] + 0.95 * x2[i]
+            mockRight[i] = 0.95 * x1[i] + 1.0 * x2[i]
+        }
+        
+        var mockInterleaved = [Float](repeating: 0, count: preambleLen * 2)
+        for i in 0..<preambleLen {
+            mockInterleaved[i * 2] = mockLeft[i]
+            mockInterleaved[i * 2 + 1] = mockRight[i]
+        }
+        
+        _ = linkStereo.ingest(samples: mockInterleaved)
+        
+        XCTAssertGreaterThan(linkStereo.lastH11, 0.65)
+        XCTAssertGreaterThan(linkStereo.lastH22, 0.65)
+        XCTAssertGreaterThan(linkStereo.lastH12, 0.60)
+        XCTAssertGreaterThan(linkStereo.lastH21, 0.60)
+        XCTAssertEqual(linkStereo.lastSpatialMode, 0)
+        
+        // 2. Verify SVD solver on orthogonal/low condition number (should choose Multiplexing)
+        let linkStereo2 = AcousticPHYLink(config: configStereo)
+        for i in 0..<preambleLen {
+            mockLeft[i] = 1.0 * x1[i] + 0.05 * x2[i]
+            mockRight[i] = 0.05 * x1[i] + 1.0 * x2[i]
+        }
+        for i in 0..<preambleLen {
+            mockInterleaved[i * 2] = mockLeft[i]
+            mockInterleaved[i * 2 + 1] = mockRight[i]
+        }
+        _ = linkStereo2.ingest(samples: mockInterleaved)
+        XCTAssertEqual(linkStereo2.lastSpatialMode, 1)
+        
+        // 3. Verify THD measurement math on a pure 3kHz sine tone vs distorted tone
+        let fs: Float = 48000
+        let f0: Float = 3000
+        let cleanTone = AcousticPHYLink.generateSineTone(frequencyHz: f0, durationSecs: 0.1, sampleRateHz: fs, amplitude: 0.5)
+        let cleanTHD = AcousticPHYLink.calculateTHD(samples: cleanTone, sampleRateHz: Int(fs), fundamentalHz: f0)
+        XCTAssertLessThan(cleanTHD, 0.5)
+        
+        var distortedTone = cleanTone
+        let h2Tone = AcousticPHYLink.generateSineTone(frequencyHz: f0 * 2, durationSecs: 0.1, sampleRateHz: fs, amplitude: 0.05)
+        let h3Tone = AcousticPHYLink.generateSineTone(frequencyHz: f0 * 3, durationSecs: 0.1, sampleRateHz: fs, amplitude: 0.025)
+        for i in 0..<distortedTone.count {
+            distortedTone[i] += h2Tone[i] + h3Tone[i]
+        }
+        let distTHD = AcousticPHYLink.calculateTHD(samples: distortedTone, sampleRateHz: Int(fs), fundamentalHz: f0)
+        XCTAssertGreaterThan(distTHD, 9.0)
+        XCTAssertLessThan(distTHD, 13.0)
+    }
+
     private func makeCoreFrame(descriptor: CoreFrameDescriptor, payload: [UInt8]) -> [UInt8] {
         var header = [UInt8](repeating: 0, count: 15)
         var bitPos = 0
