@@ -172,10 +172,24 @@ private class DcssModem(private val config: DcssConfig) {
 class AcousticPhyLink(private val config: SessionConfig) {
     private val lock = Object()
     private var peerDeviceSignature: Byte = 0
+    private var peerNotchMask = ByteArray(14) { 0xFF.toByte() }
+    private var localNotchMask = ByteArray(14) { 0xFF.toByte() }
 
     fun updatePeerSignature(signature: Byte) {
         synchronized(lock) {
             peerDeviceSignature = signature
+        }
+    }
+
+    fun updatePeerNotchMask(mask: ByteArray) {
+        synchronized(lock) {
+            peerNotchMask = mask
+        }
+    }
+
+    fun updateLocalNotchMask(mask: ByteArray) {
+        synchronized(lock) {
+            localNotchMask = mask
         }
     }
 
@@ -743,7 +757,25 @@ class AcousticPhyLink(private val config: SessionConfig) {
     private fun modulateOfdm(payload: ByteArray): FloatArray {
         val bits = BitPacking.encodeLengthPrefixed(payload)
         val qpskSymbols = mapBitsToQpsk(bits)
-        val activeCount = ofdmActiveCarrierCount
+        val sig = synchronized(lock) { peerDeviceSignature }
+        val mask = synchronized(lock) { peerNotchMask }
+
+        val activeBinsFiltered = mutableListOf<Int>()
+        for (i in 0 until ofdmActiveBins.size) {
+            val bin = ofdmActiveBins[i]
+            val byteIdx = i / 8
+            val bitIdx = i % 8
+            if (byteIdx < mask.size) {
+                val bit = (mask[byteIdx].toInt() ushr (7 - bitIdx)) and 1
+                if (bit == 1) {
+                    activeBinsFiltered.add(bin)
+                }
+            } else {
+                activeBinsFiltered.add(bin)
+            }
+        }
+
+        val activeCount = activeBinsFiltered.size
         if (activeCount <= 0) {
             return FloatArray(0)
         }
@@ -759,7 +791,6 @@ class AcousticPhyLink(private val config: SessionConfig) {
         val amplitude = min(max(cappedGain, 0f), 0.95f)
         val fftScale = 1.0f / ofdmFftSize.toFloat()
         val scale = amplitude * fftScale
-        val sig = synchronized(lock) { peerDeviceSignature }
         val binWidth = sampleRateHz.toFloat() / ofdmFftSize.toFloat()
 
         for (frameIdx in 0 until frameCount) {
@@ -771,7 +802,7 @@ class AcousticPhyLink(private val config: SessionConfig) {
 
             for (idx in 0 until activeCount) {
                 val symbol = if (start + idx < end) qpskSymbols[start + idx] else 0.toByte()
-                val bin = ofdmActiveBins[idx]
+                val bin = activeBinsFiltered[idx]
 
                 var eqFactor = 1.0f
                 val freq = bin.toFloat() * binWidth
@@ -849,7 +880,27 @@ class AcousticPhyLink(private val config: SessionConfig) {
             return null
         }
         val frameCount = samples.size / symbolLength
-        val activeCount = ofdmActiveCarrierCount
+        val mask = synchronized(lock) { localNotchMask }
+
+        val activeBinsFiltered = mutableListOf<Int>()
+        for (i in 0 until ofdmActiveBins.size) {
+            val bin = ofdmActiveBins[i]
+            val byteIdx = i / 8
+            val bitIdx = i % 8
+            if (byteIdx < mask.size) {
+                val bit = (mask[byteIdx].toInt() ushr (7 - bitIdx)) and 1
+                if (bit == 1) {
+                    activeBinsFiltered.add(bin)
+                }
+            } else {
+                activeBinsFiltered.add(bin)
+            }
+        }
+
+        val activeCount = activeBinsFiltered.size
+        if (activeCount <= 0) {
+            return null
+        }
         val totalBits = frameCount * activeCount * 2
         val bits = ByteArray(totalBits)
         var bitIdx = 0
@@ -866,7 +917,7 @@ class AcousticPhyLink(private val config: SessionConfig) {
             fft.transform(re, im, forward = true)
 
             for (idx in 0 until activeCount) {
-                val bin = ofdmActiveBins[idx]
+                val bin = activeBinsFiltered[idx]
                 val symbol = demapQpsk(re[bin], im[bin]).toInt()
                 bits[bitIdx++] = ((symbol ushr 1) and 1).toByte()
                 bits[bitIdx++] = (symbol and 1).toByte()

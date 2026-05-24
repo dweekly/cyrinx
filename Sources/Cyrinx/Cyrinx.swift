@@ -169,6 +169,7 @@ public struct Config {
     public var channels: UInt32
     public var deviceSignature: UInt8
     public var maxBufferCapacity: UInt32
+    public var notchMask: [UInt8]
 
     /// Resolves the local device's hardware signature based on system info.
     public static func resolveLocalDeviceSignature() -> UInt8 {
@@ -200,7 +201,8 @@ public struct Config {
         sfbcStaticMode: Bool = true,
         channels: UInt32 = 1,
         deviceSignature: UInt8 = Config.resolveLocalDeviceSignature(),
-        maxBufferCapacity: UInt32 = 65536
+        maxBufferCapacity: UInt32 = 65536,
+        notchMask: [UInt8] = [UInt8](repeating: 0xFF, count: 14)
     ) {
         self.role = role
         self.transportBackend = transportBackend
@@ -217,6 +219,7 @@ public struct Config {
         self.channels = channels
         self.deviceSignature = deviceSignature
         self.maxBufferCapacity = maxBufferCapacity
+        self.notchMask = notchMask
     }
 
     fileprivate func toC(
@@ -246,6 +249,20 @@ public struct Config {
         c.speakers_count = UInt8(channels)
         c.device_signature = deviceSignature
         c.max_buffer_capacity = maxBufferCapacity
+        c.notch_mask.0 = notchMask.count > 0 ? notchMask[0] : 0xFF
+        c.notch_mask.1 = notchMask.count > 1 ? notchMask[1] : 0xFF
+        c.notch_mask.2 = notchMask.count > 2 ? notchMask[2] : 0xFF
+        c.notch_mask.3 = notchMask.count > 3 ? notchMask[3] : 0xFF
+        c.notch_mask.4 = notchMask.count > 4 ? notchMask[4] : 0xFF
+        c.notch_mask.5 = notchMask.count > 5 ? notchMask[5] : 0xFF
+        c.notch_mask.6 = notchMask.count > 6 ? notchMask[6] : 0xFF
+        c.notch_mask.7 = notchMask.count > 7 ? notchMask[7] : 0xFF
+        c.notch_mask.8 = notchMask.count > 8 ? notchMask[8] : 0xFF
+        c.notch_mask.9 = notchMask.count > 9 ? notchMask[9] : 0xFF
+        c.notch_mask.10 = notchMask.count > 10 ? notchMask[10] : 0xFF
+        c.notch_mask.11 = notchMask.count > 11 ? notchMask[11] : 0xFF
+        c.notch_mask.12 = notchMask.count > 12 ? notchMask[12] : 0xFF
+        c.notch_mask.13 = notchMask.count > 13 ? notchMask[13] : 0xFF
         return c
     }
 }
@@ -306,6 +323,7 @@ public struct Metrics {
     public var peerSpeakersCount: UInt8
     public var peerDeviceSignature: UInt8
     public var peerMaxBufferCapacity: UInt32
+    public var peerNotchMask: [UInt8]
 
     fileprivate init(c: cyrinx_metrics_t) {
         gear = Gear(cValue: c.current_gear)
@@ -323,6 +341,12 @@ public struct Metrics {
         peerSpeakersCount = c.peer_speakers_count
         peerDeviceSignature = c.peer_device_signature
         peerMaxBufferCapacity = c.peer_max_buffer_capacity
+        peerNotchMask = [
+            c.peer_notch_mask.0, c.peer_notch_mask.1, c.peer_notch_mask.2, c.peer_notch_mask.3,
+            c.peer_notch_mask.4, c.peer_notch_mask.5, c.peer_notch_mask.6, c.peer_notch_mask.7,
+            c.peer_notch_mask.8, c.peer_notch_mask.9, c.peer_notch_mask.10, c.peer_notch_mask.11,
+            c.peer_notch_mask.12, c.peer_notch_mask.13
+        ]
     }
 }
 

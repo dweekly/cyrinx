@@ -103,6 +103,7 @@ typedef struct {
 #define CYRINX_DEVICE_GENERIC     0x00
 #define CYRINX_DEVICE_MACBOOK_PRO 0x01
 #define CYRINX_DEVICE_PIXEL_7A    0x02
+#define CYRINX_NOTCH_MASK_BYTES   14
 
 typedef struct {
     cyrinx_gear_t current_gear;
@@ -121,6 +122,7 @@ typedef struct {
     uint8_t peer_speakers_count;
     uint8_t peer_device_signature;
     uint32_t peer_max_buffer_capacity;
+    uint8_t peer_notch_mask[CYRINX_NOTCH_MASK_BYTES];
 } cyrinx_metrics_t;
 
 typedef struct {
@@ -187,6 +189,7 @@ typedef struct {
     uint8_t speakers_count;
     uint8_t device_signature;
     uint32_t max_buffer_capacity;
+    uint8_t notch_mask[CYRINX_NOTCH_MASK_BYTES];
 } cyrinx_config_t;
 
 /* Returns the semantic version string of the linked cyrinx core. */

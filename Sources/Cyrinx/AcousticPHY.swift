@@ -95,6 +95,13 @@ final class AcousticPHYLink {
         turboConfig.peerDeviceSignature = signature
     }
 
+    /// Dynamically updates the peer's subcarrier notch mask.
+    public func updatePeerNotchMask(_ mask: [UInt8]) {
+        lock.lock()
+        defer { lock.unlock() }
+        turboConfig.peerNotchMask = mask
+    }
+
     init(
         config: Config,
         dcssSymbolSamplesOverride: Int? = nil,

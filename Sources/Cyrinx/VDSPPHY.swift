@@ -32,6 +32,7 @@ public struct VDSPOFDMConfig: Sendable {
     public var bandEndHz: Float
     public var txGainCap: Float
     public var peerDeviceSignature: UInt8
+    public var peerNotchMask: [UInt8]
 
     public init(
         sampleRateHz: UInt32 = 48_000,
@@ -40,7 +41,8 @@ public struct VDSPOFDMConfig: Sendable {
         bandStartHz: Float = 18_500,
         bandEndHz: Float = 23_500,
         txGainCap: Float = 0.12,
-        peerDeviceSignature: UInt8 = 0
+        peerDeviceSignature: UInt8 = 0,
+        peerNotchMask: [UInt8] = [UInt8](repeating: 0xFF, count: 14)
     ) {
         self.sampleRateHz = sampleRateHz
         self.fftSize = fftSize
@@ -49,6 +51,7 @@ public struct VDSPOFDMConfig: Sendable {
         self.bandEndHz = bandEndHz
         self.txGainCap = txGainCap
         self.peerDeviceSignature = peerDeviceSignature
+        self.peerNotchMask = peerNotchMask
     }
 }
 
@@ -303,7 +306,21 @@ public enum VDSPPHY {
             guard start <= end else {
                 throw VDSPPHYError.invalidConfiguration("invalid OFDM active bin range")
             }
-            return Array(start...end)
+            let fullBins = Array(start...end)
+            var filteredBins: [Int] = []
+            for (idx, bin) in fullBins.enumerated() {
+                let byteIdx = idx / 8
+                let bitIdx = idx % 8
+                if byteIdx < config.peerNotchMask.count {
+                    let bit = (config.peerNotchMask[byteIdx] >> (7 - bitIdx)) & 1
+                    if bit == 1 {
+                        filteredBins.append(bin)
+                    }
+                } else {
+                    filteredBins.append(bin)
+                }
+            }
+            return filteredBins
         }
 
         private static func validate(config: VDSPOFDMConfig) throws {

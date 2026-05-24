@@ -578,6 +578,14 @@ enum AudioBackendFactory {
                 var cMetrics = cyrinx_metrics_t()
                 if cyrinx_get_metrics(handle, &cMetrics) == CYRINX_OK.rawValue {
                     phyLink.updatePeerSignature(cMetrics.peer_device_signature)
+                    let mask = [
+                        cMetrics.peer_notch_mask.0, cMetrics.peer_notch_mask.1, cMetrics.peer_notch_mask.2,
+                        cMetrics.peer_notch_mask.3, cMetrics.peer_notch_mask.4, cMetrics.peer_notch_mask.5,
+                        cMetrics.peer_notch_mask.6, cMetrics.peer_notch_mask.7, cMetrics.peer_notch_mask.8,
+                        cMetrics.peer_notch_mask.9, cMetrics.peer_notch_mask.10, cMetrics.peer_notch_mask.11,
+                        cMetrics.peer_notch_mask.12, cMetrics.peer_notch_mask.13
+                    ]
+                    phyLink.updatePeerNotchMask(mask)
                 }
             }
             let waveform =
@@ -1858,6 +1866,14 @@ enum AudioBackendFactory {
                 var cMetrics = cyrinx_metrics_t()
                 if cyrinx_get_metrics(handle, &cMetrics) == CYRINX_OK.rawValue {
                     phyLink.updatePeerSignature(cMetrics.peer_device_signature)
+                    let mask = [
+                        cMetrics.peer_notch_mask.0, cMetrics.peer_notch_mask.1, cMetrics.peer_notch_mask.2,
+                        cMetrics.peer_notch_mask.3, cMetrics.peer_notch_mask.4, cMetrics.peer_notch_mask.5,
+                        cMetrics.peer_notch_mask.6, cMetrics.peer_notch_mask.7, cMetrics.peer_notch_mask.8,
+                        cMetrics.peer_notch_mask.9, cMetrics.peer_notch_mask.10, cMetrics.peer_notch_mask.11,
+                        cMetrics.peer_notch_mask.12, cMetrics.peer_notch_mask.13
+                    ]
+                    phyLink.updatePeerNotchMask(mask)
                 }
             }
             let waveform =
