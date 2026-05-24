@@ -243,6 +243,10 @@ class AndroidAudioBackend(
         return CyrinxStatus.OK
     }
 
+    override fun updatePeerSignature(signature: Byte) {
+        phy.updatePeerSignature(signature)
+    }
+
     fun playLocalAudibleBeacon(role: Role): Int {
         if (!running.get()) {
             return CyrinxStatus.ERR_NOT_RUNNING

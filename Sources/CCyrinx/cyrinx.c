@@ -103,6 +103,8 @@ struct cyrinx_session {
 
     uint8_t peer_mics_count;
     uint8_t peer_speakers_count;
+    uint8_t peer_device_signature;
+    uint32_t peer_max_buffer_capacity;
 
     struct cyrinx_session *linked_peer;
 };
@@ -381,13 +383,19 @@ static void cyrinx_set_gear(cyrinx_session_t *session, cyrinx_gear_t next) {
         cyrinx_emit_event(session, CYRINX_EVENT_DEGRADED);
         
         /* Auto-broadcast our channel capacity handshake message! */
-        uint8_t cap_payload[4];
+        uint8_t cap_payload[10];
         cap_payload[0] = 0xE1; // magic
         cap_payload[1] = 1;    // version
         cap_payload[2] = session->config.mics_count;
         cap_payload[3] = session->config.speakers_count;
+        cap_payload[4] = session->config.device_signature;
+        cap_payload[5] = (uint8_t)((session->config.max_buffer_capacity >> 24) & 0xFF);
+        cap_payload[6] = (uint8_t)((session->config.max_buffer_capacity >> 16) & 0xFF);
+        cap_payload[7] = (uint8_t)((session->config.max_buffer_capacity >> 8) & 0xFF);
+        cap_payload[8] = (uint8_t)(session->config.max_buffer_capacity & 0xFF);
+        cap_payload[9] = 0x00; // padding
         (void)cyrinx_send_internal(session, CYRINX_FRAME_DATA, session->next_tx_seq++, 0,
-                                   CYRINX_STREAM_CONTROL, 3u, 0u, cap_payload, 4, false);
+                                   CYRINX_STREAM_CONTROL, 3u, 0u, cap_payload, 10, false);
     } else {
         cyrinx_emit_event(session, CYRINX_EVENT_LINKED);
     }
@@ -597,6 +605,8 @@ void cyrinx_default_config(cyrinx_config_t *out_config) {
     out_config->security_mode = CYRINX_SECURITY_EXTERNAL;
     out_config->mics_count = 1;
     out_config->speakers_count = 1;
+    out_config->device_signature = CYRINX_DEVICE_GENERIC;
+    out_config->max_buffer_capacity = 65536;
 }
 
 void cyrinx_default_arc_policy(cyrinx_arc_policy_t *out_policy) {
@@ -908,6 +918,8 @@ int cyrinx_get_metrics(cyrinx_session_t *session, cyrinx_metrics_t *out) {
     *out = session->metrics;
     out->peer_mics_count = session->peer_mics_count;
     out->peer_speakers_count = session->peer_speakers_count;
+    out->peer_device_signature = session->peer_device_signature;
+    out->peer_max_buffer_capacity = session->peer_max_buffer_capacity;
     return CYRINX_OK;
 }
 
@@ -993,23 +1005,34 @@ int cyrinx_ingest_frame(cyrinx_session_t *session, const uint8_t *frame, size_t 
     }
 
     if (h.frame_type == CYRINX_FRAME_DATA) {
-        if (h.stream_id == CYRINX_STREAM_CONTROL && payload_len == 4 && payload[0] == 0xE1) {
+        if (h.stream_id == CYRINX_STREAM_CONTROL && payload_len >= 10 && payload[0] == 0xE1) {
             /* Handshake message! Save peer capacities. */
             session->peer_mics_count = payload[2];
             session->peer_speakers_count = payload[3];
+            session->peer_device_signature = payload[4];
+            session->peer_max_buffer_capacity = ((uint32_t)payload[5] << 24) |
+                                                ((uint32_t)payload[6] << 16) |
+                                                ((uint32_t)payload[7] << 8)  |
+                                                (uint32_t)payload[8];
             
             /* Respond with our own capacities if peer initiated. */
             static uint64_t last_reply_ms = 0;
             uint64_t now = cyrinx_now_ms();
             if (now - last_reply_ms > 1000) {
                 last_reply_ms = now;
-                uint8_t cap_payload[4];
+                uint8_t cap_payload[10];
                 cap_payload[0] = 0xE1;
                 cap_payload[1] = 1;
                 cap_payload[2] = session->config.mics_count;
                 cap_payload[3] = session->config.speakers_count;
+                cap_payload[4] = session->config.device_signature;
+                cap_payload[5] = (uint8_t)((session->config.max_buffer_capacity >> 24) & 0xFF);
+                cap_payload[6] = (uint8_t)((session->config.max_buffer_capacity >> 16) & 0xFF);
+                cap_payload[7] = (uint8_t)((session->config.max_buffer_capacity >> 8) & 0xFF);
+                cap_payload[8] = (uint8_t)(session->config.max_buffer_capacity & 0xFF);
+                cap_payload[9] = 0x00;
                 (void)cyrinx_send_internal(session, CYRINX_FRAME_DATA, session->next_tx_seq++, h.seq,
-                                           CYRINX_STREAM_CONTROL, 3u, 0u, cap_payload, 4, false);
+                                           CYRINX_STREAM_CONTROL, 3u, 0u, cap_payload, 10, false);
             }
             
             /* Immediate ACK */

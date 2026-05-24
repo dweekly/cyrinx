@@ -574,6 +574,12 @@ enum AudioBackendFactory {
             }
 
             let frameBytes = Array(frame)
+            if let handle = sessionHandle {
+                var cMetrics = cyrinx_metrics_t()
+                if cyrinx_get_metrics(handle, &cMetrics) == CYRINX_OK.rawValue {
+                    phyLink.updatePeerSignature(cMetrics.peer_device_signature)
+                }
+            }
             let waveform =
                 (try? phyLink.encode(frame: frameBytes))
                 ?? StubWaveSynthesizer.synthesize(
@@ -1848,6 +1854,12 @@ enum AudioBackendFactory {
                 return CYRINX_ERR_NOT_RUNNING.rawValue
             }
             let frameBytes = Array(frame)
+            if let handle = sessionHandle {
+                var cMetrics = cyrinx_metrics_t()
+                if cyrinx_get_metrics(handle, &cMetrics) == CYRINX_OK.rawValue {
+                    phyLink.updatePeerSignature(cMetrics.peer_device_signature)
+                }
+            }
             let waveform =
                 (try? phyLink.encode(frame: frameBytes))
                 ?? StubWaveSynthesizer.synthesize(

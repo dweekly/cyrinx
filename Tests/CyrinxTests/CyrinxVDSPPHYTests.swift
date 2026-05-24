@@ -40,4 +40,28 @@ final class CyrinxVDSPPHYTests: XCTestCase {
 
         XCTAssertThrowsError(try VDSPPHY.demodulateDCSS(samples: truncated, config: config))
     }
+
+    func testEqualizerPreEmphasisFilter() throws {
+        let payload = Data((0..<96).map { UInt8($0 % 251) })
+        
+        // Modulate with peer device signature 0 (generic, no EQ)
+        let configGeneric = VDSPOFDMConfig(sampleRateHz: 48_000, peerDeviceSignature: 0)
+        let samplesGeneric = try VDSPPHY.modulateOFDMQPSK(payload: Array(payload), config: configGeneric)
+        
+        // Modulate with peer device signature 1 (MacBook Pro, EQ pre-emphasis)
+        let configMac = VDSPOFDMConfig(sampleRateHz: 48_000, peerDeviceSignature: 0x01)
+        let samplesMac = try VDSPPHY.modulateOFDMQPSK(payload: Array(payload), config: configMac)
+        
+        // Pre-emphasis must change the waveform amplitudes (frequency-specific boost)
+        XCTAssertNotEqual(samplesGeneric, samplesMac)
+        
+        // Verify peak safety cap (no sample should exceed 0.95 in absolute value)
+        for s in samplesMac {
+            XCTAssertLessThanOrEqual(abs(s), 0.9501)
+        }
+        
+        // Verify we can still demodulate the pre-emphasized waveform cleanly
+        let decoded = try VDSPPHY.demodulateOFDMQPSK(samples: samplesMac, config: configMac)
+        XCTAssertEqual(decoded, Array(payload))
+    }
 }

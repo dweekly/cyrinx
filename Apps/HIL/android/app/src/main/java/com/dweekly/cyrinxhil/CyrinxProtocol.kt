@@ -91,6 +91,8 @@ data class CyrinxMetrics(
     var linkResets: Int = 0,
     var currentGear: Int = 0,
     var retransmissionActive: Boolean = false,
+    var peerDeviceSignature: Byte = 0,
+    var peerMaxBufferCapacity: Int = 0,
 )
 
 data class SessionConfig(
@@ -103,8 +105,11 @@ data class SessionConfig(
     val preambleSyncThreshold: Float = 0.25f,
     val rawCodec: RawCodec = RawCodec.AUTO,
     val channels: Int = 1,
+    val deviceSignature: Byte = 0,
+    val maxBufferCapacity: Int = 65536,
 )
 
 interface FrameTxSink {
     fun sendFrame(frame: ByteArray): Int
+    fun updatePeerSignature(signature: Byte) {}
 }

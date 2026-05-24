@@ -603,6 +603,8 @@ class MainActivity : ComponentActivity() {
             preambleSyncThreshold = overrideSyncThreshold ?: 0.25f,
             rawCodec = overrideRawCodec ?: RawCodec.AUTO,
             channels = overrideChannels ?: 1,
+            deviceSignature = 0x02, // CYRINX_DEVICE_PIXEL_7A
+            maxBufferCapacity = 65536,
         )
     }
 

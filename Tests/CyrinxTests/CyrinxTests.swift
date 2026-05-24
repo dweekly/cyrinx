@@ -351,4 +351,27 @@ final class CyrinxTests: XCTestCase {
         XCTAssertEqual(b.metrics.peerSpeakersCount, 2)
     }
 
+    func testMultiVariableCapabilityHandshake() throws {
+        // Master config with custom signature and buffer capacity
+        let a = try CyrinxSession(config: Config(role: .master, channels: 2, deviceSignature: 0x01, maxBufferCapacity: 32768))
+        // Slave config with custom signature and buffer capacity
+        let b = try CyrinxSession(config: Config(role: .slave, channels: 1, deviceSignature: 0x02, maxBufferCapacity: 65536))
+
+        try CyrinxSession.linkInMemory(a, b)
+        try a.start()
+        try b.start()
+
+        // Master sends a packet to trigger handshake & gear transition
+        try a.send(Data("cap_handshake".utf8), streamID: 1, qos: .bestEffort, priority: .normal, flags: [.fin])
+        
+        // Drain b
+        _ = try b.receive(timeoutMS: 150)
+
+        // Verify both sessions resolved signature and buffer capacity correctly
+        XCTAssertEqual(a.metrics.peerDeviceSignature, 0x02)
+        XCTAssertEqual(a.metrics.peerMaxBufferCapacity, 65536)
+        XCTAssertEqual(b.metrics.peerDeviceSignature, 0x01)
+        XCTAssertEqual(b.metrics.peerMaxBufferCapacity, 32768)
+    }
+
 }

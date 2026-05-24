@@ -62,9 +62,9 @@ final class AcousticPHYLink {
     private let syncThreshold: Float
     private let forceRobustMode: Bool
     private let config: Config
-    private let robustConfig: VDSPDCSSConfig
-    private let headerConfig: VDSPDCSSConfig
-    private let turboConfig: VDSPOFDMConfig
+    private var robustConfig: VDSPDCSSConfig
+    private var headerConfig: VDSPDCSSConfig
+    private var turboConfig: VDSPOFDMConfig
     private let lock = NSLock()
     private var rxBuffer: [Float] = []
     private var rxBufferRight: [Float] = []
@@ -85,6 +85,15 @@ final class AcousticPHYLink {
     private let preambleBlockR: [Float]
     private let preambleL: [Float]
     private let preambleR: [Float]
+
+    /// Dynamically updates the peer's hardware signature to look up calibration curves.
+    public func updatePeerSignature(_ signature: UInt8) {
+        lock.lock()
+        defer { lock.unlock() }
+        robustConfig.peerDeviceSignature = signature
+        headerConfig.peerDeviceSignature = signature
+        turboConfig.peerDeviceSignature = signature
+    }
 
     init(
         config: Config,
@@ -157,13 +166,24 @@ final class AcousticPHYLink {
 
         let mode = selectBodyMode(for: frame)
         let header = AcousticPHYHeader(mode: mode, payloadLength: UInt16(frame.count)).encode()
-        let headerWave = try VDSPPHY.modulateDCSS(payload: header, config: headerConfig)
+
+        let localHeaderConfig: VDSPDCSSConfig
+        let localRobustConfig: VDSPDCSSConfig
+        let localTurboConfig: VDSPOFDMConfig
+
+        lock.lock()
+        localHeaderConfig = headerConfig
+        localRobustConfig = robustConfig
+        localTurboConfig = turboConfig
+        lock.unlock()
+
+        let headerWave = try VDSPPHY.modulateDCSS(payload: header, config: localHeaderConfig)
         let bodyWave: [Float]
         switch mode {
         case .robustDCSS:
-            bodyWave = try VDSPPHY.modulateDCSS(payload: frame, config: robustConfig)
+            bodyWave = try VDSPPHY.modulateDCSS(payload: frame, config: localRobustConfig)
         case .turboOFDM:
-            bodyWave = try VDSPPHY.modulateOFDMQPSK(payload: frame, config: turboConfig)
+            bodyWave = try VDSPPHY.modulateOFDMQPSK(payload: frame, config: localTurboConfig)
         }
 
         if config.channels == 2 {

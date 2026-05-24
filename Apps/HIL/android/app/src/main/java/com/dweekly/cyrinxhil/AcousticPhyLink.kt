@@ -171,6 +171,13 @@ private class DcssModem(private val config: DcssConfig) {
 
 class AcousticPhyLink(private val config: SessionConfig) {
     private val lock = Object()
+    private var peerDeviceSignature: Byte = 0
+
+    fun updatePeerSignature(signature: Byte) {
+        synchronized(lock) {
+            peerDeviceSignature = signature
+        }
+    }
 
     private val sampleRateHz = config.sampleRateHz.coerceIn(8_000, 192_000)
     private val cappedGain = run {
@@ -752,6 +759,8 @@ class AcousticPhyLink(private val config: SessionConfig) {
         val amplitude = min(max(cappedGain, 0f), 0.95f)
         val fftScale = 1.0f / ofdmFftSize.toFloat()
         val scale = amplitude * fftScale
+        val sig = synchronized(lock) { peerDeviceSignature }
+        val binWidth = sampleRateHz.toFloat() / ofdmFftSize.toFloat()
 
         for (frameIdx in 0 until frameCount) {
             val start = frameIdx * activeCount
@@ -764,7 +773,19 @@ class AcousticPhyLink(private val config: SessionConfig) {
                 val symbol = if (start + idx < end) qpskSymbols[start + idx] else 0.toByte()
                 val bin = ofdmActiveBins[idx]
 
-                val norm = 0.70710677f
+                var eqFactor = 1.0f
+                val freq = bin.toFloat() * binWidth
+                if (sig.toInt() == 0x01) { // CYRINX_DEVICE_MACBOOK_PRO
+                    val x = max(0.0f, min(1.0f, (freq - config.bandStartHz.toFloat()) / max(1.0f, config.bandEndHz.toFloat() - config.bandStartHz.toFloat())))
+                    val dbBoost = 3.0f + 9.0f * x
+                    eqFactor = java.lang.Math.pow(10.0, (dbBoost / 20.0).toDouble()).toFloat()
+                } else if (sig.toInt() == 0x02) { // CYRINX_DEVICE_PIXEL_7A
+                    val x = max(0.0f, min(1.0f, (freq - config.bandStartHz.toFloat()) / max(1.0f, config.bandEndHz.toFloat() - config.bandStartHz.toFloat())))
+                    val dbBoost = 3.0f + 12.0f * x
+                    eqFactor = java.lang.Math.pow(10.0, (dbBoost / 20.0).toDouble()).toFloat()
+                }
+
+                val norm = 0.70710677f * eqFactor
                 when (symbol.toInt() and 0x3) {
                     0 -> {
                         re[bin] = norm
@@ -797,13 +818,26 @@ class AcousticPhyLink(private val config: SessionConfig) {
             System.arraycopy(im, 0, timeIm, 0, ofdmFftSize)
             fft.transform(timeRe, timeIm, forward = false)
 
+            var maxPeak = 0.0f
+            for (i in 0 until ofdmFftSize) {
+                val absV = abs(timeRe[i])
+                if (absV > maxPeak) {
+                    maxPeak = absV
+                }
+            }
+            val peakIfScaled = maxPeak * scale
+            var finalScale = scale
+            if (peakIfScaled > 0.95f) {
+                finalScale = 0.95f / max(1e-7f, maxPeak)
+            }
+
             val outStart = frameIdx * symbolLength
             val cpStart = ofdmFftSize - ofdmCpSamples
             for (i in 0 until ofdmCpSamples) {
-                out[outStart + i] = timeRe[cpStart + i] * scale
+                out[outStart + i] = timeRe[cpStart + i] * finalScale
             }
             for (i in 0 until ofdmFftSize) {
-                out[outStart + ofdmCpSamples + i] = timeRe[i] * scale
+                out[outStart + ofdmCpSamples + i] = timeRe[i] * finalScale
             }
         }
         return out

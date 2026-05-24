@@ -100,6 +100,10 @@ typedef struct {
     uint8_t crc_fail;
 } cyrinx_channel_report_t;
 
+#define CYRINX_DEVICE_GENERIC     0x00
+#define CYRINX_DEVICE_MACBOOK_PRO 0x01
+#define CYRINX_DEVICE_PIXEL_7A    0x02
+
 typedef struct {
     cyrinx_gear_t current_gear;
     float snr_db;
@@ -115,6 +119,8 @@ typedef struct {
     uint8_t retransmission_active;
     uint8_t peer_mics_count;
     uint8_t peer_speakers_count;
+    uint8_t peer_device_signature;
+    uint32_t peer_max_buffer_capacity;
 } cyrinx_metrics_t;
 
 typedef struct {
@@ -159,6 +165,7 @@ typedef void (*cyrinx_event_callback_t)(cyrinx_event_t event, void *user_data);
  * - tx_gain_cap (speaker safety cap)
  * - band_start_hz / band_end_hz (ultrasonic band plan)
  * - CP and sensor-assisted ARC flags for dynamic geometry handling.
+ * - device_signature & max_buffer_capacity for peer capability handshake.
  */
 typedef struct {
     cyrinx_role_t role;
@@ -178,6 +185,8 @@ typedef struct {
     void *user_data;
     uint8_t mics_count;
     uint8_t speakers_count;
+    uint8_t device_signature;
+    uint32_t max_buffer_capacity;
 } cyrinx_config_t;
 
 /* Returns the semantic version string of the linked cyrinx core. */

@@ -167,6 +167,19 @@ public struct Config {
     public var dynamicCP: Bool
     public var sfbcStaticMode: Bool
     public var channels: UInt32
+    public var deviceSignature: UInt8
+    public var maxBufferCapacity: UInt32
+
+    /// Resolves the local device's hardware signature based on system info.
+    public static func resolveLocalDeviceSignature() -> UInt8 {
+        #if os(macOS)
+        let name = ProcessInfo.processInfo.hostName.lowercased()
+        if name.contains("macbookpro") || name.contains("macbook pro") || name.contains("macbook") {
+            return 0x01 // CYRINX_DEVICE_MACBOOK_PRO
+        }
+        #endif
+        return 0x00 // CYRINX_DEVICE_GENERIC
+    }
 
     /// Creates a PRD-aligned session configuration.
     ///
@@ -185,7 +198,9 @@ public struct Config {
         sensorAssistedARC: Bool = true,
         dynamicCP: Bool = true,
         sfbcStaticMode: Bool = true,
-        channels: UInt32 = 1
+        channels: UInt32 = 1,
+        deviceSignature: UInt8 = Config.resolveLocalDeviceSignature(),
+        maxBufferCapacity: UInt32 = 65536
     ) {
         self.role = role
         self.transportBackend = transportBackend
@@ -200,6 +215,8 @@ public struct Config {
         self.dynamicCP = dynamicCP
         self.sfbcStaticMode = sfbcStaticMode
         self.channels = channels
+        self.deviceSignature = deviceSignature
+        self.maxBufferCapacity = maxBufferCapacity
     }
 
     fileprivate func toC(
@@ -227,6 +244,8 @@ public struct Config {
         c.user_data = userData
         c.mics_count = UInt8(channels)
         c.speakers_count = UInt8(channels)
+        c.device_signature = deviceSignature
+        c.max_buffer_capacity = maxBufferCapacity
         return c
     }
 }
@@ -272,19 +291,21 @@ public struct ARCPolicy {
 
 /// Runtime metrics sampled from the transport core.
 public struct Metrics {
-    public let gear: Gear
-    public let snrDB: Float
-    public let evmPct: Float
-    public let cfoHz: Float
-    public let per2s: Float
-    public let goodputBps: Float
-    public let txRetries: UInt32
-    public let txFrames: UInt32
-    public let rxFrames: UInt32
-    public let crcFailures: UInt32
-    public let linkResets: UInt32
-    public let peerMicsCount: UInt8
-    public let peerSpeakersCount: UInt8
+    public var gear: Gear
+    public var snrDB: Float
+    public var evmPct: Float
+    public var cfoHz: Float
+    public var per2s: Float
+    public var goodputBps: Float
+    public var txRetries: UInt32
+    public var txFrames: UInt32
+    public var rxFrames: UInt32
+    public var crcFailures: UInt32
+    public var linkResets: UInt32
+    public var peerMicsCount: UInt8
+    public var peerSpeakersCount: UInt8
+    public var peerDeviceSignature: UInt8
+    public var peerMaxBufferCapacity: UInt32
 
     fileprivate init(c: cyrinx_metrics_t) {
         gear = Gear(cValue: c.current_gear)
@@ -300,6 +321,8 @@ public struct Metrics {
         linkResets = c.link_resets
         peerMicsCount = c.peer_mics_count
         peerSpeakersCount = c.peer_speakers_count
+        peerDeviceSignature = c.peer_device_signature
+        peerMaxBufferCapacity = c.peer_max_buffer_capacity
     }
 }
 

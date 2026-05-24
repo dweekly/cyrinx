@@ -36,6 +36,10 @@ class CyrinxTransportSession(
         private set
     var peerSpeakersCount = 1
         private set
+    var peerDeviceSignature = 0
+        private set
+    var peerMaxBufferCapacity = 65536
+        private set
     private var lastReplyMs = 0L
 
     private var awaitingAck = false
@@ -278,24 +282,37 @@ class CyrinxTransportSession(
         val payload = frame.copyOfRange(payloadStart, payloadEnd)
 
         if (header.frameType == CyrinxConstants.FRAME_DATA) {
-            if (header.streamId == CyrinxConstants.STREAM_CONTROL && payload.size == 4 && payload[0] == 0xE1.toByte()) {
+            if (header.streamId == CyrinxConstants.STREAM_CONTROL && payload.size >= 10 && payload[0] == 0xE1.toByte()) {
                 // Handshake message! Save peer capacities.
                 synchronized(signal) {
                     peerMicsCount = payload[2].toInt() and 0xFF
                     peerSpeakersCount = payload[3].toInt() and 0xFF
+                    peerDeviceSignature = payload[4].toInt() and 0xFF
+                    peerMaxBufferCapacity = ((payload[5].toInt() and 0xFF) shl 24) or
+                                            ((payload[6].toInt() and 0xFF) shl 16) or
+                                            ((payload[7].toInt() and 0xFF) shl 8) or
+                                            (payload[8].toInt() and 0xFF)
+                    metricsState.peerDeviceSignature = payload[4]
+                    metricsState.peerMaxBufferCapacity = peerMaxBufferCapacity
                 }
-                log("handshake received from peer: mics=$peerMicsCount, speakers=$peerSpeakersCount")
+                txSink.updatePeerSignature(payload[4])
+                log("handshake received from peer: mics=$peerMicsCount, speakers=$peerSpeakersCount, signature=$peerDeviceSignature, capacity=$peerMaxBufferCapacity")
 
                 // Reply with our own capacities if peer initiated
                 val now = SystemClock.elapsedRealtime()
                 if (now - lastReplyMs > 1000) {
                     lastReplyMs = now
-                    val capPayload = byteArrayOf(
-                        0xE1.toByte(),
-                        1.toByte(),
-                        config.channels.toByte(),
-                        config.channels.toByte()
-                    )
+                    val capPayload = ByteArray(10)
+                    capPayload[0] = 0xE1.toByte()
+                    capPayload[1] = 1.toByte()
+                    capPayload[2] = config.channels.toByte()
+                    capPayload[3] = config.channels.toByte()
+                    capPayload[4] = config.deviceSignature
+                    capPayload[5] = ((config.maxBufferCapacity ushr 24) and 0xFF).toByte()
+                    capPayload[6] = ((config.maxBufferCapacity ushr 16) and 0xFF).toByte()
+                    capPayload[7] = ((config.maxBufferCapacity ushr 8) and 0xFF).toByte()
+                    capPayload[8] = (config.maxBufferCapacity and 0xFF).toByte()
+                    capPayload[9] = 0.toByte()
                     val seq = synchronized(signal) {
                         val s = nextTxSeq
                         nextTxSeq = (nextTxSeq + 1) and 0xFFFF
@@ -362,12 +379,17 @@ class CyrinxTransportSession(
                 }
             }
             if (triggerBroadcast) {
-                val capPayload = byteArrayOf(
-                    0xE1.toByte(),
-                    1.toByte(),
-                    config.channels.toByte(),
-                    config.channels.toByte()
-                )
+                val capPayload = ByteArray(10)
+                capPayload[0] = 0xE1.toByte()
+                capPayload[1] = 1.toByte()
+                capPayload[2] = config.channels.toByte()
+                capPayload[3] = config.channels.toByte()
+                capPayload[4] = config.deviceSignature
+                capPayload[5] = ((config.maxBufferCapacity ushr 24) and 0xFF).toByte()
+                capPayload[6] = ((config.maxBufferCapacity ushr 16) and 0xFF).toByte()
+                capPayload[7] = ((config.maxBufferCapacity ushr 8) and 0xFF).toByte()
+                capPayload[8] = (config.maxBufferCapacity and 0xFF).toByte()
+                capPayload[9] = 0.toByte()
                 val seq = nextTxSeq
                 nextTxSeq = (nextTxSeq + 1) and 0xFFFF
                 sendInternal(

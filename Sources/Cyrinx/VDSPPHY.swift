@@ -31,6 +31,7 @@ public struct VDSPOFDMConfig: Sendable {
     public var bandStartHz: Float
     public var bandEndHz: Float
     public var txGainCap: Float
+    public var peerDeviceSignature: UInt8
 
     public init(
         sampleRateHz: UInt32 = 48_000,
@@ -38,7 +39,8 @@ public struct VDSPOFDMConfig: Sendable {
         cpSamples: Int = 96,
         bandStartHz: Float = 18_500,
         bandEndHz: Float = 23_500,
-        txGainCap: Float = 0.12
+        txGainCap: Float = 0.12,
+        peerDeviceSignature: UInt8 = 0
     ) {
         self.sampleRateHz = sampleRateHz
         self.fftSize = fftSize
@@ -46,6 +48,7 @@ public struct VDSPOFDMConfig: Sendable {
         self.bandStartHz = bandStartHz
         self.bandEndHz = bandEndHz
         self.txGainCap = txGainCap
+        self.peerDeviceSignature = peerDeviceSignature
     }
 }
 
@@ -57,6 +60,7 @@ public struct VDSPDCSSConfig: Sendable {
     public var startHz: Float
     public var endHz: Float
     public var txGainCap: Float
+    public var peerDeviceSignature: UInt8
 
     public init(
         sampleRateHz: UInt32 = 48_000,
@@ -64,7 +68,8 @@ public struct VDSPDCSSConfig: Sendable {
         symbolBins: Int = 256,
         startHz: Float = 18_500,
         endHz: Float = 23_500,
-        txGainCap: Float = 0.12
+        txGainCap: Float = 0.12,
+        peerDeviceSignature: UInt8 = 0
     ) {
         self.sampleRateHz = sampleRateHz
         self.symbolSamples = symbolSamples
@@ -72,6 +77,7 @@ public struct VDSPDCSSConfig: Sendable {
         self.startHz = startHz
         self.endHz = endHz
         self.txGainCap = txGainCap
+        self.peerDeviceSignature = peerDeviceSignature
     }
 }
 
@@ -228,17 +234,31 @@ public enum VDSPPHY {
         }
 
         private func fillSpectrum(symbols: [UInt8], real: inout [Float], imag: inout [Float]) {
+            let binWidth = Float(config.sampleRateHz) / Float(config.fftSize)
             for (idx, bin) in activeBins.enumerated() {
                 let symbol = idx < symbols.count ? symbols[idx] : 0
                 let point = mapQPSK(symbol)
-                real[bin] = point.re
-                imag[bin] = point.im
+                
+                var eqFactor = Float(1.0)
+                let freq = Float(bin) * binWidth
+                if config.peerDeviceSignature == 0x01 { // CYRINX_DEVICE_MACBOOK_PRO
+                    let x = max(0.0, min(1.0, (freq - config.bandStartHz) / max(1.0, config.bandEndHz - config.bandStartHz)))
+                    let dbBoost = 3.0 + 9.0 * x
+                    eqFactor = pow(10.0, dbBoost / 20.0)
+                } else if config.peerDeviceSignature == 0x02 { // CYRINX_DEVICE_PIXEL_7A
+                    let x = max(0.0, min(1.0, (freq - config.bandStartHz) / max(1.0, config.bandEndHz - config.bandStartHz)))
+                    let dbBoost = 3.0 + 12.0 * x
+                    eqFactor = pow(10.0, dbBoost / 20.0)
+                }
+                
+                real[bin] = point.re * eqFactor
+                imag[bin] = point.im * eqFactor
 
                 // Mirror conjugate bins to keep time-domain output real-valued.
                 let mirror = (config.fftSize - bin) % config.fftSize
                 if mirror != bin {
-                    real[mirror] = point.re
-                    imag[mirror] = -point.im
+                    real[mirror] = point.re * eqFactor
+                    imag[mirror] = -point.im * eqFactor
                 }
             }
         }
@@ -246,8 +266,23 @@ public enum VDSPPHY {
         private func scaleIFFTOutput(_ values: [Float]) -> [Float] {
             // vDSP inverse DFT is unnormalized; apply FFT-size normalization and TX amplitude cap.
             let fftScale = 1.0 / Float(config.fftSize)
+            
+            var maxPeak: Float = 0.0
+            for v in values {
+                let absV = abs(v)
+                if absV > maxPeak {
+                    maxPeak = absV
+                }
+            }
+            
             let scale = amplitude * fftScale
-            return values.map { $0 * scale }
+            let peakIfScaled = maxPeak * scale
+            var finalScale = scale
+            if peakIfScaled > 0.95 {
+                finalScale = 0.95 / max(1e-7, maxPeak)
+            }
+            
+            return values.map { $0 * finalScale }
         }
 
         private func demapQPSKBits(reOut: [Float], imOut: [Float]) -> [UInt8] {
