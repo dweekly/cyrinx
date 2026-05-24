@@ -241,7 +241,7 @@ public enum VDSPPHY {
             for (idx, bin) in activeBins.enumerated() {
                 let symbol = idx < symbols.count ? symbols[idx] : 0
                 let point = mapQPSK(symbol)
-                
+
                 var eqFactor = Float(1.0)
                 let freq = Float(bin) * binWidth
                 if config.peerDeviceSignature == 0x01 { // CYRINX_DEVICE_MACBOOK_PRO
@@ -253,7 +253,7 @@ public enum VDSPPHY {
                     let dbBoost = 3.0 + 12.0 * x
                     eqFactor = pow(10.0, dbBoost / 20.0)
                 }
-                
+
                 real[bin] = point.re * eqFactor
                 imag[bin] = point.im * eqFactor
 
@@ -269,7 +269,7 @@ public enum VDSPPHY {
         private func scaleIFFTOutput(_ values: [Float]) -> [Float] {
             // vDSP inverse DFT is unnormalized; apply FFT-size normalization and TX amplitude cap.
             let fftScale = 1.0 / Float(config.fftSize)
-            
+
             var maxPeak: Float = 0.0
             for v in values {
                 let absV = abs(v)
@@ -277,14 +277,14 @@ public enum VDSPPHY {
                     maxPeak = absV
                 }
             }
-            
+
             let scale = amplitude * fftScale
             let peakIfScaled = maxPeak * scale
             var finalScale = scale
             if peakIfScaled > 0.95 {
                 finalScale = 0.95 / max(1e-7, maxPeak)
             }
-            
+
             return values.map { $0 * finalScale }
         }
 

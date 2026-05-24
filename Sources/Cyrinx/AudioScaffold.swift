@@ -586,8 +586,20 @@ enum AudioBackendFactory {
                         cMetrics.peer_notch_mask.12, cMetrics.peer_notch_mask.13
                     ]
                     phyLink.updatePeerNotchMask(mask)
+                    let peerKey = Data([
+                        cMetrics.peer_public_key.0, cMetrics.peer_public_key.1, cMetrics.peer_public_key.2, cMetrics.peer_public_key.3,
+                        cMetrics.peer_public_key.4, cMetrics.peer_public_key.5, cMetrics.peer_public_key.6, cMetrics.peer_public_key.7,
+                        cMetrics.peer_public_key.8, cMetrics.peer_public_key.9, cMetrics.peer_public_key.10, cMetrics.peer_public_key.11,
+                        cMetrics.peer_public_key.12, cMetrics.peer_public_key.13, cMetrics.peer_public_key.14, cMetrics.peer_public_key.15,
+                        cMetrics.peer_public_key.16, cMetrics.peer_public_key.17, cMetrics.peer_public_key.18, cMetrics.peer_public_key.19,
+                        cMetrics.peer_public_key.20, cMetrics.peer_public_key.21, cMetrics.peer_public_key.22, cMetrics.peer_public_key.23,
+                        cMetrics.peer_public_key.24, cMetrics.peer_public_key.25, cMetrics.peer_public_key.26, cMetrics.peer_public_key.27,
+                        cMetrics.peer_public_key.28, cMetrics.peer_public_key.29, cMetrics.peer_public_key.30, cMetrics.peer_public_key.31
+                    ])
+                    phyLink.updatePeerPublicKey(peerKey)
                 }
             }
+
             let waveform =
                 (try? phyLink.encode(frame: frameBytes))
                 ?? StubWaveSynthesizer.synthesize(
@@ -1808,12 +1820,12 @@ enum AudioBackendFactory {
                 guard let self else { return }
                 let frameLength = Int(buffer.frameLength)
                 guard frameLength > 0 else { return }
-                
+
                 if self.config.channels == 2 {
                     guard let channelData = buffer.floatChannelData else { return }
                     let leftPtr = channelData[0]
                     let rightPtr = buffer.format.channelCount >= 2 ? channelData[1] : channelData[0]
-                    
+
                     var interleaved = [Float](repeating: 0, count: frameLength * 2)
                     for i in 0..<frameLength {
                         interleaved[i * 2] = leftPtr[i]
@@ -1874,8 +1886,20 @@ enum AudioBackendFactory {
                         cMetrics.peer_notch_mask.12, cMetrics.peer_notch_mask.13
                     ]
                     phyLink.updatePeerNotchMask(mask)
+                    let peerKey = Data([
+                        cMetrics.peer_public_key.0, cMetrics.peer_public_key.1, cMetrics.peer_public_key.2, cMetrics.peer_public_key.3,
+                        cMetrics.peer_public_key.4, cMetrics.peer_public_key.5, cMetrics.peer_public_key.6, cMetrics.peer_public_key.7,
+                        cMetrics.peer_public_key.8, cMetrics.peer_public_key.9, cMetrics.peer_public_key.10, cMetrics.peer_public_key.11,
+                        cMetrics.peer_public_key.12, cMetrics.peer_public_key.13, cMetrics.peer_public_key.14, cMetrics.peer_public_key.15,
+                        cMetrics.peer_public_key.16, cMetrics.peer_public_key.17, cMetrics.peer_public_key.18, cMetrics.peer_public_key.19,
+                        cMetrics.peer_public_key.20, cMetrics.peer_public_key.21, cMetrics.peer_public_key.22, cMetrics.peer_public_key.23,
+                        cMetrics.peer_public_key.24, cMetrics.peer_public_key.25, cMetrics.peer_public_key.26, cMetrics.peer_public_key.27,
+                        cMetrics.peer_public_key.28, cMetrics.peer_public_key.29, cMetrics.peer_public_key.30, cMetrics.peer_public_key.31
+                    ])
+                    phyLink.updatePeerPublicKey(peerKey)
                 }
             }
+
             let waveform =
                 (try? phyLink.encode(frame: frameBytes))
                 ?? StubWaveSynthesizer.synthesize(
@@ -1946,7 +1970,7 @@ enum AudioBackendFactory {
                 let copied = stereo.withUnsafeMutableBufferPointer { ptr in
                     dequeueTxSamples(into: ptr.baseAddress!, sampleCount: frameCount * 2)
                 }
-                
+
                 if buffers.count >= 2 {
                     for ch in 0..<2 {
                         let buffer = buffers[ch]

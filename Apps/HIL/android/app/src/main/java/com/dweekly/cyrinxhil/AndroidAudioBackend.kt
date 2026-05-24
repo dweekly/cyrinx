@@ -251,6 +251,11 @@ class AndroidAudioBackend(
         phy.updatePeerNotchMask(mask)
     }
 
+    override fun updatePeerPublicKey(key: ByteArray) {
+        phy.updatePeerPublicKey(key)
+    }
+
+
     fun playLocalAudibleBeacon(role: Role): Int {
         if (!running.get()) {
             return CyrinxStatus.ERR_NOT_RUNNING

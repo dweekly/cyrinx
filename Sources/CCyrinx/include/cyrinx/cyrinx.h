@@ -104,6 +104,8 @@ typedef struct {
 #define CYRINX_DEVICE_MACBOOK_PRO 0x01
 #define CYRINX_DEVICE_PIXEL_7A    0x02
 #define CYRINX_NOTCH_MASK_BYTES   14
+#define CYRINX_PUBLIC_KEY_BYTES   32
+#define CYRINX_CAP_PAYLOAD_SECURE_BYTES 56
 
 typedef struct {
     cyrinx_gear_t current_gear;
@@ -123,7 +125,9 @@ typedef struct {
     uint8_t peer_device_signature;
     uint32_t peer_max_buffer_capacity;
     uint8_t peer_notch_mask[CYRINX_NOTCH_MASK_BYTES];
+    uint8_t peer_public_key[CYRINX_PUBLIC_KEY_BYTES];
 } cyrinx_metrics_t;
+
 
 typedef struct {
     float up_g2_to_qpsk_snr_db;
@@ -190,7 +194,9 @@ typedef struct {
     uint8_t device_signature;
     uint32_t max_buffer_capacity;
     uint8_t notch_mask[CYRINX_NOTCH_MASK_BYTES];
+    uint8_t local_public_key[CYRINX_PUBLIC_KEY_BYTES];
 } cyrinx_config_t;
+
 
 /* Returns the semantic version string of the linked cyrinx core. */
 CYRINX_API const char *cyrinx_version(void);

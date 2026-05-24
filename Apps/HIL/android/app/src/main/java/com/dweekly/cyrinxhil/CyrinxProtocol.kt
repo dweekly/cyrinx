@@ -94,6 +94,7 @@ data class CyrinxMetrics(
     var peerDeviceSignature: Byte = 0,
     var peerMaxBufferCapacity: Int = 0,
     var peerNotchMask: ByteArray = ByteArray(14) { 0xFF.toByte() },
+    var peerPublicKey: ByteArray = ByteArray(32),
 )
 
 data class SessionConfig(
@@ -109,10 +110,15 @@ data class SessionConfig(
     val deviceSignature: Byte = 0,
     val maxBufferCapacity: Int = 65536,
     val notchMask: ByteArray = ByteArray(14) { 0xFF.toByte() },
+    val enableCrypto: Boolean = false,
+    val localPublicKey: ByteArray = ByteArray(32),
+    val localPrivateKey: ByteArray = ByteArray(32),
 )
 
 interface FrameTxSink {
     fun sendFrame(frame: ByteArray): Int
     fun updatePeerSignature(signature: Byte) {}
     fun updatePeerNotchMask(mask: ByteArray) {}
+    fun updatePeerPublicKey(key: ByteArray) {}
 }
+

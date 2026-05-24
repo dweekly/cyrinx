@@ -1,7 +1,9 @@
 import CCyrinx
+import CryptoKit
 import Foundation
 
 private let acousticFrameMaxBytes = 2048
+
 private let acousticHeaderBytes = 7
 private let acousticHeaderMagic0: UInt8 = 0xAC
 private let acousticHeaderMagic1: UInt8 = 0x51
@@ -86,6 +88,11 @@ final class AcousticPHYLink {
     private let preambleL: [Float]
     private let preambleR: [Float]
 
+    private var peerPublicKey: Data?
+    private var k_enc: Data?
+    private var k_mac: Data?
+    private var txSequence: UInt64 = 0
+
     /// Dynamically updates the peer's hardware signature to look up calibration curves.
     public func updatePeerSignature(_ signature: UInt8) {
         lock.lock()
@@ -100,6 +107,115 @@ final class AcousticPHYLink {
         lock.lock()
         defer { lock.unlock() }
         turboConfig.peerNotchMask = mask
+    }
+
+    /// Dynamically updates the peer's public key.
+    public func updatePeerPublicKey(_ key: Data) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        if peerPublicKey == key { return }
+
+        let allZeros = key.allSatisfy { $0 == 0 }
+        if allZeros {
+            self.peerPublicKey = nil
+            self.k_enc = nil
+            self.k_mac = nil
+            return
+        }
+
+        self.peerPublicKey = key
+
+        guard let privKeyData = config.localPrivateKey else { return }
+        do {
+            let localPrivateKey = try Curve25519.KeyAgreement.PrivateKey(rawRepresentation: privKeyData)
+            let peerPubKey = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: key)
+            let sharedSecret = try localPrivateKey.sharedSecretFromKeyAgreement(with: peerPubKey)
+
+            let derived = sharedSecret.hkdfDerivedSymmetricKey(
+                using: SHA256.self,
+                salt: Data("CyrinxEncryptionSalt".utf8),
+                sharedInfo: Data(),
+                outputByteCount: 64
+            )
+            let derivedBytes = derived.withUnsafeBytes { Data($0) }
+            self.k_enc = derivedBytes.prefix(32)
+            self.k_mac = derivedBytes.suffix(32)
+        } catch {
+            print("[Crypto] Failed to derive shared keys: \(error)")
+        }
+    }
+
+    private func encryptCTR(payload: Data, key: Data, sequence: UInt64) -> Data {
+        var out = Data(repeating: 0, count: payload.count)
+        var offset = 0
+        var counter: UInt32 = 0
+        while offset < payload.count {
+            var inputBlock = Data(repeating: 0, count: 12)
+            inputBlock.withUnsafeMutableBytes { ptr in
+                ptr.storeBytes(of: sequence.bigEndian, as: UInt64.self)
+                ptr.storeBytes(of: counter.bigEndian, toByteOffset: 8, as: UInt32.self)
+            }
+            var hasher = SHA256()
+            hasher.update(data: key)
+            hasher.update(data: inputBlock)
+            let keystream = Data(hasher.finalize())
+            let toXor = min(32, payload.count - offset)
+            for i in 0..<toXor {
+                out[offset + i] = payload[offset + i] ^ keystream[i]
+            }
+            offset += toXor
+            counter += 1
+        }
+        return out
+    }
+
+    private func secureEnvelopePack(payload: Data, k_enc: Data, k_mac: Data, sequence: UInt64) -> Data {
+        let ciphertext = encryptCTR(payload: payload, key: k_enc, sequence: sequence)
+        var envelope = Data()
+        var seqBytes = Data(repeating: 0, count: 8)
+        seqBytes.withUnsafeMutableBytes { ptr in
+            ptr.storeBytes(of: sequence.bigEndian, as: UInt64.self)
+        }
+        envelope.append(seqBytes)
+        envelope.append(ciphertext)
+
+        let macKey = SymmetricKey(data: k_mac)
+        let signature = HMAC<SHA256>.authenticationCode(for: seqBytes + ciphertext, using: macKey)
+        let signatureData = Data(signature)
+        let truncatedTag = signatureData.prefix(8)
+        envelope.append(truncatedTag)
+        return envelope
+    }
+
+    private func secureEnvelopeUnpack(envelope: Data, k_enc: Data, k_mac: Data) throws -> Data {
+        guard envelope.count >= 16 else {
+            throw VDSPPHYError.decodeFailure("Envelope too short")
+        }
+        let sequenceBytes = envelope.prefix(8)
+        let tagBytes = envelope.suffix(8)
+        let ciphertext = envelope.subdata(in: 8..<(envelope.count - 8))
+
+        let sequence = sequenceBytes.withUnsafeBytes { ptr in
+            UInt64(bigEndian: ptr.load(as: UInt64.self))
+        }
+
+        let macKey = SymmetricKey(data: k_mac)
+        let signature = HMAC<SHA256>.authenticationCode(for: sequenceBytes + ciphertext, using: macKey)
+        let signatureData = Data(signature)
+        let truncatedTag = signatureData.prefix(8)
+
+        var isEqual = true
+        for i in 0..<8 {
+            if tagBytes[tagBytes.startIndex + i] != truncatedTag[truncatedTag.startIndex + i] {
+                isEqual = false
+            }
+        }
+        guard isEqual else {
+            throw VDSPPHYError.decodeFailure("Integrity check failed: invalid HMAC tag")
+        }
+
+        return encryptCTR(payload: ciphertext, key: k_enc, sequence: sequence)
     }
 
     init(
@@ -171,8 +287,24 @@ final class AcousticPHYLink {
             throw VDSPPHYError.invalidConfiguration("invalid acoustic frame payload size")
         }
 
-        let mode = selectBodyMode(for: frame)
-        let header = AcousticPHYHeader(mode: mode, payloadLength: UInt16(frame.count)).encode()
+        var payloadToSend = frame
+        lock.lock()
+        let encryptKeys = (k_enc != nil && k_mac != nil)
+        let localKEnc = k_enc
+        let localKMac = k_mac
+        let seq = txSequence
+        if encryptKeys && frame[0] != 0xE1 {
+            txSequence += 1
+        }
+        lock.unlock()
+
+        if encryptKeys && frame[0] != 0xE1 {
+            let packed = secureEnvelopePack(payload: Data(frame), k_enc: localKEnc!, k_mac: localKMac!, sequence: seq)
+            payloadToSend = Array(packed)
+        }
+
+        let mode = selectBodyMode(for: payloadToSend)
+        let header = AcousticPHYHeader(mode: mode, payloadLength: UInt16(payloadToSend.count)).encode()
 
         let localHeaderConfig: VDSPDCSSConfig
         let localRobustConfig: VDSPDCSSConfig
@@ -313,10 +445,22 @@ final class AcousticPHYLink {
                 bodyPayload = try? VDSPPHY.demodulateOFDMQPSK(samples: bodyWindow, config: turboConfig)
             }
 
-            guard let frame = bodyPayload, frame.count == Int(packetHeader.payloadLength) else {
+            guard var frame = bodyPayload, frame.count == Int(packetHeader.payloadLength) else {
                 removeFirstSamples(syncStart + 1)
                 rxSearchStart = 0
                 continue
+            }
+
+            let decryptKeys = (k_enc != nil && k_mac != nil)
+            if decryptKeys && frame[0] != 0xE1 {
+                do {
+                    let unpacked = try secureEnvelopeUnpack(envelope: Data(frame), k_enc: k_enc!, k_mac: k_mac!)
+                    frame = Array(unpacked)
+                } catch {
+                    removeFirstSamples(syncStart + 1)
+                    rxSearchStart = 0
+                    continue
+                }
             }
 
             let report = channelReport(for: lockResult)
@@ -663,15 +807,15 @@ final class AcousticPHYLink {
     public static func calculateTHD(samples: [Float], sampleRateHz: Int, fundamentalHz: Float) -> Float {
         let n = 2048
         if samples.count < n { return 0.0 }
-        
+
         var real = Array(samples[0..<n])
         var imag = [Float](repeating: 0, count: n)
-        
+
         let fft = CyrinxFFT(size: n)
         fft.transform(real: &real, imag: &imag, forward: true)
-        
+
         let binWidth = Float(sampleRateHz) / Float(n)
-        
+
         func getPowerAtFreq(_ freq: Float) -> Float {
             let centerBin = Int(round(freq / binWidth))
             var powerSum: Float = 0
@@ -682,10 +826,10 @@ final class AcousticPHYLink {
             }
             return powerSum
         }
-        
+
         let pFund = getPowerAtFreq(fundamentalHz)
         if pFund <= 1e-9 { return 0.0 }
-        
+
         var pHarmonics: Float = 0
         var harmonicMultiplier = 2
         while true {
@@ -696,7 +840,7 @@ final class AcousticPHYLink {
             pHarmonics += getPowerAtFreq(harmFreq)
             harmonicMultiplier += 1
         }
-        
+
         return sqrt(pHarmonics / pFund) * 100.0
     }
 }
@@ -707,7 +851,7 @@ final class CyrinxFFT {
     private let bitReversalTable: [Int]
     private let cosTable: [Float]
     private let sinTable: [Float]
-    
+
     init(size: Int) {
         self.size = size
         var temp = size
@@ -718,7 +862,7 @@ final class CyrinxFFT {
             count += 1
         }
         self.log2N = count
-        
+
         var revTable = [Int](repeating: 0, count: size)
         for i in 0..<size {
             var rev = 0
@@ -730,7 +874,7 @@ final class CyrinxFFT {
             revTable[i] = rev
         }
         self.bitReversalTable = revTable
-        
+
         var cTable = [Float](repeating: 0, count: size / 2)
         var sTable = [Float](repeating: 0, count: size / 2)
         for k in 0..<(size / 2) {
@@ -741,10 +885,10 @@ final class CyrinxFFT {
         self.cosTable = cTable
         self.sinTable = sTable
     }
-    
+
     func transform(real: inout [Float], imag: inout [Float], forward: Bool) {
         precondition(real.count == size && imag.count == size, "Input arrays must be of size \(size)")
-        
+
         // 1. Bit-reversal sorting
         for i in 0..<size {
             let j = bitReversalTable[i]
@@ -753,28 +897,28 @@ final class CyrinxFFT {
                 imag.swapAt(i, j)
             }
         }
-        
+
         // 2. Butterfly stages
         var len = 2
         while len <= size {
             let halfLen = len / 2
             let twiddleStep = size / len
-            
+
             for i in stride(from: 0, to: size, by: len) {
                 for j in 0..<halfLen {
                     let k = i + j
                     let l = k + halfLen
-                    
+
                     let twiddleIdx = j * twiddleStep
                     let wr = cosTable[twiddleIdx]
                     let wi = forward ? -sinTable[twiddleIdx] : sinTable[twiddleIdx]
-                    
+
                     let tRe = real[l] * wr - imag[l] * wi
                     let tIm = real[l] * wi + imag[l] * wr
-                    
+
                     real[l] = real[k] - tRe
                     imag[l] = imag[k] - tIm
-                    
+
                     real[k] += tRe
                     imag[k] += tIm
                 }

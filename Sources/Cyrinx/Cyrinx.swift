@@ -1,7 +1,9 @@
 import CCyrinx
+import CryptoKit
 import Foundation
 
 private let CYRINX_SWIFT_OK: Int32 = 0
+
 private let CYRINX_SWIFT_ERR_INVALID_ARGUMENT: Int32 = -1
 private let CYRINX_SWIFT_ERR_BUFFER_TOO_SMALL: Int32 = -3
 private let CYRINX_SWIFT_ERR_TIMEOUT: Int32 = -4
@@ -170,6 +172,9 @@ public struct Config {
     public var deviceSignature: UInt8
     public var maxBufferCapacity: UInt32
     public var notchMask: [UInt8]
+    public var enableCrypto: Bool
+    public var localPublicKey: Data?
+    public var localPrivateKey: Data?
 
     /// Resolves the local device's hardware signature based on system info.
     public static func resolveLocalDeviceSignature() -> UInt8 {
@@ -202,7 +207,10 @@ public struct Config {
         channels: UInt32 = 1,
         deviceSignature: UInt8 = Config.resolveLocalDeviceSignature(),
         maxBufferCapacity: UInt32 = 65536,
-        notchMask: [UInt8] = [UInt8](repeating: 0xFF, count: 14)
+        notchMask: [UInt8] = [UInt8](repeating: 0xFF, count: 14),
+        enableCrypto: Bool = false,
+        localPublicKey: Data? = nil,
+        localPrivateKey: Data? = nil
     ) {
         self.role = role
         self.transportBackend = transportBackend
@@ -220,6 +228,15 @@ public struct Config {
         self.deviceSignature = deviceSignature
         self.maxBufferCapacity = maxBufferCapacity
         self.notchMask = notchMask
+        self.enableCrypto = enableCrypto
+        if enableCrypto && localPublicKey == nil {
+            let privateKey = Curve25519.KeyAgreement.PrivateKey()
+            self.localPrivateKey = privateKey.rawRepresentation
+            self.localPublicKey = privateKey.publicKey.rawRepresentation
+        } else {
+            self.localPrivateKey = localPrivateKey
+            self.localPublicKey = localPublicKey
+        }
     }
 
     fileprivate func toC(
@@ -249,7 +266,7 @@ public struct Config {
         c.speakers_count = UInt8(channels)
         c.device_signature = deviceSignature
         c.max_buffer_capacity = maxBufferCapacity
-        c.notch_mask.0 = notchMask.count > 0 ? notchMask[0] : 0xFF
+        c.notch_mask.0 = !notchMask.isEmpty ? notchMask[0] : 0xFF
         c.notch_mask.1 = notchMask.count > 1 ? notchMask[1] : 0xFF
         c.notch_mask.2 = notchMask.count > 2 ? notchMask[2] : 0xFF
         c.notch_mask.3 = notchMask.count > 3 ? notchMask[3] : 0xFF
@@ -263,7 +280,48 @@ public struct Config {
         c.notch_mask.11 = notchMask.count > 11 ? notchMask[11] : 0xFF
         c.notch_mask.12 = notchMask.count > 12 ? notchMask[12] : 0xFF
         c.notch_mask.13 = notchMask.count > 13 ? notchMask[13] : 0xFF
+        if let pubKey = localPublicKey {
+            let limit = min(pubKey.count, 32)
+            for idx in 0..<limit {
+                switch idx {
+                case 0: c.local_public_key.0 = pubKey[0]
+                case 1: c.local_public_key.1 = pubKey[1]
+                case 2: c.local_public_key.2 = pubKey[2]
+                case 3: c.local_public_key.3 = pubKey[3]
+                case 4: c.local_public_key.4 = pubKey[4]
+                case 5: c.local_public_key.5 = pubKey[5]
+                case 6: c.local_public_key.6 = pubKey[6]
+                case 7: c.local_public_key.7 = pubKey[7]
+                case 8: c.local_public_key.8 = pubKey[8]
+                case 9: c.local_public_key.9 = pubKey[9]
+                case 10: c.local_public_key.10 = pubKey[10]
+                case 11: c.local_public_key.11 = pubKey[11]
+                case 12: c.local_public_key.12 = pubKey[12]
+                case 13: c.local_public_key.13 = pubKey[13]
+                case 14: c.local_public_key.14 = pubKey[14]
+                case 15: c.local_public_key.15 = pubKey[15]
+                case 16: c.local_public_key.16 = pubKey[16]
+                case 17: c.local_public_key.17 = pubKey[17]
+                case 18: c.local_public_key.18 = pubKey[18]
+                case 19: c.local_public_key.19 = pubKey[19]
+                case 20: c.local_public_key.20 = pubKey[20]
+                case 21: c.local_public_key.21 = pubKey[21]
+                case 22: c.local_public_key.22 = pubKey[22]
+                case 23: c.local_public_key.23 = pubKey[23]
+                case 24: c.local_public_key.24 = pubKey[24]
+                case 25: c.local_public_key.25 = pubKey[25]
+                case 26: c.local_public_key.26 = pubKey[26]
+                case 27: c.local_public_key.27 = pubKey[27]
+                case 28: c.local_public_key.28 = pubKey[28]
+                case 29: c.local_public_key.29 = pubKey[29]
+                case 30: c.local_public_key.30 = pubKey[30]
+                case 31: c.local_public_key.31 = pubKey[31]
+                default: break
+                }
+            }
+        }
         return c
+
     }
 }
 
@@ -324,6 +382,7 @@ public struct Metrics {
     public var peerDeviceSignature: UInt8
     public var peerMaxBufferCapacity: UInt32
     public var peerNotchMask: [UInt8]
+    public var peerPublicKey: Data
 
     fileprivate init(c: cyrinx_metrics_t) {
         gear = Gear(cValue: c.current_gear)
@@ -347,6 +406,16 @@ public struct Metrics {
             c.peer_notch_mask.8, c.peer_notch_mask.9, c.peer_notch_mask.10, c.peer_notch_mask.11,
             c.peer_notch_mask.12, c.peer_notch_mask.13
         ]
+        peerPublicKey = Data([
+            c.peer_public_key.0, c.peer_public_key.1, c.peer_public_key.2, c.peer_public_key.3,
+            c.peer_public_key.4, c.peer_public_key.5, c.peer_public_key.6, c.peer_public_key.7,
+            c.peer_public_key.8, c.peer_public_key.9, c.peer_public_key.10, c.peer_public_key.11,
+            c.peer_public_key.12, c.peer_public_key.13, c.peer_public_key.14, c.peer_public_key.15,
+            c.peer_public_key.16, c.peer_public_key.17, c.peer_public_key.18, c.peer_public_key.19,
+            c.peer_public_key.20, c.peer_public_key.21, c.peer_public_key.22, c.peer_public_key.23,
+            c.peer_public_key.24, c.peer_public_key.25, c.peer_public_key.26, c.peer_public_key.27,
+            c.peer_public_key.28, c.peer_public_key.29, c.peer_public_key.30, c.peer_public_key.31
+        ])
     }
 }
 

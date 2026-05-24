@@ -1,7 +1,13 @@
 package com.dweekly.cyrinxhil
 
+import java.nio.ByteBuffer
+import java.security.MessageDigest
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 import kotlin.math.PI
 import kotlin.math.abs
+
+
 import kotlin.math.atan2
 import kotlin.math.ceil
 import kotlin.math.cos
@@ -174,6 +180,10 @@ class AcousticPhyLink(private val config: SessionConfig) {
     private var peerDeviceSignature: Byte = 0
     private var peerNotchMask = ByteArray(14) { 0xFF.toByte() }
     private var localNotchMask = ByteArray(14) { 0xFF.toByte() }
+    private var peerPublicKey: ByteArray? = null
+    private var kEnc: ByteArray? = null
+    private var kMac: ByteArray? = null
+    private var txSequence = 0L
 
     fun updatePeerSignature(signature: Byte) {
         synchronized(lock) {
@@ -192,6 +202,125 @@ class AcousticPhyLink(private val config: SessionConfig) {
             localNotchMask = mask
         }
     }
+
+    fun updatePeerPublicKey(key: ByteArray) {
+        synchronized(lock) {
+            if (peerPublicKey?.contentEquals(key) == true) return
+            
+            val allZeros = key.all { it == 0.toByte() }
+            if (allZeros) {
+                peerPublicKey = null
+                kEnc = null
+                kMac = null
+                return
+            }
+            
+            peerPublicKey = key
+            val privKey = config.localPrivateKey
+            val sharedSecret = X25519.scalarMult(privKey, key)
+            
+            try {
+                val derived = hkdfSHA256(sharedSecret, "CyrinxEncryptionSalt".toByteArray(Charsets.UTF_8), 64)
+                kEnc = derived.copyOfRange(0, 32)
+                kMac = derived.copyOfRange(32, 64)
+            } catch (e: Exception) {
+                // Fail-safe
+            }
+        }
+    }
+
+    private fun hkdfSHA256(secret: ByteArray, salt: ByteArray, length: Int): ByteArray {
+        val mac = Mac.getInstance("HmacSHA256")
+        mac.init(SecretKeySpec(salt, "HmacSHA256"))
+        val prk = mac.doFinal(secret)
+        
+        mac.init(SecretKeySpec(prk, "HmacSHA256"))
+        val okm = ByteArray(length)
+        var offset = 0
+        var t = ByteArray(0)
+        var counter = 1
+        while (offset < length) {
+            mac.update(t)
+            mac.update(ByteArray(0)) // info (empty)
+            mac.update(counter.toByte())
+            t = mac.doFinal()
+            val toCopy = minOf(t.size, length - offset)
+            System.arraycopy(t, 0, okm, offset, toCopy)
+            offset += toCopy
+            counter++
+        }
+        return okm
+    }
+
+    private fun encryptCTR(payload: ByteArray, key: ByteArray, sequence: Long): ByteArray {
+        val out = ByteArray(payload.size)
+        var offset = 0
+        var counter = 0
+        val md = MessageDigest.getInstance("SHA-256")
+        while (offset < payload.size) {
+            val inputBlock = ByteBuffer.allocate(12)
+                .putLong(sequence)
+                .putInt(counter)
+                .array()
+            md.update(key)
+            md.update(inputBlock)
+            val keystream = md.digest()
+            val toXor = minOf(32, payload.size - offset)
+            for (i in 0 until toXor) {
+                out[offset + i] = (payload[offset + i].toInt() xor keystream[i].toInt()).toByte()
+            }
+            offset += toXor
+            counter++
+        }
+        return out
+    }
+
+    private fun secureEnvelopePack(payload: ByteArray, k_enc: ByteArray, k_mac: ByteArray, sequence: Long): ByteArray {
+        val ciphertext = encryptCTR(payload, k_enc, sequence)
+        val envelope = ByteArray(8 + ciphertext.size + 8)
+        val seqBytes = ByteBuffer.allocate(8).putLong(sequence).array()
+        
+        System.arraycopy(seqBytes, 0, envelope, 0, 8)
+        System.arraycopy(ciphertext, 0, envelope, 8, ciphertext.size)
+        
+        val mac = Mac.getInstance("HmacSHA256")
+        mac.init(SecretKeySpec(k_mac, "HmacSHA256"))
+        mac.update(seqBytes)
+        mac.update(ciphertext)
+        val signature = mac.doFinal()
+        System.arraycopy(signature, 0, envelope, 8 + ciphertext.size, 8)
+        return envelope
+    }
+
+    private fun secureEnvelopeUnpack(envelope: ByteArray, k_enc: ByteArray, k_mac: ByteArray): ByteArray {
+        if (envelope.size < 16) {
+            throw IllegalArgumentException("Envelope too short")
+        }
+        val sequenceBytes = envelope.copyOfRange(0, 8)
+        val tagBytes = envelope.copyOfRange(envelope.size - 8, envelope.size)
+        val ciphertext = envelope.copyOfRange(8, envelope.size - 8)
+        
+        val sequence = ByteBuffer.wrap(sequenceBytes).long
+        
+        val mac = Mac.getInstance("HmacSHA256")
+        mac.init(SecretKeySpec(k_mac, "HmacSHA256"))
+        mac.update(sequenceBytes)
+        mac.update(ciphertext)
+        val signature = mac.doFinal()
+        
+        var isEqual = true
+        for (i in 0 until 8) {
+            if (tagBytes[i] != signature[i]) {
+                isEqual = false
+            }
+        }
+        if (!isEqual) {
+            throw SecurityException("Integrity check failed: invalid HMAC tag")
+        }
+        
+        return encryptCTR(ciphertext, k_enc, sequence)
+    }
+
 
     private val sampleRateHz = config.sampleRateHz.coerceIn(8_000, 192_000)
     private val cappedGain = run {
@@ -280,15 +409,36 @@ class AcousticPhyLink(private val config: SessionConfig) {
             "invalid acoustic frame payload size"
         }
 
-        val mode = selectBodyMode(frame)
-        val header = AcousticHeader(mode = mode, payloadLength = frame.size).encode()
+        var payloadToSend = frame
+        var encryptKeys = false
+        var localKEnc: ByteArray? = null
+        var localKMac: ByteArray? = null
+        var seq = 0L
+
+        synchronized(lock) {
+            if (kEnc != null && kMac != null && frame.isNotEmpty() && frame[0] != 0xE1.toByte()) {
+                encryptKeys = true
+                localKEnc = kEnc
+                localKMac = kMac
+                seq = txSequence
+                txSequence++
+            }
+        }
+
+        if (encryptKeys) {
+            payloadToSend = secureEnvelopePack(frame, localKEnc!!, localKMac!!, seq)
+        }
+
+        val mode = selectBodyMode(payloadToSend)
+        val header = AcousticHeader(mode = mode, payloadLength = payloadToSend.size).encode()
         val headerWave = headerModem.modulate(header)
 
         val bodyWave = if (mode == AcousticBodyMode.TURBO_OFDM) {
-            modulateOfdm(frame)
+            modulateOfdm(payloadToSend)
         } else {
-            robustModem.modulate(frame)
+            robustModem.modulate(payloadToSend)
         }
+
 
         if (config.channels == 2) {
             val totalLen = preamble.size + headerWave.size + bodyWave.size
@@ -404,21 +554,44 @@ class AcousticPhyLink(private val config: SessionConfig) {
             } catch (_: Throwable) {
                 null
             }
+            var frame = bodyPayload
             if (bodyPayload == null || bodyPayload.size != packetHeader.payloadLength) {
                 dropFront(syncStart + 1)
                 rxSearchStart = 0
                 continue
             }
 
+            var decryptKeys = false
+            var localKEnc: ByteArray? = null
+            var localKMac: ByteArray? = null
+            synchronized(lock) {
+                if (kEnc != null && kMac != null && frame.isNotEmpty() && frame[0] != 0xE1.toByte()) {
+                    decryptKeys = true
+                    localKEnc = kEnc
+                    localKMac = kMac
+                }
+            }
+
+            if (decryptKeys) {
+                try {
+                    frame = secureEnvelopeUnpack(frame, localKEnc!!, localKMac!!)
+                } catch (e: Exception) {
+                    dropFront(syncStart + 1)
+                    rxSearchStart = 0
+                    continue
+                }
+            }
+
             decoded.add(
                 AcousticDecodedFrame(
-                    frame = bodyPayload,
+                    frame = frame,
                     report = channelReport(lockResult),
                 ),
             )
             dropFront(bodyEnd)
             rxSearchStart = 0
         }
+
 
         return decoded
     }
