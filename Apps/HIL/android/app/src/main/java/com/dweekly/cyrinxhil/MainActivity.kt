@@ -2,6 +2,7 @@ package com.dweekly.cyrinxhil
 
 import android.Manifest
 import android.content.Context
+import android.media.AudioManager
 import android.os.Vibrator
 import android.os.VibrationEffect
 import android.os.Build
@@ -258,6 +259,13 @@ class MainActivity : ComponentActivity() {
 
         stopRawBackend()
         stopSession()
+
+        // Programmatic acoustic gain staging calibration to safe linear region (72% sweet-spot)
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        val targetIndex = (maxVolume * 0.72f).toInt()
+        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetIndex, 0)
+        appendLog("[AcousticCalibration] Android Stream volume auto-calibrated to: $targetIndex / $maxVolume")
 
         val config = buildSessionConfig(role)
 

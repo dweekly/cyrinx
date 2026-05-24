@@ -392,6 +392,7 @@ public final class CyrinxSession {
 
     /// Moves the session from idle to discovery mode.
     public func start() throws {
+        AcousticCalibration.optimizeHardwareVolumes()
         try audioBackend?.start()
         let rc = cyrinx_start(handle)
         do {

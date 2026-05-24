@@ -323,6 +323,14 @@ class AcousticPhyLink(private val config: SessionConfig) {
         val decoded = ArrayList<AcousticDecodedFrame>()
         val headerSamples = expectedDcssSamples(ACOUSTIC_HEADER_BYTES, headerConfig)
 
+        // Prevent exponential CPU search bottleneck under queue overflow
+        val maxBufferSize = preamble.size * 4 + headerSamples
+        if (rxBuffer.size > maxBufferSize) {
+            val dropCount = rxBuffer.size - maxBufferSize
+            dropFront(dropCount)
+            rxSearchStart = max(0, rxSearchStart - dropCount)
+        }
+
         while (true) {
             val lockResult = findBestPreambleLock(rxBuffer, rxSearchStart)
             if (lockResult == null) {
