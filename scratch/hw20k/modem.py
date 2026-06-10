@@ -306,8 +306,15 @@ def ofdm_mod_symbol(cfg, freq_vals_on_used):
 
 # ---------------- TX ----------------
 
-def modulate_frame(cfg, payload_bytes, frame_seed=1):
-    """payload_bytes: exactly cfg.payload_bytes. Returns float32 waveform."""
+def modulate_frame(cfg, payload_bytes, frame_seed=1, taps=None):
+    """payload_bytes: exactly cfg.payload_bytes. Returns float32 waveform.
+
+    If `taps` is a dict, it is filled with the intermediate result of every TX
+    pipeline stage (and the DetRng-derived artifacts) for golden-vector export.
+    Passing taps does NOT change the returned waveform — it is pure
+    instrumentation for cross-implementation parity testing (see
+    scratch/hw20k/golden_vectors.py and docs/PUBLICATION.md PR 1.1).
+    """
     assert len(payload_bytes) == cfg.payload_bytes
     # blocks + CRC
     blocks = []
@@ -319,13 +326,18 @@ def modulate_frame(cfg, payload_bytes, frame_seed=1):
     bits = np.unpackbits(np.frombuffer(stream, dtype=np.uint8))
     # pad info bits up to cfg.info_bits
     pad = cfg.info_bits - len(bits)
-    bits = np.concatenate([bits, prbs_bits(pad, seed=7)]) if pad else bits
+    pad_info = prbs_bits(pad, seed=7) if pad else np.zeros(0, dtype=np.uint8)
+    bits = np.concatenate([bits, pad_info]) if pad else bits
     coded = conv_encode(bits)
+    coded_full = coded
     coded = puncture(coded, cfg.pattern)
+    coded_punctured = coded
     # fill to symbol capacity with PRBS (receiver ignores)
     cap = cfg.bits_per_sym * cfg.n_sym
+    pad_fill = np.zeros(0, dtype=np.uint8)
     if len(coded) < cap:
-        coded = np.concatenate([coded, prbs_bits(cap - len(coded), seed=8)])
+        pad_fill = prbs_bits(cap - len(coded), seed=8)
+        coded = np.concatenate([coded, pad_fill])
     # frame-wide interleave
     perm = DetRng(0x1EAF).permutation(cap)
     inter = np.empty(cap, dtype=np.uint8)
@@ -338,6 +350,7 @@ def modulate_frame(cfg, payload_bytes, frame_seed=1):
     # data symbols
     pos = 0
     used_set = {b: i for i, b in enumerate(cfg.used)}
+    data_freq = []  # complex freq-domain values on used bins, per data symbol
     for s in range(cfg.n_sym):
         fv = np.zeros(len(cfg.used), dtype=complex)
         fv[[used_set[b] for b in cfg.pilot_idx]] = cfg.pilots
@@ -346,13 +359,34 @@ def modulate_frame(cfg, payload_bytes, frame_seed=1):
             chunk = inter[pos:pos + nb]
             pos += nb
             fv[used_set[b]] = qam_map(chunk[None, :], nb)[0]
+        data_freq.append(fv)
         syms.append(ofdm_mod_symbol(cfg, fv))
     x = np.concatenate(syms)
+    x_raw = x
     # normalize + soft clip to tame OFDM PAPR
     sigma = x.std()
     x = np.clip(x, -cfg.clip_sigma * sigma, cfg.clip_sigma * sigma)
     x = x / np.abs(x).max() * cfg.amp
     wave = np.concatenate([cfg.chirp_wave * cfg.amp, np.zeros(GUARD), x])
+    if taps is not None:
+        taps.update({
+            "stream_with_crc": np.frombuffer(stream, dtype=np.uint8).copy(),
+            "info_bits": bits.astype(np.uint8),
+            "pad_info_bits": pad_info.astype(np.uint8),
+            "coded_bits": coded_full.astype(np.uint8),
+            "punctured_bits": coded_punctured.astype(np.uint8),
+            "pad_fill_bits": pad_fill.astype(np.uint8),
+            "coded_filled_bits": coded.astype(np.uint8),
+            "interleave_perm": perm.astype(np.int64),
+            "interleaved_bits": inter.astype(np.uint8),
+            "pilots": cfg.pilots.astype(np.complex128),
+            "sync_freq": np.stack([sync_symbol_freq(cfg, w) for w in range(2)]),
+            "data_freq": np.stack(data_freq) if data_freq else np.zeros((0, len(cfg.used)), complex),
+            "ofdm_time_raw": x_raw.astype(np.float64),
+            "ofdm_time_norm": x.astype(np.float64),
+            "wave": wave.astype(np.float64),
+            "clip_sigma_value": float(sigma),
+        })
     return wave.astype(np.float32)
 
 

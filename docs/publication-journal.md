@@ -52,5 +52,36 @@ the plan stage (e.g. `[1.1]`, `[0.2]`) it belongs to.
   low-value churn now); stale branch/worktree pruning; full-history secret/PII
   sweep happens at the Phase 5 public-flip gate.
 
-### `[1.1]` Golden-vector contract — next
-- (entries to follow as work lands)
+### `[1.1]` Golden-vector contract — landed (branch `publication/golden-vectors`)
+- **FFT strategy decided** (answer to "KISS first, then optimize?"): yes —
+  KISS FFT as the portable correctness reference behind a thin internal FFT-plan
+  interface (`create/forward/inverse/destroy`); per-arch optimized backends
+  (vDSP/Accelerate on Apple, PFFFT/NEON on ARM, AVX on x86) added later, each
+  gated by these golden vectors. What makes the fast version cheap to reach,
+  baked into the C structure now: fixed compile-time size (2048) + precomputed
+  twiddles in a plan struct (no per-call alloc); **real-input transform** (rfft —
+  half the work, biggest single win); structure-of-arrays + 32-byte alignment +
+  `restrict` for auto-vectorization; **no global `-ffast-math`** (it reorders FP
+  ops → breaks cross-platform determinism AND the golden float tolerances; scope
+  it only to an explicitly-tolerant fast backend); `-O2` + LTO.
+- **Instrument, don't reimplement.** Added an optional `taps` dict to
+  `modem.py:modulate_frame` — populated only when passed, zero behavior change
+  (modem selftest still 4/4 + 14/14). Records every stage + DetRng-derived
+  artifacts (interleave perm, pilots, sync, PRBS pads).
+- **Emitter** `scratch/hw20k/golden_vectors.py` (`emit`/`verify`) writes small
+  canonical fixtures to `Tests/Fixtures/golden/` with a manifest carrying
+  per-artifact dtype/shape/SHA-256/tolerance. Two cases (qpsk_r12, qam16_r34) at
+  real params (NFFT 2048, CP 768), smallest n_sym that still carries one CRC
+  block — every code path, tiny frame.
+- **Tiered tolerance**: exact (byte-for-byte) for the deterministic integer
+  pipeline + decoded payload; float (1e-5 abs, float32 reference) for FFT-derived
+  values. Reference stored as **float32** — matches the real TX dtype and halved
+  the fixtures from 1.2 MB → **664 KB**. Dropped redundant `ofdm_time_norm`
+  (= `wave` tail) and debug-only `ofdm_time_raw` (kept in taps).
+- **Library-side lock**: `Tests/CyrinxTests/GoldenVectors.swift` (loader; locates
+  fixtures via `#filePath` so the C rig shares the path) + 4 passing tests
+  (manifest loads, SHA-256 integrity, round-trip target self-consistent, exact-
+  stage shapes). Full suite green (48 tests).
+- **Next (1.2)**: C TX path against these vectors — DetRng, conv-encode+puncture,
+  interleaver, Gray QAM map, OFDM mod — bit-exact on integer stages, float-tol on
+  the wave. The Swift `GoldenVectors` typed accessors are ready for it.
