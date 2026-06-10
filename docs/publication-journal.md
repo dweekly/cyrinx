@@ -85,3 +85,28 @@ the plan stage (e.g. `[1.1]`, `[0.2]`) it belongs to.
 - **Next (1.2)**: C TX path against these vectors — DetRng, conv-encode+puncture,
   interleaver, Gray QAM map, OFDM mod — bit-exact on integer stages, float-tol on
   the wave. The Swift `GoldenVectors` typed accessors are ready for it.
+
+### `[1.1]` Review response (PR #24 feedback)
+Five precise findings, all addressed:
+1. **RX contract was missing.** Added an `rx_wave` artifact per case = the TX
+   `wave` through a fixed deterministic multipath channel (`RX_CHANNEL_TAPS`,
+   echoes within the CP, no noise), decoded to prove it reproduces the payload.
+   So 1.3 has a stable receive fixture exercising chirp/fine sync, LS channel
+   est, pilot tracking, LLR, Viterbi — and a *non-unity* channel so a broken
+   equalizer can't pass. Decode metadata (`decode_blocks_ok/_total`) recorded.
+2. **Fill branch wasn't exercised** (both cases had `pad_fill=0`). Added a rate
+   2/3 case (`qpsk_r23`) → `pad_fill=1`. Probed all rate×n_sym combos: pad_fill
+   is **structurally ≤1 bit** (the modem sizes payload to fill capacity), so 1
+   bit is the max; `emit` now *asserts* at least one case has non-empty fill.
+3. **No C-side rig.** Added `Tests/CGoldenVectors` (test-support C target):
+   `cyrinx_golden.{h,c}` (blob reader + size-verify) consuming a generated
+   `golden_manifest.h` (emitted by `golden_vectors.py`), exercised by a Swift
+   test that diffs C-read vs Swift-read bytes. Minimal, no JSON-in-C.
+4. **Fragile typed loaders.** Rewrote the Swift Int64/Float accessors to use
+   unaligned little-endian loads (`loadUnaligned` + `littleEndian:`), never
+   `bindMemory` (which assumes alignment + host endianness).
+5. **PUBLICATION.md 0.2 wording** (on #23) corrected to "move/organize parity
+   spikes," matching the kept-not-deleted decision.
+
+Now 3 cases, 16 artifacts each, **~1.3 MB**, full suite green (52 tests incl. 8
+golden + the C loader).

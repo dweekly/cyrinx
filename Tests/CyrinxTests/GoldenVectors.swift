@@ -45,7 +45,6 @@ enum GoldenVectors {
         let nBlocks: Int
         let binLo: Int
         let binHi: Int
-        let rxOffset: Int
         let seed: Int
         enum CodingKeys: String, CodingKey {
             case nfft, cp, sr, rate, seed
@@ -56,15 +55,14 @@ enum GoldenVectors {
             case nBlocks = "n_blocks"
             case binLo = "bin_lo"
             case binHi = "bin_hi"
-            case rxOffset = "rx_offset"
         }
     }
 
     struct Artifact: Decodable {
         let stage: String
         let file: String
-        let tolerance: String   // "exact" | "float"
-        let dtype: String       // "uint8" | "int64" | "float32" | "complex64"
+        let tolerance: String  // "exact" | "float"
+        let dtype: String  // "uint8" | "int64" | "float32" | "complex64"
         let shape: [Int]
         let bytes: Int
         let sha256: String
@@ -74,8 +72,8 @@ enum GoldenVectors {
     static var directory: URL {
         // this file is <repo>/Tests/CyrinxTests/GoldenVectors.swift
         URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()      // Tests/CyrinxTests
-            .deletingLastPathComponent()      // Tests
+            .deletingLastPathComponent()  // Tests/CyrinxTests
+            .deletingLastPathComponent()  // Tests
             .appendingPathComponent("Fixtures/golden", isDirectory: true)
     }
 
@@ -86,8 +84,9 @@ enum GoldenVectors {
     }
 
     static func rawData(_ caseName: String, _ artifact: Artifact) throws -> Data {
-        try Data(contentsOf: directory.appendingPathComponent(caseName)
-            .appendingPathComponent(artifact.file))
+        try Data(
+            contentsOf: directory.appendingPathComponent(caseName)
+                .appendingPathComponent(artifact.file))
     }
 
     static func sha256Hex(_ data: Data) -> String {
@@ -95,20 +94,38 @@ enum GoldenVectors {
     }
 
     // MARK: typed accessors (for the DSP-port tests in 1.2/1.3)
+    //
+    // The fixture format is explicitly little-endian. These parse fixed-width
+    // LE values with UNALIGNED loads (Data may be a non-zero-based slice and the
+    // blobs are not guaranteed aligned), and convert from little-endian
+    // independent of host byte order — never `bindMemory`, which assumes both.
 
     static func bytes(_ data: Data) -> [UInt8] { [UInt8](data) }
 
     static func int64s(_ data: Data) -> [Int64] {
-        data.withUnsafeBytes { Array($0.bindMemory(to: Int64.self)) }
+        data.withUnsafeBytes { raw in
+            let n = raw.count / MemoryLayout<Int64>.size
+            return (0..<n).map { i in
+                Int64(littleEndian: raw.loadUnaligned(fromByteOffset: i * 8, as: Int64.self))
+            }
+        }
     }
 
     static func float32s(_ data: Data) -> [Float] {
-        data.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
+        data.withUnsafeBytes { raw in
+            let n = raw.count / MemoryLayout<UInt32>.size
+            return (0..<n).map { i in
+                let bits = UInt32(
+                    littleEndian:
+                        raw.loadUnaligned(fromByteOffset: i * 4, as: UInt32.self))
+                return Float(bitPattern: bits)
+            }
+        }
     }
 
     /// complex64 = interleaved float32 (re, im); returned as (re, im) pairs.
     static func complex64(_ data: Data) -> [(re: Float, im: Float)] {
         let f = float32s(data)
-        return stride(from: 0, to: f.count, by: 2).map { (f[$0], f[$0 + 1]) }
+        return stride(from: 0, to: f.count - 1, by: 2).map { (f[$0], f[$0 + 1]) }
     }
 }

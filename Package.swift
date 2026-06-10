@@ -55,9 +55,20 @@ let package = Package(
             dependencies: ["Cyrinx"],
             path: "Examples/SimulationBench"
         ),
+        // Test-support C target: a minimal loader for the bulk-PHY golden
+        // vectors (PR 1.1). Not a product — used only by CyrinxTests to prove
+        // the portable-C side can read/size the golden artifacts.
+        .target(
+            name: "CGoldenVectors",
+            path: "Tests/CGoldenVectors",
+            publicHeadersPath: "include",
+            cSettings: [
+                .headerSearchPath(".")
+            ]
+        ),
         .testTarget(
             name: "CyrinxTests",
-            dependencies: ["Cyrinx", "CCyrinx"],
+            dependencies: ["Cyrinx", "CCyrinx", "CGoldenVectors"],
             path: "Tests/CyrinxTests"
         )
     ]
