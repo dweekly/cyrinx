@@ -511,19 +511,26 @@ def demodulate_frame(cfg, rx, start_hint=None, fine_window=400, diag=None):
     llr_full = depuncture_llr(llr, cfg.pattern, n_coded_full)
     bits = viterbi_decode(llr_full[0::2], llr_full[1::2], cfg.info_bits)
 
-    # CRC check per block
+    # CRC check per block; keep per-position results so callers can verify
+    # ordered reconstruction (block j must match payload bytes at offset j),
+    # not mere set membership.
     by = np.packbits(bits[: cfg.n_blocks * (CRC_BLOCK + 4) * 8]).tobytes()
     ok = 0
     good = bytearray()
+    blocks = []
     for i in range(cfg.n_blocks):
         blk = by[i * (CRC_BLOCK + 4):(i + 1) * (CRC_BLOCK + 4)]
         if zlib.crc32(blk[:CRC_BLOCK]).to_bytes(4, "big") == blk[CRC_BLOCK:]:
             ok += 1
             good += blk[:CRC_BLOCK]
+            blocks.append((i, True, blk[:CRC_BLOCK]))
+        else:
+            blocks.append((i, False, None))
     res = {
         "ok": True, "start": start, "chirp_q": q,
         "blocks_ok": ok, "blocks_total": cfg.n_blocks,
         "payload": bytes(good),
+        "blocks": blocks,
         "evm_rms": float(np.mean(evms)),
         "snr_bin_db": 10 * np.log10(np.maximum(snr_bin, 1e-6)),
         "goodput_bps": ok * CRC_BLOCK * 8 / cfg.airtime_s,
