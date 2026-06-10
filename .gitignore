@@ -18,3 +18,7 @@ scratch/hw20k/data/*.pcm
 scratch/hw20k/data/*.npy
 scratch/hw20k/data/*.wav
 .claude/
+
+# iOS HIL runtime artifacts (regenerated each run)
+scratch/hw20k/data/ios_result.json
+scratch/hw20k/data/_empty_result.json
