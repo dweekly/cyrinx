@@ -128,3 +128,24 @@ to the next stage, so a failure pinpoints the diverging stage):
   isn't merely compared against itself.
 58 tests green. **Next:** Gray QAM map → `data_freq` (float-tol), then vendor
 KISS FFT behind the FFT-plan interface for OFDM mod → `wave`.
+
+### `[1.2]` C TX path — COMPLETE (QAM + KISS FFT + full frame)
+The portable-C transmitter is now end-to-end validated against the golden
+vectors (all 3 cases: QPSK r1/2, 16-QAM r3/4, QPSK r2/3):
+- **Gray QAM map** (BPSK/QPSK/16/64) via the inverse-Gray PAM levels.
+- **KISS FFT vendored** (BSD-3, `Sources/CCyrinx/kissfft/`, NOTICE updated),
+  compiled `-Dkiss_fft_scalar=double` so the C reference matches the numpy
+  oracle to ~1e-9. Wrapped behind `cyrinx_fft.h` (`cyrinx_irfft_*`) — the
+  FFT-plan interface a vDSP/NEON backend can later replace (PR 1.6). numpy.irfft
+  is 1/N-normalized; KISS is unnormalized, so the wrapper divides by nfft.
+- **Full orchestration** `cyrinx_bulk_modulate` mirrors `modulate_frame`:
+  geometry → blocks+CRC → info bits (+seed-7 pad) → conv+puncture (+seed-8 fill)
+  → interleave → pilots/sync/QAM per symbol → IFFT+CP → std-clip + peak-normalize
+  → chirp+GUARD+data. `data_freq` (pre-IFFT) and `wave` (final) both within the
+  1e-5 float tolerance; integer stages bit-exact.
+- Config recorded in the manifest (`f_lo/f_hi/pilot_every/bits_per_bin_uniform/
+  chirp_*/amp/clip_sigma`) so the test reconstructs the exact generating config.
+- Known wart: KISS's `kiss_fft_log.h` `#define DEBUG 4` warns against the debug
+  build's `-DDEBUG=1` (harmless; vendored file, left unmodified).
+59 tests green. **Next (PR 1.3):** the C RX path — chirp sync, LS channel est,
+pilot tracking, LLR, Viterbi — decoding `rx_wave` to `decoded_payload`.

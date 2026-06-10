@@ -182,6 +182,13 @@ def build_case(name, cfg, seed):
         "n_blocks": cfg.n_blocks, "payload_bytes": cfg.payload_bytes,
         "info_bits": cfg.info_bits, "bits_per_sym": cfg.bits_per_sym,
         "seed": seed,
+        # full generating config so a port can reconstruct it without guessing.
+        # f_lo/f_hi as exact bin edges recover the same bin_lo/bin_hi via ceil/floor.
+        "f_lo": float(cfg.bin_lo * cfg.bin_hz), "f_hi": float(cfg.bin_hi * cfg.bin_hz),
+        "pilot_every": int(cfg.pilot_idx[1] - cfg.pilot_idx[0])
+        if len(cfg.pilot_idx) > 1 else 8,
+        "bits_per_bin_uniform": int(cfg.bits_per_bin[cfg.data_bins[0]]),
+        "chirp_f0": float(M.CHIRP_F0), "chirp_f1": float(M.CHIRP_F1),
         # RX-side expectations + reproducibility metadata
         "rx_pre_pad": RX_PRE_PAD, "rx_post_pad": RX_POST_PAD,
         "rx_channel_taps": RX_CHANNEL_TAPS,

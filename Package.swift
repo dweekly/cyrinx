@@ -22,7 +22,11 @@ let package = Package(
             path: "Sources/CCyrinx",
             publicHeadersPath: "include",
             cSettings: [
-                .headerSearchPath(".")
+                .headerSearchPath("."),
+                // vendored KISS FFT (BSD-3) for the portable bulk-PHY OFDM core,
+                // compiled in double precision to match the numpy oracle.
+                .headerSearchPath("kissfft"),
+                .define("kiss_fft_scalar", to: "double")
             ]
         ),
         .target(

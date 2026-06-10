@@ -103,6 +103,70 @@ final class CyrinxBulkTXTests: XCTestCase {
         XCTAssertEqual(cyrinx_detrng_u64(&r), expectedSplitmix(seed: 0x1234, index: 2))
     }
 
+    /// Full TX orchestration: geometry, the per-symbol freq-domain vectors
+    /// (`data_freq`, exercises QAM map + pilot/interleave placement), and the
+    /// final `wave` (exercises the OFDM IFFT + CP + normalization). data_freq is
+    /// float-tol; wave is float-tol vs the float32 reference.
+    func testModulateDataFreqAndWave() throws {
+        let tol = Float(try GoldenVectors.loadManifest().floatAbsTol)
+        for c in try cases() {
+            let cfg = c.config
+            let expDataFreq = GoldenVectors.complex64(
+                try GoldenVectors.rawData(c.name, try artifactObj(c, "data_freq")))
+            let expWave = GoldenVectors.float32s(
+                try GoldenVectors.rawData(c.name, try artifactObj(c, "wave")))
+            let payload = try bytes(c, "payload")
+
+            var bc = cyrinx_bulk_config()
+            bc.f_lo = cfg.fLo
+            bc.f_hi = cfg.fHi
+            bc.pilot_every = Int32(cfg.pilotEvery)
+            bc.bits_per_bin = Int32(cfg.bitsPerBin)
+            bc.n_sym = Int32(cfg.nSym)
+            bc.nfft = Int32(cfg.nfft)
+            bc.cp = Int32(cfg.cp)
+            bc.sr = Int32(cfg.sr)
+            bc.amp = cfg.amp
+            bc.clip_sigma = cfg.clipSigma
+            bc.chirp_f0 = cfg.chirpF0
+            bc.chirp_f1 = cfg.chirpF1
+
+            try cfg.rate.withCString { rptr in
+                bc.rate = rptr
+                var geo = cyrinx_bulk_geometry()
+                XCTAssertEqual(cyrinx_bulk_compute_geometry(&bc, &geo), 0, "\(c.name): geometry")
+                XCTAssertEqual(Int(geo.payload_bytes), cfg.payloadBytes, "\(c.name): payload_bytes")
+                XCTAssertEqual(Int(geo.n_blocks), cfg.nBlocks, "\(c.name): n_blocks")
+                XCTAssertEqual(Int(geo.bits_per_sym), cfg.bitsPerSym, "\(c.name): bits_per_sym")
+
+                let nUsed = Int(geo.n_used)
+                var dataFreq = [Double](repeating: 0, count: cfg.nSym * nUsed * 2)
+                var wave = [Float](repeating: 0, count: Int(geo.frame_samples))
+                let written = payload.withUnsafeBufferPointer { p in
+                    cyrinx_bulk_modulate(&bc, p.baseAddress, p.count, &wave, wave.count, &dataFreq)
+                }
+                XCTAssertEqual(written, Int(geo.frame_samples), "\(c.name): samples written")
+
+                // data_freq (QAM symbols + pilots, pre-IFFT)
+                XCTAssertEqual(dataFreq.count, expDataFreq.count * 2, "\(c.name): data_freq count")
+                var dfErr: Float = 0
+                for k in 0..<expDataFreq.count {
+                    dfErr = max(dfErr, abs(Float(dataFreq[k * 2]) - expDataFreq[k].re))
+                    dfErr = max(dfErr, abs(Float(dataFreq[k * 2 + 1]) - expDataFreq[k].im))
+                }
+                XCTAssertLessThan(dfErr, tol, "\(c.name): data_freq max abs err \(dfErr)")
+
+                // wave (post-IFFT, CP, normalization)
+                XCTAssertEqual(wave.count, expWave.count, "\(c.name): wave length")
+                var wErr: Float = 0
+                for i in 0..<min(wave.count, expWave.count) {
+                    wErr = max(wErr, abs(wave[i] - expWave[i]))
+                }
+                XCTAssertLessThan(wErr, tol, "\(c.name): wave max abs err \(wErr)")
+            }
+        }
+    }
+
     // MARK: helpers
 
     /// Reference splitmix64 (independent reimplementation in Swift) so the test

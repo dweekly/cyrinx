@@ -67,6 +67,53 @@ size_t cyrinx_puncture_pattern(const char *rate, const uint8_t **out_pattern);
 size_t cyrinx_puncture(const uint8_t *coded, size_t n, const uint8_t *pattern,
                        size_t p, uint8_t *out);
 
+/* ---------------- Gray-coded QAM ----------------
+ * Map `nbits` interleaved bits (MSB first) to one unit-average-power complex
+ * symbol. nbits: 1 (BPSK), 2 (QPSK), 4 (16-QAM), 6 (64-QAM), 8 (256-QAM).
+ * Matches modem.py:qam_map. */
+void cyrinx_qam_map(const uint8_t *bits, int nbits, double *out_re, double *out_im);
+
+/* ---------------- Wideband bulk-PHY TX ----------------
+ * Uniform bit-loading config (all data bins carry `bits_per_bin` bits). Mixed
+ * per-bin loading arrives with the adaptive sounder (PR 1.4). */
+typedef struct {
+    double f_lo, f_hi;   /* used-band edges in Hz */
+    int pilot_every;     /* comb-pilot spacing in used bins (modem default 8) */
+    int bits_per_bin;    /* 1/2/4/6/8 on every data bin */
+    const char *rate;    /* code rate: "1/2","2/3","3/4","5/6" */
+    int n_sym;           /* number of OFDM data symbols */
+    int nfft, cp, sr;
+    double amp, clip_sigma;
+    double chirp_f0, chirp_f1;
+} cyrinx_bulk_config;
+
+/* Derived frame geometry (modem.py:Config.__init__). */
+typedef struct {
+    int bin_lo, bin_hi, n_used, n_pilots, n_data_bins;
+    int bits_per_sym, cap, info_bits, n_blocks, payload_bytes;
+    int frame_samples;
+} cyrinx_bulk_geometry;
+
+/* Compute geometry from config. Returns 0 on success, -1 on invalid config. */
+int cyrinx_bulk_compute_geometry(const cyrinx_bulk_config *cfg,
+                                 cyrinx_bulk_geometry *out);
+
+/* Modulate one frame. `payload` must be geometry.payload_bytes long. Writes
+ * geometry.frame_samples float samples to `wave_out` (capacity wave_cap). If
+ * `data_freq_out` is non-NULL it receives n_sym*n_used complex values (re/im
+ * interleaved doubles) — the per-data-symbol freq-domain vectors, for golden
+ * validation. Returns the number of samples written, or -1 on error. */
+long cyrinx_bulk_modulate(const cyrinx_bulk_config *cfg, const uint8_t *payload,
+                          size_t payload_len, float *wave_out, size_t wave_cap,
+                          double *data_freq_out);
+
+/* Default chirp/guard constants (modem.py). */
+#define CYRINX_BULK_CHIRP_LEN 4096
+#define CYRINX_BULK_GUARD 2048
+#define CYRINX_BULK_CHIRP_F0 2000.0
+#define CYRINX_BULK_CHIRP_F1 16000.0
+#define CYRINX_BULK_CRC_BLOCK 256
+
 #ifdef __cplusplus
 }
 #endif

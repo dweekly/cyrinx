@@ -9,7 +9,9 @@ file. You may obtain a copy of the License at:
 
     http://www.apache.org/licenses/LICENSE-2.0
 
-Third-party components (added during the v1.0 publication effort; see
-docs/PUBLICATION.md) carry their own licenses, which will be recorded here as
-they are vendored — e.g. a portable FFT (KISS FFT / pocketfft, BSD-3-Clause)
-for the C bulk-PHY core.
+Third-party components carry their own licenses:
+
+  KISS FFT — Copyright (c) 2003-2010 Mark Borgerding. All rights reserved.
+  SPDX-License-Identifier: BSD-3-Clause. Vendored under
+  Sources/CCyrinx/kissfft/ (see Sources/CCyrinx/kissfft/COPYING) and used as the
+  portable FFT backend of the C bulk-PHY core.
