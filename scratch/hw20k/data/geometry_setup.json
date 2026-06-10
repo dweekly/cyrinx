@@ -3,5 +3,7 @@
   "description": "iPhone face-up, charge-port edge toward laptop hinge, ~2.5 in from phone bottom edge to MacBook screen, resting on ~0.5 in soft cloth, far-left palm rest",
   "device": "iphone17pm",
   "mac": "MacBook Pro M4 (Mac16,5)",
-  "note": "Same geometry used for the Pixel 7a throughout. Phone bottom edge (mics/speaker) faces the Mac speakers."
+  "note": "Same geometry used for the Pixel 7a throughout. Phone bottom edge (mics/speaker) faces the Mac speakers.",
+  "coupling": "air-coupled (NOT structure-borne): phone rests on ~0.5 in soft cloth throughout, which damps chassis vibration conduction. This addresses the 'partly structure-coupled?' concern -- the link is genuinely over-the-air.",
+  "contrast": "contact_palmrest (36.6 kbps, ~1.5 ms delay spread near-field pocket) vs desk_air_offset (0 kbps, 35.8 ms delay spread; laptop elevated 5in on stand over hard desk = reverberant cavity). Both cloth-isolated, so the difference is the ACOUSTIC ENVIRONMENT (proximity + reverb), not structure vs air coupling."
 }
