@@ -9,9 +9,9 @@
 > byte-verified OTA goodput of 36.6 kbps Mac->Pixel (demodulated on the
 > Pixel itself) and 27.3 kbps Pixel->Mac**, 16-QAM rate-3/4 OFDM across
 > 1.1-23 kHz / 0.6-17 kHz, with all overhead included. See
-> [scratch/hw20k/NOTES.md](scratch/hw20k/NOTES.md) for the measurement
-> protocol, channel data, and the four physical-layer defects that had to be
-> fixed to get there.
+> [docs/ACOUSTIC_BULK_PHY.md](docs/ACOUSTIC_BULK_PHY.md) for the full
+> writeup and [scratch/hw20k/NOTES.md](scratch/hw20k/NOTES.md) for the lab
+> notebook.
 
 This document outlines the design, implementation, and physical validation results of the high-speed **QPSK OFDM Physical Layer** on Android, culminating in the first successful over-the-air (OTA) bidirectional link transfers between a macOS Master and a Pixel 7a Slave.
 

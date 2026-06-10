@@ -1,5 +1,9 @@
 # 20 kbps Bidirectional Acoustic Link — Working Notes
 
+> Lab notebook. The curated research writeup (results, methodology,
+> platform gotchas, future directions) is
+> [docs/ACOUSTIC_BULK_PHY.md](../../docs/ACOUSTIC_BULK_PHY.md).
+
 Fresh as of 2026-06-09. Effort: measured ≥20 kbps acoustic goodput Mac↔Pixel 7a.
 Setup: Pixel 7a face-up on MacBook Pro palm rest on a soft cloth; both volumes max.
 
