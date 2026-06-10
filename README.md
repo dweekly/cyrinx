@@ -1,6 +1,26 @@
 # cyrinx
 
-`cyrinx` is an adaptive ultrasonic transport prototype optimized for close-range desktop-to-phone links (1-2 ft) in the 18.5-23.5 kHz band.
+`cyrinx` is a **research prototype** exploring data-over-sound for close-range
+desktop-to-phone links (1-2 ft). It contains two largely separate strands:
+
+1. An adaptive ultrasonic transport stack (Swift/C + Kotlin) targeting the
+   18.5-23.5 kHz band — the original protocol design (gears, ARQ, crypto
+   envelope). Functional but slow as measured (<0.3 kbps OTA).
+2. A **measured wideband bulk PHY experiment** (audible band) that achieved
+   36.6 / 27.3 kbps verified over-the-air goodput between a MacBook Pro and a
+   Pixel 7a — see below. This is an experimental harness, **not yet integrated
+   into the Swift/C transport API**: it is not real-time streaming, not
+   rate-adaptive in closed loop, not secured by the X25519 envelope, and has
+   only been validated in one physical geometry (phone on the palm rest).
+   An inaudible ultrasonic-band variant is under investigation
+   (docs/ULTRASONIC_BAND.md, PR #1).
+
+On originality: the communications techniques used (OFDM, cyclic prefixes,
+pilot tracking, QAM, convolutional/Viterbi FEC, CRC block verification) are
+standard; data-over-sound itself has substantial prior art (minimodem, ggwave,
+Quiet, Google Nearby Messages, Chirp/LISNR, BatNet). The contribution here is
+the measured end-to-end result on this hardware pair, the diagnostic
+methodology, and the documented platform/physical-layer defect catalog.
 
 This repository currently provides:
 

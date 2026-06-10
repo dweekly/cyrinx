@@ -162,7 +162,29 @@ were exonerated by them, which is worth as much as the positives.
 - Use the MacBook's native 48 kHz devices explicitly (external displays/BT
   headsets silently become default and hijack playback).
 
-## 7. Where to go next (untapped headroom)
+## 7. Status, originality, and limitations
+
+This is a measured experiment, not a product. Known deficiencies: the bulk
+PHY is not integrated into the public Swift/C transport API; receive is
+batch-decoded (no real-time streaming RX yet, though decode runs 20x real
+time); MCS selection is open-loop per session (no closed-loop rate
+adaptation); the X25519/CTR/HMAC envelope from the older stack is not wired
+into the bulk PHY; and results are validated in exactly one geometry
+(Pixel 7a on a MacBook Pro palm rest) on one device pair.
+
+On originality: OFDM, cyclic prefixes, comb pilots, QAM, punctured
+convolutional codes with Viterbi decoding, CRC block verification, and
+acoustic speaker-mic links are all established techniques, and data-over-
+sound has substantial prior art — minimodem (general-purpose audio FSK),
+ggwave (multi-tone FSK data-over-sound), Quiet/quiet-js (OFDM-based with
+ultrasonic profiles and FEC), Google Nearby Messages (DSSS, ~94.5 bps),
+Chirp.io/LISNR (commercial CSS), and BatNet (smartphone ultrasonic PSK over
+20-24 kHz; arXiv). The contribution of this work is the verified end-to-end
+goodput on commodity hardware with all overhead counted, the discriminating-
+experiment methodology of §5, and the platform/physical defect catalog of
+§4/§6.
+
+## 8. Where to go next (untapped headroom)
 
 - Per-bin adaptive bit loading (`adapt` profile in `ota_test.py`): the SNR
   is 35–45 dB mid-band; 64/256-QAM there should roughly double throughput.
