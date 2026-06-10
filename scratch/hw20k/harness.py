@@ -75,11 +75,11 @@ def logcat_wait(pattern, timeout_s, poll_s=0.5):
                        "\n".join(adb(f'logcat -d -s {TAG}').stdout.splitlines()[-12:]))
 
 
-def android_record_start(duration_s, channels=2, source="unprocessed", out_name="cap.pcm"):
+def android_record_start(duration_s, channels=2, source="unprocessed", out_name="cap.pcm", sr=SR):
     android_prepare()
     logcat_clear()
     adb(f"shell am start -n {ACT} --es cmd rec_pcm --ef duration_sec {duration_s} "
-        f"--ei sample_rate_hz {SR} --ei channels {channels} --es source {source} "
+        f"--ei sample_rate_hz {sr} --ei channels {channels} --es source {source} "
         f"--es out_name {out_name}")
     line = logcat_wait("rec_pcm begin", 10)
     return line
@@ -95,12 +95,12 @@ def android_record_finish(duration_s, out_name="cap.pcm", local_path=None):
     return line, local_path
 
 
-def android_record(duration_s, channels=2, source="unprocessed", out_name="cap.pcm"):
-    android_record_start(duration_s, channels, source, out_name)
+def android_record(duration_s, channels=2, source="unprocessed", out_name="cap.pcm", sr=SR):
+    android_record_start(duration_s, channels, source, out_name, sr=sr)
     return android_record_finish(duration_s, out_name)
 
 
-def android_play(wave, channels=1, block=True):
+def android_play(wave, channels=1, block=True, sr=SR):
     """wave: float32 mono [-1,1] or (n,2) stereo. Pushes and plays on the phone."""
     pcm = np.clip(wave, -1, 1)
     pcm16 = (pcm * 32767).astype("<i2")
@@ -109,12 +109,12 @@ def android_play(wave, channels=1, block=True):
     adb(f"push {tmp} /data/local/tmp/tx.pcm")
     android_prepare()
     logcat_clear()
-    adb(f"shell am start -n {ACT} --es cmd play_pcm --ei sample_rate_hz {SR} "
+    adb(f"shell am start -n {ACT} --es cmd play_pcm --ei sample_rate_hz {sr} "
         f"--ei channels {channels}")
     logcat_wait("play_pcm begin", 10)
     if block:
         n_frames = len(pcm16) // channels if pcm16.ndim == 1 else len(pcm16)
-        logcat_wait("play_pcm done", n_frames / SR + 20)
+        logcat_wait("play_pcm done", n_frames / sr + 20)
 
 
 # ---------------- Mac audio ----------------
@@ -127,9 +127,9 @@ def mac_set_input_volume(pct):
     sh(f"osascript -e 'set volume input volume {pct}'")
 
 
-def _sd():
+def _sd(sr=SR):
     import sounddevice as sd
-    sd.default.samplerate = SR
+    sd.default.samplerate = sr
     devs = sd.query_devices()
     for i, d in enumerate(devs):
         if d["name"] == MAC_MIC:
@@ -139,15 +139,15 @@ def _sd():
     return sd
 
 
-def mac_record(duration_s):
-    sd = _sd()
-    x = sd.rec(int(duration_s * SR), channels=1, dtype="float32")
+def mac_record(duration_s, sr=SR):
+    sd = _sd(sr)
+    x = sd.rec(int(duration_s * sr), channels=1, dtype="float32")
     sd.wait()
     return x[:, 0]
 
 
-def mac_play(wave, block=True):
-    sd = _sd()
+def mac_play(wave, block=True, sr=SR):
+    sd = _sd(sr)
     sd.play(np.asarray(wave, dtype=np.float32))
     if block:
         sd.wait()
@@ -166,29 +166,29 @@ def mac_play_and_record(wave, extra_s=1.0):
 # ---------------- Cross-device captures ----------------
 
 def mac_to_android(wave, channels_out=2, rec_channels=2, source="unprocessed",
-                   pre_s=0.7, post_s=0.7, out_name="m2a.pcm"):
+                   pre_s=0.7, post_s=0.7, out_name="m2a.pcm", sr=SR):
     """Play `wave` from Mac speakers while the phone records. Returns phone capture path."""
-    dur = len(wave) / SR + pre_s + post_s + 8.0
-    android_record_start(dur, channels=rec_channels, source=source, out_name=out_name)
+    dur = len(wave) / sr + pre_s + post_s + 8.0
+    android_record_start(dur, channels=rec_channels, source=source, out_name=out_name, sr=sr)
     time.sleep(pre_s)
-    mac_play(wave, block=True)
+    mac_play(wave, block=True, sr=sr)
     line, path = android_record_finish(dur, out_name=out_name)
     return line, path
 
 
-def android_to_mac(wave, channels=1, pre_s=0.7, post_s=0.7):
+def android_to_mac(wave, channels=1, pre_s=0.7, post_s=0.7, sr=SR):
     """Play `wave` from phone speaker while the Mac records. Returns float32 mono capture."""
     import threading
-    dur = (len(wave) if np.ndim(wave) == 1 else wave.shape[0]) / SR + pre_s + post_s + 2.5
+    dur = (len(wave) if np.ndim(wave) == 1 else wave.shape[0]) / sr + pre_s + post_s + 2.5
     result = {}
 
     def rec():
-        result["x"] = mac_record(dur)
+        result["x"] = mac_record(dur, sr=sr)
 
     t = threading.Thread(target=rec)
     t.start()
     time.sleep(pre_s + 0.3)
-    android_play(wave, channels=channels, block=True)
+    android_play(wave, channels=channels, block=True, sr=sr)
     t.join()
     return result["x"]
 

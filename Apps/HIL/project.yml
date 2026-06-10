@@ -21,6 +21,10 @@ targets:
         CFBundleDisplayName: Cyrinx HIL iOS
         NSMicrophoneUsageDescription: Cyrinx HIL needs microphone access for ultrasonic testing.
         UILaunchScreen: {}
+        # File sharing so the Mac harness can push/pull PCM + result.json via
+        # `xcrun devicectl device copy ... --domain-type appDataContainer`.
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationPortraitUpsideDown
@@ -29,6 +33,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.dweekly.cyrinx.hil.ios
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: V83C69HYSQ
     dependencies:
       - package: Cyrinx
         product: Cyrinx

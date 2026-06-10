@@ -20,8 +20,12 @@
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Cyrinx HIL needs microphone access for ultrasonic testing.</string>
+	<key>UIFileSharingEnabled</key>
+	<true/>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

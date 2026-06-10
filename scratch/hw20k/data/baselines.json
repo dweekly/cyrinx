@@ -1,0 +1,56 @@
+{
+  "payload_len": 32,
+  "geometry": "iphone17pm on cloth, Mac palm rest",
+  "path": "Mac left speaker -> iPhone mic (m2i)",
+  "cyrinx_m2i_kbps": 36.47,
+  "ggwave": {
+    "p1_Fast": {
+      "digital_bps": 133.5,
+      "msg_airtime_s": 1.918,
+      "ota_recovered": true,
+      "ota_goodput_bps": 133.5
+    },
+    "p2_Fastest": {
+      "digital_bps": 266.7,
+      "msg_airtime_s": 0.96,
+      "ota_recovered": true,
+      "ota_goodput_bps": 266.7
+    },
+    "p5_U-Fastest": {
+      "digital_bps": 266.7,
+      "msg_airtime_s": 0.96,
+      "ota_recovered": true,
+      "ota_goodput_bps": 266.7
+    }
+  },
+  "minimodem": {
+    "baud300": {
+      "digital_bps": 237.0,
+      "msg_airtime_s": 1.08,
+      "ota_recovered": true,
+      "ota_bytes_seen": 1,
+      "ota_goodput_bps": 237.0
+    },
+    "baud600": {
+      "digital_bps": 474.1,
+      "msg_airtime_s": 0.54,
+      "ota_recovered": false,
+      "ota_bytes_seen": 1,
+      "ota_goodput_bps": 0.0
+    },
+    "baud1200": {
+      "digital_bps": 948.1,
+      "msg_airtime_s": 0.27,
+      "ota_recovered": false,
+      "ota_bytes_seen": 1,
+      "ota_goodput_bps": 0.0
+    },
+    "baud2400": {
+      "digital_bps": 1896.3,
+      "msg_airtime_s": 0.135,
+      "ota_recovered": false,
+      "ota_bytes_seen": 1,
+      "ota_goodput_bps": 0.0
+    }
+  }
+}

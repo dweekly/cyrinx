@@ -55,6 +55,13 @@ platform gotchas — is [docs/ACOUSTIC_BULK_PHY.md](docs/ACOUSTIC_BULK_PHY.md)
 against what was actually built (and why they diverged) is
 [docs/PRD_VS_AS_BUILT.md](docs/PRD_VS_AS_BUILT.md) (fresh as of 2026-06-09).
 
+The same bulk PHY ported to an iOS HIL app and measured over the air on an
+iPhone 17 Pro Max — **36.57 kbps Mac->iPhone** (decoded on-device by
+`BulkDemod.swift`) and **16.87 kbps iPhone->Mac** (iPhone speaker is
+band-limited) — plus the devicectl-based device-control mechanism and the
+iPhone speaker's ultrasonic phase-incoherence finding, is in
+[docs/IOS_HIL.md](docs/IOS_HIL.md) (fresh as of 2026-06-10).
+
 ## Implemented Protocol Model
 
 - `G1 Discovery`: ZC preamble + sync/CFO control path

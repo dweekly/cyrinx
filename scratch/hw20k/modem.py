@@ -227,11 +227,21 @@ def pilot_symbols(pilot_bins, seed=0xBEEF):
 class Config:
     def __init__(self, f_lo=1100.0, f_hi=23000.0, pilot_every=8,
                  bits_per_bin=None, rate="1/2", n_sym=64, amp=0.5,
-                 clip_sigma=3.3, nfft=NFFT, cp=CP):
+                 clip_sigma=3.3, nfft=NFFT, cp=CP, sr=SR,
+                 chirp_f0=None, chirp_f1=None, track_alpha=0.0,
+                 rx_bandpass=None):
+        self.sr = sr
+        self.track_alpha = track_alpha   # decision-directed H tracking rate
+        self.rx_bandpass = rx_bandpass   # (lo,hi) Hz receive prefilter, or None
         self.nfft = nfft
         self.cp = cp
         self.sym = nfft + cp
-        self.bin_hz = SR / nfft
+        self.bin_hz = sr / nfft
+        # preamble chirp lives inside the configured band by default so the
+        # whole frame respects band limits (e.g. inaudible-only operation)
+        self.chirp_wave = make_chirp(sr,
+                                     chirp_f0 if chirp_f0 is not None else CHIRP_F0,
+                                     chirp_f1 if chirp_f1 is not None else CHIRP_F1)
         self.bin_lo = int(np.ceil(f_lo / self.bin_hz))
         self.bin_hi = int(np.floor(f_hi / self.bin_hz))
         self.used = np.arange(self.bin_lo, self.bin_hi + 1)
@@ -256,7 +266,7 @@ class Config:
         self.payload_bytes = self.n_blocks * CRC_BLOCK
         self.info_bits = info
         self.frame_samples = CHIRP_LEN + GUARD + (2 + n_sym) * self.sym
-        self.airtime_s = self.frame_samples / SR
+        self.airtime_s = self.frame_samples / sr
 
     def describe(self):
         return (f"nfft {self.nfft} cp {self.cp}, band {self.bin_lo*self.bin_hz:.0f}-{self.bin_hi*self.bin_hz:.0f} Hz, "
@@ -266,13 +276,13 @@ class Config:
                 f"PHY goodput cap {self.payload_bytes*8/self.airtime_s/1000:.1f} kbps")
 
 
-def make_chirp():
-    t = np.arange(CHIRP_LEN) / SR
-    T = CHIRP_LEN / SR
-    ph = 2 * np.pi * (CHIRP_F0 * t + 0.5 * (CHIRP_F1 - CHIRP_F0) * t * t / T)
+def make_chirp(sr=SR, f0=CHIRP_F0, f1=CHIRP_F1, n=CHIRP_LEN):
+    t = np.arange(n) / sr
+    T = n / sr
+    ph = 2 * np.pi * (f0 * t + 0.5 * (f1 - f0) * t * t / T)
     w = np.sin(ph)
     r = 128
-    env = np.ones(CHIRP_LEN)
+    env = np.ones(n)
     env[:r] = 0.5 - 0.5 * np.cos(np.pi * np.arange(r) / r)
     env[-r:] = env[:r][::-1]
     return (w * env).astype(np.float64)
@@ -342,24 +352,47 @@ def modulate_frame(cfg, payload_bytes, frame_seed=1):
     sigma = x.std()
     x = np.clip(x, -cfg.clip_sigma * sigma, cfg.clip_sigma * sigma)
     x = x / np.abs(x).max() * cfg.amp
-    wave = np.concatenate([CHIRP * cfg.amp, np.zeros(GUARD), x])
+    wave = np.concatenate([cfg.chirp_wave * cfg.amp, np.zeros(GUARD), x])
     return wave.astype(np.float32)
 
 
 # ---------------- RX ----------------
 
-def find_chirp(rx, search_from=0):
+def bandpass(rx, lo_hz, hi_hz, sr):
+    """4th-order Butterworth band-pass. Used for ultrasonic-only reception so
+    loud audible-band room noise does not swamp the chirp matched filter or
+    eat ADC headroom; the OFDM demod itself is bin-selective and would not
+    need it, but coarse sync correlates the full band."""
+    from scipy.signal import butter, sosfiltfilt
+    nyq = sr / 2
+    sos = butter(4, [max(lo_hz, 1) / nyq, min(hi_hz, nyq - 1) / nyq],
+                 btype="band", output="sos")
+    return sosfiltfilt(sos, rx)
+
+
+def find_chirp(rx, search_from=0, chirp=None):
     """Matched filter; returns sample index where chirp starts."""
-    mf = np.correlate(rx[search_from:], CHIRP, mode="valid")
+    ch = CHIRP if chirp is None else chirp
+    mf = np.correlate(rx[search_from:], ch, mode="valid")
     pk = int(np.argmax(np.abs(mf)))
-    return search_from + pk, np.abs(mf[pk]) / (np.linalg.norm(CHIRP) *
-           np.linalg.norm(rx[search_from + pk: search_from + pk + CHIRP_LEN]) + 1e-12)
+    return search_from + pk, np.abs(mf[pk]) / (np.linalg.norm(ch) *
+           np.linalg.norm(rx[search_from + pk: search_from + pk + len(ch)]) + 1e-12)
 
 
-def demodulate_frame(cfg, rx, start_hint=None, fine_window=400, diag=None):
-    """Returns dict with blocks_ok, payload, evm, etc. rx: float array."""
+def demodulate_frame(cfg, rx, start_hint=None, fine_window=400, diag=None, rx2=None):
+    """Returns dict with blocks_ok, payload, evm, etc. rx: float array.
+
+    If rx2 (a second microphone capture, sample-aligned with rx) is given,
+    the two are combined per subcarrier by maximal-ratio combining (MRC):
+    the mics see different multipath null patterns, so MRC fills nulls that
+    sink either mic alone and raises effective SNR by up to 3 dB on average.
+    """
+    if getattr(cfg, "rx_bandpass", None) is not None:
+        rx = bandpass(rx, cfg.rx_bandpass[0], cfg.rx_bandpass[1], cfg.sr)
+        if rx2 is not None:
+            rx2 = bandpass(rx2, cfg.rx_bandpass[0], cfg.rx_bandpass[1], cfg.sr)
     if start_hint is None:
-        start, q = find_chirp(rx)
+        start, q = find_chirp(rx, chirp=cfg.chirp_wave)
     else:
         start, q = start_hint, 1.0
     base = start + CHIRP_LEN + GUARD
@@ -372,16 +405,16 @@ def demodulate_frame(cfg, rx, start_hint=None, fine_window=400, diag=None):
     off = int(np.argmax(np.abs(mf)))
     base = lo + off
 
-    def fft_at(pos):
-        w = rx[pos + cfg.cp: pos + cfg.sym]
+    def fft_at(sig, pos):
+        w = sig[pos + cfg.cp: pos + cfg.sym]
         if len(w) < cfg.nfft:
             return None
         return np.fft.rfft(w[:cfg.nfft])
 
-    def estimate_H(b):
+    def estimate_H(sig, b):
         Hs = []
         for w in range(2):
-            Y = fft_at(b + w * cfg.sym)
+            Y = fft_at(sig, b + w * cfg.sym)
             if Y is None:
                 return None
             X = sync_symbol_freq(cfg, w)
@@ -392,20 +425,19 @@ def demodulate_frame(cfg, rx, start_hint=None, fine_window=400, diag=None):
     # before the strongest one the xcorr locks to) stay inside the CP. The CP
     # is sized with margin, so starting early only trades guard headroom.
     base -= 24
-    Hs = estimate_H(base)
-    if Hs is None:
-        return {"ok": False, "err": "short capture"}
-
-    H = (Hs[0] + Hs[1]) / 2
-    # noise variance per bin from the two estimates
-    nv = np.abs(Hs[0] - Hs[1]) ** 2 / 2
-    # Do NOT smooth H across bins: with multipath/bulk delay its phase rotates
-    # multiple cycles across a few bins and smoothing destroys the estimate.
-    # Only the (real, positive) noise variance is smoothed.
-    H_s = H
-    k = np.ones(9) / 9
-    nv_s = np.convolve(nv, k, mode="same") + 1e-12
-    snr_bin = (np.abs(H_s) ** 2) / nv_s
+    chans = [rx] + ([rx2] if rx2 is not None else [])
+    H_list, nv_list = [], []
+    for sig in chans:
+        Hs = estimate_H(sig, base)
+        if Hs is None:
+            return {"ok": False, "err": "short capture"}
+        H_list.append((Hs[0] + Hs[1]) / 2)
+        nvk = np.convolve(np.abs(Hs[0] - Hs[1]) ** 2 / 2, np.ones(9) / 9,
+                          mode="same") + 1e-12
+        nv_list.append(nvk)
+    # Per-bin effective SNR is the sum across mics (MRC); for one mic this is
+    # the previous behavior. Do NOT smooth H across bins (phase rotates fast).
+    snr_bin = sum(np.abs(H) ** 2 / nv for H, nv in zip(H_list, nv_list))
 
     used_set = {b: i for i, b in enumerate(cfg.used)}
     pil_pos = np.array([used_set[b] for b in cfg.pilot_idx])
@@ -415,11 +447,25 @@ def demodulate_frame(cfg, rx, start_hint=None, fine_window=400, diag=None):
     llr_stream = np.empty(cfg.bits_per_sym * cfg.n_sym)
     pos = 0
     evms = []
+    # Decision-directed per-bin channel tracking: the acoustic multipath
+    # pattern drifts (micro-motion at cm wavelengths), so a frame-start H
+    # ages within ~10 symbols. G accumulates the per-bin residual so each
+    # symbol is equalized against a reference at most ~1/alpha symbols old.
+    G = np.ones(len(cfg.used), dtype=complex)
     for s in range(cfg.n_sym):
-        Y = fft_at(base + (2 + s) * cfg.sym)
-        if Y is None:
-            return {"ok": False, "err": f"short capture at sym {s}"}
-        Z = Y[cfg.used] / H_s
+        Ys = []
+        for sig in chans:
+            Y = fft_at(sig, base + (2 + s) * cfg.sym)
+            if Y is None:
+                return {"ok": False, "err": f"short capture at sym {s}"}
+            Ys.append(Y[cfg.used])
+        if len(chans) == 1:
+            Z = Ys[0] / (H_list[0] * G)
+        else:
+            # MRC: Z = sum_k conj(H_k) Y_k / (sum_k |H_k|^2), then de-rotate G
+            num = sum(np.conj(H) * Y for H, Y in zip(H_list, Ys))
+            den = sum(np.abs(H) ** 2 for H in H_list) + 1e-12
+            Z = (num / den) / G
         # pilot phase tracking: CPE + timing slope, fitted iteratively so a
         # large ramp doesn't bias the angle-of-sum estimator under ISI noise
         e = Z[pil_pos] * np.conj(cfg.pilots)
@@ -441,11 +487,35 @@ def demodulate_frame(cfg, rx, start_hint=None, fine_window=400, diag=None):
         evm2 = float(np.mean(np.abs(ep - 1) ** 2))
         evms.append(float(np.sqrt(evm2)))
         # demap data bins
+        sym_llr_start = pos
         for b, p in zip(cfg.data_bins, dat_pos):
             nb = cfg.bits_per_bin[b]
             n0 = 1.0 / max(snr_bin[p], 0.1) + evm2
             llr_stream[pos:pos + nb] = qam_llr(Z[p:p+1], nb, n0)[0]
             pos += nb
+        if cfg.track_alpha > 0.0 and evm2 < 0.25:
+            a = cfg.track_alpha
+            # exact residual at pilot bins
+            rp = Z[pil_pos] * np.conj(cfg.pilots)
+            upd = np.ones(len(cfg.used), dtype=complex)
+            upd[pil_pos] = rp
+            # decision-directed residual at data bins (hard decisions from
+            # the LLRs just computed); skip when the symbol is too noisy
+            q = sym_llr_start
+            for b, p in zip(cfg.data_bins, dat_pos):
+                nb = cfg.bits_per_bin[b]
+                bits_hat = (llr_stream[q:q + nb] < 0).astype(np.uint8)
+                q += nb
+                xh = qam_map(bits_hat[None, :], nb)[0]
+                upd[p] = Z[p] / xh
+            # Clamp implausible jumps (wrong decisions, deep fades), then blend.
+            # upd is measured on the CPE/slope-corrected Z, so G absorbs only
+            # the slow per-bin aging; the per-symbol fit stays separate.
+            d = upd - 1.0
+            mag = np.abs(d)
+            d = np.where(mag > 0.5, d * (0.5 / np.maximum(mag, 1e-9)), d)
+            G = G * (1.0 + a * d)
+            G = G / np.maximum(np.abs(G), 1e-6) * np.minimum(np.abs(G), 3.0)
 
     # deinterleave
     perm = DetRng(0x1EAF).permutation(len(llr_stream))
@@ -457,25 +527,34 @@ def demodulate_frame(cfg, rx, start_hint=None, fine_window=400, diag=None):
     llr_full = depuncture_llr(llr, cfg.pattern, n_coded_full)
     bits = viterbi_decode(llr_full[0::2], llr_full[1::2], cfg.info_bits)
 
-    # CRC check per block
+    # CRC check per block; keep per-position results so callers can verify
+    # ordered reconstruction (block j must match payload bytes at offset j),
+    # not mere set membership.
     by = np.packbits(bits[: cfg.n_blocks * (CRC_BLOCK + 4) * 8]).tobytes()
     ok = 0
     good = bytearray()
+    blocks = []
     for i in range(cfg.n_blocks):
         blk = by[i * (CRC_BLOCK + 4):(i + 1) * (CRC_BLOCK + 4)]
         if zlib.crc32(blk[:CRC_BLOCK]).to_bytes(4, "big") == blk[CRC_BLOCK:]:
             ok += 1
             good += blk[:CRC_BLOCK]
+            blocks.append((i, True, blk[:CRC_BLOCK]))
+        else:
+            blocks.append((i, False, None))
     res = {
         "ok": True, "start": start, "chirp_q": q,
         "blocks_ok": ok, "blocks_total": cfg.n_blocks,
         "payload": bytes(good),
+        "blocks": blocks,
         "evm_rms": float(np.mean(evms)),
         "snr_bin_db": 10 * np.log10(np.maximum(snr_bin, 1e-6)),
         "goodput_bps": ok * CRC_BLOCK * 8 / cfg.airtime_s,
+        "sr": cfg.sr,
     }
     if diag is not None:
-        diag["H"] = H_s
+        diag["H"] = H_list[0]
+        diag["n_mics"] = len(chans)
         diag["evms"] = evms
     return res
 
