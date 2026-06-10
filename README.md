@@ -51,7 +51,7 @@ and **27.3 kbps Pixel 7a->Mac**. The research writeup — measured channel,
 modem design, the four physical-layer defects, diagnostic methodology, and
 platform gotchas — is [docs/ACOUSTIC_BULK_PHY.md](docs/ACOUSTIC_BULK_PHY.md)
 (fresh as of 2026-06-09); the lab notebook and reproducible harness live in
-[scratch/hw20k/](scratch/hw20k/NOTES.md). A contrast of the original PRD
+[scratch/hw20k/](scratch/hw20k/NOTES.md). Hard-won **negative findings** (dead ends, disproved hypotheses, "don't do that" results) are consolidated in [docs/NEGATIVE_FINDINGS.md](docs/NEGATIVE_FINDINGS.md) (fresh as of 2026-06-10) so they are never rediscovered the expensive way. A contrast of the original PRD
 against what was actually built (and why they diverged) is
 [docs/PRD_VS_AS_BUILT.md](docs/PRD_VS_AS_BUILT.md) (fresh as of 2026-06-09).
 An academic-workshop-style LaTeX whitepaper consolidating all of the above —

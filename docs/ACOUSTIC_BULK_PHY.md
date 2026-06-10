@@ -1,3 +1,4 @@
+<!-- Negative results / dead ends: docs/NEGATIVE_FINDINGS.md -->
 # Wideband Acoustic Bulk PHY: Measured 36.6 / 27.3 kbps Mac ↔ Pixel 7a
 
 Fresh as of 2026-06-09. Status: goal (≥20 kbps measured goodput each
