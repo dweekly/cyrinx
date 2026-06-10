@@ -168,7 +168,7 @@ def mac_play_and_record(wave, extra_s=1.0):
 def mac_to_android(wave, channels_out=2, rec_channels=2, source="unprocessed",
                    pre_s=0.7, post_s=0.7, out_name="m2a.pcm"):
     """Play `wave` from Mac speakers while the phone records. Returns phone capture path."""
-    dur = len(wave) / SR + pre_s + post_s + 1.0
+    dur = len(wave) / SR + pre_s + post_s + 8.0
     android_record_start(dur, channels=rec_channels, source=source, out_name=out_name)
     time.sleep(pre_s)
     mac_play(wave, block=True)
