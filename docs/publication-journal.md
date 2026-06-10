@@ -168,3 +168,14 @@ pinned the TX correctly. Implemented (single-mic, track_alpha=0 path):
 60 tests green. The portable-C bulk PHY is functionally complete (uniform
 bit-loading). **Next:** Apple vDSP FFT backend (1.6) and/or the adaptive sounder
 + repositioning-guidance API (1.4/1.4b); MRC for stereo (1.5).
+
+### `[1.7]` Swift binding — `BulkPHY` (library surface over the C codec)
+`Sources/Cyrinx/BulkPHY.swift`: an ergonomic Swift API over the C codec — no DSP
+here, just config marshalling. `BulkPHY.Configuration` (defaults to the measured
+16-QAM r3/4 near-field profile), `geometry()`, `encode(Data) -> [Float]`,
+`decode([Float]) -> Decoded` (payload + per-block CRC + EVM, `isComplete`).
+Pure-Swift encode→loopback→decode round trips for QPSK/16-QAM/64-QAM all recover
+the payload with every block valid; wrong-length payloads are rejected. The
+**Swift library now delivers the bulk codec end-to-end** (digitally); OTA parity
+(1.10) needs hardware. 64 tests green. (Retiring the HIL `BulkDemod` forks in
+favor of this binding is the remaining part of 1.7.)
