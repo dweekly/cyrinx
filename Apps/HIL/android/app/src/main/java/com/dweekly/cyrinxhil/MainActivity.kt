@@ -561,6 +561,7 @@ class MainActivity : ComponentActivity() {
             }
             "rec_pcm" -> recPcmFile(intent)
             "play_pcm" -> playPcmFile(intent)
+            "bulk_decode" -> runBulkDecode(intent)
             else -> appendLog("unknown automation cmd=$cmd")
         }
     }
@@ -753,6 +754,46 @@ class MainActivity : ComponentActivity() {
                 appendLog("play_pcm done: wrote=$off bytes")
             } catch (t: Throwable) {
                 appendLog("play_pcm failed: ${t.message}")
+            }
+        }
+    }
+
+    // On-device demodulation of a wideband bulk-PHY capture (see BulkDemod.kt).
+    // Verifies decoded payload bytes against the transmitter's DetRng PRBS and
+    // logs goodput, so the phone proves reception without help from the Mac.
+    private fun runBulkDecode(intent: android.content.Intent) {
+        val path = intent.getStringExtra("path")?.takeIf { it.isNotBlank() }
+            ?: File(filesDir, "cap.pcm").absolutePath
+        val channels = intent.getIntExtra("channels", 2)
+        val fLo = intent.getFloatExtra("f_lo", 1100f).toDouble()
+        val fHi = intent.getFloatExtra("f_hi", 23000f).toDouble()
+        val nSym = intent.getIntExtra("n_sym", 64)
+        val nPayloads = intent.getIntExtra("n_payloads", 3)
+        val seedBase = intent.getIntExtra("payload_seed_base", 1000).toLong()
+        ioExecutor.execute {
+            try {
+                val t0 = System.currentTimeMillis()
+                val results = BulkDemod.decodeCapture(
+                    path, channels, fLo, fHi, nSym, nPayloads, seedBase,
+                ) { appendLog(it) }
+                val okFrames = results.filter { it.ok && it.blocksOk > 0 }
+                val verified = okFrames.sumOf { it.verified }
+                if (okFrames.isNotEmpty()) {
+                    val frameSamples = BulkDemod.Cfg(fLo, fHi, nSym).frameSamples
+                    val first = okFrames.minOf { it.start }
+                    val last = okFrames.maxOf { it.start }
+                    val spanS = (last + frameSamples - first).toDouble() / BulkDemod.SRATE
+                    val gp = verified * BulkDemod.CRC_BLOCK * 8 / spanS
+                    appendLog(
+                        "bulk_decode TOTAL: verified=$verified blocks " +
+                            "(${verified * BulkDemod.CRC_BLOCK} bytes) span=${"%.2f".format(spanS)}s " +
+                            "goodput=${"%.0f".format(gp)} bps wall_ms=${System.currentTimeMillis() - t0}",
+                    )
+                } else {
+                    appendLog("bulk_decode TOTAL: no frames decoded")
+                }
+            } catch (t: Throwable) {
+                appendLog("bulk_decode failed: ${t.message}")
             }
         }
     }

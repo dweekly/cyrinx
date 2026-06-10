@@ -1,5 +1,18 @@
 # Cyrinx Android OFDM & Bidirectional HIL Walkthrough
 
+> [!IMPORTANT]
+> **2026-06-09 correction and update.** The "Symmetrical 20+ kbps" claim later
+> in this document was a theoretical capacity computation, not a measurement;
+> the actually measured goodput of the system described below was under
+> 0.3 kbps (24-byte packets every 700 ms). A new wideband bulk PHY
+> (`scratch/hw20k/`, `BulkDemod.kt`) has since achieved **measured,
+> byte-verified OTA goodput of 36.6 kbps Mac->Pixel (demodulated on the
+> Pixel itself) and 27.3 kbps Pixel->Mac**, 16-QAM rate-3/4 OFDM across
+> 1.1-23 kHz / 0.6-17 kHz, with all overhead included. See
+> [scratch/hw20k/NOTES.md](scratch/hw20k/NOTES.md) for the measurement
+> protocol, channel data, and the four physical-layer defects that had to be
+> fixed to get there.
+
 This document outlines the design, implementation, and physical validation results of the high-speed **QPSK OFDM Physical Layer** on Android, culminating in the first successful over-the-air (OTA) bidirectional link transfers between a macOS Master and a Pixel 7a Slave.
 
 ---

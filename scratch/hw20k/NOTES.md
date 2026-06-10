@@ -89,5 +89,18 @@ gaps. NFFT 2048, CP 768, 64 symbols/frame, comb pilots /8.
 | Android->Mac | 16QAM r1/2 | 111/111 | 0.12 | 18.19 kbps |
 | Android->Mac | 16QAM r3/4 | 168/168 | 0.11 | **27.53 kbps** |
 
-Both directions exceed the 20 kbps target. Next: on-device Kotlin decode so
-the Pixel autonomously demodulates (no pulling captures to the Mac).
+Both directions exceed the 20 kbps target.
+
+## FINAL verified result (2026-06-09, final_measurement.py)
+
+5 frames per direction, 16QAM r3/4, goodput = CRC32-valid AND byte-verified
+payload / span from first chirp to last data sample (all overhead included):
+
+- **Mac -> Android: 36,571 bps** — 375/375 blocks (96,000 bytes), demodulated
+  ON THE PIXEL by BulkDemod.kt (Kotlin port, 170 ms per 4 s frame), payload
+  verified on-device against the transmitter's splitmix64 PRBS.
+- **Android -> Mac: 27,307 bps** — 280/280 blocks (71,680 bytes), demodulated
+  on the Mac (modem.py) from its own mic capture.
+
+The Kotlin decoder was first validated bit-exact against the Python decoder
+on an identical capture file (225/225 blocks, matching EVM).

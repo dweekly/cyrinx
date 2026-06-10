@@ -69,9 +69,7 @@ def make_cfg(direction, profile, amp, cp=768, nfft=2048):
 def run_direction(direction, profile, amp=0.7, n_frames=3, gap_s=0.25, cp=768, nfft=2048):
     cfg = make_cfg(direction, profile, amp, cp=cp, nfft=nfft)
     print(f"[{direction}/{profile}] {cfg.describe()}")
-    rng = np.random.default_rng(42)
-    payloads = [rng.integers(0, 256, cfg.payload_bytes, dtype=np.uint8).tobytes()
-                for _ in range(n_frames)]
+    payloads = [M.DetRng(1000 + i).bytes(cfg.payload_bytes) for i in range(n_frames)]
     waves = [M.modulate_frame(cfg, p) for p in payloads]
     gap = np.zeros(int(gap_s * H.SR), dtype=np.float32)
     tx = np.concatenate([w for pair in zip(waves, [gap] * n_frames) for w in pair])

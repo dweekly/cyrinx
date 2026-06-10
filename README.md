@@ -23,6 +23,15 @@ This repository currently provides:
 - vDSP-backed OFDM QPSK and D-CSS modulators/demodulators in Swift (`VDSPPHY`)
 - Golden-vector, chunked-sequence, and acoustic end-to-end PHY tests for deterministic behavior
 
+## Measured bulk-PHY results (hw20k)
+
+A wideband bulk-transfer PHY achieving measured, byte-verified over-the-air
+goodput of **36.6 kbps Mac->Pixel 7a** (decoded on-device by `BulkDemod.kt`)
+and **27.3 kbps Pixel 7a->Mac** is documented in
+[scratch/hw20k/NOTES.md](scratch/hw20k/NOTES.md) (fresh as of 2026-06-09),
+with the channel measurements, modem design, debugging log, and the
+reproducible harness (`scratch/hw20k/*.py`).
+
 ## Implemented Protocol Model
 
 - `G1 Discovery`: ZC preamble + sync/CFO control path

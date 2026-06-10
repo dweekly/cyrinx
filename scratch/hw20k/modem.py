@@ -174,16 +174,51 @@ def qam_llr(z, nbits, n0):
     return out
 
 
+
+# ---------------- portable deterministic RNG (splitmix64) ----------------
+# Used for pilots, sync symbols, interleaver, and padding so the Kotlin
+# (Android) implementation can reproduce streams bit-exactly.
+
+_M64 = (1 << 64) - 1
+
+
+class DetRng:
+    def __init__(self, seed):
+        self.s = seed & _M64
+
+    def u64(self):
+        self.s = (self.s + 0x9E3779B97F4A7C15) & _M64
+        z = self.s
+        z = ((z ^ (z >> 30)) * 0xBF58476D1CE4E5B9) & _M64
+        z = ((z ^ (z >> 27)) * 0x94D049BB133111EB) & _M64
+        return (z ^ (z >> 31)) & _M64
+
+    def mod(self, m):
+        return self.u64() % m
+
+    def bits(self, n):
+        return np.array([self.u64() >> 63 for _ in range(n)], dtype=np.uint8)
+
+    def bytes(self, n):
+        return bytes((self.u64() >> 56) & 0xFF for _ in range(n))
+
+    def permutation(self, n):
+        p = np.arange(n)
+        for i in range(n - 1, 0, -1):
+            j = self.mod(i + 1)
+            p[i], p[j] = p[j], p[i]
+        return p
+
+
 # ---------------- PRBS / pilots ----------------
 
 def prbs_bits(n, seed=0xC0FFEE):
-    rng = np.random.default_rng(seed)
-    return rng.integers(0, 2, n, dtype=np.uint8)
+    return DetRng(seed).bits(n)
 
 
 def pilot_symbols(pilot_bins, seed=0xBEEF):
-    rng = np.random.default_rng(seed)
-    ph = rng.integers(0, 4, len(pilot_bins))
+    r = DetRng(seed)
+    ph = np.array([r.mod(4) for _ in range(len(pilot_bins))])
     return np.exp(1j * (np.pi / 4 + np.pi / 2 * ph))
 
 
@@ -247,8 +282,8 @@ CHIRP = make_chirp()
 
 def sync_symbol_freq(cfg, which=0):
     """Known full-band QPSK symbol for channel estimation."""
-    rng = np.random.default_rng(0x5EED + which)
-    ph = rng.integers(0, 4, len(cfg.used))
+    r = DetRng(0x5EED + which)
+    ph = np.array([r.mod(4) for _ in range(len(cfg.used))])
     return np.exp(1j * (np.pi / 4 + np.pi / 2 * ph))
 
 
@@ -282,8 +317,7 @@ def modulate_frame(cfg, payload_bytes, frame_seed=1):
     if len(coded) < cap:
         coded = np.concatenate([coded, prbs_bits(cap - len(coded), seed=8)])
     # frame-wide interleave
-    rng = np.random.default_rng(0x1EAF)
-    perm = rng.permutation(cap)
+    perm = DetRng(0x1EAF).permutation(cap)
     inter = np.empty(cap, dtype=np.uint8)
     inter[perm] = coded[:cap]
 
@@ -414,8 +448,7 @@ def demodulate_frame(cfg, rx, start_hint=None, fine_window=400, diag=None):
             pos += nb
 
     # deinterleave
-    rng = np.random.default_rng(0x1EAF)
-    perm = rng.permutation(len(llr_stream))
+    perm = DetRng(0x1EAF).permutation(len(llr_stream))
     llr = llr_stream[perm]
     # depuncture + viterbi
     n_coded_used = int(np.ceil((cfg.info_bits + 6) * 2 *
