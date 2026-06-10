@@ -168,5 +168,18 @@ swift run cyrinx-sim-bench --profile quiet --out artifacts/bench/sim-quiet.json
 
 This implementation includes a real-time TX/RX acoustic physical layer in Swift for Apple audio backends, paired with a robust Kotlin companion target for physical Android devices, plus a comprehensive local-first simulation and benchmark suite.
 
-For our long-term, multi-antenna architectural vision and stack-ranked priorities organized around environmental sensing, capabilities handshaking, and SVD spatial sounding, please see the complete [ROADMAP.md](file:///Users/dew/dev/cyrinx/ROADMAP.md).
+For our long-term, multi-antenna architectural vision and stack-ranked priorities organized around environmental sensing, capabilities handshaking, and SVD spatial sounding, please see the complete [ROADMAP.md](ROADMAP.md).
+
+The active, sequenced effort to publish Cyrinx as a public Apache-2.0 library —
+porting the wideband bulk PHY into the portable C core so the library itself
+delivers the measured headline, plus the [cyrinx.org](https://cyrinx.org)
+companion site and an arXiv paper — is tracked in
+[docs/PUBLICATION.md](docs/PUBLICATION.md) (fresh as of 2026-06-10), with
+day-to-day rationale in [docs/publication-journal.md](docs/publication-journal.md).
+
+## License
+
+Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
+Copyright 2026 Primatech Paper Co LLC. The optional crypto envelope is
+experimental and unaudited; see [SECURITY.md](SECURITY.md).
 
