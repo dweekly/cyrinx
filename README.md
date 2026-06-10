@@ -31,7 +31,9 @@ and **27.3 kbps Pixel 7a->Mac**. The research writeup — measured channel,
 modem design, the four physical-layer defects, diagnostic methodology, and
 platform gotchas — is [docs/ACOUSTIC_BULK_PHY.md](docs/ACOUSTIC_BULK_PHY.md)
 (fresh as of 2026-06-09); the lab notebook and reproducible harness live in
-[scratch/hw20k/](scratch/hw20k/NOTES.md).
+[scratch/hw20k/](scratch/hw20k/NOTES.md). A contrast of the original PRD
+against what was actually built (and why they diverged) is
+[docs/PRD_VS_AS_BUILT.md](docs/PRD_VS_AS_BUILT.md) (fresh as of 2026-06-09).
 
 ## Implemented Protocol Model
 

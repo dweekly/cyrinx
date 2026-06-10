@@ -1,5 +1,11 @@
 # 20 kbps Bidirectional Acoustic Link — Working Notes
 
+> Audio captures (.pcm/.npy/.wav) are NOT committed: TX waveforms are pure
+> functions of the code, and RX captures are reproduced in minutes by
+> re-running the harness with the hardware attached (`ota_test.py`,
+> `characterize.py`, `final_measurement.py`). Only small derived artifacts
+> (channel.json, channel_snr.png, snr_*.json) are kept.
+>
 > Lab notebook. The curated research writeup (results, methodology,
 > platform gotchas, future directions) is
 > [docs/ACOUSTIC_BULK_PHY.md](../../docs/ACOUSTIC_BULK_PHY.md).

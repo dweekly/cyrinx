@@ -14,3 +14,6 @@ Apps/HIL/android/.idea/
 Apps/HIL/android/**/build/
 Apps/HIL/android/local.properties
 __pycache__/
+scratch/hw20k/data/*.pcm
+scratch/hw20k/data/*.npy
+scratch/hw20k/data/*.wav
