@@ -72,7 +72,9 @@ modulation theory.
 \section{Introduction and Motivation}
 
 Consumer laptops and phones ship with speakers and microphones of considerably
-higher fidelity than the ``data-over-sound'' literature typically assumes, yet
+higher fidelity than the ``data-over-sound'' literature typically assumes ---
+fidelity the acoustic-\emph{sensing} literature already exploits aggressively
+\cite{powerphone} --- yet
 deployed acoustic-communication systems cluster at very low rates: roughly
 $10^2$\,bps for robust spread-spectrum schemes and roughly $10^3$\,bps for
 multi-tone FSK \cite{nearby,ggwave}. Acoustic links remain attractive for
@@ -170,7 +172,12 @@ modulation (``D-CSS'') was inspired by LoRa-style chirp spread spectrum
 \cite{lora}. The bulk PHY described in this paper replaced the ZC preamble
 with a linear chirp plus known OFDM sync symbols, and replaced one-shot CFO
 estimation with continuous per-symbol pilot tracking---a change forced by
-measurement (Section~\ref{sec:defects}).
+measurement (Section~\ref{sec:defects}). Pilot-based joint tracking of
+sampling-clock and carrier offsets is itself standard OFDM receiver practice
+\cite{sfotrack,sfopatent}, and clock drift between independently clocked audio
+devices is a long-known problem in acoustic echo cancellation \cite{aecdrift};
+we claim no novelty here either --- the finding is only that on this channel
+continuous tracking is mandatory rather than optional.
 
 \textbf{Platform audio stacks.} Prior practitioners documented the hostility
 of consumer audio stacks to modem waveforms: voice-processing I/O units inject
@@ -362,8 +369,10 @@ each data bin's noise variance is taken as the sync-derived per-bin estimate
 \emph{plus that symbol's own pilot error-vector magnitude squared}. A symbol
 corrupted by a burst, dropout, or fade therefore reports honestly weak LLRs
 and degrades into soft erasures rather than poisoning the Viterbi traceback
-through the interleaver (Section~\ref{sec:defects}, defect 4). This also
-provides burst-noise immunity (typing, key clicks) at no added cost.
+through the interleaver (Section~\ref{sec:defects}, defect 4); converting
+burst corruption into erasures is the information-theoretically favorable move
+on a burst channel \cite{bursterasure}. This also provides burst-noise
+immunity (typing, key clicks) at no added cost.
 
 \begin{table}[t]
 \centering
@@ -564,8 +573,10 @@ Pixel 7a$\rightarrow$Mac (0.6--17\,kHz) & on the Mac (\texttt{modem.py}) &
 Both directions exceed the 20\,kbps goal with zero block errors
 (Table~\ref{tab:final}). The on-device Kotlin decoder runs in about 170\,ms
 per 4\,s frame on the Pixel 7a --- roughly 20$\times$ real time --- in pure
-Kotlin with a double-precision radix-2 FFT, which indicates that a real-time
-streaming receiver is computationally comfortable on this class of phone.
+Kotlin with a double-precision radix-2 FFT --- before any use of the
+NEON-vectorized DSP libraries available on this hardware \cite{neon,kfr} ---
+which indicates that a real-time streaming receiver is computationally
+comfortable on this class of phone.
 
 \subsection{Contrast with the predecessor stack}
 
@@ -624,7 +635,11 @@ raw test payloads; and (v) is validated in exactly \emph{one} physical
 geometry (a Pixel 7a face-up on a MacBook Pro palm rest), on one device pair,
 under one ambient condition. The link is half-duplex and has no link layer.
 The numbers should be read as ``what this hardware pair can do at contact
-range,'' not as a general-environment claim.
+range,'' not as a general-environment claim. A product link would also have to
+confront the security properties of short-range audio channels, which have a
+substantial literature of their own --- from channel-security surveys
+\cite{audiosecsurvey} to classic acoustic side channels such as keyboard
+emanations \cite{kbdacoustic}.
 
 \textbf{Untapped physical headroom} (estimates, from the measured SNR):
 \begin{itemize}
@@ -638,10 +653,16 @@ range,'' not as a general-environment claim.
         stereo mics) for spatial multiplexing Mac$\rightarrow$Pixel ---
         turning defect 2's decorrelation from a bug into capacity.
   \item \emph{Real-time streaming RX.} At 20$\times$ real time for the batch
-        decoder, a ring-buffer port is straightforward.
+        decoder, a ring-buffer port is straightforward; real-time audio
+        processing pipelines on Android are well documented \cite{rtdroid}.
   \item \emph{Link layer:} session-granularity rate adaptation from
         receiver-fed-back per-bin SNR, plus ARQ for residual block errors at
         higher MCS.
+  \item \emph{Mobility.} Everything here assumes the static contact-range
+        channel. For devices in relative motion the channel becomes doubly
+        dispersive, and the delay--Doppler waveforms (OTFS) studied for
+        underwater acoustic channels \cite{otfsreview,otfsjasa} are the
+        natural candidates --- untested here.
 \end{itemize}
 
 \subsection{Measured result: the inaudible-ultrasonic variant}
@@ -675,7 +696,10 @@ EVM $\sim$1.0 (SINR $\sim$0\,dB). Power-per-bin and phase coherence are
 different quantities; PSD-based channel surveys overstate capacity for
 phase-modulated waveforms on this transducer. A room-tone capture confirmed
 the band is near-silent (in-band RMS $\sim$5$\times$10$^{-8}$), so the limit is
-the transmit transducer, not ambient noise.
+the transmit transducer, not ambient noise. (One deployment caveat: our quiet
+room is not the general case --- deliberate near-ultrasonic emitters such as
+anti-eavesdropping jammers occupy exactly this band
+\cite{nusguard,ultrajam}.)
 
 The conclusion is that a \emph{symmetric} inaudible link is bounded by the
 mobile speaker, not by the protocol. The fast inaudible direction
@@ -777,6 +801,86 @@ Performance.'' arXiv. \url{https://arxiv.org/pdf/1406.3412}
 
 \bibitem{lora}
 Semtech Corporation. ``AN1200.22: LoRa Modulation Basics.'' Application note.
+
+\bibitem{sfotrack}
+``Carrier and Sampling Frequency Offset Estimation and Tracking in OFDM
+Systems.'' IEEE.
+\url{https://ieeexplore.ieee.org/document/4669503}
+(accessed June 9, 2026).
+
+\bibitem{sfopatent}
+``Pilot based sampling frequency offset estimation and correction for an OFDM
+system.'' U.S. Patent 7{,}782{,}752\,B2.
+\url{https://patents.google.com/patent/US7782752B2/en}
+(accessed June 9, 2026).
+
+\bibitem{aecdrift}
+``Adaptive estimation and compensation of clock drift in acoustic echo
+cancellers.'' U.S. Patent 7{,}120{,}259\,B1.
+\url{https://patents.google.com/patent/US7120259B1/en}
+(accessed June 9, 2026).
+
+\bibitem{bursterasure}
+``Capacity of Burst Noise-Erasure Channels With and Without Feedback and
+Input Cost.'' arXiv:1705.01596.
+\url{https://arxiv.org/pdf/1705.01596} (accessed June 9, 2026).
+
+\bibitem{otfsreview}
+``Orthogonal time frequency space modulation for underwater acoustic
+communication systems: a review.'' Edith Cowan University Research Online.
+\url{https://ro.ecu.edu.au/cgi/viewcontent.cgi?article=8367&context=ecuworks2022-2026}
+(accessed June 9, 2026).
+
+\bibitem{otfsjasa}
+``Orthogonal time-frequency space modulation for underwater mobile acoustic
+communications.'' J. Acoust. Soc. Am. 157(2):1378, 2025.
+\url{https://pubs.aip.org/asa/jasa/article-pdf/157/2/1378/20406915/1378_1_10.0035938.pdf}
+(accessed June 9, 2026).
+
+\bibitem{powerphone}
+``PowerPhone: Unleashing the Acoustic Sensing Capability of Smartphones.''
+PMC.
+\url{https://pmc.ncbi.nlm.nih.gov/articles/PMC12765216/}
+(accessed June 9, 2026).
+
+\bibitem{audiosecsurvey}
+``Short-Range Audio Channels Security: Survey of Mechanisms, Applications,
+and Research Challenges.'' CRI-Lab.
+\url{https://cri-lab.net/wp-content/uploads/2020/01/Audio_Channels_Security_Survey.pdf}
+(accessed June 9, 2026).
+
+\bibitem{kbdacoustic}
+D.~Asonov, R.~Agrawal. ``Keyboard Acoustic Emanations.'' IEEE Symposium on
+Security and Privacy, 2004.
+\url{https://web.eecs.umich.edu/~genkin/teaching/fall2018/EECS598-12_files/kbdacoustic.pdf}
+(accessed June 9, 2026).
+
+\bibitem{nusguard}
+``NUSGuard: Smart Device Anti-Eavesdropping Protection Based on
+Near-Ultrasonic Interference.'' New Jersey Institute of Technology.
+\url{https://researchwith.njit.edu/en/publications/nusguard-smart-device-anti-eavesdropping-protection-based-on-near/}
+(accessed June 9, 2026).
+
+\bibitem{ultrajam}
+``Dynamic Ultrasonic Jamming via Time--Frequency Mosaic for
+Anti-Eavesdropping Systems.'' Electronics 14(15):2960, MDPI.
+\url{https://www.mdpi.com/2079-9292/14/15/2960}
+(accessed June 9, 2026).
+
+\bibitem{rtdroid}
+``Real Time Sound Processing on Android.'' JTRES 2016.
+\url{https://steveyko.github.io/assets/pdf/rtdroid-sound-jtres16.pdf}
+(accessed June 9, 2026).
+
+\bibitem{neon}
+Android Developers (NDK). ``Neon support.''
+\url{https://developer.android.com/ndk/guides/cpu-arm-neon}
+(accessed June 9, 2026).
+
+\bibitem{kfr}
+``KFR: Fast, modern C++ DSP framework (SSE, AVX, AVX-512, ARM NEON,
+RISC-V RVV).'' \url{https://github.com/kfrlib/kfr}
+(accessed June 9, 2026).
 
 \bibitem{vpio}
 ``VoiceProcessingIO Audio Unit adds an unexpected input stream to Built-in
