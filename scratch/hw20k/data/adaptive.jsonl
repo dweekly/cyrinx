@@ -1,0 +1,1 @@
+{"position": "current_position", "sounding": {"tier": "robust", "mcs": "BPSK", "rate": "1/2", "bits_uniform": 1, "cp": 1536, "cp_ms": 32.0, "nfft": 4096, "advise_reposition": true, "median_snr_db": 7.8, "delay_spread_ms_15": 36.0, "usable_bin_frac": 0.69, "clock_ppm_est": -0.6}, "link": {"verified": 0, "total": 125, "goodput_kbps": 0.0, "tier": "robust"}}

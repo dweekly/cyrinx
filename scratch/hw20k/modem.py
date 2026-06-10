@@ -379,10 +379,18 @@ def find_chirp(rx, search_from=0, chirp=None):
            np.linalg.norm(rx[search_from + pk: search_from + pk + len(ch)]) + 1e-12)
 
 
-def demodulate_frame(cfg, rx, start_hint=None, fine_window=400, diag=None):
-    """Returns dict with blocks_ok, payload, evm, etc. rx: float array."""
+def demodulate_frame(cfg, rx, start_hint=None, fine_window=400, diag=None, rx2=None):
+    """Returns dict with blocks_ok, payload, evm, etc. rx: float array.
+
+    If rx2 (a second microphone capture, sample-aligned with rx) is given,
+    the two are combined per subcarrier by maximal-ratio combining (MRC):
+    the mics see different multipath null patterns, so MRC fills nulls that
+    sink either mic alone and raises effective SNR by up to 3 dB on average.
+    """
     if getattr(cfg, "rx_bandpass", None) is not None:
         rx = bandpass(rx, cfg.rx_bandpass[0], cfg.rx_bandpass[1], cfg.sr)
+        if rx2 is not None:
+            rx2 = bandpass(rx2, cfg.rx_bandpass[0], cfg.rx_bandpass[1], cfg.sr)
     if start_hint is None:
         start, q = find_chirp(rx, chirp=cfg.chirp_wave)
     else:
@@ -397,16 +405,16 @@ def demodulate_frame(cfg, rx, start_hint=None, fine_window=400, diag=None):
     off = int(np.argmax(np.abs(mf)))
     base = lo + off
 
-    def fft_at(pos):
-        w = rx[pos + cfg.cp: pos + cfg.sym]
+    def fft_at(sig, pos):
+        w = sig[pos + cfg.cp: pos + cfg.sym]
         if len(w) < cfg.nfft:
             return None
         return np.fft.rfft(w[:cfg.nfft])
 
-    def estimate_H(b):
+    def estimate_H(sig, b):
         Hs = []
         for w in range(2):
-            Y = fft_at(b + w * cfg.sym)
+            Y = fft_at(sig, b + w * cfg.sym)
             if Y is None:
                 return None
             X = sync_symbol_freq(cfg, w)
@@ -417,20 +425,19 @@ def demodulate_frame(cfg, rx, start_hint=None, fine_window=400, diag=None):
     # before the strongest one the xcorr locks to) stay inside the CP. The CP
     # is sized with margin, so starting early only trades guard headroom.
     base -= 24
-    Hs = estimate_H(base)
-    if Hs is None:
-        return {"ok": False, "err": "short capture"}
-
-    H = (Hs[0] + Hs[1]) / 2
-    # noise variance per bin from the two estimates
-    nv = np.abs(Hs[0] - Hs[1]) ** 2 / 2
-    # Do NOT smooth H across bins: with multipath/bulk delay its phase rotates
-    # multiple cycles across a few bins and smoothing destroys the estimate.
-    # Only the (real, positive) noise variance is smoothed.
-    H_s = H
-    k = np.ones(9) / 9
-    nv_s = np.convolve(nv, k, mode="same") + 1e-12
-    snr_bin = (np.abs(H_s) ** 2) / nv_s
+    chans = [rx] + ([rx2] if rx2 is not None else [])
+    H_list, nv_list = [], []
+    for sig in chans:
+        Hs = estimate_H(sig, base)
+        if Hs is None:
+            return {"ok": False, "err": "short capture"}
+        H_list.append((Hs[0] + Hs[1]) / 2)
+        nvk = np.convolve(np.abs(Hs[0] - Hs[1]) ** 2 / 2, np.ones(9) / 9,
+                          mode="same") + 1e-12
+        nv_list.append(nvk)
+    # Per-bin effective SNR is the sum across mics (MRC); for one mic this is
+    # the previous behavior. Do NOT smooth H across bins (phase rotates fast).
+    snr_bin = sum(np.abs(H) ** 2 / nv for H, nv in zip(H_list, nv_list))
 
     used_set = {b: i for i, b in enumerate(cfg.used)}
     pil_pos = np.array([used_set[b] for b in cfg.pilot_idx])
@@ -446,10 +453,19 @@ def demodulate_frame(cfg, rx, start_hint=None, fine_window=400, diag=None):
     # symbol is equalized against a reference at most ~1/alpha symbols old.
     G = np.ones(len(cfg.used), dtype=complex)
     for s in range(cfg.n_sym):
-        Y = fft_at(base + (2 + s) * cfg.sym)
-        if Y is None:
-            return {"ok": False, "err": f"short capture at sym {s}"}
-        Z = Y[cfg.used] / (H_s * G)
+        Ys = []
+        for sig in chans:
+            Y = fft_at(sig, base + (2 + s) * cfg.sym)
+            if Y is None:
+                return {"ok": False, "err": f"short capture at sym {s}"}
+            Ys.append(Y[cfg.used])
+        if len(chans) == 1:
+            Z = Ys[0] / (H_list[0] * G)
+        else:
+            # MRC: Z = sum_k conj(H_k) Y_k / (sum_k |H_k|^2), then de-rotate G
+            num = sum(np.conj(H) * Y for H, Y in zip(H_list, Ys))
+            den = sum(np.abs(H) ** 2 for H in H_list) + 1e-12
+            Z = (num / den) / G
         # pilot phase tracking: CPE + timing slope, fitted iteratively so a
         # large ramp doesn't bias the angle-of-sum estimator under ISI noise
         e = Z[pil_pos] * np.conj(cfg.pilots)
@@ -537,7 +553,8 @@ def demodulate_frame(cfg, rx, start_hint=None, fine_window=400, diag=None):
         "sr": cfg.sr,
     }
     if diag is not None:
-        diag["H"] = H_s
+        diag["H"] = H_list[0]
+        diag["n_mics"] = len(chans)
         diag["evms"] = evms
     return res
 

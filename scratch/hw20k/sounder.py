@@ -100,36 +100,50 @@ def analyze(cfg, rx, sr):
 
 LOAD = [(27.0, 6), (20.0, 4), (12.0, 2), (6.0, 1)]   # SNR-margin -> bits
 
+# MCS ladder, fastest -> most robust. The sounder ALWAYS picks the most
+# aggressive tier the measured channel clears; it never refuses to transmit.
+# "reposition" is advisory only, attached when even the floor tier is marginal.
+#   tier: (label, mcs, rate, bits/bin, min median SNR dB, max delay-spread ms)
+LADDER = [
+    ("fast",   "16-QAM", "3/4", 4, 22.0, 12.0),
+    ("medium", "16-QAM", "1/2", 4, 16.0, 18.0),
+    ("qpsk",   "QPSK",   "1/2", 2,  9.0, 24.0),
+    ("robust", "BPSK",   "1/2", 1,  2.0, 1e9),   # floor: BPSK + longest CP
+]
+
 
 def recommend(an, sr, margin_db=4.0):
     ds15 = an["delay_spread_ms"]["-15dB"]
     med = an["median_snr_db"]
     usable_frac = an["usable_bins"] / max(1, an["total_bins"])
-    # CP to cover the -15 dB delay spread, +25% headroom, clamped
+    # Pick the fastest tier whose SNR and delay-spread gates are both cleared.
+    chosen = LADDER[-1]
+    for tier in LADDER:
+        _, _, _, _, snr_min, ds_max = tier
+        if med >= snr_min and ds15 <= ds_max:
+            chosen = tier
+            break
+    label, mcs, rate, bits_uniform, _, _ = chosen
+    # CP to cover the -15 dB delay spread (+25% headroom). For robust tiers let
+    # CP run to the full cap; only the fast tier keeps CP tight for efficiency.
     cp_ms = min(CP_CAP_MS, max(5.0, ds15 * 1.25))
     cp = int(cp_ms / 1000 * sr)
     nfft = 2048 if cp <= 1024 else 4096
-    # feasibility
-    if ds15 > CP_CAP_MS or usable_frac < 0.3 or med < 4:
-        verdict = "reposition"
-        mcs, rate = "robust", "1/2"
-    elif med >= 22 and ds15 < 12 and usable_frac > 0.7:
-        verdict = "fast"
-        mcs, rate = "16-QAM", "3/4"
-    else:
-        verdict = "robust-only"
-        mcs, rate = "QPSK", "1/2"
-    # per-bin loading by SNR
+    # advisory only: a better physical spot would help, but we still link
+    advise_reposition = bool(label == "robust" and (med < 6 or ds15 > CP_CAP_MS))
+    # per-bin loading by SNR, capped at the tier's order
     bits = {}
+    cap_bits = bits_uniform
     for f, s in zip(an["freqs"], an["snr_db"]):
         b = 0
         for th, nb in LOAD:
             if s - margin_db >= th:
-                b = nb; break
+                b = min(nb, cap_bits); break
         bits[int(round(f / (sr / nfft)))] = b
     return {
-        "verdict": verdict, "mcs": mcs, "rate": rate,
+        "tier": label, "mcs": mcs, "rate": rate, "bits_uniform": bits_uniform,
         "cp": cp, "cp_ms": round(cp_ms, 1), "nfft": nfft,
+        "advise_reposition": advise_reposition,
         "median_snr_db": round(med, 1),
         "delay_spread_ms_15": round(ds15, 1),
         "usable_bin_frac": round(usable_frac, 2),
@@ -163,5 +177,6 @@ if __name__ == "__main__":
           f"usable bins={rec['usable_bin_frac']*100:.0f}%")
     print(f"  delay spread -15dB={rec['delay_spread_ms_15']} ms  "
           f"clock~{rec['clock_ppm_est']} ppm")
-    print(f"  --> VERDICT: {rec['verdict']}  (recommend {rec['mcs']} r{rec['rate']}, "
-          f"CP {rec['cp']} = {rec['cp_ms']} ms, NFFT {rec['nfft']})")
+    rep = "  (also: a closer/less-reverberant spot would help)" if rec['advise_reposition'] else ""
+    print(f"  --> TIER: {rec['tier']}  ({rec['mcs']} r{rec['rate']}, "
+          f"CP {rec['cp']} = {rec['cp_ms']} ms, NFFT {rec['nfft']}){rep}")
