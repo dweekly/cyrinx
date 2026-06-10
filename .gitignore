@@ -22,3 +22,9 @@ scratch/hw20k/data/*.wav
 # iOS HIL runtime artifacts (regenerated each run)
 scratch/hw20k/data/ios_result.json
 scratch/hw20k/data/_empty_result.json
+
+# compiled artifacts (never tracked)
+*.class
+*.dex
+*.o
+*.a
