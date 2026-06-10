@@ -46,8 +46,16 @@ enum GoldenVectors {
         let binLo: Int
         let binHi: Int
         let seed: Int
+        let amp: Double
+        let clipSigma: Double
+        let fLo: Double
+        let fHi: Double
+        let pilotEvery: Int
+        let bitsPerBin: Int
+        let chirpF0: Double
+        let chirpF1: Double
         enum CodingKeys: String, CodingKey {
-            case nfft, cp, sr, rate, seed
+            case nfft, cp, sr, rate, seed, amp
             case nSym = "n_sym"
             case payloadBytes = "payload_bytes"
             case infoBits = "info_bits"
@@ -55,6 +63,13 @@ enum GoldenVectors {
             case nBlocks = "n_blocks"
             case binLo = "bin_lo"
             case binHi = "bin_hi"
+            case clipSigma = "clip_sigma"
+            case fLo = "f_lo"
+            case fHi = "f_hi"
+            case pilotEvery = "pilot_every"
+            case bitsPerBin = "bits_per_bin_uniform"
+            case chirpF0 = "chirp_f0"
+            case chirpF1 = "chirp_f1"
         }
     }
 

@@ -109,4 +109,73 @@ Five precise findings, all addressed:
    spikes," matching the kept-not-deleted decision.
 
 Now 3 cases, 16 artifacts each, **~1.3 MB**, full suite green (52 tests incl. 8
-golden + the C loader).
+golden + the C loader). #23 + #24 merged to main.
+
+### `[1.2]` C TX path — deterministic integer core (branch `publication/c-tx-path`)
+First increment: the FFT-independent deterministic TX primitives in portable C
+(`Sources/CCyrinx/cyrinx_bulk.{c,h}`), each validated **bit-exact** against the
+golden vectors via `CyrinxBulkTXTests` (uses a golden intermediate as the input
+to the next stage, so a failure pinpoints the diverging stage):
+- `DetRng` splitmix64 (+ `permutation`/`bits`/`bytes`), `prbs_bits`;
+- IEEE **CRC-32** (zlib, poly 0xEDB88320) — explicitly NOT the core's CRC-32C;
+- conv-encode K=7 (171,133) + 6 tail bits; puncture (1/2, 2/3, 3/4, 5/6);
+- the interleaver permutation, validated against `interleave_perm`.
+- **Bug the vectors caught:** wrote the generator polynomial as C `0121` (octal
+  121 = 81) instead of `0171` (octal 171 = 121) — a classic Python-`0o171`→C
+  octal slip. conv_encode produced plausible-but-wrong codes; `coded_bits.bin`
+  flagged it immediately. Exactly why 1.1 lands before any DSP.
+- `testDetRngStream` reimplements splitmix64 independently in Swift so the C
+  isn't merely compared against itself.
+58 tests green. **Next:** Gray QAM map → `data_freq` (float-tol), then vendor
+KISS FFT behind the FFT-plan interface for OFDM mod → `wave`.
+
+### `[1.2]` C TX path — COMPLETE (QAM + KISS FFT + full frame)
+The portable-C transmitter is now end-to-end validated against the golden
+vectors (all 3 cases: QPSK r1/2, 16-QAM r3/4, QPSK r2/3):
+- **Gray QAM map** (BPSK/QPSK/16/64) via the inverse-Gray PAM levels.
+- **KISS FFT vendored** (BSD-3, `Sources/CCyrinx/kissfft/`, NOTICE updated),
+  compiled `-Dkiss_fft_scalar=double` so the C reference matches the numpy
+  oracle to ~1e-9. Wrapped behind `cyrinx_fft.h` (`cyrinx_irfft_*`) — the
+  FFT-plan interface a vDSP/NEON backend can later replace (PR 1.6). numpy.irfft
+  is 1/N-normalized; KISS is unnormalized, so the wrapper divides by nfft.
+- **Full orchestration** `cyrinx_bulk_modulate` mirrors `modulate_frame`:
+  geometry → blocks+CRC → info bits (+seed-7 pad) → conv+puncture (+seed-8 fill)
+  → interleave → pilots/sync/QAM per symbol → IFFT+CP → std-clip + peak-normalize
+  → chirp+GUARD+data. `data_freq` (pre-IFFT) and `wave` (final) both within the
+  1e-5 float tolerance; integer stages bit-exact.
+- Config recorded in the manifest (`f_lo/f_hi/pilot_every/bits_per_bin_uniform/
+  chirp_*/amp/clip_sigma`) so the test reconstructs the exact generating config.
+- Known wart: KISS's `kiss_fft_log.h` `#define DEBUG 4` warns against the debug
+  build's `-DDEBUG=1` (harmless; vendored file, left unmodified).
+59 tests green. **Next (PR 1.3):** the C RX path — chirp sync, LS channel est,
+pilot tracking, LLR, Viterbi — decoding `rx_wave` to `decoded_payload`.
+
+### `[1.3]` C RX path — COMPLETE, decodes on the first run
+The portable-C **receiver** decodes each case's `rx_wave` (TX through the fixed
+multipath channel) to the exact `decoded_payload`, all blocks CRC-valid, across
+all 3 cases — **passed first try**, a strong signal the golden-vector contract
+pinned the TX correctly. Implemented (single-mic, track_alpha=0 path):
+- forward real FFT added to `cyrinx_fft` (`cyrinx_rfft_*`, numpy.rfft semantics);
+- chirp matched-filter coarse sync + sync-symbol fine sync (−24-sample early bias);
+- LS channel estimation from the 2 sync symbols, 9-tap box noise variance,
+  per-bin SNR; **no cross-bin H smoothing** (negative finding #2);
+- per-symbol 3-pass pilot phase-slope + CPE tracking; pilot-EVM² LLR weighting;
+- max-log QAM LLR (inverse-Gray min-distance); deinterleave; depuncture into the
+  rate-1/2 stream; soft Viterbi (trellis traceback); CRC-32 per block.
+- Decision: **bundle TX+RX into PR #26** — a codec's TX without RX is a
+  half-feature (can't validate a round trip); they share the module and the
+  golden harness. Closes #11 (1.2) and #12 (1.3).
+60 tests green. The portable-C bulk PHY is functionally complete (uniform
+bit-loading). **Next:** Apple vDSP FFT backend (1.6) and/or the adaptive sounder
++ repositioning-guidance API (1.4/1.4b); MRC for stereo (1.5).
+
+### `[1.7]` Swift binding — `BulkPHY` (library surface over the C codec)
+`Sources/Cyrinx/BulkPHY.swift`: an ergonomic Swift API over the C codec — no DSP
+here, just config marshalling. `BulkPHY.Configuration` (defaults to the measured
+16-QAM r3/4 near-field profile), `geometry()`, `encode(Data) -> [Float]`,
+`decode([Float]) -> Decoded` (payload + per-block CRC + EVM, `isComplete`).
+Pure-Swift encode→loopback→decode round trips for QPSK/16-QAM/64-QAM all recover
+the payload with every block valid; wrong-length payloads are rejected. The
+**Swift library now delivers the bulk codec end-to-end** (digitally); OTA parity
+(1.10) needs hardware. 64 tests green. (Retiring the HIL `BulkDemod` forks in
+favor of this binding is the remaining part of 1.7.)
