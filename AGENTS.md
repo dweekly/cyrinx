@@ -28,3 +28,14 @@ Tests use XCTest and should be named `test...`. Add tests near the behavior chan
 ## Commit & Pull Request Guidelines
 
 Recent history uses short imperative commit subjects, for example `Add Android HIL app, ADB automation, and macOS Android HIL CLI`. Keep commits focused and avoid mixing generated artifacts with source edits unless the generation step is the change. PRs should include a concise summary, linked issue if applicable, test commands with results, and screenshots or diagnostic logs for HIL, Android, macOS, or UI-facing changes.
+
+## Python Development & Environment Rules
+
+- **Use a Virtual Environment (`venv`)**: You must always use a Python virtual environment (`.venv`) for all Python package installations and running any diagnostic/analysis scripts. Do not install Python packages globally or using `--break-system-packages` on the system Python. Always invoke scripts using the `.venv/bin/python` interpreter.
+
+## Agent Tone & Reporting Guidelines
+
+- **Empirical and Analytical Tone**: Maintain a strictly professional, scientific, and empirical tone. Avoid flowery, boasting, or overconfident language (e.g., words like "historic", "flawlessly", "perfectly", "100% correct").
+- **Engineering-Focused Analysis**: Focus objectively on engineering data, physical measurements, and system constraints. Proactively document and detail what did not work or fell short of the ideal system behavior, providing precise postmortems with high granularity.
+
+

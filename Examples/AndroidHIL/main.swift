@@ -28,6 +28,8 @@ private struct Options {
     var fixtureWavePath: String?
     var fixturePayloadHex: String?
     var fixturePayloadText: String?
+    var channels: Int = 2
+    var payloadSize: Int = 24
 
     init(args: [String]) {
         var idx = 0
@@ -52,7 +54,7 @@ private struct Options {
             case "--reliable-every":
                 if idx + 1 < args.count {
                     idx += 1
-                    reliableEvery = max(1, Int(args[idx]) ?? reliableEvery)
+                    reliableEvery = max(0, Int(args[idx]) ?? reliableEvery)
                 }
             case "--sample-rate":
                 if idx + 1 < args.count {
@@ -136,6 +138,16 @@ private struct Options {
                 if idx + 1 < args.count {
                     idx += 1
                     fixturePayloadText = args[idx]
+                }
+            case "--channels":
+                if idx + 1 < args.count {
+                    idx += 1
+                    channels = Int(args[idx]) ?? channels
+                }
+            case "--payload-size":
+                if idx + 1 < args.count {
+                    idx += 1
+                    payloadSize = max(20, Int(args[idx]) ?? payloadSize)
                 }
             default:
                 break
@@ -352,7 +364,7 @@ private func runRawMode(_ opts: Options) throws {
             try link.send(frame: payload)
             logLine("[raw-tx] bytes=\(payload.count) text=\(String(decoding: payload, as: UTF8.self))")
             sendCount += 1
-            nextSend = Date().addingTimeInterval(TimeInterval(opts.sendIntervalMs) / 1000.0)
+            nextSend = nextSend.addingTimeInterval(TimeInterval(opts.sendIntervalMs) / 1000.0)
         }
 
         if Date() >= nextDiag {
@@ -573,7 +585,7 @@ struct AndroidHILRunner {
         let opts = Options(args: Array(CommandLine.arguments.dropFirst()))
         logLine("[cyrinx-android-hil] role=\(opts.role) durationSec=\(opts.durationSec) sendIntervalMs=\(opts.sendIntervalMs)")
         logLine(
-            "[cyrinx-android-hil] sampleRate=\(opts.sampleRateHz) band=\(opts.bandStartHz)...\(opts.bandEndHz) " +
+            "[cyrinx-android-hil] sampleRate=\(opts.sampleRateHz) band=\(opts.bandStartHz)...\(opts.bandEndHz) channels=\(opts.channels) " +
                 "txGain=\(opts.txGainCap) dcss=\(opts.dcssSymbolSamples) sync=\(opts.preambleSyncThreshold) " +
                 "forceRobust=\(opts.forceRobustMode)"
         )
@@ -611,7 +623,8 @@ struct AndroidHILRunner {
             sampleRateHz: opts.sampleRateHz,
             bandStartHz: opts.bandStartHz,
             bandEndHz: opts.bandEndHz,
-            txGainCap: opts.txGainCap
+            txGainCap: opts.txGainCap,
+            channels: UInt32(opts.channels)
         )
 
 #if os(macOS)
@@ -654,16 +667,30 @@ struct AndroidHILRunner {
             while Date() < end {
                 if !opts.rxOnly, Date() >= nextSend {
                     let stamp = String(format: "%.3f", Date().timeIntervalSince1970)
-                    let bestEffortPayload = Data("mac-probe:\(stamp)".utf8)
+                    let prefixBe = "mac-probe:\(stamp):"
+                    var bestEffortPayload = Data(prefixBe.utf8)
+                    if bestEffortPayload.count < opts.payloadSize {
+                        let padding = opts.payloadSize - bestEffortPayload.count
+                        let padBytes = (0..<padding).map { UInt8(($0 * 17) & 0xFF) }
+                        bestEffortPayload.append(contentsOf: padBytes)
+                    }
                     do {
+                        let txStart = Date()
                         try session.send(bestEffortPayload, streamID: 7, qos: .bestEffort, priority: .high, flags: [.fin])
-                        print("[tx] best-effort bytes=\(bestEffortPayload.count)")
+                        let txDuration = Date().timeIntervalSince(txStart)
+                        print("[tx] best-effort bytes=\(bestEffortPayload.count) took=\(String(format: "%.4f", txDuration))s")
                     } catch {
                         print("[tx] best-effort failed: \(error)")
                     }
 
-                    if sendCount % opts.reliableEvery == 0 {
-                        let reliablePayload = Data("mac-probe-rel:\(stamp)".utf8)
+                    if opts.reliableEvery > 0 && sendCount > 0 && sendCount % opts.reliableEvery == 0 {
+                        let prefixRel = "mac-probe-rel:\(stamp):"
+                        var reliablePayload = Data(prefixRel.utf8)
+                        if reliablePayload.count < opts.payloadSize {
+                            let padding = opts.payloadSize - reliablePayload.count
+                            let padBytes = (0..<padding).map { UInt8(($0 * 17) & 0xFF) }
+                            reliablePayload.append(contentsOf: padBytes)
+                        }
                         do {
                             try session.send(reliablePayload, streamID: 9, qos: .reliable, priority: .high, flags: [.fin])
                             print("[tx] reliable bytes=\(reliablePayload.count)")
@@ -673,7 +700,7 @@ struct AndroidHILRunner {
                     }
 
                     sendCount += 1
-                    nextSend = Date().addingTimeInterval(TimeInterval(opts.sendIntervalMs) / 1000.0)
+                    nextSend = nextSend.addingTimeInterval(TimeInterval(opts.sendIntervalMs) / 1000.0)
                 }
 
                 do {

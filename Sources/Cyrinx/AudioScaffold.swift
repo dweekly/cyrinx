@@ -496,6 +496,7 @@ enum AudioBackendFactory {
         init(config: Config) throws {
             self.config = config
             phyLink = AcousticPHYLink(config: config)
+            phyLink.updatePeerSignature(0x01)
             try configureAudioSession()
             try createAudioUnit()
         }
@@ -600,13 +601,20 @@ enum AudioBackendFactory {
                 }
             }
 
-            let waveform =
-                (try? phyLink.encode(frame: frameBytes))
-                ?? StubWaveSynthesizer.synthesize(
+            let waveform: [Float]
+            do {
+                let encStart = Date()
+                waveform = try phyLink.encode(frame: frameBytes)
+                let encDuration = Date().timeIntervalSince(encStart)
+                print("[enc] encode took=\(String(format: "%.4f", encDuration))s")
+            } catch {
+                print("[error] phyLink.encode failed: \(error)")
+                waveform = StubWaveSynthesizer.synthesize(
                     symbols: frameBytes,
                     sampleRate: Double(config.sampleRateHz),
                     txGainCap: config.txGainCap
                 )
+            }
             enqueueTxSamples(waveform)
             return 0
         }
@@ -1777,6 +1785,7 @@ enum AudioBackendFactory {
         init(config: Config) {
             self.config = config
             phyLink = AcousticPHYLink(config: config)
+            phyLink.updatePeerSignature(0x02)
         }
 
         var diagnostics: AudioBackendDiagnostics {
@@ -1900,13 +1909,20 @@ enum AudioBackendFactory {
                 }
             }
 
-            let waveform =
-                (try? phyLink.encode(frame: frameBytes))
-                ?? StubWaveSynthesizer.synthesize(
+            let waveform: [Float]
+            do {
+                let encStart = Date()
+                waveform = try phyLink.encode(frame: frameBytes)
+                let encDuration = Date().timeIntervalSince(encStart)
+                print("[enc] encode took=\(String(format: "%.4f", encDuration))s")
+            } catch {
+                print("[error] phyLink.encode failed: \(error)")
+                waveform = StubWaveSynthesizer.synthesize(
                     symbols: frameBytes,
                     sampleRate: Double(config.sampleRateHz),
                     txGainCap: config.txGainCap
                 )
+            }
             counters.recordTx(bytes: frame.count)
             enqueueTxSamples(waveform)
             return CYRINX_OK.rawValue

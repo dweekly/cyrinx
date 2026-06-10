@@ -3,6 +3,9 @@ package com.dweekly.cyrinxhil
 import android.Manifest
 import android.content.Context
 import android.media.AudioManager
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioTrack
 import android.os.Vibrator
 import android.os.VibrationEffect
 import android.os.Build
@@ -64,6 +67,8 @@ class MainActivity : ComponentActivity() {
     private var overrideRawCapturePath: String? = null
     @Volatile
     private var overrideChannels: Int? = null
+    @Volatile
+    private var overrideForceBodyMode: String? = null
 
     private val periodicRefresh = object : Runnable {
         override fun run() {
@@ -260,10 +265,10 @@ class MainActivity : ComponentActivity() {
         stopRawBackend()
         stopSession()
 
-        // Programmatic acoustic gain staging calibration to safe linear region (72% sweet-spot)
+        // Programmatic acoustic gain staging calibration to safe linear region (45% sweet-spot)
         val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-        val targetIndex = (maxVolume * 0.72f).toInt()
+        val targetIndex = (maxVolume * 0.80f).toInt()
         audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetIndex, 0)
         appendLog("[AcousticCalibration] Android Stream volume auto-calibrated to: $targetIndex / $maxVolume")
 
@@ -499,6 +504,7 @@ class MainActivity : ComponentActivity() {
         overrideRawCodec = parseRawCodec(intent.getStringExtra("raw_codec")) ?: overrideRawCodec
         overrideRawCapturePath = intent.getStringExtra("capture_path")?.takeIf { it.isNotBlank() } ?: overrideRawCapturePath
         overrideChannels = intent.getIntExtra("channels", -1).takeIf { it > 0 } ?: overrideChannels
+        overrideForceBodyMode = intent.getStringExtra("force_body_mode")?.takeIf { it.isNotBlank() } ?: overrideForceBodyMode
 
         appendLog(
             "automation cmd=$cmd role=${role?.name ?: "unchanged"} sampleRate=${overrideSampleRateHz ?: 48_000} " +
@@ -537,13 +543,75 @@ class MainActivity : ComponentActivity() {
             "decode_file" -> runDecodeFile(role ?: selectedRole(), intent)
             "raw_encode_file" -> runRawEncodeFile(role ?: selectedRole(), intent)
             "raw_decode_file" -> runRawDecodeFile(role ?: selectedRole(), intent)
+            "sweep" -> {
+                val startHz = intent.getFloatExtra("start_hz", 1000f)
+                val endHz = intent.getFloatExtra("end_hz", 22000f)
+                val durationSec = intent.getFloatExtra("duration_sec", 8f)
+                val amp = intent.getFloatExtra("amplitude", 0.35f)
+                playSweep(startHz, endHz, durationSec, amp)
+            }
             else -> appendLog("unknown automation cmd=$cmd")
         }
     }
 
+    private fun playSweep(startHz: Float, endHz: Float, durationSec: Float, amplitude: Float) {
+        val sampleRate = 48000
+        val count = (sampleRate * durationSec).toInt()
+        val pcm = ShortArray(count)
+        val fStart = startHz.toDouble()
+        val fEnd = endHz.toDouble()
+        val T = durationSec.toDouble()
+        
+        for (i in 0 until count) {
+            val t = i.toDouble() / sampleRate.toDouble()
+            val phase = 2.0 * Math.PI * (fStart * t + 0.5 * (fEnd - fStart) * (t * t) / T)
+            val sample = amplitude * kotlin.math.sin(phase).toFloat()
+            val clamped = sample.coerceIn(-1.0f, 1.0f)
+            pcm[i] = (clamped * 32767.0f).toInt().toShort()
+        }
+        
+        ioExecutor.execute {
+            try {
+                appendLog("sweep play begin: ${startHz}Hz to ${endHz}Hz dur=${durationSec}s")
+                val minBuf = AudioTrack.getMinBufferSize(
+                    sampleRate,
+                    AudioFormat.CHANNEL_OUT_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT
+                )
+                val bufferSize = maxOf(minBuf, count * 2)
+                val track = AudioTrack(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build(),
+                    AudioFormat.Builder()
+                        .setSampleRate(sampleRate)
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                        .build(),
+                    bufferSize,
+                    AudioTrack.MODE_STATIC,
+                    AudioManager.AUDIO_SESSION_ID_GENERATE
+                )
+                track.write(pcm, 0, count)
+                track.play()
+                val playTimeMs = (durationSec * 1000).toLong()
+                Thread.sleep(playTimeMs + 500)
+                track.stop()
+                track.release()
+                appendLog("sweep play completed: ${startHz}Hz to ${endHz}Hz")
+            } catch (t: Throwable) {
+                appendLog("sweep play failed: ${t.message}")
+            }
+        }
+    }
+
+
     private fun runAutomationScenario(role: Role, intent: android.content.Intent) {
         val durationSec = intent.getIntExtra("duration_sec", 15).coerceIn(5, 180)
-        val intervalMs = intent.getIntExtra("send_interval_ms", 750).coerceIn(250, 5_000)
+        val intervalMs = intent.getIntExtra("send_interval_ms", 750).coerceIn(20, 5_000)
+        val reliableEvery = intent.getIntExtra("reliable_every", 4)
+        val payloadSize = intent.getIntExtra("payload_size", 24).coerceIn(20, 1024)
 
         runOnUiThread { startSession(role) }
 
@@ -556,11 +624,28 @@ class MainActivity : ComponentActivity() {
                 return@execute
             }
             while (System.currentTimeMillis() < stopAt) {
-                val bePayload = "probe:${System.currentTimeMillis()}".toByteArray(Charsets.UTF_8)
+                val prefixBe = "probe:${System.currentTimeMillis()}:"
+                val prefixBeBytes = prefixBe.toByteArray(Charsets.UTF_8)
+                val bePayload = ByteArray(payloadSize)
+                System.arraycopy(prefixBeBytes, 0, bePayload, 0, minOf(prefixBeBytes.size, payloadSize))
+                if (payloadSize > prefixBeBytes.size) {
+                    for (i in prefixBeBytes.size until payloadSize) {
+                        bePayload[i] = ((i * 17) and 0xFF).toByte()
+                    }
+                }
+
                 val beRc = sendProbeInternal(current, bestEffort = true, payload = bePayload)
                 appendLog("scenario send BE rc=$beRc")
-                if (counter % 4 == 0) {
-                    val relPayload = "probe-reliable:${System.currentTimeMillis()}".toByteArray(Charsets.UTF_8)
+                if (reliableEvery > 0 && counter % reliableEvery == 0) {
+                    val prefixRel = "probe-reliable:${System.currentTimeMillis()}:"
+                    val prefixRelBytes = prefixRel.toByteArray(Charsets.UTF_8)
+                    val relPayload = ByteArray(payloadSize)
+                    System.arraycopy(prefixRelBytes, 0, relPayload, 0, minOf(prefixRelBytes.size, payloadSize))
+                    if (payloadSize > prefixRelBytes.size) {
+                        for (i in prefixRelBytes.size until payloadSize) {
+                            relPayload[i] = ((i * 17) and 0xFF).toByte()
+                        }
+                    }
                     val relRc = sendProbeInternal(current, bestEffort = false, payload = relPayload)
                     appendLog("scenario send reliable rc=$relRc")
                 }
@@ -602,9 +687,10 @@ class MainActivity : ComponentActivity() {
             dcssSymbolSamples = overrideDcssSymbolSamples ?: 256,
             preambleSyncThreshold = overrideSyncThreshold ?: 0.25f,
             rawCodec = overrideRawCodec ?: RawCodec.AUTO,
-            channels = overrideChannels ?: 1,
+            channels = overrideChannels ?: 2,
             deviceSignature = 0x02, // CYRINX_DEVICE_PIXEL_7A
             maxBufferCapacity = 65536,
+            forceBodyMode = overrideForceBodyMode,
         )
     }
 

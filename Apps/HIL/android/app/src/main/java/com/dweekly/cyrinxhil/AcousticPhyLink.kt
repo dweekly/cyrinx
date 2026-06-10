@@ -25,7 +25,9 @@ private const val CYRINX_OFDM_FFT_SIZE = 1024
 
 private enum class AcousticBodyMode(val value: Int) {
     ROBUST_DCSS(0),
-    TURBO_OFDM(1),
+    TURBO_QPSK(1),
+    TURBO_16QAM(2),
+    TURBO_64QAM(3),
     ;
 
     companion object {
@@ -177,7 +179,7 @@ private class DcssModem(private val config: DcssConfig) {
 
 class AcousticPhyLink(private val config: SessionConfig) {
     private val lock = Object()
-    private var peerDeviceSignature: Byte = 0
+    private var peerDeviceSignature: Byte = 0x01.toByte()
     private var peerNotchMask = ByteArray(14) { 0xFF.toByte() }
     private var localNotchMask = ByteArray(14) { 0xFF.toByte() }
     private var peerPublicKey: ByteArray? = null
@@ -324,7 +326,7 @@ class AcousticPhyLink(private val config: SessionConfig) {
 
     private val sampleRateHz = config.sampleRateHz.coerceIn(8_000, 192_000)
     private val cappedGain = run {
-        val maxCap = if (config.bandStartHz >= 18000) 0.70f else 0.12f
+        val maxCap = if (config.bandStartHz >= 9000) 0.70f else 0.12f
         min(max(config.txGainCap, 0f), maxCap)
     }
 
@@ -398,7 +400,7 @@ class AcousticPhyLink(private val config: SessionConfig) {
         System.arraycopy(preambleBlockR, 0, it, preambleBlockR.size, preambleBlockR.size)
     }
     private val preambleEnergy = max(1e-7f, preamble.fold(0f) { acc, v -> acc + (v * v) })
-    private val syncThreshold = config.preambleSyncThreshold.coerceIn(0.10f, 0.98f)
+    private val syncThreshold = config.preambleSyncThreshold.coerceIn(0.05f, 0.98f)
 
     private val rxBuffer = FloatBuffer(131072)
     private val rxBufferRight = FloatBuffer(131072)
@@ -433,10 +435,11 @@ class AcousticPhyLink(private val config: SessionConfig) {
         val header = AcousticHeader(mode = mode, payloadLength = payloadToSend.size).encode()
         val headerWave = headerModem.modulate(header)
 
-        val bodyWave = if (mode == AcousticBodyMode.TURBO_OFDM) {
-            modulateOfdm(payloadToSend)
-        } else {
-            robustModem.modulate(payloadToSend)
+        val bodyWave = when (mode) {
+            AcousticBodyMode.TURBO_QPSK -> modulateOfdm(payloadToSend, mode)
+            AcousticBodyMode.TURBO_16QAM -> modulateOfdm(payloadToSend, mode)
+            AcousticBodyMode.TURBO_64QAM -> modulateOfdm(payloadToSend, mode)
+            else -> robustModem.modulate(payloadToSend)
         }
 
 
@@ -495,7 +498,7 @@ class AcousticPhyLink(private val config: SessionConfig) {
         val headerSamples = expectedDcssSamples(ACOUSTIC_HEADER_BYTES, headerConfig)
 
         // Prevent exponential CPU search bottleneck under queue overflow
-        val maxBufferSize = preamble.size * 4 + headerSamples
+        val maxBufferSize = sampleRateHz * 12
         if (rxBuffer.size > maxBufferSize) {
             val dropCount = rxBuffer.size - maxBufferSize
             dropFront(dropCount)
@@ -521,7 +524,7 @@ class AcousticPhyLink(private val config: SessionConfig) {
 
             val headerLock = decodeHeaderAround(syncStart, headerSamples)
             if (headerLock == null) {
-                dropFront(syncStart + 1)
+                dropFront(syncStart + preamble.size / 2)
                 rxSearchStart = 0
                 continue
             }
@@ -529,10 +532,11 @@ class AcousticPhyLink(private val config: SessionConfig) {
             val headerStart = headerLock.start
             val headerEnd = headerLock.end
 
-            val bodySamples = if (packetHeader.mode == AcousticBodyMode.TURBO_OFDM) {
-                expectedOfdmSamples(packetHeader.payloadLength)
-            } else {
-                expectedDcssSamples(packetHeader.payloadLength, robustConfig)
+            val bodySamples = when (packetHeader.mode) {
+                AcousticBodyMode.TURBO_QPSK,
+                AcousticBodyMode.TURBO_16QAM,
+                AcousticBodyMode.TURBO_64QAM -> expectedOfdmSamples(packetHeader.payloadLength, packetHeader.mode)
+                else -> expectedDcssSamples(packetHeader.payloadLength, robustConfig)
             }
             val bodyStart = headerEnd
             val bodyEnd = bodyStart + bodySamples
@@ -546,17 +550,20 @@ class AcousticPhyLink(private val config: SessionConfig) {
 
             val bodyWindow = sliceToFloatArray(rxBuffer, bodyStart, bodyEnd)
             val bodyPayload = try {
-                if (packetHeader.mode == AcousticBodyMode.TURBO_OFDM) {
-                    demodulateOfdm(bodyWindow)
-                } else {
-                    robustModem.demodulate(bodyWindow)
+                when (packetHeader.mode) {
+                    AcousticBodyMode.TURBO_QPSK,
+                    AcousticBodyMode.TURBO_16QAM,
+                    AcousticBodyMode.TURBO_64QAM -> demodulateOfdm(bodyWindow, packetHeader.mode, packetHeader.payloadLength)
+                    else -> robustModem.demodulate(bodyWindow)
                 }
-            } catch (_: Throwable) {
+            } catch (t: Throwable) {
+                android.util.Log.e("CyrinxHILAndroid", "body demodulation failed", t)
                 null
             }
             var frame = bodyPayload
             if (bodyPayload == null || bodyPayload.size != packetHeader.payloadLength) {
-                dropFront(syncStart + 1)
+                android.util.Log.w("CyrinxHILAndroid", "Demodulation failed or size mismatch: got ${bodyPayload?.size ?: "null"}, expected ${packetHeader.payloadLength}. Dropping to bodyEnd=$bodyEnd")
+                dropFront(bodyEnd)
                 rxSearchStart = 0
                 continue
             }
@@ -576,7 +583,8 @@ class AcousticPhyLink(private val config: SessionConfig) {
                 try {
                     frame = secureEnvelopeUnpack(frame, localKEnc!!, localKMac!!)
                 } catch (e: Exception) {
-                    dropFront(syncStart + 1)
+                    android.util.Log.e("CyrinxHILAndroid", "secureEnvelopeUnpack failed: ${e.message}. Dropping to bodyEnd=$bodyEnd")
+                    dropFront(bodyEnd)
                     rxSearchStart = 0
                     continue
                 }
@@ -605,7 +613,7 @@ class AcousticPhyLink(private val config: SessionConfig) {
     private fun decodeHeaderAround(syncStart: Int, headerSamples: Int): HeaderLock? {
         val baseStart = syncStart + preamble.size
         val maxShiftSamples = 32
-        val shiftStep = 8
+        val shiftStep = 1
         val shifts = ArrayList<Int>()
         shifts.add(0)
         var delta = shiftStep
@@ -639,14 +647,25 @@ class AcousticPhyLink(private val config: SessionConfig) {
         }
         val header = frame.copyOfRange(2, 17)
         val frameType = readBitsMsb(header, 4, 4)
-        if (frameType == CyrinxConstants.FRAME_ACK || frameType == CyrinxConstants.FRAME_CONTROL) {
+        val streamId = readBitsMsb(header, 70, 12)
+        if (frameType == CyrinxConstants.FRAME_ACK || frameType == CyrinxConstants.FRAME_CONTROL || streamId == 0) {
             return AcousticBodyMode.ROBUST_DCSS
         }
+        val forced = config.forceBodyMode?.trim()?.lowercase(java.util.Locale.US)
+        if (forced != null) {
+            when (forced) {
+                "64qam" -> return AcousticBodyMode.TURBO_64QAM
+                "16qam" -> return AcousticBodyMode.TURBO_16QAM
+                "qpsk" -> return AcousticBodyMode.TURBO_QPSK
+                "robust" -> return AcousticBodyMode.ROBUST_DCSS
+            }
+        }
         val gearId = readBitsMsb(header, 64, 3)
-        return if (gearId >= 2) {
-            AcousticBodyMode.TURBO_OFDM
-        } else {
-            AcousticBodyMode.ROBUST_DCSS
+        return when (gearId) {
+            4 -> AcousticBodyMode.TURBO_64QAM
+            3 -> AcousticBodyMode.TURBO_16QAM
+            2 -> AcousticBodyMode.TURBO_QPSK
+            else -> AcousticBodyMode.ROBUST_DCSS
         }
     }
 
@@ -674,11 +693,12 @@ class AcousticPhyLink(private val config: SessionConfig) {
         var maxCorrObserved = 0f
         var maxCorrIndex = -1
 
-        for (start in lowerBound..searchLimit) {
+        var coarseStart = lowerBound
+        while (coarseStart <= searchLimit) {
             var dot = 0f
             var segmentEnergy = 0f
             for (idx in preamble.indices) {
-                val sample = buffer.array[start + idx]
+                val sample = buffer.array[coarseStart + idx]
                 val reference = preamble[idx]
                 dot += sample * reference
                 segmentEnergy += sample * sample
@@ -687,26 +707,22 @@ class AcousticPhyLink(private val config: SessionConfig) {
             val corr = dot / norm
             if (corr > maxCorrObserved) {
                 maxCorrObserved = corr
-                maxCorrIndex = start
-            }
-            if (corr < syncThreshold) {
-                continue
+                maxCorrIndex = coarseStart
             }
 
-            // We crossed the syncThreshold! Search a local window ahead (48 samples / 12 chips)
-            // to find the absolute maximum peak and prevent locking on rising-edge sidelobes.
-            var bestStart = start
-            var bestCorr = corr
-            var bestDot = dot
+            if (corr >= syncThreshold * 0.5f) {
+                val fineStart = max(lowerBound, coarseStart - 8)
+                val fineEnd = min(searchLimit, coarseStart + 8)
 
-            val windowSize = 48
-            val peakSearchLimit = min(start + windowSize, searchLimit)
-            if (start + 1 <= peakSearchLimit) {
-                for (candidateStart in (start + 1)..peakSearchLimit) {
+                var bestStart = coarseStart
+                var bestCorr = corr
+                var bestDot = dot
+
+                for (start in fineStart..fineEnd) {
                     var candidateDot = 0f
                     var candidateEnergy = 0f
                     for (idx in preamble.indices) {
-                        val sample = buffer.array[candidateStart + idx]
+                        val sample = buffer.array[start + idx]
                         val reference = preamble[idx]
                         candidateDot += sample * reference
                         candidateEnergy += sample * sample
@@ -715,112 +731,144 @@ class AcousticPhyLink(private val config: SessionConfig) {
                     val candidateCorr = candidateDot / candidateNorm
                     if (candidateCorr > bestCorr) {
                         bestCorr = candidateCorr
-                        bestStart = candidateStart
+                        bestStart = start
                         bestDot = candidateDot
                     }
                 }
-            }
 
-            // MIMO 2x2 channel sounding and SVD solver
-            if (config.channels == 2) {
-                var dot11 = 0f
-                var dot12 = 0f
-                var dot21 = 0f
-                var dot22 = 0f
-                var energyY1 = 0f
-                var energyY2 = 0f
-                var energyX1 = 0f
-                var energyX2 = 0f
+                if (bestCorr >= syncThreshold) {
+                    val finalStart = bestStart
+                    var finalStartPeak = bestStart
+                    var finalCorr = bestCorr
+                    var finalDot = bestDot
 
-                for (idx in preamble.indices) {
-                    val y1 = buffer.array[bestStart + idx]
-                    val y2 = if (bestStart + idx < rxBufferRight.size) rxBufferRight.array[bestStart + idx] else 0f
-                    val x1 = preamble[idx]
-                    val x2 = preambleR[idx]
+                    val windowSize = 48
+                    val peakSearchLimit = min(bestStart + windowSize, searchLimit)
+                    if (bestStart + 1 <= peakSearchLimit) {
+                        for (candidateStart in (bestStart + 1)..peakSearchLimit) {
+                            var candidateDot = 0f
+                            var candidateEnergy = 0f
+                            for (idx in preamble.indices) {
+                                val sample = buffer.array[candidateStart + idx]
+                                val reference = preamble[idx]
+                                candidateDot += sample * reference
+                                candidateEnergy += sample * sample
+                            }
+                            val candidateNorm = sqrt(max(candidateEnergy * preambleEnergy, 1e-7f))
+                            val candidateCorr = candidateDot / candidateNorm
+                            if (candidateCorr > finalCorr) {
+                                finalCorr = candidateCorr
+                                finalStartPeak = candidateStart
+                                finalDot = candidateDot
+                            }
+                        }
+                    }
 
-                    dot11 += y1 * x1
-                    dot12 += y1 * x2
-                    dot21 += y2 * x1
-                    dot22 += y2 * x2
+                    // MIMO 2x2 channel sounding and SVD solver
+                    if (config.channels == 2) {
+                        var dot11 = 0f
+                        var dot12 = 0f
+                        var dot21 = 0f
+                        var dot22 = 0f
+                        var energyY1 = 0f
+                        var energyY2 = 0f
+                        var energyX1 = 0f
+                        var energyX2 = 0f
 
-                    energyY1 += y1 * y1
-                    energyY2 += y2 * y2
-                    energyX1 += x1 * x1
-                    energyX2 += x2 * x2
+                        for (idx in preamble.indices) {
+                            val y1 = buffer.array[finalStartPeak + idx]
+                            val y2 = if (finalStartPeak + idx < rxBufferRight.size) rxBufferRight.array[finalStartPeak + idx] else 0f
+                            val x1 = preamble[idx]
+                            val x2 = preambleR[idx]
+
+                            dot11 += y1 * x1
+                            dot12 += y1 * x2
+                            dot21 += y2 * x1
+                            dot22 += y2 * x2
+
+                            energyY1 += y1 * y1
+                            energyY2 += y2 * y2
+                            energyX1 += x1 * x1
+                            energyX2 += x2 * x2
+                        }
+
+                        val h11 = dot11 / sqrt(max(energyY1 * energyX1, 1e-7f))
+                        val h12 = dot12 / sqrt(max(energyY1 * energyX2, 1e-7f))
+                        val h21 = dot21 / sqrt(max(energyY2 * energyX1, 1e-7f))
+                        val h22 = dot22 / sqrt(max(energyY2 * energyX2, 1e-7f))
+
+                        this.lastH11 = h11
+                        this.lastH12 = h12
+                        this.lastH21 = h21
+                        this.lastH22 = h22
+
+                        // SVD Solver
+                        val s1 = h11 * h11 + h12 * h12 + h21 * h21 + h22 * h22
+                        val det = h11 * h22 - h12 * h21
+                        val term = max(0f, s1 * s1 - 4f * det * det)
+                        val sqrtTerm = sqrt(term)
+                        val l1 = (s1 + sqrtTerm) * 0.5f
+                        val l2 = max(0f, (s1 - sqrtTerm) * 0.5f)
+                        val sigma1 = sqrt(l1)
+                        val sigma2 = sqrt(l2)
+
+                        this.lastSigma1 = sigma1
+                        this.lastSigma2 = sigma2
+
+                        val kappaDb = if (sigma2 > 1e-5f) 20f * log10(sigma1 / sigma2) else 99f
+                        this.lastKappaDb = kappaDb
+                        this.lastSpatialMode = if (kappaDb < 6f) 1 else 0
+                    } else {
+                        // Mono mode
+                        var dot11 = 0f
+                        var energyY1 = 0f
+                        var energyX1 = 0f
+                        for (idx in preamble.indices) {
+                            val y1 = buffer.array[finalStartPeak + idx]
+                            val x1 = preamble[idx]
+                            dot11 += y1 * x1
+                            energyY1 += y1 * y1
+                            energyX1 += x1 * x1
+                        }
+                        val h11 = dot11 / sqrt(max(energyY1 * energyX1, 1e-7f))
+                        this.lastH11 = h11
+                        this.lastH12 = 0f
+                        this.lastH21 = 0f
+                        this.lastH22 = 0f
+                        this.lastSigma1 = h11
+                        this.lastSigma2 = 0f
+                        this.lastKappaDb = 99f
+                        this.lastSpatialMode = 0
+                    }
+
+                    val scale = finalDot / preambleEnergy
+                    var errorEnergy = 0f
+                    for (idx in preamble.indices) {
+                        val estimate = scale * preamble[idx]
+                        val err = buffer.array[finalStartPeak + idx] - estimate
+                        errorEnergy += err * err
+                    }
+
+                    val signalPower = max(1e-7f, (scale * scale * preambleEnergy) / preamble.size)
+                    val noisePower = max(1e-7f, errorEnergy / preamble.size)
+                    val snrDb = 10.0f * log10(signalPower / noisePower)
+                    val evmPct = sqrt(noisePower / signalPower) * 100.0f
+                    android.util.Log.i("CyrinxHILAndroid", "Preamble lock found! start=$finalStartPeak (first crossing=$finalStart) corr=$finalCorr snrDb=$snrDb")
+                    return PreambleLock(index = finalStartPeak, correlation = finalCorr, snrDb = snrDb, evmPct = evmPct)
                 }
-
-                val h11 = dot11 / sqrt(max(energyY1 * energyX1, 1e-7f))
-                val h12 = dot12 / sqrt(max(energyY1 * energyX2, 1e-7f))
-                val h21 = dot21 / sqrt(max(energyY2 * energyX1, 1e-7f))
-                val h22 = dot22 / sqrt(max(energyY2 * energyX2, 1e-7f))
-
-                this.lastH11 = h11
-                this.lastH12 = h12
-                this.lastH21 = h21
-                this.lastH22 = h22
-
-                // SVD Solver
-                val s1 = h11 * h11 + h12 * h12 + h21 * h21 + h22 * h22
-                val det = h11 * h22 - h12 * h21
-                val term = max(0f, s1 * s1 - 4f * det * det)
-                val sqrtTerm = sqrt(term)
-                val l1 = (s1 + sqrtTerm) * 0.5f
-                val l2 = max(0f, (s1 - sqrtTerm) * 0.5f)
-                val sigma1 = sqrt(l1)
-                val sigma2 = sqrt(l2)
-
-                this.lastSigma1 = sigma1
-                this.lastSigma2 = sigma2
-
-                val kappaDb = if (sigma2 > 1e-5f) 20f * log10(sigma1 / sigma2) else 99f
-                this.lastKappaDb = kappaDb
-                this.lastSpatialMode = if (kappaDb < 6f) 1 else 0
-            } else {
-                // Mono mode
-                var dot11 = 0f
-                var energyY1 = 0f
-                var energyX1 = 0f
-                for (idx in preamble.indices) {
-                    val y1 = buffer.array[bestStart + idx]
-                    val x1 = preamble[idx]
-                    dot11 += y1 * x1
-                    energyY1 += y1 * y1
-                    energyX1 += x1 * x1
-                }
-                val h11 = dot11 / sqrt(max(energyY1 * energyX1, 1e-7f))
-                this.lastH11 = h11
-                this.lastH12 = 0f
-                this.lastH21 = 0f
-                this.lastH22 = 0f
-                this.lastSigma1 = h11
-                this.lastSigma2 = 0f
-                this.lastKappaDb = 99f
-                this.lastSpatialMode = 0
             }
 
-            val scale = bestDot / preambleEnergy
-            var errorEnergy = 0f
-            for (idx in preamble.indices) {
-                val estimate = scale * preamble[idx]
-                val err = buffer.array[bestStart + idx] - estimate
-                errorEnergy += err * err
-            }
-
-            val signalPower = max(1e-7f, (scale * scale * preambleEnergy) / preamble.size)
-            val noisePower = max(1e-7f, errorEnergy / preamble.size)
-            val snrDb = 10.0f * log10(signalPower / noisePower)
-            val evmPct = sqrt(noisePower / signalPower) * 100.0f
-            android.util.Log.i("CyrinxHILAndroid", "Preamble lock found! start=$bestStart (first crossing=$start) corr=$bestCorr snrDb=$snrDb")
-            return PreambleLock(index = bestStart, correlation = bestCorr, snrDb = snrDb, evmPct = evmPct)
+            coarseStart += 8
         }
-        if (maxCorrObserved > 0.01f) {
+
+        if (maxCorrObserved >= syncThreshold * 0.7f) {
             android.util.Log.d("CyrinxHILAndroid", "maxCorrObserved=$maxCorrObserved at index $maxCorrIndex (threshold=$syncThreshold, searchSize=${searchLimit - lowerBound + 1}, bufferSize=${buffer.size})")
         }
         return null
     }
 
     private fun channelReport(lockResult: PreambleLock): ChannelReport {
-        val estimatedPer = max(0f, min(1f, 1.0f - lockResult.correlation))
+        val estimatedPer = max(0f, min(1f, (0.25f - lockResult.correlation) / 0.25f))
         return ChannelReport(
             snrDb = lockResult.snrDb,
             evmPct = lockResult.evmPct,
@@ -831,9 +879,10 @@ class AcousticPhyLink(private val config: SessionConfig) {
     }
 
     private fun trimUnlockedBufferForResync(headerWindow: Int) {
-        val keep = max(preamble.size * 2, headerWindow)
-        if (rxBuffer.size > keep) {
-            val dropped = rxBuffer.size - keep
+        val maxBufferSamples = 72000 // 1.5 seconds
+        val keepSamples = 48000 // 1.0 second
+        if (rxBuffer.size > maxBufferSamples) {
+            val dropped = rxBuffer.size - keepSamples
             dropFront(dropped)
             rxSearchStart = max(0, rxSearchStart - dropped)
         }
@@ -865,7 +914,7 @@ class AcousticPhyLink(private val config: SessionConfig) {
 
         val centerHz = (bandStartHz + bandEndHz) * 0.5f
         val chipSpan = 4
-        val maxCap = if (bandStartHz >= 18000) 0.70f else 0.12f
+        val maxCap = if (bandStartHz >= 9000) 0.70f else 0.12f
         val amplitude = min(max(txGainCap, 0f), maxCap)
         val out = FloatArray(zc.size * chipSpan)
         var sampleIndex = 0
@@ -927,9 +976,14 @@ class AcousticPhyLink(private val config: SessionConfig) {
         return value
     }
 
-    private fun modulateOfdm(payload: ByteArray): FloatArray {
+    private fun modulateOfdm(payload: ByteArray, mode: AcousticBodyMode): FloatArray {
         val bits = BitPacking.encodeLengthPrefixed(payload)
-        val qpskSymbols = mapBitsToQpsk(bits)
+        val bitsPerSymbol = when (mode) {
+            AcousticBodyMode.TURBO_16QAM -> 4
+            AcousticBodyMode.TURBO_64QAM -> 6
+            else -> 2
+        }
+        val symbols = mapBitsToSymbols(bits, bitsPerSymbol)
         val sig = synchronized(lock) { peerDeviceSignature }
         val mask = synchronized(lock) { peerNotchMask }
 
@@ -952,7 +1006,7 @@ class AcousticPhyLink(private val config: SessionConfig) {
         if (activeCount <= 0) {
             return FloatArray(0)
         }
-        val frameCount = ceil(qpskSymbols.size.toDouble() / activeCount.toDouble()).toInt()
+        val frameCount = ceil(symbols.size.toDouble() / activeCount.toDouble()).toInt()
         val symbolLength = ofdmFftSize + ofdmCpSamples
         val out = FloatArray(frameCount * symbolLength)
 
@@ -968,13 +1022,13 @@ class AcousticPhyLink(private val config: SessionConfig) {
 
         for (frameIdx in 0 until frameCount) {
             val start = frameIdx * activeCount
-            val end = min(start + activeCount, qpskSymbols.size)
+            val end = min(start + activeCount, symbols.size)
 
             re.fill(0f)
             im.fill(0f)
 
             for (idx in 0 until activeCount) {
-                val symbol = if (start + idx < end) qpskSymbols[start + idx] else 0.toByte()
+                val symbol = if (start + idx < end) symbols[start + idx] else 0.toByte()
                 val bin = activeBinsFiltered[idx]
 
                 var eqFactor = 1.0f
@@ -989,25 +1043,22 @@ class AcousticPhyLink(private val config: SessionConfig) {
                     eqFactor = java.lang.Math.pow(10.0, (dbBoost / 20.0).toDouble()).toFloat()
                 }
 
-                val norm = 0.70710677f * eqFactor
-                when (symbol.toInt() and 0x3) {
-                    0 -> {
-                        re[bin] = norm
-                        im[bin] = norm
-                    }
-                    1 -> {
-                        re[bin] = -norm
-                        im[bin] = norm
-                    }
-                    2 -> {
-                        re[bin] = norm
-                        im[bin] = -norm
-                    }
+                val point = when (bitsPerSymbol) {
+                    4 -> map16Qam(symbol)
+                    6 -> map64Qam(symbol)
                     else -> {
-                        re[bin] = -norm
-                        im[bin] = -norm
+                        val norm = 0.70710677f
+                        when (symbol.toInt() and 0x3) {
+                            0 -> Pair(norm, norm)
+                            1 -> Pair(-norm, norm)
+                            2 -> Pair(norm, -norm)
+                            else -> Pair(-norm, -norm)
+                        }
                     }
                 }
+
+                re[bin] = point.first * eqFactor
+                im[bin] = point.second * eqFactor
 
                 val mirror = (ofdmFftSize - bin) % ofdmFftSize
                 if (mirror != bin) {
@@ -1029,10 +1080,9 @@ class AcousticPhyLink(private val config: SessionConfig) {
                     maxPeak = absV
                 }
             }
-            val peakIfScaled = maxPeak * scale
-            var finalScale = scale
-            if (peakIfScaled > 0.95f) {
-                finalScale = 0.95f / max(1e-7f, maxPeak)
+            var finalScale = 0.0f
+            if (maxPeak > 1e-7f) {
+                finalScale = amplitude / maxPeak
             }
 
             val outStart = frameIdx * symbolLength
@@ -1047,7 +1097,7 @@ class AcousticPhyLink(private val config: SessionConfig) {
         return out
     }
 
-    private fun demodulateOfdm(samples: FloatArray): ByteArray? {
+    private fun demodulateOfdm(samples: FloatArray, mode: AcousticBodyMode, expectedLength: Int? = null): ByteArray? {
         val symbolLength = ofdmFftSize + ofdmCpSamples
         if (samples.size < symbolLength) {
             return null
@@ -1074,42 +1124,436 @@ class AcousticPhyLink(private val config: SessionConfig) {
         if (activeCount <= 0) {
             return null
         }
-        val totalBits = frameCount * activeCount * 2
-        val bits = ByteArray(totalBits)
-        var bitIdx = 0
+        val bitsPerSymbol = when (mode) {
+            AcousticBodyMode.TURBO_16QAM -> 4
+            AcousticBodyMode.TURBO_64QAM -> 6
+            else -> 2
+        }
 
-        val re = FloatArray(ofdmFftSize)
-        val im = FloatArray(ofdmFftSize)
+        val binFactors = FloatArray(ofdmFftSize)
+        val multiplier = 2.0f * Math.PI.toFloat() / ofdmFftSize
+        for (i in 0 until activeCount) {
+            val bin = activeBinsFiltered[i]
+            binFactors[bin] = bin * multiplier
+        }
+
+        val equalizedFrames = ArrayList<Pair<FloatArray, FloatArray>>(frameCount)
+        var sharedTau = 0.0f
+        var sharedConj = false
 
         for (frameIdx in 0 until frameCount) {
             val start = (frameIdx * symbolLength) + ofdmCpSamples
+            val re = FloatArray(ofdmFftSize)
+            val im = FloatArray(ofdmFftSize)
 
             System.arraycopy(samples, start, re, 0, ofdmFftSize)
             im.fill(0f)
 
             fft.transform(re, im, forward = true)
 
+            var totalEnergy = 0f
             for (idx in 0 until activeCount) {
                 val bin = activeBinsFiltered[idx]
-                val symbol = demapQpsk(re[bin], im[bin]).toInt()
-                bits[bitIdx++] = ((symbol ushr 1) and 1).toByte()
-                bits[bitIdx++] = (symbol and 1).toByte()
+                totalEnergy += re[bin] * re[bin] + im[bin] * im[bin]
+            }
+            val avgEnergy = totalEnergy / max(1, activeCount)
+            val normFactor = sqrt(max(avgEnergy, 1e-7f))
+
+            // Pre-divide active bins by normFactor once.
+            val normRe = FloatArray(ofdmFftSize)
+            val normIm = FloatArray(ofdmFftSize)
+            for (i in 0 until activeCount) {
+                val bin = activeBinsFiltered[i]
+                normRe[bin] = re[bin] / normFactor
+                normIm[bin] = im[bin] / normFactor
+            }
+
+            var bestTau = 0.0f
+            var bestTheta = 0.0f
+            var bestConj = false
+            var minMSE = Float.MAX_VALUE
+
+            if (frameIdx == 0) {
+                val tauCoarse = floatArrayOf(-8.0f, -6.0f, -4.0f, -2.0f, 0.0f, 2.0f, 4.0f, 6.0f, 8.0f)
+                val thetaCoarseIdx = intArrayOf(0, 4, 8, 12, 16)
+
+                var bestCoarseTau = 0.0f
+                var bestCoarseThetaIdx = 8
+                var bestCoarseConj = false
+                var minCoarseMSE = Float.MAX_VALUE
+
+                for (conj in listOf(false, true)) {
+                    for (tau in tauCoarse) {
+                        for (thetaIdx in thetaCoarseIdx) {
+                            val theta = -Math.PI.toFloat() / 4.0f + (thetaIdx * Math.PI.toFloat() / 32.0f)
+                            var sumError = 0f
+
+                            for (i in 0 until activeCount) {
+                                val bin = activeBinsFiltered[i]
+                                val r = normRe[bin]
+                                val iVal = if (conj) -normIm[bin] else normIm[bin]
+
+                                val phi = theta + binFactors[bin] * tau
+                                val cosPhi = kotlin.math.cos(phi)
+                                val sinPhi = kotlin.math.sin(phi)
+
+                                val rRot = r * cosPhi + iVal * sinPhi
+                                val iRot = iVal * cosPhi - r * sinPhi
+
+                                val err = when (bitsPerSymbol) {
+                                    4 -> {
+                                        val d = 0.31622777f
+                                        val absR = kotlin.math.abs(rRot)
+                                        val errR = if (absR < 2.0f * d) kotlin.math.abs(absR - d) else kotlin.math.abs(absR - 3.0f * d)
+                                        val absI = kotlin.math.abs(iRot)
+                                        val errI = if (absI < 2.0f * d) kotlin.math.abs(absI - d) else kotlin.math.abs(absI - 3.0f * d)
+                                        errR * errR + errI * errI
+                                    }
+                                    6 -> {
+                                        val d = 0.15430335f
+                                        val absR = kotlin.math.abs(rRot)
+                                        val errR = when {
+                                            absR < 2.0f * d -> kotlin.math.abs(absR - d)
+                                            absR < 4.0f * d -> kotlin.math.abs(absR - 3.0f * d)
+                                            absR < 6.0f * d -> kotlin.math.abs(absR - 5.0f * d)
+                                            else -> kotlin.math.abs(absR - 7.0f * d)
+                                        }
+                                        val absI = kotlin.math.abs(iRot)
+                                        val errI = when {
+                                            absI < 2.0f * d -> kotlin.math.abs(absI - d)
+                                            absI < 4.0f * d -> kotlin.math.abs(absI - 3.0f * d)
+                                            absI < 6.0f * d -> kotlin.math.abs(absI - 5.0f * d)
+                                            else -> kotlin.math.abs(absI - 7.0f * d)
+                                        }
+                                        errR * errR + errI * errI
+                                    }
+                                    else -> {
+                                        val norm = 0.70710677f
+                                        val errR = kotlin.math.abs(rRot) - norm
+                                        val errI = kotlin.math.abs(iRot) - norm
+                                        errR * errR + errI * errI
+                                    }
+                                }
+                                sumError += err
+                            }
+
+                            val penalty = 0.0001f * (tau * tau) + 0.00005f * (theta * theta)
+                            val score = sumError + penalty
+                            if (score < minCoarseMSE) {
+                                minCoarseMSE = score
+                                bestCoarseTau = tau
+                                bestCoarseThetaIdx = thetaIdx
+                                bestCoarseConj = conj
+                            }
+                        }
+                    }
+                }
+
+                // Fine search around the best coarse point
+                val tauFine = ArrayList<Float>()
+                for (tOffset in floatArrayOf(-1.0f, -0.75f, -0.5f, -0.25f, 0.0f, 0.25f, 0.5f, 0.75f, 1.0f)) {
+                    val t = bestCoarseTau + tOffset
+                    if (t >= -8.0f && t <= 8.0f) {
+                        tauFine.add(t)
+                    }
+                }
+
+                val thetaFineIdx = ArrayList<Int>()
+                for (idxOffset in intArrayOf(-2, -1, 0, 1, 2)) {
+                    val idx = bestCoarseThetaIdx + idxOffset
+                    if (idx >= 0 && idx <= 16) {
+                        thetaFineIdx.add(idx)
+                    }
+                }
+
+                bestConj = bestCoarseConj
+                for (tau in tauFine) {
+                    for (thetaIdx in thetaFineIdx) {
+                        val theta = -Math.PI.toFloat() / 4.0f + (thetaIdx * Math.PI.toFloat() / 32.0f)
+                        var sumError = 0f
+
+                        for (i in 0 until activeCount) {
+                            val bin = activeBinsFiltered[i]
+                            val r = normRe[bin]
+                            val iVal = if (bestConj) -normIm[bin] else normIm[bin]
+
+                            val phi = theta + binFactors[bin] * tau
+                            val cosPhi = kotlin.math.cos(phi)
+                            val sinPhi = kotlin.math.sin(phi)
+
+                            val rRot = r * cosPhi + iVal * sinPhi
+                            val iRot = iVal * cosPhi - r * sinPhi
+
+                            val err = when (bitsPerSymbol) {
+                                4 -> {
+                                    val d = 0.31622777f
+                                    val absR = kotlin.math.abs(rRot)
+                                    val errR = if (absR < 2.0f * d) kotlin.math.abs(absR - d) else kotlin.math.abs(absR - 3.0f * d)
+                                    val absI = kotlin.math.abs(iRot)
+                                    val errI = if (absI < 2.0f * d) kotlin.math.abs(absI - d) else kotlin.math.abs(absI - 3.0f * d)
+                                    errR * errR + errI * errI
+                                }
+                                6 -> {
+                                    val d = 0.15430335f
+                                    val absR = kotlin.math.abs(rRot)
+                                    val errR = when {
+                                        absR < 2.0f * d -> kotlin.math.abs(absR - d)
+                                        absR < 4.0f * d -> kotlin.math.abs(absR - 3.0f * d)
+                                        absR < 6.0f * d -> kotlin.math.abs(absR - 5.0f * d)
+                                        else -> kotlin.math.abs(absR - 7.0f * d)
+                                    }
+                                    val absI = kotlin.math.abs(iRot)
+                                    val errI = when {
+                                        absI < 2.0f * d -> kotlin.math.abs(absI - d)
+                                        absI < 4.0f * d -> kotlin.math.abs(absI - 3.0f * d)
+                                        absI < 6.0f * d -> kotlin.math.abs(absI - 5.0f * d)
+                                        else -> kotlin.math.abs(absI - 7.0f * d)
+                                    }
+                                    errR * errR + errI * errI
+                                }
+                                else -> {
+                                    val norm = 0.70710677f
+                                    val errR = kotlin.math.abs(rRot) - norm
+                                    val errI = kotlin.math.abs(iRot) - norm
+                                    errR * errR + errI * errI
+                                }
+                            }
+                            sumError += err
+                        }
+
+                        val penalty = 0.0001f * (tau * tau) + 0.00005f * (theta * theta)
+                        val score = sumError + penalty
+                        if (score < minMSE) {
+                            minMSE = score
+                            bestTau = tau
+                            bestTheta = theta
+                        }
+                    }
+                }
+
+                sharedTau = bestTau
+                sharedConj = bestConj
+            } else {
+                bestTau = sharedTau
+                bestConj = sharedConj
+                for (thetaIdx in 0..16) {
+                    val theta = -Math.PI.toFloat() / 4.0f + (thetaIdx * Math.PI.toFloat() / 32.0f)
+                    var sumError = 0f
+
+                    for (i in 0 until activeCount) {
+                        val bin = activeBinsFiltered[i]
+                        val r = normRe[bin]
+                        val iVal = if (bestConj) -normIm[bin] else normIm[bin]
+
+                        val phi = theta + binFactors[bin] * bestTau
+                        val cosPhi = kotlin.math.cos(phi)
+                        val sinPhi = kotlin.math.sin(phi)
+
+                        val rRot = r * cosPhi + iVal * sinPhi
+                        val iRot = iVal * cosPhi - r * sinPhi
+
+                        val err = when (bitsPerSymbol) {
+                            4 -> {
+                                val d = 0.31622777f
+                                val absR = kotlin.math.abs(rRot)
+                                val errR = if (absR < 2.0f * d) kotlin.math.abs(absR - d) else kotlin.math.abs(absR - 3.0f * d)
+                                val absI = kotlin.math.abs(iRot)
+                                val errI = if (absI < 2.0f * d) kotlin.math.abs(absI - d) else kotlin.math.abs(absI - 3.0f * d)
+                                errR * errR + errI * errI
+                            }
+                            6 -> {
+                                val d = 0.15430335f
+                                val absR = kotlin.math.abs(rRot)
+                                val errR = when {
+                                    absR < 2.0f * d -> kotlin.math.abs(absR - d)
+                                    absR < 4.0f * d -> kotlin.math.abs(absR - 3.0f * d)
+                                    absR < 6.0f * d -> kotlin.math.abs(absR - 5.0f * d)
+                                    else -> kotlin.math.abs(absR - 7.0f * d)
+                                }
+                                val absI = kotlin.math.abs(iRot)
+                                val errI = when {
+                                    absI < 2.0f * d -> kotlin.math.abs(absI - d)
+                                    absI < 4.0f * d -> kotlin.math.abs(absI - 3.0f * d)
+                                    absI < 6.0f * d -> kotlin.math.abs(absI - 5.0f * d)
+                                    else -> kotlin.math.abs(absI - 7.0f * d)
+                                }
+                                errR * errR + errI * errI
+                            }
+                            else -> {
+                                val norm = 0.70710677f
+                                val errR = kotlin.math.abs(rRot) - norm
+                                val errI = kotlin.math.abs(iRot) - norm
+                                errR * errR + errI * errI
+                            }
+                        }
+                        sumError += err
+                    }
+
+                    val penalty = 0.0001f * (bestTau * bestTau) + 0.00005f * (theta * theta)
+                    val score = sumError + penalty
+                    if (score < minMSE) {
+                        minMSE = score
+                        bestTheta = theta
+                    }
+                }
+            }
+
+            android.util.Log.i(
+                "CyrinxHILAndroid",
+                "demodulateOfdm Frame $frameIdx: avgEnergy=$avgEnergy, bestTau=$bestTau, " +
+                "bestTheta=$bestTheta, bestConj=$bestConj, minMSE=$minMSE"
+            )
+
+            val eqRe = FloatArray(ofdmFftSize)
+            val eqIm = FloatArray(ofdmFftSize)
+            for (i in 0 until ofdmFftSize) {
+                eqRe[i] = re[i]
+                eqIm[i] = if (bestConj) -im[i] else im[i]
+            }
+            for (i in 0 until activeCount) {
+                val bin = activeBinsFiltered[i]
+                val phi = bestTheta + binFactors[bin] * bestTau
+                val cosPhi = kotlin.math.cos(phi)
+                val sinPhi = kotlin.math.sin(phi)
+                val r = re[bin]
+                val iVal = if (bestConj) -im[bin] else im[bin]
+                eqRe[bin] = r * cosPhi + iVal * sinPhi
+                eqIm[bin] = iVal * cosPhi - r * sinPhi
+            }
+
+            equalizedFrames.add(Pair(eqRe, eqIm))
+        }
+
+        // Try both standard and conjugate-inverted constellations across 4 quadrant rotations
+        for (conj in listOf(false, true)) {
+            for (q in 0..3) {
+                val bits = ByteArray(frameCount * activeCount * bitsPerSymbol)
+                var bitIdx = 0
+
+                for (frameIdx in 0 until frameCount) {
+                    val (eqRe, eqIm) = equalizedFrames[frameIdx]
+                    var activeEnergy = 0f
+                    for (idx in 0 until activeCount) {
+                        val bin = activeBinsFiltered[idx]
+                        activeEnergy += eqRe[bin] * eqRe[bin] + eqIm[bin] * eqIm[bin]
+                    }
+                    val avgEnergy = activeEnergy / max(1, activeCount)
+                    val normFactor = sqrt(max(avgEnergy, 1e-7f))
+
+                    for (idx in 0 until activeCount) {
+                        val bin = activeBinsFiltered[idx]
+                        val reNorm = eqRe[bin] / normFactor
+                        var imNorm = eqIm[bin] / normFactor
+
+                        if (conj) {
+                            imNorm = -imNorm
+                        }
+
+                        var rRot = reNorm
+                        var iRot = imNorm
+
+                        when (q) {
+                            1 -> { // 90 degrees CCW: (x, y) -> (-y, x)
+                                val tmp = rRot
+                                rRot = -iRot
+                                iRot = tmp
+                            }
+                            2 -> { // 180 degrees: (x, y) -> (-x, -y)
+                                rRot = -rRot
+                                iRot = -iRot
+                            }
+                            3 -> { // 270 degrees CCW: (x, y) -> (y, -x)
+                                val tmp = rRot
+                                rRot = iRot
+                                iRot = -tmp
+                            }
+                        }
+
+                        val symbol = when (bitsPerSymbol) {
+                            4 -> demap16Qam(rRot, iRot)
+                            6 -> demap64Qam(rRot, iRot)
+                            else -> demapQpsk(rRot, iRot)
+                        }.toInt()
+
+                        for (shift in (bitsPerSymbol - 1) downTo 0) {
+                            bits[bitIdx++] = ((symbol ushr shift) and 1).toByte()
+                        }
+                    }
+                }
+
+                val payload = BitPacking.decodeLengthPrefixed(bits)
+                if (payload != null) {
+                    if (expectedLength != null) {
+                        if (payload.size == expectedLength) {
+                            android.util.Log.i(
+                                "CyrinxHILAndroid",
+                                "OFDM Demod q=$q conj=$conj success expected size $expectedLength"
+                            )
+                            return payload
+                        } else {
+                            android.util.Log.d(
+                                "CyrinxHILAndroid",
+                                "OFDM Demod q=$q conj=$conj got ${payload.size} exp=$expectedLength"
+                            )
+                        }
+                    } else {
+                        android.util.Log.i(
+                            "CyrinxHILAndroid",
+                            "OFDM Demod q=$q conj=$conj success size ${payload.size}"
+                        )
+                        return payload
+                    }
+                }
             }
         }
 
+        // Fallback to q = 0, conj = false
+        val bits = ByteArray(frameCount * activeCount * bitsPerSymbol)
+        var bitIdx = 0
+        for (frameIdx in 0 until frameCount) {
+            val (eqRe, eqIm) = equalizedFrames[frameIdx]
+            var activeEnergy = 0f
+            for (idx in 0 until activeCount) {
+                val bin = activeBinsFiltered[idx]
+                activeEnergy += eqRe[bin] * eqRe[bin] + eqIm[bin] * eqIm[bin]
+            }
+            val avgEnergy = activeEnergy / max(1, activeCount)
+            val normFactor = sqrt(max(avgEnergy, 1e-7f))
+
+            for (idx in 0 until activeCount) {
+                val bin = activeBinsFiltered[idx]
+                val reNorm = eqRe[bin] / normFactor
+                val imNorm = eqIm[bin] / normFactor
+
+                val symbol = when (bitsPerSymbol) {
+                    4 -> demap16Qam(reNorm, imNorm)
+                    6 -> demap64Qam(reNorm, imNorm)
+                    else -> demapQpsk(reNorm, imNorm)
+                }.toInt()
+
+                for (shift in (bitsPerSymbol - 1) downTo 0) {
+                    bits[bitIdx++] = ((symbol ushr shift) and 1).toByte()
+                }
+            }
+        }
         return BitPacking.decodeLengthPrefixed(bits)
     }
 
-    private fun expectedOfdmSamples(payloadBytes: Int): Int {
+    private fun expectedOfdmSamples(payloadBytes: Int, mode: AcousticBodyMode): Int {
         if (payloadBytes < 0 || ofdmFftSize <= 0 || ofdmCpSamples <= 0) {
             return 0
         }
         if (ofdmActiveCarrierCount <= 0) {
             return 0
         }
+        val bitsPerSymbol = when (mode) {
+            AcousticBodyMode.TURBO_16QAM -> 4
+            AcousticBodyMode.TURBO_64QAM -> 6
+            else -> 2
+        }
         val bitCount = (payloadBytes + 2) * 8
-        val qpskSymbols = (bitCount + 1) / 2
-        val frameCount = max(1, (qpskSymbols + ofdmActiveCarrierCount - 1) / ofdmActiveCarrierCount)
+        val symbolsCount = (bitCount + bitsPerSymbol - 1) / bitsPerSymbol
+        val frameCount = max(1, (symbolsCount + ofdmActiveCarrierCount - 1) / ofdmActiveCarrierCount)
         return frameCount * (ofdmFftSize + ofdmCpSamples)
     }
 
@@ -1120,18 +1564,123 @@ class AcousticPhyLink(private val config: SessionConfig) {
         return 3
     }
 
-    private fun mapBitsToQpsk(bits: ByteArray): ByteArray {
+    private fun map16Qam(symbol: Byte): Pair<Float, Float> {
+        val d = 0.31622777f
+        val b = symbol.toInt() and 0xF
+        val iBits = b and 0x3
+        val qBits = (b ushr 2) and 0x3
+
+        val re = when (iBits) {
+            0 -> -3.0f * d
+            1 -> -1.0f * d
+            3 -> 1.0f * d
+            else -> 3.0f * d
+        }
+
+        val im = when (qBits) {
+            0 -> -3.0f * d
+            1 -> -1.0f * d
+            3 -> 1.0f * d
+            else -> 3.0f * d
+        }
+
+        return Pair(re, im)
+    }
+
+    private fun demap16Qam(re: Float, im: Float): Byte {
+        val d = 0.31622777f
+        val iVal = if (re < -2.0f * d) {
+            0
+        } else if (re < 0.0f) {
+            1
+        } else if (re < 2.0f * d) {
+            3
+        } else {
+            2
+        }
+
+        val qVal = if (im < -2.0f * d) {
+            0
+        } else if (im < 0.0f) {
+            1
+        } else if (im < 2.0f * d) {
+            3
+        } else {
+            2
+        }
+
+        return (iVal or (qVal shl 2)).toByte()
+    }
+
+    private fun map64Qam(symbol: Byte): Pair<Float, Float> {
+        val d = 0.15430335f
+        val b = symbol.toInt() and 0x3F
+        val iBits = b and 0x7
+        val qBits = (b ushr 3) and 0x7
+
+        val re = when (iBits) {
+            0 -> -7.0f * d
+            1 -> -5.0f * d
+            2 -> -3.0f * d
+            3 -> -1.0f * d
+            4 -> 1.0f * d
+            5 -> 3.0f * d
+            6 -> 5.0f * d
+            else -> 7.0f * d
+        }
+
+        val im = when (qBits) {
+            0 -> -7.0f * d
+            1 -> -5.0f * d
+            2 -> -3.0f * d
+            3 -> -1.0f * d
+            4 -> 1.0f * d
+            5 -> 3.0f * d
+            6 -> 5.0f * d
+            else -> 7.0f * d
+        }
+
+        return Pair(re, im)
+    }
+
+    private fun demap64Qam(re: Float, im: Float): Byte {
+        val d = 0.15430335f
+        val iVal = if (re < -6.0f * d) 0
+        else if (re < -4.0f * d) 1
+        else if (re < -2.0f * d) 2
+        else if (re < 0.0f) 3
+        else if (re < 2.0f * d) 4
+        else if (re < 4.0f * d) 5
+        else if (re < 6.0f * d) 6
+        else 7
+
+        val qVal = if (im < -6.0f * d) 0
+        else if (im < -4.0f * d) 1
+        else if (im < -2.0f * d) 2
+        else if (im < 0.0f) 3
+        else if (im < 2.0f * d) 4
+        else if (im < 4.0f * d) 5
+        else if (im < 6.0f * d) 6
+        else 7
+
+        return (iVal or (qVal shl 3)).toByte()
+    }
+
+    private fun mapBitsToSymbols(bits: ByteArray, bitsPerSymbol: Int): ByteArray {
         if (bits.isEmpty()) {
             return byteArrayOf()
         }
-        val symbols = ByteArray((bits.size + 1) / 2)
+        val symbols = ByteArray((bits.size + bitsPerSymbol - 1) / bitsPerSymbol)
         var index = 0
         var symIdx = 0
         while (index < bits.size) {
-            val high = bits[index].toInt() and 1
-            val low = if (index + 1 < bits.size) (bits[index + 1].toInt() and 1) else 0
-            symbols[symIdx++] = ((high shl 1) or low).toByte()
-            index += 2
+            var symbol = 0
+            for (shift in (bitsPerSymbol - 1) downTo 0) {
+                val bit = if (index < bits.size) bits[index].toInt() and 1 else 0
+                symbol = (symbol shl 1) or bit
+                index++
+            }
+            symbols[symIdx++] = symbol.toByte()
         }
         return symbols
     }
@@ -1152,11 +1701,13 @@ class AcousticPhyLink(private val config: SessionConfig) {
 
         fun decodeLengthPrefixed(bits: ByteArray): ByteArray? {
             if (bits.size < 16) {
+                android.util.Log.e("CyrinxHILAndroid", "decodeLengthPrefixed: bits.size (${bits.size}) < 16")
                 return null
             }
             val length = bitsToUInt16(bits, 0)
             val requiredBits = 16 + (length * 8)
             if (bits.size < requiredBits) {
+                android.util.Log.w("CyrinxHILAndroid", "decodeLengthPrefixed: bits.size (${bits.size}) < required ($requiredBits), length prefix was $length")
                 return null
             }
             return bitsToBytes(bits, 16, requiredBits)

@@ -86,16 +86,39 @@ public struct VDSPDCSSConfig: Sendable {
 
 /// vDSP-backed modulators and demodulators for ultrasonic waveforms.
 public enum VDSPPHY {
+    /// Maps payload bytes to OFDM frames with arbitrary mode and returns real-valued waveform samples.
+    public static func modulateOFDM(
+        payload: [UInt8],
+        mode: UInt8,
+        config: VDSPOFDMConfig = VDSPOFDMConfig()
+    ) throws -> [Float] {
+        #if canImport(Accelerate)
+            return try OFDMModem(config: config, mode: mode).modulate(payload: payload)
+        #else
+            throw VDSPPHYError.unavailable("Accelerate/vDSP unavailable on this platform")
+        #endif
+    }
+
+    /// Demodulates real-valued OFDM waveform samples of arbitrary mode back into payload bytes.
+    public static func demodulateOFDM(
+        samples: [Float],
+        mode: UInt8,
+        config: VDSPOFDMConfig = VDSPOFDMConfig(),
+        expectedLength: Int? = nil
+    ) throws -> [UInt8] {
+        #if canImport(Accelerate)
+            return try OFDMModem(config: config, mode: mode).demodulate(samples: samples, expectedLength: expectedLength)
+        #else
+            throw VDSPPHYError.unavailable("Accelerate/vDSP unavailable on this platform")
+        #endif
+    }
+
     /// Maps payload bytes to OFDM QPSK frames and returns real-valued waveform samples.
     public static func modulateOFDMQPSK(
         payload: [UInt8],
         config: VDSPOFDMConfig = VDSPOFDMConfig()
     ) throws -> [Float] {
-        #if canImport(Accelerate)
-            return try OFDMQPSKModem(config: config).modulate(payload: payload)
-        #else
-            throw VDSPPHYError.unavailable("Accelerate/vDSP unavailable on this platform")
-        #endif
+        return try modulateOFDM(payload: payload, mode: 1, config: config)
     }
 
     /// Demodulates real-valued OFDM-QPSK waveform samples back into payload bytes.
@@ -103,11 +126,7 @@ public enum VDSPPHY {
         samples: [Float],
         config: VDSPOFDMConfig = VDSPOFDMConfig()
     ) throws -> [UInt8] {
-        #if canImport(Accelerate)
-            return try OFDMQPSKModem(config: config).demodulate(samples: samples)
-        #else
-            throw VDSPPHYError.unavailable("Accelerate/vDSP unavailable on this platform")
-        #endif
+        return try demodulateOFDM(samples: samples, mode: 1, config: config)
     }
 
     /// Maps payload bytes to differential chirp symbols across the configured ultrasonic sweep.
@@ -136,16 +155,27 @@ public enum VDSPPHY {
 }
 
 #if canImport(Accelerate)
-    private struct OFDMQPSKModem {
+    private struct OFDMModem {
         private let config: VDSPOFDMConfig
+        private let mode: UInt8
         private let dftForward: vDSP.DiscreteFourierTransform<Float>
         private let dftInverse: vDSP.DiscreteFourierTransform<Float>
         private let activeBins: [Int]
         private let amplitude: Float
+        private let bitsPerSymbol: Int
 
-        init(config: VDSPOFDMConfig) throws {
-            try OFDMQPSKModem.validate(config: config)
+        init(config: VDSPOFDMConfig, mode: UInt8) throws {
+            try OFDMModem.validate(config: config)
             self.config = config
+            self.mode = mode
+            switch mode {
+            case 2:
+                self.bitsPerSymbol = 4
+            case 3:
+                self.bitsPerSymbol = 6
+            default:
+                self.bitsPerSymbol = 2
+            }
             dftForward = try vDSP.DiscreteFourierTransform(
                 count: config.fftSize,
                 direction: .forward,
@@ -158,45 +188,110 @@ public enum VDSPPHY {
                 transformType: .complexComplex,
                 ofType: Float.self
             )
-            activeBins = try OFDMQPSKModem.makeActiveBins(config: config)
+            activeBins = try OFDMModem.makeActiveBins(config: config)
             amplitude = min(max(config.txGainCap, 0), 0.95)
         }
 
         func modulate(payload: [UInt8]) throws -> [Float] {
             let bits = BitPacking.encodeLengthPrefixed(payload)
-            let qpskSymbols = mapBitsToQPSK(bits)
-            // Pack QPSK symbols into OFDM symbols; each frame consumes activeBins.count points.
-            let frameCount = Int(ceil(Double(qpskSymbols.count) / Double(activeBins.count)))
+            let symbols = mapBitsToSymbols(bits: bits, bitsPerSymbol: bitsPerSymbol)
+            let frameCount = Int(ceil(Double(symbols.count) / Double(activeBins.count)))
             var output: [Float] = []
             output.reserveCapacity(frameCount * (config.fftSize + config.cpSamples))
 
             for frameIndex in 0..<frameCount {
                 let start = frameIndex * activeBins.count
-                let end = min(start + activeBins.count, qpskSymbols.count)
-                let frameSymbols = Array(qpskSymbols[start..<end])
+                let end = min(start + activeBins.count, symbols.count)
+                var frameSymbols = Array(symbols[start..<end])
+                if frameSymbols.count < activeBins.count {
+                    let needed = activeBins.count - frameSymbols.count
+                    for i in 0..<needed {
+                        frameSymbols.append(UInt8(i % (1 << bitsPerSymbol)))
+                    }
+                }
                 let waveform = try modulateFrame(symbols: frameSymbols)
                 output.append(contentsOf: waveform)
             }
             return output
         }
 
-        func demodulate(samples: [Float]) throws -> [UInt8] {
+        func demodulate(samples: [Float], expectedLength: Int? = nil) throws -> [UInt8] {
             let symbolLength = config.fftSize + config.cpSamples
             guard samples.count >= symbolLength else {
                 throw VDSPPHYError.decodeFailure("not enough samples for OFDM demod")
             }
 
             let frameCount = samples.count / symbolLength
-            var bits: [UInt8] = []
-            bits.reserveCapacity(frameCount * activeBins.count * 2)
+            var equalizedFrames: [([Float], [Float])] = []
+            equalizedFrames.reserveCapacity(frameCount)
+
+            var sharedTau: Float? = nil
+            var sharedConj: Bool? = nil
 
             for frameIndex in 0..<frameCount {
                 let start = (frameIndex * symbolLength) + config.cpSamples
                 let end = start + config.fftSize
                 let frame = Array(samples[start..<end])
-                bits.append(contentsOf: try demodulateFrame(frame))
+
+                guard frame.count == config.fftSize else {
+                    throw VDSPPHYError.decodeFailure("invalid OFDM frame length")
+                }
+
+                var reOut = [Float](repeating: 0, count: config.fftSize)
+                var imOut = [Float](repeating: 0, count: config.fftSize)
+                dftForward.transform(
+                    inputReal: frame,
+                    inputImaginary: [Float](repeating: 0, count: frame.count),
+                    outputReal: &reOut,
+                    outputImaginary: &imOut
+                )
+                let (eqRe, eqIm, tau, conj) = equalizeFrame(
+                    re: reOut,
+                    im: imOut,
+                    sharedTau: sharedTau,
+                    sharedConj: sharedConj
+                )
+                sharedTau = tau
+                sharedConj = conj
+                equalizedFrames.append((eqRe, eqIm))
             }
 
+            for conj in [false, true] {
+                for q in 0..<4 {
+                    var bits: [UInt8] = []
+                    bits.reserveCapacity(frameCount * activeBins.count * bitsPerSymbol)
+
+                    for (eqRe, eqIm) in equalizedFrames {
+                        bits.append(contentsOf: demapBits(
+                            reOut: eqRe,
+                            imOut: eqIm,
+                            rotationQuadrant: q,
+                            conjugate: conj
+                        ))
+                    }
+
+                    if let payload = try? BitPacking.decodeLengthPrefixed(bits: bits) {
+                        if let expected = expectedLength {
+                            if payload.count == expected {
+                                return payload
+                            }
+                        } else {
+                            return payload
+                        }
+                    }
+                }
+            }
+
+            var bits: [UInt8] = []
+            bits.reserveCapacity(frameCount * activeBins.count * bitsPerSymbol)
+            for (eqRe, eqIm) in equalizedFrames {
+                bits.append(contentsOf: demapBits(
+                    reOut: eqRe,
+                    imOut: eqIm,
+                    rotationQuadrant: 0,
+                    conjugate: false
+                ))
+            }
             return try BitPacking.decodeLengthPrefixed(bits: bits)
         }
 
@@ -220,27 +315,19 @@ public enum VDSPPHY {
             return Array(scaled[cpStart..<n]) + scaled
         }
 
-        private func demodulateFrame(_ frame: [Float]) throws -> [UInt8] {
-            guard frame.count == config.fftSize else {
-                throw VDSPPHYError.decodeFailure("invalid OFDM frame length")
-            }
-
-            var reOut = [Float](repeating: 0, count: config.fftSize)
-            var imOut = [Float](repeating: 0, count: config.fftSize)
-            dftForward.transform(
-                inputReal: frame,
-                inputImaginary: [Float](repeating: 0, count: frame.count),
-                outputReal: &reOut,
-                outputImaginary: &imOut
-            )
-            return demapQPSKBits(reOut: reOut, imOut: imOut)
-        }
-
         private func fillSpectrum(symbols: [UInt8], real: inout [Float], imag: inout [Float]) {
             let binWidth = Float(config.sampleRateHz) / Float(config.fftSize)
             for (idx, bin) in activeBins.enumerated() {
                 let symbol = idx < symbols.count ? symbols[idx] : 0
-                let point = mapQPSK(symbol)
+                let point: (re: Float, im: Float)
+                switch bitsPerSymbol {
+                case 4:
+                    point = map16QAM(symbol)
+                case 6:
+                    point = map64QAM(symbol)
+                default:
+                    point = mapQPSK(symbol)
+                }
 
                 var eqFactor = Float(1.0)
                 let freq = Float(bin) * binWidth
@@ -267,9 +354,6 @@ public enum VDSPPHY {
         }
 
         private func scaleIFFTOutput(_ values: [Float]) -> [Float] {
-            // vDSP inverse DFT is unnormalized; apply FFT-size normalization and TX amplitude cap.
-            let fftScale = 1.0 / Float(config.fftSize)
-
             var maxPeak: Float = 0.0
             for v in values {
                 let absV = abs(v)
@@ -278,25 +362,216 @@ public enum VDSPPHY {
                 }
             }
 
-            let scale = amplitude * fftScale
-            let peakIfScaled = maxPeak * scale
-            var finalScale = scale
-            if peakIfScaled > 0.95 {
-                finalScale = 0.95 / max(1e-7, maxPeak)
+            var finalScale: Float = 0.0
+            if maxPeak > 1e-7 {
+                finalScale = amplitude / maxPeak
             }
 
             return values.map { $0 * finalScale }
         }
 
-        private func demapQPSKBits(reOut: [Float], imOut: [Float]) -> [UInt8] {
+        private func demapBits(
+            reOut: [Float],
+            imOut: [Float],
+            rotationQuadrant: Int,
+            conjugate: Bool = false
+        ) -> [UInt8] {
             var bits: [UInt8] = []
-            bits.reserveCapacity(activeBins.count * 2)
+            bits.reserveCapacity(activeBins.count * bitsPerSymbol)
+
+            var totalEnergy: Float = 0.0
             for bin in activeBins {
-                let symbol = demapQPSK(re: reOut[bin], im: imOut[bin])
-                bits.append((symbol >> 1) & 1)
-                bits.append(symbol & 1)
+                let re = reOut[bin]
+                let im = imOut[bin]
+                totalEnergy += re * re + im * im
+            }
+            let avgEnergy = totalEnergy / Float(max(1, activeBins.count))
+            let normFactor = sqrt(max(avgEnergy, 1e-7))
+
+            for bin in activeBins {
+                var reNorm = reOut[bin] / normFactor
+                var imNorm = imOut[bin] / normFactor
+
+                if conjugate {
+                    imNorm = -imNorm
+                }
+
+                switch rotationQuadrant {
+                case 1: // 90 degrees CCW: (x, y) -> (-y, x)
+                    let tmp = reNorm
+                    reNorm = -imNorm
+                    imNorm = tmp
+                case 2: // 180 degrees: (x, y) -> (-x, -y)
+                    reNorm = -reNorm
+                    imNorm = -imNorm
+                case 3: // 270 degrees CCW: (x, y) -> (y, -x)
+                    let tmp = reNorm
+                    reNorm = imNorm
+                    imNorm = -tmp
+                default:
+                    break
+                }
+
+                let symbol: UInt8
+                switch bitsPerSymbol {
+                case 4:
+                    symbol = demap16QAM(re: reNorm, im: imNorm)
+                case 6:
+                    symbol = demap64QAM(re: reNorm, im: imNorm)
+                default:
+                    symbol = demapQPSK(re: reNorm, im: imNorm)
+                }
+                for shift in (0..<bitsPerSymbol).reversed() {
+                    bits.append((symbol >> UInt8(shift)) & 1)
+                }
             }
             return bits
+        }
+
+        private func mapQPSK(_ symbol: UInt8) -> (re: Float, im: Float) {
+            let norm: Float = 0.70710677
+            switch symbol & 0x3 {
+            case 0: return (norm, norm)
+            case 1: return (-norm, norm)
+            case 2: return (norm, -norm)
+            default: return (-norm, -norm)
+            }
+        }
+
+        private func demapQPSK(re: Float, im: Float) -> UInt8 {
+            if re >= 0, im >= 0 { return 0 }
+            if re < 0, im >= 0 { return 1 }
+            if re >= 0, im < 0 { return 2 }
+            return 3
+        }
+
+        private func map16QAM(_ symbol: UInt8) -> (re: Float, im: Float) {
+            let d: Float = 0.31622777
+            let b = symbol & 0xF
+            let i_bits = b & 0x3
+            let q_bits = (b >> 2) & 0x3
+
+            let re: Float
+            switch i_bits {
+            case 0: re = -3.0 * d
+            case 1: re = -1.0 * d
+            case 3: re = 1.0 * d
+            default: re = 3.0 * d
+            }
+
+            let im: Float
+            switch q_bits {
+            case 0: im = -3.0 * d
+            case 1: im = -1.0 * d
+            case 3: im = 1.0 * d
+            default: im = 3.0 * d
+            }
+
+            return (re, im)
+        }
+
+        private func demap16QAM(re: Float, im: Float) -> UInt8 {
+            let d: Float = 0.31622777
+            let i_val: UInt8
+            if re < -2.0 * d {
+                i_val = 0
+            } else if re < 0.0 {
+                i_val = 1
+            } else if re < 2.0 * d {
+                i_val = 3
+            } else {
+                i_val = 2
+            }
+
+            let q_val: UInt8
+            if im < -2.0 * d {
+                q_val = 0
+            } else if im < 0.0 {
+                q_val = 1
+            } else if im < 2.0 * d {
+                q_val = 3
+            } else {
+                q_val = 2
+            }
+
+            return i_val | (q_val << 2)
+        }
+
+        private func map64QAM(_ symbol: UInt8) -> (re: Float, im: Float) {
+            let d: Float = 0.15430335
+            let b = symbol & 0x3F
+            let i_bits = b & 0x7
+            let q_bits = (b >> 3) & 0x7
+
+            let re: Float
+            switch i_bits {
+            case 0: re = -7.0 * d
+            case 1: re = -5.0 * d
+            case 2: re = -3.0 * d
+            case 3: re = -1.0 * d
+            case 4: re = 1.0 * d
+            case 5: re = 3.0 * d
+            case 6: re = 5.0 * d
+            default: re = 7.0 * d
+            }
+
+            let im: Float
+            switch q_bits {
+            case 0: im = -7.0 * d
+            case 1: im = -5.0 * d
+            case 2: im = -3.0 * d
+            case 3: im = -1.0 * d
+            case 4: im = 1.0 * d
+            case 5: im = 3.0 * d
+            case 6: im = 5.0 * d
+            default: im = 7.0 * d
+            }
+
+            return (re, im)
+        }
+
+        private func demap64QAM(re: Float, im: Float) -> UInt8 {
+            let d: Float = 0.15430335
+            let i_val: UInt8
+            if re < -6.0 * d { i_val = 0 }
+            else if re < -4.0 * d { i_val = 1 }
+            else if re < -2.0 * d { i_val = 2 }
+            else if re < 0.0 { i_val = 3 }
+            else if re < 2.0 * d { i_val = 4 }
+            else if re < 4.0 * d { i_val = 5 }
+            else if re < 6.0 * d { i_val = 6 }
+            else { i_val = 7 }
+
+            let q_val: UInt8
+            if im < -6.0 * d { q_val = 0 }
+            else if im < -4.0 * d { q_val = 1 }
+            else if im < -2.0 * d { q_val = 2 }
+            else if im < 0.0 { q_val = 3 }
+            else if im < 2.0 * d { q_val = 4 }
+            else if im < 4.0 * d { q_val = 5 }
+            else if im < 6.0 * d { q_val = 6 }
+            else { q_val = 7 }
+
+            return i_val | (q_val << 3)
+        }
+
+        private func mapBitsToSymbols(bits: [UInt8], bitsPerSymbol: Int) -> [UInt8] {
+            if bits.isEmpty {
+                return []
+            }
+            var symbols = [UInt8]()
+            symbols.reserveCapacity((bits.count + bitsPerSymbol - 1) / bitsPerSymbol)
+            var index = 0
+            while index < bits.count {
+                var symbol: UInt8 = 0
+                for _ in 0..<bitsPerSymbol {
+                    let bit = (index < bits.count) ? (bits[index] & 1) : 0
+                    symbol = (symbol << 1) | bit
+                    index += 1
+                }
+                symbols.append(symbol)
+            }
+            return symbols
         }
 
         private static func makeActiveBins(config: VDSPOFDMConfig) throws -> [Int] {
@@ -321,6 +596,264 @@ public enum VDSPPHY {
                 }
             }
             return filteredBins
+        }
+
+        private func equalizeFrame(
+            re: [Float],
+            im: [Float],
+            sharedTau: Float?,
+            sharedConj: Bool?
+        ) -> (eqRe: [Float], eqIm: [Float], tau: Float, conj: Bool) {
+            var totalEnergy: Float = 0.0
+            for bin in activeBins {
+                let r = re[bin]
+                let i = im[bin]
+                totalEnergy += r * r + i * i
+            }
+            let avgEnergy = totalEnergy / Float(max(1, activeBins.count))
+            let normFactor = sqrt(max(avgEnergy, 1e-7))
+
+            // Pre-divide active bins by normFactor once.
+            var normRe = [Float](repeating: 0.0, count: config.fftSize)
+            var normIm = [Float](repeating: 0.0, count: config.fftSize)
+            for bin in activeBins {
+                normRe[bin] = re[bin] / normFactor
+                normIm[bin] = im[bin] / normFactor
+            }
+
+            // Pre-calculate bin factors: 2 * pi * bin / fftSize
+            var binFactors = [Float](repeating: 0.0, count: config.fftSize)
+            let multiplier = 2.0 * Float.pi / Float(config.fftSize)
+            for bin in activeBins {
+                binFactors[bin] = Float(bin) * multiplier
+            }
+
+            var bestTau: Float = 0.0
+            var bestTheta: Float = 0.0
+            var bestConj = false
+            var minMSE: Float = Float.greatestFiniteMagnitude
+
+            if let sTau = sharedTau, let sConj = sharedConj {
+                // Subsequent frame: use sharedTau and sharedConj, only search theta
+                bestTau = sTau
+                bestConj = sConj
+                for thetaIdx in 0...16 {
+                    let theta = -Float.pi / 4.0 + (Float(thetaIdx) * Float.pi / 32.0)
+                    var sumError: Float = 0.0
+
+                    for bin in activeBins {
+                        let r = normRe[bin]
+                        let i = bestConj ? -normIm[bin] : normIm[bin]
+
+                        let phi = theta + binFactors[bin] * bestTau
+                        let cosPhi = cos(phi)
+                        let sinPhi = sin(phi)
+
+                        let rRot = r * cosPhi + i * sinPhi
+                        let iRot = i * cosPhi - r * sinPhi
+
+                        let err: Float
+                        switch bitsPerSymbol {
+                        case 4:
+                            let d: Float = 0.31622777
+                            let absR = abs(rRot)
+                            let errR = absR < 2.0 * d ? abs(absR - d) : abs(absR - 3.0 * d)
+                            let absI = abs(iRot)
+                            let errI = absI < 2.0 * d ? abs(absI - d) : abs(absI - 3.0 * d)
+                            err = errR * errR + errI * errI
+                        case 6:
+                            let d: Float = 0.15430335
+                            let absR = abs(rRot)
+                            let errR: Float
+                            if absR < 2.0 * d { errR = abs(absR - d) }
+                            else if absR < 4.0 * d { errR = abs(absR - 3.0 * d) }
+                            else if absR < 6.0 * d { errR = abs(absR - 5.0 * d) }
+                            else { errR = abs(absR - 7.0 * d) }
+
+                            let absI = abs(iRot)
+                            let errI: Float
+                            if absI < 2.0 * d { errI = abs(absI - d) }
+                            else if absI < 4.0 * d { errI = abs(absI - 3.0 * d) }
+                            else if absI < 6.0 * d { errI = abs(absI - 5.0 * d) }
+                            else { errI = abs(absI - 7.0 * d) }
+                            err = errR * errR + errI * errI
+                        default:
+                            let norm: Float = 0.70710677
+                            let errR = abs(rRot) - norm
+                            let errI = abs(iRot) - norm
+                            err = errR * errR + errI * errI
+                        }
+                        sumError += err
+                    }
+
+                    let penalty = 0.0001 * (bestTau * bestTau) + 0.00005 * (theta * theta)
+                    let score = sumError + penalty
+                    if score < minMSE {
+                        minMSE = score
+                        bestTheta = theta
+                    }
+                }
+            } else {
+                // First frame: Hierarchical coarse-to-fine search
+                let tauCoarse: [Float] = [-8.0, -6.0, -4.0, -2.0, 0.0, 2.0, 4.0, 6.0, 8.0]
+                let thetaCoarseIdx: [Int] = [0, 4, 8, 12, 16]
+
+                var bestCoarseTau: Float = 0.0
+                var bestCoarseThetaIdx: Int = 8
+                var bestCoarseConj = false
+                var minCoarseMSE: Float = Float.greatestFiniteMagnitude
+
+                for conj in [false, true] {
+                    for tau in tauCoarse {
+                        for thetaIdx in thetaCoarseIdx {
+                            let theta = -Float.pi / 4.0 + (Float(thetaIdx) * Float.pi / 32.0)
+                            var sumError: Float = 0.0
+
+                            for bin in activeBins {
+                                let r = normRe[bin]
+                                let i = conj ? -normIm[bin] : normIm[bin]
+
+                                let phi = theta + binFactors[bin] * tau
+                                let cosPhi = cos(phi)
+                                let sinPhi = sin(phi)
+
+                                let rRot = r * cosPhi + i * sinPhi
+                                let iRot = i * cosPhi - r * sinPhi
+
+                                let err: Float
+                                switch bitsPerSymbol {
+                                case 4:
+                                    let d: Float = 0.31622777
+                                    let absR = abs(rRot)
+                                    let errR = absR < 2.0 * d ? abs(absR - d) : abs(absR - 3.0 * d)
+                                    let absI = abs(iRot)
+                                    let errI = absI < 2.0 * d ? abs(absI - d) : abs(absI - 3.0 * d)
+                                    err = errR * errR + errI * errI
+                                case 6:
+                                    let d: Float = 0.15430335
+                                    let absR = abs(rRot)
+                                    let errR: Float
+                                    if absR < 2.0 * d { errR = abs(absR - d) }
+                                    else if absR < 4.0 * d { errR = abs(absR - 3.0 * d) }
+                                    else if absR < 6.0 * d { errR = abs(absR - 5.0 * d) }
+                                    else { errR = abs(absR - 7.0 * d) }
+
+                                    let absI = abs(iRot)
+                                    let errI: Float
+                                    if absI < 2.0 * d { errI = abs(absI - d) }
+                                    else if absI < 4.0 * d { errI = abs(absI - 3.0 * d) }
+                                    else if absI < 6.0 * d { errI = abs(absI - 5.0 * d) }
+                                    else { errI = abs(absI - 7.0 * d) }
+                                    err = errR * errR + errI * errI
+                                default:
+                                    let norm: Float = 0.70710677
+                                    let errR = abs(rRot) - norm
+                                    let errI = abs(iRot) - norm
+                                    err = errR * errR + errI * errI
+                                }
+                                sumError += err
+                            }
+
+                            let penalty = 0.0001 * (tau * tau) + 0.00005 * (theta * theta)
+                            let score = sumError + penalty
+                            if score < minCoarseMSE {
+                                minCoarseMSE = score
+                                bestCoarseTau = tau
+                                bestCoarseThetaIdx = thetaIdx
+                                bestCoarseConj = conj
+                            }
+                        }
+                    }
+                }
+
+                // Fine local search around the best coarse point
+                let tauFine: [Float] = [
+                    bestCoarseTau - 1.0, bestCoarseTau - 0.75, bestCoarseTau - 0.5, bestCoarseTau - 0.25,
+                    bestCoarseTau,
+                    bestCoarseTau + 0.25, bestCoarseTau + 0.5, bestCoarseTau + 0.75, bestCoarseTau + 1.0
+                ].filter { $0 >= -8.0 && $0 <= 8.0 }
+
+                let thetaFineIdx: [Int] = [
+                    bestCoarseThetaIdx - 2, bestCoarseThetaIdx - 1,
+                    bestCoarseThetaIdx,
+                    bestCoarseThetaIdx + 1, bestCoarseThetaIdx + 2
+                ].filter { $0 >= 0 && $0 <= 16 }
+
+                bestConj = bestCoarseConj
+                for tau in tauFine {
+                    for thetaIdx in thetaFineIdx {
+                        let theta = -Float.pi / 4.0 + (Float(thetaIdx) * Float.pi / 32.0)
+                        var sumError: Float = 0.0
+
+                        for bin in activeBins {
+                            let r = normRe[bin]
+                            let i = bestConj ? -normIm[bin] : normIm[bin]
+
+                            let phi = theta + binFactors[bin] * tau
+                            let cosPhi = cos(phi)
+                            let sinPhi = sin(phi)
+
+                            let rRot = r * cosPhi + i * sinPhi
+                            let iRot = i * cosPhi - r * sinPhi
+
+                            let err: Float
+                            switch bitsPerSymbol {
+                            case 4:
+                                let d: Float = 0.31622777
+                                let absR = abs(rRot)
+                                let errR = absR < 2.0 * d ? abs(absR - d) : abs(absR - 3.0 * d)
+                                let absI = abs(iRot)
+                                let errI = absI < 2.0 * d ? abs(absI - d) : abs(absI - 3.0 * d)
+                                err = errR * errR + errI * errI
+                            case 6:
+                                let d: Float = 0.15430335
+                                let absR = abs(rRot)
+                                let errR: Float
+                                if absR < 2.0 * d { errR = abs(absR - d) }
+                                else if absR < 4.0 * d { errR = abs(absR - 3.0 * d) }
+                                else if absR < 6.0 * d { errR = abs(absR - 5.0 * d) }
+                                else { errR = abs(absR - 7.0 * d) }
+
+                                let absI = abs(iRot)
+                                let errI: Float
+                                if absI < 2.0 * d { errI = abs(absI - d) }
+                                else if absI < 4.0 * d { errI = abs(absI - 3.0 * d) }
+                                else if absI < 6.0 * d { errI = abs(absI - 5.0 * d) }
+                                else { errI = abs(absI - 7.0 * d) }
+                                err = errR * errR + errI * errI
+                            default:
+                                let norm: Float = 0.70710677
+                                let errR = abs(rRot) - norm
+                                let errI = abs(iRot) - norm
+                                err = errR * errR + errI * errI
+                            }
+                            sumError += err
+                        }
+
+                        let penalty = 0.0001 * (tau * tau) + 0.00005 * (theta * theta)
+                        let score = sumError + penalty
+                        if score < minMSE {
+                            minMSE = score
+                            bestTau = tau
+                            bestTheta = theta
+                        }
+                    }
+                }
+            }
+
+            var eqRe = re
+            var eqIm = im
+            for bin in activeBins {
+                let phi = bestTheta + binFactors[bin] * bestTau
+                let cosPhi = cos(phi)
+                let sinPhi = sin(phi)
+                let r = re[bin]
+                let i = bestConj ? -im[bin] : im[bin]
+                eqRe[bin] = r * cosPhi + i * sinPhi
+                eqIm[bin] = i * cosPhi - r * sinPhi
+            }
+
+            return (eqRe, eqIm, bestTau, bestConj)
         }
 
         private static func validate(config: VDSPOFDMConfig) throws {

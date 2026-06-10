@@ -108,9 +108,9 @@ class AndroidAudioBackend(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 add(MediaRecorder.AudioSource.UNPROCESSED)
             }
+            add(MediaRecorder.AudioSource.VOICE_RECOGNITION)
             add(MediaRecorder.AudioSource.MIC)
             add(MediaRecorder.AudioSource.CAMCORDER)
-            add(MediaRecorder.AudioSource.VOICE_RECOGNITION)
         }
 
         var chosenSource: Int? = null
