@@ -109,4 +109,22 @@ Five precise findings, all addressed:
    spikes," matching the kept-not-deleted decision.
 
 Now 3 cases, 16 artifacts each, **~1.3 MB**, full suite green (52 tests incl. 8
-golden + the C loader).
+golden + the C loader). #23 + #24 merged to main.
+
+### `[1.2]` C TX path — deterministic integer core (branch `publication/c-tx-path`)
+First increment: the FFT-independent deterministic TX primitives in portable C
+(`Sources/CCyrinx/cyrinx_bulk.{c,h}`), each validated **bit-exact** against the
+golden vectors via `CyrinxBulkTXTests` (uses a golden intermediate as the input
+to the next stage, so a failure pinpoints the diverging stage):
+- `DetRng` splitmix64 (+ `permutation`/`bits`/`bytes`), `prbs_bits`;
+- IEEE **CRC-32** (zlib, poly 0xEDB88320) — explicitly NOT the core's CRC-32C;
+- conv-encode K=7 (171,133) + 6 tail bits; puncture (1/2, 2/3, 3/4, 5/6);
+- the interleaver permutation, validated against `interleave_perm`.
+- **Bug the vectors caught:** wrote the generator polynomial as C `0121` (octal
+  121 = 81) instead of `0171` (octal 171 = 121) — a classic Python-`0o171`→C
+  octal slip. conv_encode produced plausible-but-wrong codes; `coded_bits.bin`
+  flagged it immediately. Exactly why 1.1 lands before any DSP.
+- `testDetRngStream` reimplements splitmix64 independently in Swift so the C
+  isn't merely compared against itself.
+58 tests green. **Next:** Gray QAM map → `data_freq` (float-tol), then vendor
+KISS FFT behind the FFT-plan interface for OFDM mod → `wave`.
