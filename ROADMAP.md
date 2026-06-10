@@ -87,3 +87,54 @@ Our development priorities are organized around three key architectural pillars:
 * **Likely Impact:** Low. Enables local multi-user whiteboard sessions and broadcast scenarios.
 * **Technical Difficulty:** Extremely High. Requires a custom, timing-synchronized acoustic MAC layer and collision avoidance protocols.
 * **ROI:** **Low.** (A fun, whimsical proof-of-concept, but highly niche compared to standard point-to-point links).
+
+---
+
+## 2026-06-09 Review Feedback (verbatim priorities, recorded for execution)
+
+Source: external project review after the measured bulk-PHY result. Items
+marked (in progress) are being exercised by the ultrasonic-band effort (PR #1).
+
+### Project hardening
+1. Separate claims by subsystem in README: Cyrinx transport (C/Swift framing,
+   ARC, streams, ACKs, simulation) vs legacy acoustic PHY (D-CSS/vDSP/Android
+   HIL) vs measured bulk PHY (scratch/hw20k + BulkDemod.kt). (partially done)
+2. Promote the bulk PHY out of scratch/ into a first-class module with shared
+   test vectors for Swift, Kotlin, and Python.
+3. Capture-replay tests: small OTA captures + expected decode summaries so CI
+   exercises chirp detection, sync, pilot tracking, Viterbi, CRC accounting
+   offline.
+4. Formal HIL acceptance suite: repeatable profiles (both directions,
+   palm-rest and desk-distance geometry, typing transients, low volume, wrong
+   mic, processed audio, clipping); pass/fail on verified bytes.
+5. Unified per-run metrics JSON: SNR/band, EVM/symbol, verified+failed blocks,
+   chirp starts, clock offset, CP margin, goodput, airtime, decode CPU time.
+6. Integrate bulk PHY with transport as two planes: robust low-rate control
+   (discovery, capabilities, feedback, security) + high-rate bulk data plane.
+7. Document hardware limits plainly: throughput came from abandoning
+   inaudibility, wide audible bandwidth, fixed geometry, asymmetric bands.
+   (done in docs/ACOUSTIC_BULK_PHY.md SS7)
+
+### Algorithmic directions (highest ROI = better channel-state use)
+1. Fast-acquisition superframe: chirp + known symbols + robust control payload
+   + pilot structure -> lock, channel estimate, first MCS < 1 s.
+2. Per-bin adaptive bit loading off/1/2/4/6/8 bits with margin. (in progress)
+3. Adaptive coding rate paired with loading; keep conv code until it is the
+   measured bottleneck before considering LDPC/Polar.
+4. Generalize pilot-driven reliability weighting: per-symbol + per-bin +
+   burst-erasure flags + transient classifier from pilot residuals.
+5. Dynamic CP / window bias from measured PDP per session. (in progress)
+6. Block-level ARQ / incremental parity on CRC blocks, not frame retries.
+7. Two-mic maximal-ratio combining (easier than MIMO, immediate robustness).
+8. True 2x2 MIMO later with per-subcarrier channel estimates.
+9. Continuous environment sensing: ambient PSD notch masks between bursts +
+   pilot-EVM transient inference during frames.
+10. Asymmetric link profiles negotiated by the control plane. (in progress)
+
+### Distinctive direction
+Environment-adaptive acoustic OFDM scheduler: receiver continuously estimates
+per-bin SNR, per-symbol reliability, clock drift, delay spread, transients;
+transmitter chooses bins, QAM order, FEC rate, CP, interleaver depth per
+burst. Standard ingredients; the closed-loop adaptation to consumer-device
+acoustics with measured pilot health and block-level verification is the
+novel contribution to aim at.
