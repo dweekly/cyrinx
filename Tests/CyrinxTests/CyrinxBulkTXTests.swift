@@ -167,7 +167,59 @@ final class CyrinxBulkTXTests: XCTestCase {
         }
     }
 
+    /// Full RX: decode each case's `rx_wave` (TX through the fixed multipath
+    /// channel) and require it reproduces `decoded_payload` byte-exact with all
+    /// blocks CRC-valid. Exercises chirp sync, fine sync, LS channel estimation,
+    /// pilot phase tracking, max-log LLR, deinterleave, depuncture, soft Viterbi,
+    /// and CRC — end to end.
+    func testDemodulateRxWave() throws {
+        for c in try cases() {
+            let cfg = c.config
+            let rxWave = GoldenVectors.float32s(
+                try GoldenVectors.rawData(c.name, try artifactObj(c, "rx_wave")))
+            let expPayload = try bytes(c, "decoded_payload")
+
+            var bc = makeBulkConfig(cfg)
+            try cfg.rate.withCString { rptr in
+                bc.rate = rptr
+                var geo = cyrinx_bulk_geometry()
+                XCTAssertEqual(cyrinx_bulk_compute_geometry(&bc, &geo), 0)
+                var payload = [UInt8](repeating: 0, count: Int(geo.payload_bytes))
+                var ok: Int32 = 0
+                var total: Int32 = 0
+                var evm = 0.0
+                let n = rxWave.withUnsafeBufferPointer { p in
+                    cyrinx_bulk_demodulate(
+                        &bc, p.baseAddress, p.count, &payload, payload.count, &ok, &total, &evm)
+                }
+                XCTAssertEqual(n, Int(geo.payload_bytes), "\(c.name): demod return")
+                XCTAssertEqual(Int(total), cfg.nBlocks, "\(c.name): blocks_total")
+                XCTAssertEqual(Int(ok), Int(total), "\(c.name): blocks_ok \(ok)/\(total)")
+                XCTAssertEqual(payload, expPayload, "\(c.name): decoded payload")
+            }
+        }
+    }
+
     // MARK: helpers
+
+    /// Fill a cyrinx_bulk_config from a golden case (caller sets `.rate` inside a
+    /// withCString scope, since it's a borrowed C string pointer).
+    private func makeBulkConfig(_ cfg: GoldenVectors.Config) -> cyrinx_bulk_config {
+        var bc = cyrinx_bulk_config()
+        bc.f_lo = cfg.fLo
+        bc.f_hi = cfg.fHi
+        bc.pilot_every = Int32(cfg.pilotEvery)
+        bc.bits_per_bin = Int32(cfg.bitsPerBin)
+        bc.n_sym = Int32(cfg.nSym)
+        bc.nfft = Int32(cfg.nfft)
+        bc.cp = Int32(cfg.cp)
+        bc.sr = Int32(cfg.sr)
+        bc.amp = cfg.amp
+        bc.clip_sigma = cfg.clipSigma
+        bc.chirp_f0 = cfg.chirpF0
+        bc.chirp_f1 = cfg.chirpF1
+        return bc
+    }
 
     /// Reference splitmix64 (independent reimplementation in Swift) so the test
     /// does not merely compare the C against itself.

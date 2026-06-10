@@ -149,3 +149,22 @@ vectors (all 3 cases: QPSK r1/2, 16-QAM r3/4, QPSK r2/3):
   build's `-DDEBUG=1` (harmless; vendored file, left unmodified).
 59 tests green. **Next (PR 1.3):** the C RX path — chirp sync, LS channel est,
 pilot tracking, LLR, Viterbi — decoding `rx_wave` to `decoded_payload`.
+
+### `[1.3]` C RX path — COMPLETE, decodes on the first run
+The portable-C **receiver** decodes each case's `rx_wave` (TX through the fixed
+multipath channel) to the exact `decoded_payload`, all blocks CRC-valid, across
+all 3 cases — **passed first try**, a strong signal the golden-vector contract
+pinned the TX correctly. Implemented (single-mic, track_alpha=0 path):
+- forward real FFT added to `cyrinx_fft` (`cyrinx_rfft_*`, numpy.rfft semantics);
+- chirp matched-filter coarse sync + sync-symbol fine sync (−24-sample early bias);
+- LS channel estimation from the 2 sync symbols, 9-tap box noise variance,
+  per-bin SNR; **no cross-bin H smoothing** (negative finding #2);
+- per-symbol 3-pass pilot phase-slope + CPE tracking; pilot-EVM² LLR weighting;
+- max-log QAM LLR (inverse-Gray min-distance); deinterleave; depuncture into the
+  rate-1/2 stream; soft Viterbi (trellis traceback); CRC-32 per block.
+- Decision: **bundle TX+RX into PR #26** — a codec's TX without RX is a
+  half-feature (can't validate a round trip); they share the module and the
+  golden harness. Closes #11 (1.2) and #12 (1.3).
+60 tests green. The portable-C bulk PHY is functionally complete (uniform
+bit-loading). **Next:** Apple vDSP FFT backend (1.6) and/or the adaptive sounder
++ repositioning-guidance API (1.4/1.4b); MRC for stereo (1.5).

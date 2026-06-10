@@ -107,6 +107,15 @@ long cyrinx_bulk_modulate(const cyrinx_bulk_config *cfg, const uint8_t *payload,
                           size_t payload_len, float *wave_out, size_t wave_cap,
                           double *data_freq_out);
 
+/* Demodulate one captured frame (single microphone; the golden cases use
+ * track_alpha=0 so per-bin decision-directed tracking is disabled). `rx` is the
+ * float capture. On success writes geometry.payload_bytes to `out_payload`,
+ * sets *blocks_ok / *blocks_total (CRC-valid blocks) and *evm_rms (optional,
+ * may be NULL), and returns payload_bytes. Returns -1 on error. */
+long cyrinx_bulk_demodulate(const cyrinx_bulk_config *cfg, const float *rx,
+                            size_t rx_len, uint8_t *out_payload, size_t out_cap,
+                            int *blocks_ok, int *blocks_total, double *evm_rms);
+
 /* Default chirp/guard constants (modem.py). */
 #define CYRINX_BULK_CHIRP_LEN 4096
 #define CYRINX_BULK_GUARD 2048

@@ -33,6 +33,18 @@ void cyrinx_irfft(cyrinx_irfft_plan *plan, const double *freq_re,
 
 void cyrinx_irfft_destroy(cyrinx_irfft_plan *plan);
 
+/* Forward real FFT (numpy.rfft semantics: unnormalized). */
+typedef struct cyrinx_rfft_plan cyrinx_rfft_plan;
+
+cyrinx_rfft_plan *cyrinx_rfft_create(int nfft);
+
+/* time_in: nfft real samples; freq_re/freq_im receive the half-spectrum
+ * (nfft/2+1 entries). Unnormalized, matching numpy.rfft. */
+void cyrinx_rfft(cyrinx_rfft_plan *plan, const double *time_in, double *freq_re,
+                 double *freq_im);
+
+void cyrinx_rfft_destroy(cyrinx_rfft_plan *plan);
+
 #ifdef __cplusplus
 }
 #endif
