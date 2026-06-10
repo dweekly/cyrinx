@@ -17,3 +17,4 @@ __pycache__/
 scratch/hw20k/data/*.pcm
 scratch/hw20k/data/*.npy
 scratch/hw20k/data/*.wav
+.claude/
