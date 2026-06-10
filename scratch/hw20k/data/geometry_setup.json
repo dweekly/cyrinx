@@ -1,0 +1,7 @@
+{
+  "canonical_position": "contact_palmrest_faceup",
+  "description": "iPhone face-up, charge-port edge toward laptop hinge, ~2.5 in from phone bottom edge to MacBook screen, resting on ~0.5 in soft cloth, far-left palm rest",
+  "device": "iphone17pm",
+  "mac": "MacBook Pro M4 (Mac16,5)",
+  "note": "Same geometry used for the Pixel 7a throughout. Phone bottom edge (mics/speaker) faces the Mac speakers."
+}
