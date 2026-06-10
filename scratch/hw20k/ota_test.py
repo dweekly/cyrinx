@@ -94,7 +94,7 @@ def run_direction(direction, profile, amp=0.7, n_frames=3, gap_s=0.25, cp=768, n
         cap = H.load_pcm16(p)
         rx_list = [("mic0", cap[:, 0]), ("mic1", cap[:, 1])]
     elif direction == "a2m":
-        H.mac_set_input_volume(40)
+        H.mac_set_input_volume(22)
         rx = H.android_to_mac(np.concatenate([tx, np.zeros(H.SR // 3, dtype=np.float32)]))
         rx_list = [("macmic", rx)]
 

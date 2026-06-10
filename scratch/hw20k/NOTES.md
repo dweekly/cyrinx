@@ -60,3 +60,34 @@ Welch PSD, NFFT=1024 (46.875 Hz bins).
 ## Iteration log
 
 - v0 primitives + characterization: done (above).
+- v1 modem debugging (all on real OTA captures, 2026-06-09):
+  - Mac mic input clips near-field at full input volume -> input vol 22-40.
+  - Channel-estimate smoothing across bins destroys H under multipath: removed.
+  - Adjacent-sync-symbol decorrelation chased to FOUR stacked causes:
+    (1) ISI: CP 256 (5.3 ms) << delay spread; geometry now NFFT 2048 / CP 768.
+    (2) Dual-speaker TX: right speaker arrives 3x weaker at the phone with
+        garbage phase; L+R sum wrecks composite EVM. m2a now LEFT ONLY.
+    (3) Stream-end fade kills the final OFDM symbol -> trailing 0.33 s pad.
+    (4) A single corrupted symbol poisons Viterbi through the frame-wide
+        interleaver (overconfident LLRs). Per-symbol pilot-EVM noise weighting
+        turns such symbols into soft erasures. Digital regression added.
+  - find_chirp returns the global max; multi-frame runs now detect all chirp
+    peaks (threshold + suppression) and decode each.
+
+## Measured OTA goodput (2026-06-09, offline decode of real captures)
+
+Honest accounting: CRC32-valid 256-byte blocks, byte-compared against the TX
+PRBS payload, divided by airtime including preambles and 0.25 s inter-frame
+gaps. NFFT 2048, CP 768, 64 symbols/frame, comb pilots /8.
+
+| Direction | Profile | Blocks | EVM | Goodput |
+|---|---|---|---|---|
+| Mac->Android (1.1-23 kHz) | QPSK r1/2  | 75/75   | 0.06 | 12.29 kbps |
+| Mac->Android | 16QAM r1/2 | 150/150 | 0.06 | 24.58 kbps |
+| Mac->Android | 16QAM r3/4 | 225/225 | 0.07 | **36.86 kbps** |
+| Android->Mac (0.6-17 kHz) | QPSK r1/2 | 54/54 | 0.12 | 8.85 kbps |
+| Android->Mac | 16QAM r1/2 | 111/111 | 0.12 | 18.19 kbps |
+| Android->Mac | 16QAM r3/4 | 168/168 | 0.11 | **27.53 kbps** |
+
+Both directions exceed the 20 kbps target. Next: on-device Kotlin decode so
+the Pixel autonomously demodulates (no pulling captures to the Mac).
