@@ -59,19 +59,38 @@ def phase_std(rx, freq):
     return float(np.std(resid)), float(np.sqrt((seg ** 2).mean()))
 
 
-def main():
+def main(n_reps=8):
+    import json
     H.mac_set_input_volume(60)
-    print("iPhone 17 Pro Max speaker phase coherence (STFT phase std, lower=coherent)")
-    print(f"{'tone':>8} {'amp':>5} {'phase_std(rad)':>15} {'rx_rms':>10}  interp")
-    for freq, amp in [(8_000, 0.9), (19_500, 0.9), (19_500, 0.4),
-                      (22_000, 0.9), (22_000, 0.4)]:
-        w = tone(freq, 2.0, amp)
-        rx = I.ios_to_mac(w, channels=1, sr=SR)
-        std, rms = phase_std(rx, freq)
-        interp = ("coherent" if std < 0.3 else
-                  "marginal" if std < 1.2 else "INCOHERENT")
-        print(f"{freq/1000:6.1f}k {amp:5.2f} {std:15.3f} {rms:10.6f}  {interp}")
+    print(f"iPhone 17 Pro Max speaker phase coherence, {n_reps} reps "
+          f"(STFT phase-std, lower=coherent)")
+    conds = [(8_000, 0.9), (19_500, 0.9), (19_500, 0.4),
+             (22_000, 0.9), (22_000, 0.4)]
+    out = {"device": "iphone17pm", "sr": SR, "n_reps": n_reps, "conditions": []}
+    print(f"{'tone':>8} {'amp':>5} {'std_med':>9} {'std_min':>9} {'std_max':>9} "
+          f"{'rms_med':>10}  interp")
+    for freq, amp in conds:
+        stds, rmss = [], []
+        for _ in range(n_reps):
+            rx = I.ios_to_mac(tone(freq, 2.0, amp), channels=1, sr=SR)
+            s, r = phase_std(rx, freq)
+            if not np.isnan(s):
+                stds.append(s); rmss.append(r)
+        stds = np.array(stds); rmss = np.array(rmss)
+        med = float(np.median(stds))
+        interp = ("coherent" if med < 0.3 else
+                  "marginal" if med < 1.2 else "INCOHERENT")
+        rec = {"freq_hz": freq, "amp": amp, "phase_std_rad": stds.tolist(),
+               "std_median": med, "std_min": float(stds.min()),
+               "std_max": float(stds.max()), "rms_median": float(np.median(rmss)),
+               "interp": interp}
+        out["conditions"].append(rec)
+        print(f"{freq/1000:6.1f}k {amp:5.2f} {med:9.3f} {stds.min():9.3f} "
+              f"{stds.max():9.3f} {np.median(rmss):10.6f}  {interp}")
+    with open(os.path.join(H.DATA, "ios_phase_coherence.json"), "w") as fh:
+        json.dump(out, fh, indent=2)
+    print(f"saved {H.DATA}/ios_phase_coherence.json")
 
 
 if __name__ == "__main__":
-    main()
+    main(int(sys.argv[1]) if len(sys.argv) > 1 else 8)
