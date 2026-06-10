@@ -54,6 +54,12 @@ platform gotchas — is [docs/ACOUSTIC_BULK_PHY.md](docs/ACOUSTIC_BULK_PHY.md)
 [scratch/hw20k/](scratch/hw20k/NOTES.md). A contrast of the original PRD
 against what was actually built (and why they diverged) is
 [docs/PRD_VS_AS_BUILT.md](docs/PRD_VS_AS_BUILT.md) (fresh as of 2026-06-09).
+An academic-workshop-style LaTeX whitepaper consolidating all of the above —
+related work, channel measurements, modem design, the defect/diagnostic
+catalog, and the verified results — is
+[docs/whitepaper/cyrinx-acoustic-link.tex](docs/whitepaper/cyrinx-acoustic-link.tex)
+(compiled PDF: [docs/whitepaper/cyrinx-acoustic-link.pdf](docs/whitepaper/cyrinx-acoustic-link.pdf);
+fresh as of 2026-06-09).
 
 The same bulk PHY ported to an iOS HIL app and measured over the air on an
 iPhone 17 Pro Max — **36.57 kbps Mac->iPhone** (decoded on-device by
