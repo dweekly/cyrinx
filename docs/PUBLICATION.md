@@ -67,10 +67,14 @@ Consequences baked into Phase 1:
 ## Phase 0 — Public-readiness hygiene (small, lands on `main`)
 
 - [ ] **0.1** Add `LICENSE` (Apache-2.0) + per-file SPDX headers; `NOTICE`.
-- [ ] **0.2** Scrub committed junk: remove tracked `TestFFT.class`,
-      `scratch_fft.swift`, `TestFFT.java`; extend `.gitignore` (`*.class`,
-      `*.dex`, build dirs already ignored). Confirm no secrets/PII in history
-      (private repo → public; check `git log -p` for keys, the X25519 work).
+- [ ] **0.2** Scrub committed junk: remove the tracked compiled artifact
+      `TestFFT.class`; extend `.gitignore` (`*.class`, `*.dex`, `*.o`, `*.a`;
+      build dirs already ignored). **Keep** the source FFT/OFDM parity spikes
+      (`scratch_fft.swift`, `TestFFT.java`, `scratch/Fft*.swift`) per "ship the
+      spike" — *move/organize* them under `scratch/fft/` with a README rather
+      than delete (they pin the FFT conventions the C port must match; see PR
+      1.1). Confirm no secrets/PII in history (private repo → public; check
+      `git log -p` for keys, the X25519 work).
 - [ ] **0.3** Prune stale branches/worktrees (`wp-update`, `whitepaper`,
       three `worktree-agent-*`) after confirming `git log --oneline main..<b>`
       is empty for each.
