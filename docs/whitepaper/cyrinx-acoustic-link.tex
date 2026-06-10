@@ -60,7 +60,13 @@ suspects---and contrast the delivered system with both the original design
 document and a predecessor stack whose theoretical 22\,kbps claim corresponded
 to a measured 0.27\,kbps. We argue that for acoustic modems on consumer
 hardware, the dominant engineering cost is the gap between the channel model
-and the channel.
+and the channel. None of the modulation or coding machinery here is novel ---
+OFDM, cyclic prefixes, comb pilots, QAM, convolutional/Viterbi coding, CRC
+block verification, and acoustic data-over-sound are all long established; the
+contribution is the \emph{measured} end-to-end system on commodity
+heterogeneous hardware, the discriminating-experiment diagnostic methodology,
+the physical/platform defect catalog, and on-device verification, not new
+modulation theory.
 \end{abstract}
 
 \section{Introduction and Motivation}
@@ -148,6 +154,15 @@ Bit'' product claims throughputs around 1\,kbps. Cyrinx adopts the
 preamble-gated architecture (a chirp matched filter gates the OFDM decoder)
 while being fully open about its error-correction internals.
 
+\textbf{BatNet.} The most directly comparable prior art for a phone-to-phone
+ultrasonic link: a smartphone system that carries data between built-in
+speakers and microphones using 8-PSK in the 20--24\,kHz inaudible band,
+reporting over 600\,bps at up to 6\,m \cite{batnet}. BatNet is the established
+demonstration that consumer phone transducers can sustain a coherent
+(phase-modulated) ultrasonic link at all; our inaudible-band results
+(Section~\ref{sec:future}) are consistent with it on one direction and
+illuminate why the other direction fails on the specific Pixel 7a micro-speaker.
+
 \textbf{Synchronization literature.} The predecessor Cyrinx stack used
 Zadoff--Chu CAZAC sequences for preamble synchronization and CFO estimation,
 following standard practice \cite{cazac,zcfo}, and its robust control-header
@@ -170,6 +185,21 @@ Academic work on aerial acoustic communication with consumer hardware
 band; our contribution is less a novel modulation than a carefully verified
 data point---tens of kbps, bidirectional, decoded on the receiving phone---and
 a reproducible account of what it took to get there.
+
+\textbf{On originality.} We want to be explicit that the core communications
+techniques used here are not original to this work. OFDM, cyclic prefixes,
+comb pilots, QAM, punctured convolutional codes with Viterbi decoding, CRC
+block verification, acoustic speaker-to-microphone links, and ultrasonic
+data-over-sound are all long established, and every system surveyed above
+predates and informs ours. We invented no new modulation, code, or
+synchronization primitive. The contribution of this paper is instead: (i) a
+\emph{measured}, byte-verified end-to-end link on commodity heterogeneous
+hardware (a MacBook Pro and a Pixel 7a, decoded on the phone); (ii) a
+discriminating-experiment diagnostic methodology, reported with its negative
+results; (iii) a catalog of physical-layer and platform defects that are
+invisible to simulation; and (iv) on-device verification via a portable
+deterministic PRBS. The novelty is empirical and methodological, not
+theoretical.
 
 \section{Channel Characterization}
 \label{sec:channel}
@@ -579,12 +609,22 @@ showed, the output chain's stream-end fade is part of the channel.
 \section{Limitations and Future Directions}
 \label{sec:future}
 
-\textbf{Limitations of the result as it stands.} The measurement is a single
-physical geometry (phone on palm rest), one device pair, one ambient
-condition, and an open-loop MCS chosen from a same-day channel measurement.
-The link is batch (record, then decode), half-duplex, unencrypted, and has no
-link layer. The numbers should be read as ``what this hardware pair can do at
-contact range,'' not as a general-environment claim.
+\textbf{Limitations of the result as it stands.} These are scope statements,
+not failures; we state them plainly so the result is not over-read. The
+measured bulk PHY: (i) is \emph{not} integrated into the project's public
+Swift/C transport API --- it lives in the research harness
+(\texttt{scratch/hw20k/}) and the Kotlin HIL decoder; (ii) is \emph{not}
+real-time streaming --- it is a batch design that records, then decodes
+offline, though the on-device decoder runs at roughly 20$\times$ real time and
+a streaming port is therefore plausible; (iii) is \emph{not} closed-loop
+rate-adaptive --- the MCS is chosen open-loop from a same-day channel
+measurement, with no per-frame feedback; (iv) is \emph{not} secured by the
+project's existing X25519/CTR/HMAC envelope --- the PHY measurement carries
+raw test payloads; and (v) is validated in exactly \emph{one} physical
+geometry (a Pixel 7a face-up on a MacBook Pro palm rest), on one device pair,
+under one ambient condition. The link is half-duplex and has no link layer.
+The numbers should be read as ``what this hardware pair can do at contact
+range,'' not as a general-environment claim.
 
 \textbf{Untapped physical headroom} (estimates, from the measured SNR):
 \begin{itemize}
@@ -604,16 +644,44 @@ contact range,'' not as a general-environment claim.
         higher MCS.
 \end{itemize}
 
-\textbf{The inaudible-ultrasonic variant.} The original goal (and the obvious
-product form) is an inaudible link in the 18.5--23.5\,kHz band, and this is
-under investigation. The measured channel makes its shape clear in advance:
-Mac$\rightarrow$Pixel has 36--40\,dB SNR in that band, so on the order of
-15--25\,kbps is plausible in principle; but Pixel$\rightarrow$Mac has only
-4.6--10\,dB SNR above 18\,kHz, supporting perhaps 1--3\,kbps. A symmetric-rate
-inaudible link is physically unreachable with this phone hardware; the design
-must be asymmetric (e.g.\ a fast inaudible downlink with a slow inaudible
-return channel, or an audible return burst). These rate figures are estimates
-from measured SNR, not yet measured goodput.
+\subsection{Measured result: the inaudible-ultrasonic variant}
+\label{sec:ultrasonic}
+
+The original goal (and the obvious product form) is an inaudible link in the
+18.5--23.9\,kHz band. We subsequently ran the bulk-PHY methodology entirely in
+that band at 96\,kHz sampling \cite{ultrasonicband}; the answer is that it is
+\emph{feasible in one direction but transducer-bound in the other}.
+
+\textbf{Mac$\rightarrow$Pixel works.} In the 18.5--23.9\,kHz band at 96\,kHz
+(NFFT 2048, CP 768, the chirp preamble moved up into 18.6--23.4\,kHz),
+16-QAM rate 3/4 delivers \textbf{$\sim$9\,kbps} of verified goodput at
+EVM $\sim$0.11, with every block recovered. The ceiling here is bandwidth, not
+modulation: a $\sim$5.4\,kHz coherent band at $\sim$22\,dB SNR caps near
+9--10\,kbps, and reaching 20\,kbps inaudibly would require either more coherent
+ultrasonic bandwidth than this Pixel offers or dropping below 18.5\,kHz
+(audible).
+
+\textbf{Pixel$\rightarrow$Mac does not close} --- and the reason is a clean
+physical result rather than a tuning failure. The Pixel 7a micro-speaker is
+\emph{phase-incoherent} above $\sim$18\,kHz: a single-tone STFT phase-jitter
+measurement gives a detrended phase standard deviation of 0.055\,rad at 8\,kHz
+(clean) versus 2--4\,rad at 19.5--22\,kHz (incoherent at the upper end). The
+speaker radiates ultrasonic \emph{power}, but cannot reproduce it with the
+phase coherence that OFDM/QAM --- or any phase modulation --- requires. This
+resolves an apparent contradiction in the channel survey: a stationary
+multitone PSD reports $\sim$27.8\,dB ``SNR'' for Pixel$\rightarrow$Mac at
+18.5--21\,kHz, yet coherent OFDM demodulation in the same band yields
+EVM $\sim$1.0 (SINR $\sim$0\,dB). Power-per-bin and phase coherence are
+different quantities; PSD-based channel surveys overstate capacity for
+phase-modulated waveforms on this transducer. A room-tone capture confirmed
+the band is near-silent (in-band RMS $\sim$5$\times$10$^{-8}$), so the limit is
+the transmit transducer, not ambient noise.
+
+The conclusion is that a \emph{symmetric} inaudible link is bounded by the
+mobile speaker, not by the protocol. The fast inaudible direction
+(Mac$\rightarrow$Pixel, $\sim$9\,kbps) is real; the inaudible return path would
+require a non-coherent modulation (energy-based MFSK or OOK, as ggwave uses)
+to tolerate the micro-speaker's phase incoherence, at much lower rates.
 
 \section{Summary of Findings}
 
@@ -646,7 +714,7 @@ from measured SNR, not yet measured goodput.
         paths corrupt QAM, and macOS fades stream tails. Budget for the OS.
 \end{enumerate}
 
-\begin{thebibliography}{19}
+\begin{thebibliography}{99}
 \small
 
 \bibitem{quiet}
@@ -681,6 +749,11 @@ kamalmostafa/minimodem, GitHub issue \#30 (on the absence of integrated FEC).
 \bibitem{ggwave}
 G.~Gerganov. ``ggwave: Tiny data-over-sound library.''
 \url{https://github.com/ggerganov/ggwave} (accessed February 12, 2026).
+
+\bibitem{batnet}
+A.~Zarandy, I.~Shumailov, R.~Anderson. ``BatNet: Data transmission between
+smartphones over ultrasound.'' arXiv:2008.00136, August 2020.
+\url{https://arxiv.org/abs/2008.00136} (accessed June 9, 2026).
 
 \bibitem{chirp}
 InvenSense (TDK). ``AN-000225: Ultrasonic range sensing enables measured
@@ -736,6 +809,11 @@ Apple Support. ``Play high sample rate audio on your Mac.''
 Technical Product Requirements Document \& Research Report,'' February 2026.
 Internal design document; contrasted with the as-built system in
 \texttt{docs/PRD\_VS\_AS\_BUILT.md} of the Cyrinx repository.
+
+\bibitem{ultrasonicband}
+``Ultrasonic-Band (Inaudible) Bulk PHY --- Measured Results,''
+\texttt{docs/ULTRASONIC\_BAND.md} of the Cyrinx repository, June 2026.
+Fresh as of 2026-06-09.
 
 \bibitem{repo}
 Cyrinx repository research records: \texttt{docs/ACOUSTIC\_BULK\_PHY.md}
