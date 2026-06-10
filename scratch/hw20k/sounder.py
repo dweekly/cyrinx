@@ -147,17 +147,28 @@ def recommend(an, sr, margin_db=4.0):
     nfft = 2048 if cp <= 1024 else 4096
     # advisory only: a better physical spot would help, but we still link
     advise_reposition = bool(noncoherent and (med < 6 or ds15 > CP_CAP_MS))  # was: label=="robust" and (med < 6 or ds15 > CP_CAP_MS))
-    # per-bin loading by SNR, capped at the tier's order
+    # Per-bin loading by SNR. Thresholds CALIBRATED against measured FEC reach
+    # (not a flat margin): the rate-1/2 conv code carries QPSK down to ~5 dB
+    # per-bin SNR, so the QPSK floor matches uniform-QPSK's reach while strong
+    # bins upgrade to 16/64-QAM. Measured to beat uniform QPSK (16.15 vs
+    # 14.74 kbps) at the 10.5 dB direct-contact channel. 1-bit (BPSK) loading is
+    # intentionally NOT used here: it is buggy in mixed maps (PAPR/normalization,
+    # see task), so the floor is QPSK. (data/perbin_gain.json)
     bits = {}
-    cap_bits = bits_uniform
-    for f, s in zip(an["freqs"], an["snr_db"]):
-        b = 0
-        for th, nb in LOAD:
-            if s - margin_db >= th:
-                b = min(nb, cap_bits); break
-        bits[int(round(f / (sr / nfft)))] = b
+    if noncoherent:
+        for f in an["freqs"]:
+            bits[int(round(f / (sr / nfft)))] = 0
+    else:
+        for f, s in zip(an["freqs"], an["snr_db"]):
+            b = 2 if s >= 5.0 else 0
+            if s >= 15.0:
+                b = 4
+            if s >= 23.0:
+                b = 6
+            bits[int(round(f / (sr / nfft)))] = b
     return {
         "tier": label, "mcs": mcs, "rate": rate, "bits_uniform": bits_uniform,
+        "bits_per_bin": bits,   # measured per-subcarrier loading (water-filling-lite)
         "noncoherent": noncoherent,
         "cp": cp, "cp_ms": round(cp_ms, 1), "nfft": nfft,
         "advise_reposition": advise_reposition,

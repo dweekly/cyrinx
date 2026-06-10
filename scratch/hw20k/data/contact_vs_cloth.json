@@ -1,0 +1,6 @@
+{
+  "finding": "Direct chassis contact (no cloth) is WORSE than the 0.5in soft cloth at the same palm-rest spot.",
+  "palmrest_cloth_air":   {"median_snr_db": 22, "delay_spread_ms": 1.5, "tier": "16-QAM r3/4", "goodput_kbps": 36.5},
+  "palmrest_nocloth_contact": {"median_snr_db": 10.5, "delay_spread_ms": 0.8, "usable_bin_frac": 0.86, "tier": "QPSK r1/2", "goodput_kbps": 14.74, "blocks": "125/125"},
+  "interpretation": "Metal-to-metal contact couples structure-borne vibration/buzz that raises the noise floor (~11 dB SNR penalty), despite shorter delay spread. The soft cloth is acoustically beneficial, not incidental. Adaptive sounder correctly dropped to QPSK and linked cleanly rather than failing at 16-QAM. Confirms the legacy walkthrough's chassis-contact warning, now quantified."
+}

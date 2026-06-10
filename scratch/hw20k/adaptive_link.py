@@ -30,8 +30,13 @@ def send_m2i(wave, name="adapt.pcm"):
 def link_with(rec, n_frames=5):
     """Build a Config from the recommendation and run an ordered-verified link."""
     base = M.Config(F_LO, F_HI, nfft=rec["nfft"], cp=rec["cp"], sr=SR)
-    bpb = {b: rec["bits_uniform"] for b in base.data_idx}
-    cfg = M.Config(F_LO, F_HI, rate=rec["rate"], n_sym=64, amp=0.7,
+    # Use the sounder's measured per-bin loading (calibrated, no 1-bit bins),
+    # restricted to this Config's data bins. Beats uniform in challenged
+    # channels by upgrading strong bins; reduces to ~uniform when SNR is flat.
+    bpb = {b: rec["bits_per_bin"].get(b, 0) for b in base.data_idx}
+    if not any(bpb.values()):
+        bpb = {b: rec["bits_uniform"] for b in base.data_idx}
+    cfg = M.Config(F_LO, F_HI, rate="1/2", n_sym=64, amp=0.7,
                    cp=rec["cp"], nfft=rec["nfft"], sr=SR, track_alpha=0.35,
                    bits_per_bin=bpb)
     payloads = [M.DetRng(SEED_BASE + i).bytes(cfg.payload_bytes) for i in range(n_frames)]

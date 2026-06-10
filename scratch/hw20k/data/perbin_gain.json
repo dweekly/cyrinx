@@ -1,0 +1,9 @@
+{
+  "position": "palmrest_nocloth_direct_contact",
+  "channel_median_snr_db": 10.5,
+  "uniform_qpsk_r12_kbps": 14.74,
+  "per_bin_adaptive_r12_kbps": 16.15,
+  "gain_pct": 9.6,
+  "per_bin_scheme": "QPSK floor at >=5 dB (matches rate-1/2 FEC reach), upgrade 16-QAM >=15 dB, 64-QAM >=23 dB; no 1-bit BPSK bins (buggy in mixed maps)",
+  "note": "First measured win for adaptive per-bin bit-loading over uniform MCS in a challenged environment. Naive variants (flat margin, or QPSK threshold too high, or rate 3/4) UNDERPERFORMED uniform; the win required calibrating the QPSK floor to the FEC's actual reach and keeping rate 1/2. Headroom remains: fixing the BPSK-bin bug would let ~6-10 dB bins below the QPSK floor carry 1 bit instead of 0; MRC would raise per-bin SNR further."
+}
