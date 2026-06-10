@@ -1,0 +1,110 @@
+# 20 kbps Bidirectional Acoustic Link — Working Notes
+
+> Lab notebook. The curated research writeup (results, methodology,
+> platform gotchas, future directions) is
+> [docs/ACOUSTIC_BULK_PHY.md](../../docs/ACOUSTIC_BULK_PHY.md).
+
+Fresh as of 2026-06-09. Effort: measured ≥20 kbps acoustic goodput Mac↔Pixel 7a.
+Setup: Pixel 7a face-up on MacBook Pro palm rest on a soft cloth; both volumes max.
+
+## Measured channel (2026-06-09, characterize.py, real OTA)
+
+Probe: random-phase multitone 0.3–23.5 kHz, amp 0.6, vs 6 s ambient floor.
+Welch PSD, NFFT=1024 (46.875 Hz bins).
+
+| Band (kHz) | Mac→Android mic0 SNR | Android→Mac SNR |
+|---|---|---|
+| 0.3–2   | 26.4 dB | 28.1 dB |
+| 2–6     | 41.2 dB | 44.3 dB |
+| 6–10    | 37.1 dB | 47.3 dB |
+| 10–14   | 36.0 dB | 45.5 dB |
+| 14–18   | 38.1 dB | 33.9 dB |
+| 18–21   | 36.1 dB | 10.0 dB |
+| 21–24   | 40.7 dB | 4.6 dB  |
+
+- Shannon (8-bit cap): M→A ≈ 184 kbps, A→M ≈ 155 kbps. Target 20 kbps ≈ 13 % of capacity.
+- Pixel mic ch0 (bottom mic, nearest Mac) beats ch1 by 6–20 dB below 10 kHz.
+- A→M usable band ≈ 0.3–17 kHz (Pixel speaker/Mac mic rolls off above 18 kHz).
+- M→A usable band ≈ 0.3–23 kHz (flat!). Prior agents' "severe roll-off at 16 kHz"
+  claim does not reproduce in this near-field geometry.
+- Delay spread (ESS, −30 dB threshold): M→A ~21.7 ms, A→M ~10.8 ms. Long tail is
+  low-level; equalization + modest CP handles it (verify EVM in practice).
+- Sample clock offset Mac vs Pixel: **−24.6 ppm** (10 kHz tone, 8 s). Over 2 s
+  frame ≈ 2.4 samples of drift → needs per-symbol pilot timing/phase tracking.
+- Ambient floors: Pixel rms ≈ 7e-4 (16-bit FS), Mac rms ≈ 8e-3.
+
+## Hardware gotchas (hard-won)
+
+- Android mic capture is silently zeroed if the activity isn't top-visible:
+  keyguard bouncer (AlternateBouncerView) or expanded notification shade both
+  trigger it. Fix: `setShowWhenLocked(true)+setTurnScreenOn(true)` in the
+  activity + `cmd statusbar collapse` + wake before every capture.
+- Battery saver at low charge re-dozes the screen despite `svc power stayon`.
+- App `play_pcm` sets STREAM_MUSIC to max programmatically (AudioHardening
+  partially ignores setStreamVolume on Android 16 — verify level in logs).
+- Pull captures via `adb exec-out run-as com.dweekly.cyrinxhil cat files/x.pcm`
+  (app files dir; /sdcard is scoped-storage-restricted, /data/local/tmp is
+  readable but not writable by the app).
+
+## Modem design v1 (modem.py)
+
+- 48 kHz, FFT 1024, CP 256 (5.33 ms guard) → 37.5 sym/s.
+- M→A data band 1.1–23.0 kHz; A→M 0.6–17.0 kHz. Comb pilots every 8th bin.
+- Preamble per frame: 4096-sample chirp (coarse sync) + 2 known OFDM symbols
+  (fine sync + LS channel estimate).
+- Per-symbol pilot processing: LS fit of pilot phase vs bin → timing slope +
+  CPE, correct data bins; 1-tap MMSE equalizer from preamble estimate.
+- Adaptive per-bin QAM (BPSK/QPSK/16/64/256) from measured SNR with margin.
+- FEC: K=7 (171,133) convolutional, punctured to 3/4 (configurable), random
+  interleaver, zero-terminated per frame; CRC32 per 512-byte block for honest
+  goodput accounting.
+- Goodput = CRC-valid unique payload bits / airtime (preamble through last
+  symbol), measured on real OTA captures.
+
+## Iteration log
+
+- v0 primitives + characterization: done (above).
+- v1 modem debugging (all on real OTA captures, 2026-06-09):
+  - Mac mic input clips near-field at full input volume -> input vol 22-40.
+  - Channel-estimate smoothing across bins destroys H under multipath: removed.
+  - Adjacent-sync-symbol decorrelation chased to FOUR stacked causes:
+    (1) ISI: CP 256 (5.3 ms) << delay spread; geometry now NFFT 2048 / CP 768.
+    (2) Dual-speaker TX: right speaker arrives 3x weaker at the phone with
+        garbage phase; L+R sum wrecks composite EVM. m2a now LEFT ONLY.
+    (3) Stream-end fade kills the final OFDM symbol -> trailing 0.33 s pad.
+    (4) A single corrupted symbol poisons Viterbi through the frame-wide
+        interleaver (overconfident LLRs). Per-symbol pilot-EVM noise weighting
+        turns such symbols into soft erasures. Digital regression added.
+  - find_chirp returns the global max; multi-frame runs now detect all chirp
+    peaks (threshold + suppression) and decode each.
+
+## Measured OTA goodput (2026-06-09, offline decode of real captures)
+
+Honest accounting: CRC32-valid 256-byte blocks, byte-compared against the TX
+PRBS payload, divided by airtime including preambles and 0.25 s inter-frame
+gaps. NFFT 2048, CP 768, 64 symbols/frame, comb pilots /8.
+
+| Direction | Profile | Blocks | EVM | Goodput |
+|---|---|---|---|---|
+| Mac->Android (1.1-23 kHz) | QPSK r1/2  | 75/75   | 0.06 | 12.29 kbps |
+| Mac->Android | 16QAM r1/2 | 150/150 | 0.06 | 24.58 kbps |
+| Mac->Android | 16QAM r3/4 | 225/225 | 0.07 | **36.86 kbps** |
+| Android->Mac (0.6-17 kHz) | QPSK r1/2 | 54/54 | 0.12 | 8.85 kbps |
+| Android->Mac | 16QAM r1/2 | 111/111 | 0.12 | 18.19 kbps |
+| Android->Mac | 16QAM r3/4 | 168/168 | 0.11 | **27.53 kbps** |
+
+Both directions exceed the 20 kbps target.
+
+## FINAL verified result (2026-06-09, final_measurement.py)
+
+5 frames per direction, 16QAM r3/4, goodput = CRC32-valid AND byte-verified
+payload / span from first chirp to last data sample (all overhead included):
+
+- **Mac -> Android: 36,571 bps** — 375/375 blocks (96,000 bytes), demodulated
+  ON THE PIXEL by BulkDemod.kt (Kotlin port, 170 ms per 4 s frame), payload
+  verified on-device against the transmitter's splitmix64 PRBS.
+- **Android -> Mac: 27,307 bps** — 280/280 blocks (71,680 bytes), demodulated
+  on the Mac (modem.py) from its own mic capture.
+
+The Kotlin decoder was first validated bit-exact against the Python decoder
+on an identical capture file (225/225 blocks, matching EVM).

@@ -113,6 +113,7 @@ data class SessionConfig(
     val enableCrypto: Boolean = false,
     val localPublicKey: ByteArray = ByteArray(32),
     val localPrivateKey: ByteArray = ByteArray(32),
+    val forceBodyMode: String? = null,
 )
 
 interface FrameTxSink {

@@ -3,6 +3,11 @@ package com.dweekly.cyrinxhil
 import android.Manifest
 import android.content.Context
 import android.media.AudioManager
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.AudioTrack
+import android.media.MediaRecorder
 import android.os.Vibrator
 import android.os.VibrationEffect
 import android.os.Build
@@ -64,6 +69,8 @@ class MainActivity : ComponentActivity() {
     private var overrideRawCapturePath: String? = null
     @Volatile
     private var overrideChannels: Int? = null
+    @Volatile
+    private var overrideForceBodyMode: String? = null
 
     private val periodicRefresh = object : Runnable {
         override fun run() {
@@ -79,6 +86,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // HIL automation runs with the device locked on a desk. Without these, the
+        // keyguard/bouncer overlays the activity, it loses top-visibility, and the
+        // audio policy silences mic capture (returns all zeros).
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        }
         setContentView(R.layout.activity_main)
 
         roleSpinner = findViewById(R.id.roleSpinner)
@@ -260,10 +274,10 @@ class MainActivity : ComponentActivity() {
         stopRawBackend()
         stopSession()
 
-        // Programmatic acoustic gain staging calibration to safe linear region (72% sweet-spot)
+        // Programmatic acoustic gain staging calibration to safe linear region (45% sweet-spot)
         val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-        val targetIndex = (maxVolume * 0.72f).toInt()
+        val targetIndex = (maxVolume * 0.80f).toInt()
         audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetIndex, 0)
         appendLog("[AcousticCalibration] Android Stream volume auto-calibrated to: $targetIndex / $maxVolume")
 
@@ -499,6 +513,7 @@ class MainActivity : ComponentActivity() {
         overrideRawCodec = parseRawCodec(intent.getStringExtra("raw_codec")) ?: overrideRawCodec
         overrideRawCapturePath = intent.getStringExtra("capture_path")?.takeIf { it.isNotBlank() } ?: overrideRawCapturePath
         overrideChannels = intent.getIntExtra("channels", -1).takeIf { it > 0 } ?: overrideChannels
+        overrideForceBodyMode = intent.getStringExtra("force_body_mode")?.takeIf { it.isNotBlank() } ?: overrideForceBodyMode
 
         appendLog(
             "automation cmd=$cmd role=${role?.name ?: "unchanged"} sampleRate=${overrideSampleRateHz ?: 48_000} " +
@@ -537,13 +552,257 @@ class MainActivity : ComponentActivity() {
             "decode_file" -> runDecodeFile(role ?: selectedRole(), intent)
             "raw_encode_file" -> runRawEncodeFile(role ?: selectedRole(), intent)
             "raw_decode_file" -> runRawDecodeFile(role ?: selectedRole(), intent)
+            "sweep" -> {
+                val startHz = intent.getFloatExtra("start_hz", 1000f)
+                val endHz = intent.getFloatExtra("end_hz", 22000f)
+                val durationSec = intent.getFloatExtra("duration_sec", 8f)
+                val amp = intent.getFloatExtra("amplitude", 0.35f)
+                playSweep(startHz, endHz, durationSec, amp)
+            }
+            "rec_pcm" -> recPcmFile(intent)
+            "play_pcm" -> playPcmFile(intent)
+            "bulk_decode" -> runBulkDecode(intent)
             else -> appendLog("unknown automation cmd=$cmd")
+        }
+    }
+
+    private fun playSweep(startHz: Float, endHz: Float, durationSec: Float, amplitude: Float) {
+        val sampleRate = 48000
+        val count = (sampleRate * durationSec).toInt()
+        val pcm = ShortArray(count)
+        val fStart = startHz.toDouble()
+        val fEnd = endHz.toDouble()
+        val T = durationSec.toDouble()
+        
+        for (i in 0 until count) {
+            val t = i.toDouble() / sampleRate.toDouble()
+            val phase = 2.0 * Math.PI * (fStart * t + 0.5 * (fEnd - fStart) * (t * t) / T)
+            val sample = amplitude * kotlin.math.sin(phase).toFloat()
+            val clamped = sample.coerceIn(-1.0f, 1.0f)
+            pcm[i] = (clamped * 32767.0f).toInt().toShort()
+        }
+        
+        ioExecutor.execute {
+            try {
+                appendLog("sweep play begin: ${startHz}Hz to ${endHz}Hz dur=${durationSec}s")
+                val minBuf = AudioTrack.getMinBufferSize(
+                    sampleRate,
+                    AudioFormat.CHANNEL_OUT_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT
+                )
+                val bufferSize = maxOf(minBuf, count * 2)
+                val track = AudioTrack(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build(),
+                    AudioFormat.Builder()
+                        .setSampleRate(sampleRate)
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                        .build(),
+                    bufferSize,
+                    AudioTrack.MODE_STATIC,
+                    AudioManager.AUDIO_SESSION_ID_GENERATE
+                )
+                track.write(pcm, 0, count)
+                track.play()
+                val playTimeMs = (durationSec * 1000).toLong()
+                Thread.sleep(playTimeMs + 500)
+                track.stop()
+                track.release()
+                appendLog("sweep play completed: ${startHz}Hz to ${endHz}Hz")
+            } catch (t: Throwable) {
+                appendLog("sweep play failed: ${t.message}")
+            }
+        }
+    }
+
+
+    // Raw PCM16LE mic capture to the app's internal files dir (pull via `adb exec-out run-as ... cat`).
+    // Used by the Mac-side channel measurement / modem iteration harness, which does all DSP offline.
+    private fun recPcmFile(intent: android.content.Intent) {
+        val durationSec = intent.getFloatExtra("duration_sec", 5f).coerceIn(0.5f, 600f)
+        val sampleRate = intent.getIntExtra("sample_rate_hz", 48_000)
+        val channels = intent.getIntExtra("channels", 2).coerceIn(1, 2)
+        val sourceName = intent.getStringExtra("source")?.trim()?.lowercase(Locale.US) ?: "unprocessed"
+        val outName = intent.getStringExtra("out_name")?.takeIf { it.isNotBlank() } ?: "cap.pcm"
+        ioExecutor.execute {
+            var record: AudioRecord? = null
+            try {
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) !=
+                    PackageManager.PERMISSION_GRANTED
+                ) {
+                    appendLog("rec_pcm failed: RECORD_AUDIO not granted")
+                    return@execute
+                }
+                val source = when (sourceName) {
+                    "mic" -> MediaRecorder.AudioSource.MIC
+                    "voice_recognition" -> MediaRecorder.AudioSource.VOICE_RECOGNITION
+                    "camcorder" -> MediaRecorder.AudioSource.CAMCORDER
+                    else -> MediaRecorder.AudioSource.UNPROCESSED
+                }
+                val chMask = if (channels == 2) AudioFormat.CHANNEL_IN_STEREO else AudioFormat.CHANNEL_IN_MONO
+                val minBuf = AudioRecord.getMinBufferSize(sampleRate, chMask, AudioFormat.ENCODING_PCM_16BIT)
+                record = AudioRecord(
+                    source,
+                    sampleRate,
+                    chMask,
+                    AudioFormat.ENCODING_PCM_16BIT,
+                    maxOf(minBuf * 4, sampleRate * channels),
+                )
+                if (record.state != AudioRecord.STATE_INITIALIZED) {
+                    appendLog("rec_pcm failed: AudioRecord init failed src=$sourceName rate=$sampleRate ch=$channels")
+                    return@execute
+                }
+                val actualRate = record.sampleRate
+                val actualCh = record.channelCount
+                val totalFrames = (durationSec * actualRate).toInt()
+                val out = File(filesDir, outName)
+                appendLog(
+                    "rec_pcm begin: src=$sourceName rate=$actualRate ch=$actualCh frames=$totalFrames -> ${out.absolutePath}",
+                )
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO)
+                val buf = ShortArray(4096 * actualCh)
+                val bb = ByteBuffer.allocate(buf.size * 2).order(ByteOrder.LITTLE_ENDIAN)
+                var framesRead = 0
+                var clipped = 0
+                var sumSq = 0.0
+                record.startRecording()
+                java.io.BufferedOutputStream(java.io.FileOutputStream(out), 1 shl 20).use { fos ->
+                    while (framesRead < totalFrames) {
+                        val want = minOf(buf.size, (totalFrames - framesRead) * actualCh)
+                        val n = record.read(buf, 0, want)
+                        if (n <= 0) {
+                            appendLog("rec_pcm read error n=$n")
+                            break
+                        }
+                        bb.clear()
+                        for (i in 0 until n) {
+                            val s = buf[i]
+                            bb.putShort(s)
+                            val f = s / 32768.0
+                            sumSq += f * f
+                            if (s >= 32766 || s <= -32767) clipped += 1
+                        }
+                        fos.write(bb.array(), 0, n * 2)
+                        framesRead += n / actualCh
+                    }
+                }
+                record.stop()
+                val rms = kotlin.math.sqrt(sumSq / maxOf(1, framesRead * actualCh))
+                appendLog(
+                    "rec_pcm done: frames=$framesRead rms=${"%.6f".format(rms)} clipped=$clipped bytes=${out.length()}",
+                )
+            } catch (t: Throwable) {
+                appendLog("rec_pcm failed: ${t.message}")
+            } finally {
+                record?.release()
+            }
+        }
+    }
+
+    // Plays a raw PCM16LE file (pushed via adb to /data/local/tmp) out the speaker at max media volume.
+    private fun playPcmFile(intent: android.content.Intent) {
+        val path = intent.getStringExtra("path")?.takeIf { it.isNotBlank() } ?: "/data/local/tmp/tx.pcm"
+        val sampleRate = intent.getIntExtra("sample_rate_hz", 48_000)
+        val channels = intent.getIntExtra("channels", 1).coerceIn(1, 2)
+        val maxVolume = intent.getIntExtra("max_volume", 1)
+        ioExecutor.execute {
+            try {
+                val data = File(path).readBytes()
+                if (maxVolume != 0) {
+                    val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                    val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                    am.setStreamVolume(AudioManager.STREAM_MUSIC, max, 0)
+                    appendLog("play_pcm media volume set to $max/$max")
+                }
+                val chMask = if (channels == 2) AudioFormat.CHANNEL_OUT_STEREO else AudioFormat.CHANNEL_OUT_MONO
+                val bytesPerFrame = 2 * channels
+                val frames = data.size / bytesPerFrame
+                appendLog("play_pcm begin: $path bytes=${data.size} frames=$frames rate=$sampleRate ch=$channels")
+                val minBuf = AudioTrack.getMinBufferSize(sampleRate, chMask, AudioFormat.ENCODING_PCM_16BIT)
+                val track = AudioTrack(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build(),
+                    AudioFormat.Builder()
+                        .setSampleRate(sampleRate)
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .setChannelMask(chMask)
+                        .build(),
+                    maxOf(minBuf * 4, 1 shl 16),
+                    AudioTrack.MODE_STREAM,
+                    AudioManager.AUDIO_SESSION_ID_GENERATE,
+                )
+                track.play()
+                var off = 0
+                while (off < data.size) {
+                    val n = track.write(data, off, minOf(1 shl 16, data.size - off))
+                    if (n <= 0) {
+                        appendLog("play_pcm write error n=$n")
+                        break
+                    }
+                    off += n
+                }
+                // Drain whatever is still buffered before stopping (buffer is at most ~minBuf*4 bytes).
+                val drainMs = ((minBuf * 4L / bytesPerFrame) * 1000L / sampleRate) + 250L
+                Thread.sleep(drainMs)
+                track.stop()
+                track.release()
+                appendLog("play_pcm done: wrote=$off bytes")
+            } catch (t: Throwable) {
+                appendLog("play_pcm failed: ${t.message}")
+            }
+        }
+    }
+
+    // On-device demodulation of a wideband bulk-PHY capture (see BulkDemod.kt).
+    // Verifies decoded payload bytes against the transmitter's DetRng PRBS and
+    // logs goodput, so the phone proves reception without help from the Mac.
+    private fun runBulkDecode(intent: android.content.Intent) {
+        val path = intent.getStringExtra("path")?.takeIf { it.isNotBlank() }
+            ?: File(filesDir, "cap.pcm").absolutePath
+        val channels = intent.getIntExtra("channels", 2)
+        val fLo = intent.getFloatExtra("f_lo", 1100f).toDouble()
+        val fHi = intent.getFloatExtra("f_hi", 23000f).toDouble()
+        val nSym = intent.getIntExtra("n_sym", 64)
+        val nPayloads = intent.getIntExtra("n_payloads", 3)
+        val seedBase = intent.getIntExtra("payload_seed_base", 1000).toLong()
+        ioExecutor.execute {
+            try {
+                val t0 = System.currentTimeMillis()
+                val results = BulkDemod.decodeCapture(
+                    path, channels, fLo, fHi, nSym, nPayloads, seedBase,
+                ) { appendLog(it) }
+                val okFrames = results.filter { it.ok && it.blocksOk > 0 }
+                val verified = okFrames.sumOf { it.verified }
+                if (okFrames.isNotEmpty()) {
+                    val frameSamples = BulkDemod.Cfg(fLo, fHi, nSym).frameSamples
+                    val first = okFrames.minOf { it.start }
+                    val last = okFrames.maxOf { it.start }
+                    val spanS = (last + frameSamples - first).toDouble() / BulkDemod.SRATE
+                    val gp = verified * BulkDemod.CRC_BLOCK * 8 / spanS
+                    appendLog(
+                        "bulk_decode TOTAL: verified=$verified blocks " +
+                            "(${verified * BulkDemod.CRC_BLOCK} bytes) span=${"%.2f".format(spanS)}s " +
+                            "goodput=${"%.0f".format(gp)} bps wall_ms=${System.currentTimeMillis() - t0}",
+                    )
+                } else {
+                    appendLog("bulk_decode TOTAL: no frames decoded")
+                }
+            } catch (t: Throwable) {
+                appendLog("bulk_decode failed: ${t.message}")
+            }
         }
     }
 
     private fun runAutomationScenario(role: Role, intent: android.content.Intent) {
         val durationSec = intent.getIntExtra("duration_sec", 15).coerceIn(5, 180)
-        val intervalMs = intent.getIntExtra("send_interval_ms", 750).coerceIn(250, 5_000)
+        val intervalMs = intent.getIntExtra("send_interval_ms", 750).coerceIn(20, 5_000)
+        val reliableEvery = intent.getIntExtra("reliable_every", 4)
+        val payloadSize = intent.getIntExtra("payload_size", 24).coerceIn(20, 1024)
 
         runOnUiThread { startSession(role) }
 
@@ -556,11 +815,28 @@ class MainActivity : ComponentActivity() {
                 return@execute
             }
             while (System.currentTimeMillis() < stopAt) {
-                val bePayload = "probe:${System.currentTimeMillis()}".toByteArray(Charsets.UTF_8)
+                val prefixBe = "probe:${System.currentTimeMillis()}:"
+                val prefixBeBytes = prefixBe.toByteArray(Charsets.UTF_8)
+                val bePayload = ByteArray(payloadSize)
+                System.arraycopy(prefixBeBytes, 0, bePayload, 0, minOf(prefixBeBytes.size, payloadSize))
+                if (payloadSize > prefixBeBytes.size) {
+                    for (i in prefixBeBytes.size until payloadSize) {
+                        bePayload[i] = ((i * 17) and 0xFF).toByte()
+                    }
+                }
+
                 val beRc = sendProbeInternal(current, bestEffort = true, payload = bePayload)
                 appendLog("scenario send BE rc=$beRc")
-                if (counter % 4 == 0) {
-                    val relPayload = "probe-reliable:${System.currentTimeMillis()}".toByteArray(Charsets.UTF_8)
+                if (reliableEvery > 0 && counter % reliableEvery == 0) {
+                    val prefixRel = "probe-reliable:${System.currentTimeMillis()}:"
+                    val prefixRelBytes = prefixRel.toByteArray(Charsets.UTF_8)
+                    val relPayload = ByteArray(payloadSize)
+                    System.arraycopy(prefixRelBytes, 0, relPayload, 0, minOf(prefixRelBytes.size, payloadSize))
+                    if (payloadSize > prefixRelBytes.size) {
+                        for (i in prefixRelBytes.size until payloadSize) {
+                            relPayload[i] = ((i * 17) and 0xFF).toByte()
+                        }
+                    }
                     val relRc = sendProbeInternal(current, bestEffort = false, payload = relPayload)
                     appendLog("scenario send reliable rc=$relRc")
                 }
@@ -602,9 +878,10 @@ class MainActivity : ComponentActivity() {
             dcssSymbolSamples = overrideDcssSymbolSamples ?: 256,
             preambleSyncThreshold = overrideSyncThreshold ?: 0.25f,
             rawCodec = overrideRawCodec ?: RawCodec.AUTO,
-            channels = overrideChannels ?: 1,
+            channels = overrideChannels ?: 2,
             deviceSignature = 0x02, // CYRINX_DEVICE_PIXEL_7A
             maxBufferCapacity = 65536,
+            forceBodyMode = overrideForceBodyMode,
         )
     }
 

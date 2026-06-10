@@ -47,6 +47,9 @@ class CyrinxTransportSession(
     private var lastReplyMs = 0L
 
 
+    private var lastGoodputTimeMs = 0L
+    private var goodputBytesAccumulator = 0
+
     private var awaitingAck = false
     private var awaitingAckSeq = 0
     private var ackDeadlineMs = 0L
@@ -471,6 +474,7 @@ class CyrinxTransportSession(
 
                 reassemblyBuffer += payload
                 reassemblyFlags = reassemblyFlags or (header.flags and (CyrinxConstants.STREAM_FLAG_FIN or CyrinxConstants.STREAM_FLAG_RST))
+                updateGoodputLocked(payload.size)
 
                 if ((header.flags and CyrinxConstants.FLAG_FRAG_END) != 0) {
                     rxQueue.addLast(
@@ -571,14 +575,33 @@ class CyrinxTransportSession(
 
     private fun updateGoodputLocked(payloadBytes: Int) {
         val gearBps = when (currentGear) {
-            2 -> 4000f
-            3 -> 8000f
-            4 -> 12_000f
-            1 -> 450f
-            else -> 150f
+            2 -> 15000f
+            3 -> 30000f
+            4 -> 45000f
+            1 -> 2000f
+            else -> 1000f
         }
-        val sample = payloadBytes * 8f
-        metricsState.goodputBps = (0.8f * metricsState.goodputBps) + (0.2f * min(sample, gearBps))
+        val now = SystemClock.elapsedRealtime()
+        if (lastGoodputTimeMs == 0L) {
+            lastGoodputTimeMs = now
+            goodputBytesAccumulator = 0
+        }
+
+        goodputBytesAccumulator += payloadBytes
+
+        if (metricsState.goodputBps == 0.0f) {
+            val sample = payloadBytes * 8.0f
+            metricsState.goodputBps = min(sample, gearBps)
+        }
+
+        val diff = now - lastGoodputTimeMs
+        if (diff >= 500L) {
+            val sec = diff / 1000.0f
+            val sample = (goodputBytesAccumulator * 8.0f) / if (sec > 0.001f) sec else 0.001f
+            metricsState.goodputBps = (0.5f * metricsState.goodputBps) + (0.5f * min(sample, gearBps))
+            goodputBytesAccumulator = 0
+            lastGoodputTimeMs = now
+        }
     }
 
     private fun applyChannelReportLocked(report: ChannelReport) {

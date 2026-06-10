@@ -109,6 +109,8 @@ struct cyrinx_session {
     uint8_t peer_public_key[CYRINX_PUBLIC_KEY_BYTES];
 
     struct cyrinx_session *linked_peer;
+    uint64_t last_goodput_time_ms;
+    uint32_t goodput_bytes_accumulator;
 };
 
 
@@ -292,30 +294,48 @@ static void cyrinx_update_goodput(cyrinx_session_t *session, size_t payload_byte
         return;
     }
 
-    float gear_bps = 300.0f;
+    float gear_bps = 1000.0f;
     switch (session->current_gear) {
     case CYRINX_GEAR_G3_QPSK:
-        gear_bps = 4000.0f;
+        gear_bps = 15000.0f;
         break;
     case CYRINX_GEAR_G3_16QAM:
-        gear_bps = 8000.0f;
+        gear_bps = 30000.0f;
         break;
     case CYRINX_GEAR_G3_64QAM:
-        gear_bps = 12000.0f;
+        gear_bps = 45000.0f;
         break;
     case CYRINX_GEAR_G2_ROBUST:
-        gear_bps = 450.0f;
+        gear_bps = 2000.0f;
         break;
     case CYRINX_GEAR_G1_DISCOVERY:
     default:
-        gear_bps = 150.0f;
+        gear_bps = 1000.0f;
         break;
     }
 
-    /* EMA smoothing so ARC can consume a stable throughput estimate. */
-    float sample = (float)(payload_bytes * 8u);
-    session->metrics.goodput_bps =
-        (0.8f * session->metrics.goodput_bps) + (0.2f * (sample > gear_bps ? gear_bps : sample));
+    uint64_t now = cyrinx_now_ms();
+    if (session->last_goodput_time_ms == 0u) {
+        session->last_goodput_time_ms = now;
+        session->goodput_bytes_accumulator = 0u;
+    }
+
+    session->goodput_bytes_accumulator += (uint32_t)payload_bytes;
+
+    if (session->metrics.goodput_bps == 0.0f) {
+        float sample = (float)(payload_bytes * 8u);
+        session->metrics.goodput_bps = (sample > gear_bps ? gear_bps : sample);
+    }
+
+    uint64_t diff = now - session->last_goodput_time_ms;
+    if (diff >= 500u) {
+        float sec = (float)diff / 1000.0f;
+        float sample = (float)(session->goodput_bytes_accumulator * 8u) / (sec > 0.001f ? sec : 0.001f);
+        session->metrics.goodput_bps =
+            (0.5f * session->metrics.goodput_bps) + (0.5f * (sample > gear_bps ? gear_bps : sample));
+        session->goodput_bytes_accumulator = 0u;
+        session->last_goodput_time_ms = now;
+    }
 }
 
 static void cyrinx_queue_message(cyrinx_session_t *session, const uint8_t *data, size_t len,
@@ -623,25 +643,25 @@ void cyrinx_default_arc_policy(cyrinx_arc_policy_t *out_policy) {
     memset(out_policy, 0, sizeof(*out_policy));
 
     /* Defaults follow the current PRD thresholds and hysteresis windows. */
-    out_policy->up_g2_to_qpsk_snr_db = 14.0f;
-    out_policy->up_qpsk_to_16qam_snr_db = 25.0f;
-    out_policy->up_qpsk_to_16qam_max_evm_pct = 5.0f;
-    out_policy->up_16qam_to_64qam_snr_db = 30.0f;
-    out_policy->up_16qam_to_64qam_max_evm_pct = 4.5f;
-    out_policy->down_64qam_to_16qam_snr_db = 28.0f;
-    out_policy->down_64qam_to_16qam_max_evm_pct = 6.0f;
-    out_policy->down_16qam_to_qpsk_snr_db = 18.0f;
-    out_policy->down_16qam_to_qpsk_max_evm_pct = 10.0f;
-    out_policy->down_qpsk_to_g2_snr_db = 15.0f;
+    out_policy->up_g2_to_qpsk_snr_db = 8.0f;
+    out_policy->up_qpsk_to_16qam_snr_db = 12.0f;
+    out_policy->up_qpsk_to_16qam_max_evm_pct = 200.0f;
+    out_policy->up_16qam_to_64qam_snr_db = 15.0f;
+    out_policy->up_16qam_to_64qam_max_evm_pct = 200.0f;
+    out_policy->down_64qam_to_16qam_snr_db = 13.0f;
+    out_policy->down_64qam_to_16qam_max_evm_pct = 300.0f;
+    out_policy->down_16qam_to_qpsk_snr_db = 10.0f;
+    out_policy->down_16qam_to_qpsk_max_evm_pct = 300.0f;
+    out_policy->down_qpsk_to_g2_snr_db = 5.0f;
 
     out_policy->up_g2_to_qpsk_max_per = 0.05f;
     out_policy->up_qpsk_to_16qam_max_per = 0.01f;
     out_policy->up_16qam_to_64qam_max_per = 0.005f;
 
-    out_policy->up_g2_to_qpsk_hold_ms = 1500u;
-    out_policy->up_qpsk_to_16qam_hold_ms = 2000u;
-    out_policy->up_16qam_to_64qam_hold_ms = 3000u;
-    out_policy->min_dwell_ms = 1000u;
+    out_policy->up_g2_to_qpsk_hold_ms = 600u;
+    out_policy->up_qpsk_to_16qam_hold_ms = 800u;
+    out_policy->up_16qam_to_64qam_hold_ms = 1000u;
+    out_policy->min_dwell_ms = 400u;
 
     out_policy->qpsk_to_g2_crc_fail_count = 2u;
     out_policy->max_retransmissions = 4u;
@@ -1092,6 +1112,7 @@ int cyrinx_ingest_frame(cyrinx_session_t *session, const uint8_t *frame, size_t 
         memcpy(session->reassembly + session->reassembly_len, payload, payload_len);
         session->reassembly_len += payload_len;
         session->reassembly_flags |= (uint8_t)(h.flags & (CYRINX_STREAM_FLAG_FIN | CYRINX_STREAM_FLAG_RST));
+        cyrinx_update_goodput(session, payload_len);
 
         if ((h.flags & CYRINX_FLAG_FRAG_END) != 0u) {
             cyrinx_queue_message(session, session->reassembly, session->reassembly_len,

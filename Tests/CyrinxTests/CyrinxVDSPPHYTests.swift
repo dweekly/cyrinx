@@ -64,4 +64,72 @@ final class CyrinxVDSPPHYTests: XCTestCase {
         let decoded = try VDSPPHY.demodulateOFDMQPSK(samples: samplesMac, config: configMac)
         XCTAssertEqual(decoded, Array(payload))
     }
+
+    func testMultiMCSOFDMRoundTrip() throws {
+        let payload = Data((0..<96).map { UInt8($0 % 251) })
+        let config = VDSPOFDMConfig(sampleRateHz: 48_000)
+
+        // Test 16-QAM (mode = 2)
+        let samples16 = try VDSPPHY.modulateOFDM(payload: Array(payload), mode: 2, config: config)
+        XCTAssertFalse(samples16.isEmpty)
+        let decoded16 = try VDSPPHY.demodulateOFDM(samples: samples16, mode: 2, config: config)
+        if decoded16 != Array(payload) {
+            print("--- 16-QAM MISMATCH DETAILS ---")
+            for i in 0..<max(decoded16.count, payload.count) {
+                let dVal = i < decoded16.count ? "\(decoded16[i])" : "nil"
+                let pVal = i < payload.count ? "\(payload[i])" : "nil"
+                if dVal != pVal {
+                    print("Index \(i): decoded=\(dVal), expected=\(pVal)")
+                }
+            }
+        }
+        XCTAssertEqual(decoded16, Array(payload))
+
+        // Test 64-QAM (mode = 3)
+        let samples64 = try VDSPPHY.modulateOFDM(payload: Array(payload), mode: 3, config: config)
+        XCTAssertFalse(samples64.isEmpty)
+        let decoded64 = try VDSPPHY.demodulateOFDM(samples: samples64, mode: 3, config: config)
+        if decoded64 != Array(payload) {
+            print("--- 64-QAM MISMATCH DETAILS ---")
+            for i in 0..<max(decoded64.count, payload.count) {
+                let dVal = i < decoded64.count ? "\(decoded64[i])" : "nil"
+                let pVal = i < payload.count ? "\(payload[i])" : "nil"
+                if dVal != pVal {
+                    print("Index \(i): decoded=\(dVal), expected=\(pVal)")
+                }
+            }
+        }
+        XCTAssertEqual(decoded64, Array(payload))
+    }
+
+    func testOFDMRotationAndTimingParity() throws {
+        let payload = Data((0..<96).map { UInt8($0 % 251) })
+        let config = VDSPOFDMConfig(sampleRateHz: 48_000)
+        let samples = try VDSPPHY.modulateOFDM(payload: Array(payload), mode: 2, config: config)
+
+        var shiftedSamples = [Float](repeating: 0, count: samples.count)
+        let symbolLength = config.fftSize + config.cpSamples
+        let frameCount = samples.count / symbolLength
+
+        for frameIdx in 0..<frameCount {
+            let start = frameIdx * symbolLength
+            let frame = Array(samples[start..<(start + symbolLength)])
+
+            // Shift by exactly -2 samples (timing offset) and negate/scale (phase offset)
+            var shiftedFrame = [Float](repeating: 0, count: symbolLength)
+            for i in 0..<symbolLength {
+                let srcIdx = i + 2
+                if srcIdx < symbolLength {
+                    shiftedFrame[i] = -0.9 * frame[srcIdx] // Negation corresponds to 180 degree phase rotation!
+                }
+            }
+            for i in 0..<symbolLength {
+                shiftedSamples[start + i] = shiftedFrame[i]
+            }
+        }
+
+        let decoded = try VDSPPHY.demodulateOFDM(samples: shiftedSamples, mode: 2, config: config, expectedLength: payload.count)
+        XCTAssertEqual(decoded, Array(payload))
+    }
 }
+
