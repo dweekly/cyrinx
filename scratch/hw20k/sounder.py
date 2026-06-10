@@ -108,8 +108,17 @@ LADDER = [
     ("fast",   "16-QAM", "3/4", 4, 22.0, 12.0),
     ("medium", "16-QAM", "1/2", 4, 16.0, 18.0),
     ("qpsk",   "QPSK",   "1/2", 2,  9.0, 24.0),
-    ("robust", "BPSK",   "1/2", 1,  2.0, 1e9),   # floor: BPSK + longest CP
+    ("bpsk",   "BPSK",   "1/2", 1,  4.0, CP_CAP_MS),   # coherent OFDM floor
 ]
+# Below the coherent-OFDM floor: when the delay spread exceeds the practical CP
+# cap (the reverberant-desk regime), cyclic-prefix OFDM cannot equalize the
+# channel at ANY MCS (measured: BPSK+32ms CP -> 0/125 at 36 ms spread). The
+# correct fallback is a NON-COHERENT multi-tone FSK / DTMF waveform, which
+# detects per-bin energy over symbols longer than the delay spread and is immune
+# to both phase incoherence and ISI. Measured to carry ~267 bps where OFDM gave
+# 0 (data/desk_noncoherent.json). This tier trades rate for the ability to link
+# at all.
+NONCOHERENT_FLOOR = ("mfsk", "MT-FSK", "n/a", 0)
 
 
 def recommend(an, sr, margin_db=4.0):
@@ -117,20 +126,27 @@ def recommend(an, sr, margin_db=4.0):
     med = an["median_snr_db"]
     usable_frac = an["usable_bins"] / max(1, an["total_bins"])
     # Pick the fastest tier whose SNR and delay-spread gates are both cleared.
-    chosen = LADDER[-1]
+    # If nothing in the coherent-OFDM ladder clears (delay spread beyond the CP
+    # cap, or SNR below the BPSK floor), drop to the non-coherent MFSK floor
+    # rather than emit a coherent profile that cannot decode.
+    chosen = None
     for tier in LADDER:
         _, _, _, _, snr_min, ds_max = tier
         if med >= snr_min and ds15 <= ds_max:
             chosen = tier
             break
-    label, mcs, rate, bits_uniform, _, _ = chosen
+    noncoherent = chosen is None
+    if noncoherent:
+        label, mcs, rate, bits_uniform = NONCOHERENT_FLOOR
+    else:
+        label, mcs, rate, bits_uniform, _, _ = chosen
     # CP to cover the -15 dB delay spread (+25% headroom). For robust tiers let
     # CP run to the full cap; only the fast tier keeps CP tight for efficiency.
     cp_ms = min(CP_CAP_MS, max(5.0, ds15 * 1.25))
     cp = int(cp_ms / 1000 * sr)
     nfft = 2048 if cp <= 1024 else 4096
     # advisory only: a better physical spot would help, but we still link
-    advise_reposition = bool(label == "robust" and (med < 6 or ds15 > CP_CAP_MS))
+    advise_reposition = bool(noncoherent and (med < 6 or ds15 > CP_CAP_MS))  # was: label=="robust" and (med < 6 or ds15 > CP_CAP_MS))
     # per-bin loading by SNR, capped at the tier's order
     bits = {}
     cap_bits = bits_uniform
@@ -142,6 +158,7 @@ def recommend(an, sr, margin_db=4.0):
         bits[int(round(f / (sr / nfft)))] = b
     return {
         "tier": label, "mcs": mcs, "rate": rate, "bits_uniform": bits_uniform,
+        "noncoherent": noncoherent,
         "cp": cp, "cp_ms": round(cp_ms, 1), "nfft": nfft,
         "advise_reposition": advise_reposition,
         "median_snr_db": round(med, 1),

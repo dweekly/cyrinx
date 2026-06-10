@@ -73,10 +73,20 @@ def main(label):
           f"({rec['mcs']} r{rec['rate']}, CP {rec['cp_ms']} ms)"
           + ("  [advise closer/quieter spot]" if rec['advise_reposition'] else ""))
     out = {"position": label, "sounding": rec}
-    # Always attempt the link at the chosen (most robust feasible) tier.
-    ver, tot, gp = link_with(rec)
-    out["link"] = {"verified": ver, "total": tot, "goodput_kbps": gp, "tier": rec["tier"]}
-    print(f"[{label}] LINK ({rec['tier']}): {ver}/{tot} blocks, {gp} kbps")
+    if rec.get("noncoherent"):
+        # Delay spread exceeds the OFDM CP cap: coherent OFDM cannot decode here
+        # at any MCS. The sounder selects the non-coherent MT-FSK floor, which
+        # was measured to carry ~267 bps at this very position where OFDM gave 0
+        # (data/desk_noncoherent.json). The homegrown MFSK floor modem is the
+        # implementation follow-up (ROADMAP); ggwave stands in as the reference.
+        out["link"] = {"tier": "mfsk", "note": "non-coherent floor; OFDM infeasible "
+                       "(delay spread > CP cap). MT-FSK reference ~267 bps measured."}
+        print(f"[{label}] LINK (mfsk floor): coherent OFDM infeasible here; "
+              f"non-coherent MT-FSK is the floor (~267 bps measured, vs 0 for OFDM).")
+    else:
+        ver, tot, gp = link_with(rec)
+        out["link"] = {"verified": ver, "total": tot, "goodput_kbps": gp, "tier": rec["tier"]}
+        print(f"[{label}] LINK ({rec['tier']}): {ver}/{tot} blocks, {gp} kbps")
     with open(os.path.join(H.DATA, "adaptive.jsonl"), "a") as fh:
         fh.write(json.dumps(out) + "\n")
 

@@ -1,0 +1,7 @@
+{
+  "position": "desk_air_offset_5in_left_5in_below",
+  "channel": {"median_snr_db": 7.8, "delay_spread_ms_-15dB": 36.0, "usable_bin_frac": 0.69},
+  "coherent_ofdm": {"16qam_r34": "0/375", "qpsk_r12": "0 (EVM ~2)", "bpsk_r12_longcp": "0/125 (EVM ~1)", "verdict": "fails: delay spread >> CP, deep nulls"},
+  "noncoherent_mfsk_ggwave": {"Normal": "89 bps OTA OK", "Fast": "133 bps OTA OK", "Fastest": "267 bps OTA OK"},
+  "finding": "Non-coherent multi-tone FSK (energy detection) survives the reverberant desk channel that destroys coherent CP-OFDM at every MCS. Confirms the right floor tier below OFDM-BPSK is a non-coherent MFSK/DTMF mode (delay-spread- and phase-immune), trading rate for robustness. Graceful degradation: 36.5 kbps (palm rest, coherent) -> ~0.27 kbps (desk, non-coherent)."
+}
