@@ -14,6 +14,7 @@ let package = Package(
         .executable(name: "cyrinx-example-multiplex", targets: ["ExampleMultiplex"]),
         .executable(name: "cyrinx-example-large-payload", targets: ["ExampleLargePayload"]),
         .executable(name: "cyrinx-example-android-hil", targets: ["ExampleAndroidHIL"]),
+        .executable(name: "cyrinx-example-adaptive-bulk", targets: ["ExampleAdaptiveBulk"]),
         .executable(name: "cyrinx-sim-bench", targets: ["SimulationBench"])
     ],
     targets: [
@@ -53,6 +54,11 @@ let package = Package(
             name: "ExampleAndroidHIL",
             dependencies: ["Cyrinx"],
             path: "Examples/AndroidHIL"
+        ),
+        .executableTarget(
+            name: "ExampleAdaptiveBulk",
+            dependencies: ["Cyrinx"],
+            path: "Examples/AdaptiveBulk"
         ),
         .executableTarget(
             name: "SimulationBench",
