@@ -227,3 +227,17 @@ Added a ROADMAP exploration item (user idea): data-over-audio waveforms in the
 audible band designed to sound benign/musical (chord-tone/pentatonic symbol
 maps, pink-noise spectral shaping, melodic carriers, psychoacoustic masking),
 trading bitrate for a sound a user would tolerate playing aloud in a shared room.
+
+### `[1.4]` Adaptive-sounder decision engine — built and tested (C)
+`cyrinx_sounder.{c,h}` + Swift `AdaptiveSounder.swift`: the decision half of the
+environment-adaptive scheduler (the distinctive innovation). `recommendMCS(
+medianSNRdB:delaySpreadMs15:)` walks the MCS ladder (16-QAM r3/4 → r1/2 → QPSK →
+BPSK), picking the most aggressive tier whose SNR + delay-spread gates both
+clear, falling to a non-coherent MT-FSK floor when the −15 dB delay spread
+exceeds the 32 ms CP cap (the reverberant-desk regime), and it **never refuses to
+link** ("reposition" is advisory). Sizes the CP to cover the delay spread + 25 %
+(clamped to the cap) and switches NFFT 2048→4096 past 1024-sample CP.
+`bitLoading(perBinSNRdB:)` does the calibrated per-bin loading (0/2/4/6 by SNR).
+7 unit tests across the SNR/delay-spread space + the floor + CP clamp + loading;
+pure logic, no audio. The capture→metrics half reuses the RX channel estimation
+(needs a sounding burst = audio). 80 tests green.
