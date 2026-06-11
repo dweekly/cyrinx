@@ -44,15 +44,10 @@ measured, byte-verified over-the-air goodput of \textbf{36{,}571\,bps}
 Mac$\rightarrow$Pixel (demodulated \emph{on the phone} by a Kotlin port of the
 receiver) and \textbf{27{,}307\,bps} Pixel$\rightarrow$Mac, against a target of
 20\,kbps in each direction. Goodput is counted conservatively: only payload
-<<<<<<< Updated upstream
-bytes that are both CRC32-valid and byte-identical to the transmitted
-pseudorandom sequence, divided by the full airtime span including preambles,
-=======
 bytes that are both CRC32-valid and, under \emph{ordered} verification,
 byte-identical to the transmitted \texttt{DetRng} payload at their correct
 ordered position within the attributed frame (not mere set membership), divided
 by the full airtime span including preambles,
->>>>>>> Stashed changes
 channel-estimation symbols, pilots, FEC redundancy, CRCs, and inter-frame
 gaps. The modem is a 48\,kHz OFDM design (FFT 2048, cyclic prefix 768) with
 comb pilots, per-symbol timing/phase tracking, uniform 16-QAM, and a punctured
@@ -73,9 +68,6 @@ block verification, and acoustic data-over-sound are all long established; the
 contribution is the \emph{measured} end-to-end system on commodity
 heterogeneous hardware, the discriminating-experiment diagnostic methodology,
 the physical/platform defect catalog, and on-device verification, not new
-<<<<<<< Updated upstream
-modulation theory.
-=======
 modulation theory. We frame the result accordingly: this is a well-instrumented
 empirical case study of how much commodity hardware delivers after real-channel
 debugging---validated on two device pairs (a Pixel 7a and an iPhone 17 Pro Max,
@@ -83,7 +75,6 @@ each against the same MacBook Pro) in a single contact-range geometry, with
 same-hardware baselines against deployed tools---and a carefully measured
 contact-range prototype, not a broadly general or new-modulation acoustic-modem
 result.
->>>>>>> Stashed changes
 \end{abstract}
 
 \section{Introduction and Motivation}
@@ -96,17 +87,11 @@ deployed acoustic-communication systems cluster at very low rates: roughly
 $10^2$\,bps for robust spread-spectrum schemes and roughly $10^3$\,bps for
 multi-tone FSK \cite{nearby,ggwave}. Acoustic links remain attractive for
 proximity-bound exchange---pairing tokens, small payloads, air-gapped
-<<<<<<< Updated upstream
-transfer---because sound does not penetrate walls, requires no radio pairing
-ritual, and uses hardware already present on billions of devices
-\cite{quiet,lisnr}.
-=======
 transfer---because acoustic signals attenuate far faster and are more
 locality-bound than RF---especially the audible wideband link used here, which
 does not mean sound cannot penetrate walls, only that it does so far more
 weakly---require no radio pairing ritual, and use hardware already present on
 billions of devices \cite{quiet,lisnr}.
->>>>>>> Stashed changes
 
 The Cyrinx project asked a narrower, harder question: \emph{how much measured
 goodput can two specific commodity devices actually exchange acoustically?}
@@ -120,13 +105,9 @@ $\sim$700\,ms)---a factor of roughly 80 between claim and reality, and a factor
 of $\sim$135 between what that stack delivered and what the channel supports
 (Section~\ref{sec:eval}). This paper treats that episode as data: every number
 reported here is from an over-the-air capture on physical hardware, and we
-<<<<<<< Updated upstream
-state explicitly when a figure is an estimate rather than a measurement.
-=======
 state explicitly when a figure is an estimate rather than a measurement. We are
 deliberate about scope: what follows is an empirical case study of two specific
 device pairs in one geometry, not a general acoustic-modem result.
->>>>>>> Stashed changes
 
 Contributions:
 \begin{enumerate}
@@ -173,13 +154,9 @@ multi-tone FSK (e.g.\ dividing the spectrum into 96 discrete frequencies and
 transmitting 6 tones at once to encode 3 bytes) \cite{ggwave}. Energy-detection
 demodulation makes it resilient to multipath, but it does not exploit
 high-SNR channels: where QAM can carry 4--6 bits per Hz, MT-FSK carries less
-<<<<<<< Updated upstream
-than one.
-=======
 than one. Rather than rely on across-paper rate comparisons, we ran ggwave and
 minimodem over our \emph{own} hardware and geometry as same-channel baselines
 (Section~\ref{sec:baselines}, Table~\ref{tab:baselines}).
->>>>>>> Stashed changes
 
 \textbf{Google Nearby Messages.} The (since deprecated) audio modality of
 Nearby used direct-sequence spread spectrum with a 127-chip code, trading
@@ -331,10 +308,6 @@ that, so substantial headroom remains.
 
 The link is a half-duplex, open-loop bulk-transfer PHY at 48\,kHz PCM16. The
 OFDM geometry is NFFT 2048 (23.4\,Hz bins) with a 768-sample cyclic prefix
-<<<<<<< Updated upstream
-(16\,ms), giving 17.05 symbols/s; the CP was sized from the measured delay
-spread, not from a model. Direction-specific band profiles follow the measured
-=======
 (16\,ms), giving 17.05 symbols/s. To be precise about why this works: the
 16\,ms CP does \emph{not} cover the entire measured Mac$\rightarrow$Pixel delay
 spread of $\sim$21.7\,ms (at the $-30$\,dB threshold). The link succeeds because
@@ -343,7 +316,6 @@ tolerates the residual low-level reverberant tail beyond it, not because the CP
 spans the full measured tail. The CP length was chosen against the measured
 delay spread, not from a model, but it is an energy-coverage choice, not a
 worst-case-tail guarantee. Direction-specific band profiles follow the measured
->>>>>>> Stashed changes
 channel: 1.1--23\,kHz Mac$\rightarrow$Pixel and 0.6--17\,kHz
 Pixel$\rightarrow$Mac (Table~\ref{tab:profiles}).
 
@@ -594,22 +566,15 @@ A$\rightarrow$M & 16-QAM r3/4 & 168/168 & 0.11 & \textbf{27.53\,kbps} \\
 
 The definitive run (\texttt{scratch/hw20k/final\_measurement.py}) transmits
 5 frames per direction at 16-QAM rate 3/4 and counts goodput as payload bytes
-<<<<<<< Updated upstream
-that are both CRC32-valid \emph{and} byte-identical to the transmitted
-\texttt{DetRng} PRBS, divided by the span from the first frame's chirp to the
-=======
 that are both CRC32-valid \emph{and} pass \emph{ordered} verification: each
 CRC-valid 256-byte block must be byte-identical to the transmitted
 \texttt{DetRng} payload at its correct ordered position within the attributed
 frame, not merely a member of the expected block set. Goodput is those verified
 bytes divided by the span from the first frame's chirp to the
->>>>>>> Stashed changes
 last frame's final data sample --- preambles, sync symbols, pilots, FEC
 redundancy, CRCs, and inter-frame gaps all count against the number. Each
 direction spans 21.0\,s of airtime.
 
-<<<<<<< Updated upstream
-=======
 The $\geq$0.3\,s of trailing silence that defends the final symbol against the
 macOS stream-end fade (Section~\ref{sec:defects}) is part of the transmit
 contract but is \emph{not} counted in the goodput span, which runs from the
@@ -620,7 +585,6 @@ silence. We report the span goodput as the headline number and note that the
 gross figure is slightly lower (by the ratio of trailing silence to total
 airtime).
 
->>>>>>> Stashed changes
 \begin{table}[t]
 \centering
 \caption{Final byte-verified over-the-air goodput (2026-06-09). The
@@ -647,8 +611,6 @@ NEON-vectorized DSP libraries available on this hardware \cite{neon,kfr} ---
 which indicates that a real-time streaming receiver is computationally
 comfortable on this class of phone.
 
-<<<<<<< Updated upstream
-=======
 \subsection{Second device pair: iPhone 17 Pro Max}
 \label{sec:iphone}
 
@@ -745,7 +707,6 @@ desktop multipath that the OFDM equalizer and convolutional code absorb. At
 recovered deployed-tool baseline (ggwave ``Fastest'' at 267\,bps) on the same
 hardware and geometry.
 
->>>>>>> Stashed changes
 \subsection{Contrast with the predecessor stack}
 
 The predecessor in-repo stack (Zadoff--Chu sync, D-CSS headers, OFDM-QPSK
@@ -788,8 +749,6 @@ showed, the output chain's stream-end fade is part of the channel.
 \section{Limitations and Future Directions}
 \label{sec:future}
 
-<<<<<<< Updated upstream
-=======
 \subsection{Threats to validity}
 \label{sec:threats}
 
@@ -824,7 +783,6 @@ We state these honestly as scope statements, so the numbers are not over-read.
         set, so the goodput figures reflect ordered byte-exact delivery.
 \end{enumerate}
 
->>>>>>> Stashed changes
 \textbf{Limitations of the result as it stands.} These are scope statements,
 not failures; we state them plainly so the result is not over-read. The
 measured bulk PHY: (i) is \emph{not} integrated into the project's public
@@ -837,16 +795,10 @@ rate-adaptive --- the MCS is chosen open-loop from a same-day channel
 measurement, with no per-frame feedback; (iv) is \emph{not} secured by the
 project's existing X25519/CTR/HMAC envelope --- the PHY measurement carries
 raw test payloads; and (v) is validated in exactly \emph{one} physical
-<<<<<<< Updated upstream
-geometry (a Pixel 7a face-up on a MacBook Pro palm rest), on one device pair,
-under one ambient condition. The link is half-duplex and has no link layer.
-The numbers should be read as ``what this hardware pair can do at contact
-=======
 geometry (a phone face-up on a MacBook Pro palm rest), on two device pairs
 (Pixel 7a and iPhone 17 Pro Max, each against the same Mac), under one ambient
 condition. The link is half-duplex and has no link layer.
 The numbers should be read as ``what these hardware pairs can do at contact
->>>>>>> Stashed changes
 range,'' not as a general-environment claim. A product link would also have to
 confront the security properties of short-range audio channels, which have a
 substantial literature of their own --- from channel-security surveys
@@ -895,14 +847,6 @@ ultrasonic bandwidth than this Pixel offers or dropping below 18.5\,kHz
 (audible).
 
 \textbf{Pixel$\rightarrow$Mac does not close} --- and the reason is a clean
-<<<<<<< Updated upstream
-physical result rather than a tuning failure. The Pixel 7a micro-speaker is
-\emph{phase-incoherent} above $\sim$18\,kHz: a single-tone STFT phase-jitter
-measurement gives a detrended phase standard deviation of 0.055\,rad at 8\,kHz
-(clean) versus 2--4\,rad at 19.5--22\,kHz (incoherent at the upper end). The
-speaker radiates ultrasonic \emph{power}, but cannot reproduce it with the
-phase coherence that OFDM/QAM --- or any phase modulation --- requires. This
-=======
 physical result rather than a tuning failure. The mobile micro-speaker is
 \emph{phase-incoherent} above $\sim$18\,kHz, and we now establish this with
 repeated-run statistics on \emph{two} independent phones rather than single
@@ -941,7 +885,6 @@ Tone & Amplitude & Phase-jitter std (rad) & Verdict \\
 \bottomrule
 \end{tabular}
 \end{table} This
->>>>>>> Stashed changes
 resolves an apparent contradiction in the channel survey: a stationary
 multitone PSD reports $\sim$27.8\,dB ``SNR'' for Pixel$\rightarrow$Mac at
 18.5--21\,kHz, yet coherent OFDM demodulation in the same band yields
@@ -991,8 +934,6 @@ to tolerate the micro-speaker's phase incoherence, at much lower rates.
         paths corrupt QAM, and macOS fades stream tails. Budget for the OS.
 \end{enumerate}
 
-<<<<<<< Updated upstream
-=======
 \section{Reproducibility}
 \label{sec:repro}
 
@@ -1021,7 +962,6 @@ phone media at maximum.
 \texttt{ios\_campaign.jsonl}, \texttt{baselines.json}, \texttt{channel.json},
 and \texttt{ios\_phase\_coherence.json}.\par}
 
->>>>>>> Stashed changes
 \begin{thebibliography}{99}
 \small
 
