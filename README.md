@@ -6,14 +6,18 @@ desktop-to-phone links (1-2 ft). It contains two largely separate strands:
 1. An adaptive ultrasonic transport stack (Swift/C + Kotlin) targeting the
    18.5-23.5 kHz band — the original protocol design (gears, ARQ, crypto
    envelope). Functional but slow as measured (<0.3 kbps OTA).
-2. A **measured wideband bulk PHY experiment** (audible band) that achieved
-   36.6 / 27.3 kbps verified over-the-air goodput between a MacBook Pro and a
-   Pixel 7a — see below. This is an experimental harness, **not yet integrated
-   into the Swift/C transport API**: it is not real-time streaming, not
-   rate-adaptive in closed loop, not secured by the X25519 envelope, and has
-   only been validated in one physical geometry (phone on the palm rest).
-   An inaudible ultrasonic-band variant is under investigation
-   (docs/ULTRASONIC_BAND.md, PR #1).
+2. A **measured wideband bulk PHY** (audible band) that achieved 36.6 / 27.3
+   kbps verified over-the-air goodput between a MacBook Pro and a Pixel 7a — see
+   below. The modem is now **ported into the portable C core** (`CCyrinx`,
+   `cyrinx_bulk`) with a Swift binding (`BulkPHY`), validated bit-exact /
+   float-tolerant against committed golden vectors and round-tripping in pure
+   Swift (the in-progress publication effort, docs/PUBLICATION.md). Still
+   pending: closed-loop rate adaptation and transport-API integration, the
+   optional X25519 envelope, two-mic MRC, and **over-the-air re-validation
+   through the C library itself** (the 36.6/27.3 kbps figure was measured via the
+   Python reference harness; the library-native OTA result is PR 1.10). It has
+   been validated in one physical geometry (phone on the palm rest). An inaudible
+   ultrasonic-band variant is under investigation (docs/ULTRASONIC_BAND.md, PR #1).
 
 On originality: the communications techniques used (OFDM, cyclic prefixes,
 pilot tracking, QAM, convolutional/Viterbi FEC, CRC block verification) are
@@ -25,6 +29,10 @@ methodology, and the documented platform/physical-layer defect catalog.
 This repository currently provides:
 
 - A C core (`CCyrinx`) with a stable C ABI
+- A **portable-C wideband bulk PHY codec** (`cyrinx_bulk`: DetRng, CRC-32, K=7
+  convolutional FEC + puncturing, Gray QAM, OFDM via a vendored KISS FFT behind
+  the `cyrinx_fft` plan interface, soft Viterbi) with a Swift binding (`BulkPHY`),
+  validated against committed golden vectors
 - A native Swift wrapper (`Cyrinx`)
 - Frame codec with bit-packed headers, CRC16/CRC32C, fragmentation/reassembly
 - Half-duplex ping-pong MAC with ACK and selective retransmission policy hooks
