@@ -241,3 +241,17 @@ link** ("reposition" is advisory). Sizes the CP to cover the delay spread + 25 %
 7 unit tests across the SNR/delay-spread space + the floor + CP clamp + loading;
 pure logic, no audio. The capture→metrics half reuses the RX channel estimation
 (needs a sounding burst = audio). 80 tests green.
+
+### `[1.6]` Apple vDSP/Accelerate FFT backend — built and validated
+`cyrinx_fft.c` now has two backends behind one interface, selected at compile
+time: the vendored **KISS FFT** (portable default, the CI-tested reference that
+also ships to Android via JNI) and, under `-DCYRINX_FFT_ACCELERATE` on Apple, a
+**vDSP/Accelerate** double-precision DFT. The vDSP path uses the full complex DFT
+(`vDSP_DFT_zop_*D`) rather than the packed real FFT — simpler and unambiguous (no
+zrip pack/scale/sign pitfalls), still Accelerate-vectorized; the real input gets
+a zero imaginary part and irfft mirrors the Hermitian half. Validated against the
+**same golden vectors**: the entire codec (TX `data_freq`+`wave`, RX decode of
+`rx_wave`) passes all 20 codec/golden tests through Accelerate within the 1e-5
+tolerance. KISS default stays green (80 tests). Repeatable via
+`scripts/test-accelerate.sh`. This is the "Apple optimization" — correctness
+comes from the portable path; the backend is a drop-in the golden vectors gate.

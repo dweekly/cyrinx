@@ -137,8 +137,14 @@ For HIL diagnostics, `CyrinxSession.playLocalAudibleBeacon()` emits a role-disti
 ## Build and Test
 
 ```bash
-swift test
+swift test                    # portable KISS-FFT default (ships to Android too)
+./scripts/test-accelerate.sh  # validate the Apple vDSP/Accelerate FFT backend
 ```
+
+The bulk-PHY OFDM core uses a vendored KISS FFT by default (the portable
+correctness reference); on Apple, building with `-DCYRINX_FFT_ACCELERATE` +
+linking `Accelerate` swaps in a vDSP backend behind the same `cyrinx_fft`
+interface, validated against the same golden vectors.
 
 ## Sample Programs
 
