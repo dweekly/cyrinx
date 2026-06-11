@@ -72,10 +72,10 @@ the physical/platform defect catalog, and on-device verification, not new
 modulation theory. The modem has since been ported from the research harness
 into a portable-C reference library (transmit and receive), validated bit-exact
 against committed golden vectors with an Apple vDSP backend gated by those same
-vectors; the library's own codec also decodes over the air byte-verified,
-though so far only at QPSK rate 1/2 (12.8\,kbps) under a weaker bench coupling
-rather than at the 36\,kbps headline, and it ships with an SNR/delay-spread MCS
-sounder and a channel-metric-driven user repositioning guide. We frame the result accordingly: this is a well-instrumented
+vectors; the library's own codec decodes over the air byte-verified and at the
+palm-rest geometry reproduces the headline natively (16-QAM rate 3/4,
+39.3\,kbps, exceeding the harness figure), and it ships with an SNR/delay-spread
+MCS sounder and a channel-metric-driven user repositioning guide. We frame the result accordingly: this is a well-instrumented
 empirical case study of how much commodity hardware delivers after real-channel
 debugging---validated on two device pairs (a Pixel 7a and an iPhone 17 Pro Max,
 each against the same MacBook Pro) in a single contact-range geometry, with
@@ -296,9 +296,9 @@ Key findings, several of which contradicted prior assumptions:
         usable band is far wider.
   \item \textbf{The Pixel$\rightarrow$Mac direction dies above
         $\sim$17\,kHz}: 10.0\,dB SNR at 18--21\,kHz falling to 4.6\,dB at
-        21--24\,kHz (Pixel speaker and/or Mac microphone roll-off). This
-        asymmetry has direct consequences for any inaudible-band variant
-        (Section~\ref{sec:future}).
+        21--24\,kHz (Pixel speaker and/or Mac microphone roll-off), visible as
+        the uplink cliff in Figure~\ref{fig:asymmetry}. This asymmetry has direct
+        consequences for any inaudible-band variant (Section~\ref{sec:future}).
   \item \textbf{Sample-clock offset between the two devices is
         $-24.6$\,ppm}, which at the final OFDM geometry corresponds to about
         0.037 samples of drift per symbol --- small per symbol, but ruinous
@@ -311,6 +311,21 @@ Key findings, several of which contradicted prior assumptions:
   \item \textbf{The Pixel's bottom microphone beats its top microphone by
         6--20\,dB below 10\,kHz} at this geometry.
 \end{itemize}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.82\linewidth]{cyrinx-channel-asymmetry.pdf}
+\caption{Measured magnitude responses at the palm-rest geometry (swept-sine
+deconvolution; relative dB with drive and microphone gain pinned, so the curves
+are comparable in \emph{shape} and band edges but not in absolute level across
+directions). The Mac$\rightarrow$Pixel \emph{downlink} stays within $\sim$10\,dB
+to $\sim$19\,kHz, with a speaker resonance near 2--3\,kHz and a sharp cutoff above
+$\sim$20\,kHz; the Pixel$\rightarrow$Mac \emph{uplink} is stronger in the mid-band
+but rolls off a cliff above $\sim$14\,kHz and is essentially gone by $\sim$17\,kHz
+--- the mobile-speaker band limit that bounds the return path, not a power or
+tuning deficit. Dotted line: the 18\,kHz audible/ultrasonic edge.}
+\label{fig:asymmetry}
+\end{figure}
 
 From Table~\ref{tab:snr}, Shannon capacity with an 8-bit-per-symbol cap is
 approximately 184\,kbps M$\rightarrow$A and 155\,kbps A$\rightarrow$M (an
@@ -766,27 +781,32 @@ hardware and geometry.
 \label{sec:libota}
 
 The 36.6/27.3\,kbps headline was measured with the Python harness and the Kotlin
-on-device decoder; the portable-C library codec (Section~\ref{sec:library}) was
-validated digitally against golden vectors but not yet over the air. To close
-that gap we exercised the library code path itself end-to-end: a ctypes loader
-binds the compiled \texttt{libcyrinxbulk} dylib, the Mac \emph{C-encodes} a frame
-and plays it, the Pixel records, and the same C codec \emph{decodes the live
-capture}. In this bench session the acoustic coupling was markedly weaker than
-the historical palm-rest geometry (received peak $\sim$0.08, EVM $\sim$0.30,
-i.e.\ $\sim$10--11\,dB SINR versus the 30\,dB+ of the headline runs), so this is
-a code-path validation, not a peak-rate measurement.
+on-device decoder. To establish that the portable-C library codec
+(Section~\ref{sec:library}) delivers that result itself---not only in digital
+golden-vector tests---we exercised the library code path end-to-end over the air:
+a ctypes loader binds the compiled \texttt{libcyrinxbulk} dylib, the Mac
+\emph{C-encodes} a frame and plays it, the Pixel records, and the same C codec
+\emph{decodes the live capture}.
 
-At that coupling, \textbf{QPSK rate 1/2 decoded fully byte-verified through the
-library on both ends: 25/25 blocks across 3 frames, 12.8\,kbps}. Pushing the
-ladder higher at the \emph{same} weak coupling was SNR-limited, not
-codec-limited: 16-QAM rate 1/2 recovered 40--49 of 50 blocks ($\sim$20--25\,kbps
-with a few CRC failures) and 16-QAM rate 3/4 only 25 of 75. That the C demapper
-and Viterbi decoder partially recover live 16-QAM at $\sim$10\,dB SINR is the
-point---the ceiling here is the physical link in this particular bench setup, not
-the library. This is precisely the regime the adaptive sounder
-(Section~\ref{sec:adaptive}) is built to detect and back off from, with ARQ
-mopping up the stragglers. Re-running the full palm-rest geometry through the
-library to reproduce the 36\,kbps figure natively remains open.
+At the palm-rest geometry the library decoded, byte-verified on both ends, QPSK
+rate 1/2 at 13.1\,kbps, 16-QAM rate 1/2 at 26.2\,kbps, and \textbf{16-QAM rate
+3/4 at 39.3\,kbps (375/375 blocks, EVM 0.157)}---\emph{exceeding} the 36.6\,kbps
+Python-harness headline on the same hardware. The library-native result is
+therefore not a partial reproduction but the strongest form of the
+``measurement made reusable'' claim: the shippable codec, decoding live audio,
+beats the research harness.
+
+\textbf{The ceiling at this geometry is 16-QAM rate 3/4, and it is set by
+effective SINR, not by raw channel SNR.} 64-QAM rate 3/4 decoded 0/339 blocks at
+EVM $\sim$0.17 ($\sim$15\,dB effective SINR), even though a swept-sine sounding
+of the same channel measures the raw SNR at $\sim$52\,dB. The gap is the residual
+error floor after equalization---residual phase noise, channel-estimation error,
+and PAPR-driven loudspeaker nonlinearity on the random-data waveform---which
+64-QAM's denser constellation cannot tolerate and 16-QAM can. This bounds the
+per-bin bit-loading headroom (Section~\ref{sec:future}) by effective SINR rather
+than by the much larger raw SNR. We also note that received \emph{peak} amplitude
+is a poor coupling indicator: this cell read a peak of only 0.087 yet delivered
+39.3\,kbps; effective SINR / EVM, not peak, predicts the achievable rate.
 
 \subsection{Capacity-formula projection versus measured goodput}
 
@@ -868,11 +888,9 @@ We state these honestly as scope statements, so the numbers are not over-read.
 \textbf{Limitations of the result as it stands.} These are scope statements,
 not failures; we state them plainly so the result is not over-read. The
 measured bulk PHY: (i) is now ported into the portable-C library with a Swift
-binding and decodes over the air through that path
-(Sections~\ref{sec:library},~\ref{sec:libota}), but it is \emph{not} yet wired
-into the project's streaming transport/MAC API, and the 36\,kbps headline has not
-been reproduced natively through the library (the library-native OTA to date is
-the weaker-coupling 12.8\,kbps bench result); (ii) is \emph{not}
+binding and reproduces the headline natively over the air through that path
+(39.3\,kbps, Sections~\ref{sec:library},~\ref{sec:libota}), but it is \emph{not}
+yet wired into the project's streaming transport/MAC API; (ii) is \emph{not}
 real-time streaming --- it is a batch design that records, then decodes
 offline, though the on-device decoder runs at roughly 20$\times$ real time and
 a streaming port is therefore plausible; (iii) selects its MCS open-loop --- an
@@ -893,9 +911,15 @@ emanations \cite{kbdacoustic}.
 
 \textbf{Untapped physical headroom} (estimates, from the measured SNR):
 \begin{itemize}
-  \item \emph{Per-bin adaptive bit loading.} Mid-band SNR is 35--45\,dB;
-        64/256-QAM there should roughly double throughput. The loading
-        machinery already exists in the modem.
+  \item \emph{Per-bin adaptive bit loading.} The loading machinery already
+        exists in the modem, but the realizable headroom is bounded by
+        \emph{effective} SINR, not raw SNR: although the mid-band raw SNR is
+        35--45\,dB, a library-native probe at the palm-rest cell decoded 16-QAM
+        rate 3/4 but \emph{not} 64-QAM (0/339 blocks at $\sim$15\,dB effective
+        SINR, EVM $\sim$0.17, Section~\ref{sec:libota}). The residual-error floor
+        (phase noise, channel-estimation error, PAPR-driven nonlinearity) caps
+        the constellation well below what the raw SNR suggests, so higher-order
+        QAM buys less than a capacity estimate predicts on this transducer.
   \item \emph{Maximal-ratio combining} of the Pixel's two microphones. The
         bottom mic leads the top by 6--20\,dB below 10\,kHz, but in this geometry
         that is mostly a path-length and shadowing advantage---the phone's bottom
@@ -946,6 +970,25 @@ per-bin bit-loading rule assigns 0/2/4/6 bits by per-bin SNR thresholds
 headroom item. The thresholds are the operating points observed in the channel
 characterization (Section~\ref{sec:channel}); the ladder is open-loop today, but
 it is the decision core a closed feedback loop would call.
+
+\textbf{A measured caveat on SNR estimation.} The ladder consumes a per-bin SNR;
+supplying an accurate one from a brief sounding is the hard part, and a first
+over-the-air measurement shows the obvious estimator is unreliable. Estimating
+per-bin SNR as the variance of the channel across a burst of repeated known
+symbols is \emph{pessimistic}: the $-10$ to $-25$\,ppm clock offset between the
+independently clocked devices rotates the channel from symbol to symbol, and that
+rotation is counted as noise. At the palm-rest cell this estimator reported a
+median 10.5\,dB and recommended QPSK, while the channel in fact carried 16-QAM
+rate 3/4. Removing the per-symbol phase ramp before measuring variance
+over-corrects the other way (to $\sim$30\,dB, which would select a 64-QAM loading
+that does not decode), because a sounding of identical low-PAPR pilots never
+excites the channel-estimation error and PAPR-driven nonlinearity that random
+data incurs (Section~\ref{sec:libota}). Repeated-pilot statistics, in short, do
+not predict random-data SINR; the reliable estimator is a \emph{data-representative}
+probe---a known random-QAM frame decoded through the real receiver and read out as
+EVM---with empirically calibrated EVM-to-MCS thresholds, which a geometry/ambient
+sweep would furnish. This concerns only the SNR-\emph{estimation} half; the ladder
+logic itself, given a correct SINR, is a few lines.
 
 \textbf{Turning channel metrics into a human instruction.} Because the channel is
 dominated by physical placement---contact coupling, clipping at high volume, a
@@ -1095,10 +1138,15 @@ to tolerate the micro-speaker's phase incoherence, at much lower rates.
         codec ported into portable C, pinned by a committed golden-vector
         contract under a tiered exact/float tolerance (with an Apple vDSP
         backend gated by the same vectors), decodes over the air byte-verified
-        through the library itself. On top sit two decision surfaces---an
+        through the library itself at 39.3\,kbps---\emph{exceeding} the harness
+        headline on the same hardware. On top sit two decision surfaces---an
         SNR/delay-spread MCS sounder that never refuses to connect, and a
         channel-metric repositioning guide---that turn the project's
         measured-channel-first philosophy into APIs an application can call.
+        (A first live measurement also shows the sounder's repeated-pilot SNR
+        estimate is unreliable for MCS choice, and that higher-order QAM is
+        bounded by an effective-SINR/EVM floor well below the raw SNR;
+        Sections~\ref{sec:libota},~\ref{sec:adaptive}.)
   \item The largest remaining gap is empirical breadth, not algorithmic depth.
         Every result is one contact-range geometry in a quiet room; a
         distance/orientation/surface sweep and noisier ambient conditions would
