@@ -28,3 +28,6 @@ scratch/hw20k/data/_empty_result.json
 *.dex
 *.o
 *.a
+
+# library codec dylib (regenerable; see scratch/hw20k/clib.py)
+*.dylib

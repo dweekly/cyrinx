@@ -38,10 +38,19 @@ is **done**.
 doc; Phase 2 (#4 BPSK, #6 spread-spectrum, #5 research); Phase 3 paper draft;
 Phase 4 website build.
 
-**User-gated (cannot be automated):** 1.10 OTA re-validation through the C
-library (needs the phone + Mac on the bench); Phase 3 arXiv *submission* (needs
-the arXiv account + endorsement); Phase 4 Cloudflare *deploy* (needs wrangler
-auth on cyrinx.org); Phase 5 make-repo-public + tag + announce.
+**1.10 library-native OTA — DEMONSTRATED (2026-06-10):** with the Pixel 7a on
+the bench, the actual library C codec (via `libcyrinxbulk.dylib` + `clib.py`)
+encoded on the Mac, played over the speaker, the Pixel recorded, and the C codec
+decoded the capture — **12.8 kbps QPSK r1/2, byte-verified, 25/25 blocks, 3/3
+frames**. Higher rates are SNR-limited at the current coupling (16-QAM decoded
+partially), not codec-limited. The library itself now has a measured OTA result;
+matching the historical 36 kbps needs better physical coupling + the adaptive
+sounder (1.4) to pick the MCS. (`scratch/hw20k/ota_clib.py`.)
+
+**User-gated (cannot be automated):** Phase 3 arXiv *submission* (needs the
+arXiv account + endorsement); Phase 4 Cloudflare *deploy* (needs wrangler auth on
+cyrinx.org); Phase 5 make-repo-public + tag + announce; a clean-coupling OTA pass
+to reproduce the full 36 kbps headline through the library.
 
 Day-to-day decisions, measurements, dead ends, and rationale are logged in
 [publication-journal.md](publication-journal.md) as we go — raw material for the

@@ -191,3 +191,22 @@ aim the phone's bottom edge. Swift surface: `repositioningAdvice(for: ChannelMet
 -> RepositioningAdvice` with a localizable `.text`. 9 unit tests over each
 pathology + priority order. The sounder (1.4) will populate the metrics from a
 real sounding; the function is independently testable now. 73 tests green.
+
+### `[1.10]` Library-native OTA — DEMONSTRATED (Mac→Pixel, C codec both ends)
+The Pixel 7a was reattached, so I ran the **actual library C code** over the air
+(not the Python reference): `scratch/hw20k/clib.py` ctypes-loads
+`libcyrinxbulk.dylib` (compiled from `Sources/CCyrinx/cyrinx_bulk.c` +
+`cyrinx_fft.c` + kissfft); `ota_clib.py` C-encodes a frame on the Mac, plays it
+over the speaker, the Pixel records, and the **C codec decodes the capture**.
+- **Fully byte-verified: 12.8 kbps QPSK r1/2, 25/25 blocks, 3/3 frames** — a
+  genuine library-native OTA result (the library itself, not the harness, hits
+  measured goodput).
+- Ladder at the current coupling (peak ~0.08, EVM ~0.30 ≈ 10–11 dB SINR):
+  16-QAM r1/2 → 40–49/50 blocks (~20–25 kbps, a few CRC failures);
+  16-QAM r3/4 → 25/75 (too aggressive). Higher rates are **SNR-limited, not
+  codec-limited** — the C codec decoded real OTA 16-QAM partially, proving the
+  demap/Viterbi work on live captures; the cap is the physical link (this setup
+  is weaker than the historical 36 kbps palm-rest geometry). This is exactly the
+  case the adaptive sounder (1.4) picks the MCS for, with ARQ for the stragglers.
+- Reproducible: `clib.py` (digital loopback self-test) + `ota_clib.py [n] [bpb]
+  [rate]`. The dylib is a build artifact (gitignored); rebuild line in clib.py.
