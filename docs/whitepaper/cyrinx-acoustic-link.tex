@@ -47,9 +47,10 @@ receiver) and \textbf{27{,}307\,bps} Pixel$\rightarrow$Mac, against a target of
 bytes that are both CRC32-valid and, under \emph{ordered} verification,
 byte-identical to the transmitted \texttt{DetRng} payload at their correct
 ordered position within the attributed frame (not mere set membership), divided
-by the full airtime span including preambles,
+by the active message span (first preamble chirp to last data sample, which
+excludes the fixed trailing silence) and charged for all preambles,
 channel-estimation symbols, pilots, FEC redundancy, CRCs, and inter-frame
-gaps. The modem is a 48\,kHz OFDM design (FFT 2048, cyclic prefix 768) with
+gaps; the gross figure including trailing silence is marginally lower. The modem is a 48\,kHz OFDM design (FFT 2048, cyclic prefix 768) with
 comb pilots, per-symbol timing/phase tracking, uniform 16-QAM, and a punctured
 rate-3/4 $K{=}7$ convolutional code. Reaching the target required finding and
 fixing four physical-layer defects that are invisible to simulation:
@@ -71,9 +72,10 @@ the physical/platform defect catalog, and on-device verification, not new
 modulation theory. The modem has since been ported from the research harness
 into a portable-C reference library (transmit and receive), validated bit-exact
 against committed golden vectors with an Apple vDSP backend gated by those same
-vectors; the library's own codec decodes over the air byte-verified end to end,
-and ships with an SNR/delay-spread MCS sounder and a channel-metric-driven user
-repositioning guide. We frame the result accordingly: this is a well-instrumented
+vectors; the library's own codec also decodes over the air byte-verified,
+though so far only at QPSK rate 1/2 (12.8\,kbps) under a weaker bench coupling
+rather than at the 36\,kbps headline, and it ships with an SNR/delay-spread MCS
+sounder and a channel-metric-driven user repositioning guide. We frame the result accordingly: this is a well-instrumented
 empirical case study of how much commodity hardware delivers after real-channel
 debugging---validated on two device pairs (a Pixel 7a and an iPhone 17 Pro Max,
 each against the same MacBook Pro) in a single contact-range geometry, with
@@ -90,7 +92,7 @@ fidelity the acoustic-\emph{sensing} literature already exploits aggressively
 \cite{powerphone} --- yet
 deployed acoustic-communication systems cluster at very low rates: roughly
 $10^2$\,bps for robust spread-spectrum schemes and roughly $10^3$\,bps for
-multi-tone FSK \cite{nearby,ggwave}. Acoustic links remain attractive for
+multi-tone FSK \cite{researchgate,ggwave}. Acoustic links remain attractive for
 proximity-bound exchange---pairing tokens, small payloads, air-gapped
 transfer---because acoustic signals attenuate far faster and are more
 locality-bound than RF---especially the audible wideband link used here, which
@@ -102,7 +104,7 @@ The Cyrinx project asked a narrower, harder question: \emph{how much measured
 goodput can two specific commodity devices actually exchange acoustically?}
 The target was at least 20\,kbps of verified goodput in each direction between
 a MacBook Pro (M4) and a Pixel 7a lying face-up on the laptop's palm rest (on
-a soft cloth, both devices at maximum volume, normal office ambient noise).
+a soft cloth, both devices at maximum volume, in a quiet room).
 The emphasis on \emph{measured} is deliberate. An earlier in-repo protocol
 stack claimed ``22\,kbps'' on the basis of a subcarrier-count capacity formula;
 its measured goodput was under 0.3\,kbps (24-byte packets every
@@ -169,10 +171,12 @@ than one. Rather than rely on across-paper rate comparisons, we ran ggwave and
 minimodem over our \emph{own} hardware and geometry as same-channel baselines
 (Section~\ref{sec:baselines}, Table~\ref{tab:baselines}).
 
-\textbf{Google Nearby Messages.} The (since deprecated) audio modality of
-Nearby used direct-sequence spread spectrum with a 127-chip code, trading
-nearly all throughput for detection probability: approximately 94.5\,bps
-\cite{nearby,researchgate}. Sufficient for a token, far from bulk transfer.
+\textbf{Google Nearby Messages.} The audio modality of Nearby \cite{nearby}
+(since deprecated; ultrasonic advertising was removed in 2021) was built on the
+consumer-hardware ultrasonic scheme of Getreuer et al.\ \cite{researchgate},
+which uses direct-sequence spread spectrum with a 127-chip code and reports
+approximately 94.5\,bps, trading nearly all throughput for detection
+probability. Sufficient for a token, far from bulk transfer.
 
 \textbf{Chirp.io and LISNR.} Commercial closed-source systems
 \cite{chirp,lisnr} that emphasized the \emph{wake-up problem}: a cheap,
@@ -285,10 +289,11 @@ Key findings, several of which contradicted prior assumptions:
 
 \begin{itemize}
   \item \textbf{The Mac$\rightarrow$Pixel channel is essentially flat to
-        23\,kHz} in this near-field geometry. An earlier claim in the project
-        history of ``$-32.5$\,dB roll-off at 16\,kHz'' did not reproduce;
-        design decisions based on it (a narrow 10--14\,kHz ``flat shelf''
-        band) were wrong.
+        23\,kHz} in this near-field geometry. A roll-off assumption carried in
+        the original design document (``$-32.5$\,dB at 16\,kHz'' \cite{prd}) did
+        not reproduce under measurement; the design decision it had motivated (a
+        narrow 10--14\,kHz ``flat shelf'' band) was therefore wrong, and the
+        usable band is far wider.
   \item \textbf{The Pixel$\rightarrow$Mac direction dies above
         $\sim$17\,kHz}: 10.0\,dB SNR at 18--21\,kHz falling to 4.6\,dB at
         21--24\,kHz (Pixel speaker and/or Mac microphone roll-off). This
@@ -783,18 +788,19 @@ the library. This is precisely the regime the adaptive sounder
 mopping up the stragglers. Re-running the full palm-rest geometry through the
 library to reproduce the 36\,kbps figure natively remains open.
 
-\subsection{Contrast with the predecessor stack}
+\subsection{Capacity-formula projection versus measured goodput}
 
-The predecessor in-repo stack (Zadoff--Chu sync, D-CSS headers, OFDM-QPSK
-payload, per-frame ACK MAC) reported a ``symmetrical 20+\,kbps'' result that
-was, on inspection, a capacity formula ($86$ carriers $\times$ 6 bits $\times$
-42.857 symbols/s $=22.11$\,kbps); its measured goodput was under 0.3\,kbps.
-The project history now carries a correction notice. The channel supported
-roughly 135$\times$ what that stack delivered; the loss was architectural
-(turnaround gaps, 24-byte payloads, ACK timeouts) rather than physical. We
-include this not to disparage the earlier effort --- its Kotlin FFT,
-HIL tooling, and platform groundwork carried forward --- but because the
-simulation-vs-measurement gap is the central finding of the project.
+One concrete instance sharpens why this paper insists on measurement. An earlier
+design in this codebase (Zadoff--Chu sync, D-CSS headers, OFDM-QPSK payload,
+per-frame ACK MAC) projected ``symmetrical 20+\,kbps'' from a subcarrier-count
+capacity formula ($86$ carriers $\times$ 6 bits $\times$ 42.857 symbols/s
+$=22.11$\,kbps); its measured goodput was under 0.3\,kbps---roughly 135$\times$
+below what the same channel in fact supports. The shortfall was entirely
+architectural (turnaround gaps, 24-byte payloads, ACK timeouts), not physical:
+the channel was never the binding constraint. The lesson generalizes past any one
+implementation---a capacity formula bounds what a channel \emph{could} carry, not
+what a given MAC and framing \emph{will} deliver---and it is the reason every
+headline number here is an over-the-air measurement rather than a projection.
 
 \section{Platform Findings}
 \label{sec:platform}
@@ -890,12 +896,20 @@ emanations \cite{kbdacoustic}.
   \item \emph{Per-bin adaptive bit loading.} Mid-band SNR is 35--45\,dB;
         64/256-QAM there should roughly double throughput. The loading
         machinery already exists in the modem.
-  \item \emph{Maximal-ratio combining} of the Pixel's two microphones
-        (the bottom mic leads the top by 6--20\,dB below 10\,kHz; MRC adds
-        diversity above).
-  \item \emph{True 2$\times$2 MIMO} (Mac stereo speakers $\times$ Pixel
-        stereo mics) for spatial multiplexing Mac$\rightarrow$Pixel ---
-        turning defect 2's decorrelation from a bug into capacity.
+  \item \emph{Maximal-ratio combining} of the Pixel's two microphones. The
+        bottom mic leads the top by 6--20\,dB below 10\,kHz, but in this geometry
+        that is mostly a path-length and shadowing advantage---the phone's bottom
+        edge sits closest to the Mac speakers---rather than independent fading, so
+        MRC's real payoff is at higher frequencies where the two mics decorrelate
+        and the combiner adds genuine diversity.
+  \item \emph{True 2$\times$2 MIMO} (Mac stereo speakers $\times$ Pixel stereo
+        mics) Mac$\rightarrow$Pixel. With a measured $2\times2$ channel matrix
+        the transmitter could precode the two speakers to place a spatial null at
+        one mic while combining constructively at the other (and vice versa),
+        synthesizing two near-orthogonal subchannels for spatial multiplexing.
+        This would convert defect~2's two-speaker decorrelation from a liability
+        into a second stream---untested here, and contingent on the channel
+        matrix being well-conditioned and stable over a frame at this geometry.
   \item \emph{Real-time streaming RX.} At 20$\times$ real time for the batch
         decoder, a ring-buffer port is straightforward; real-time audio
         processing pipelines on Android are well documented \cite{rtdroid}.
@@ -953,20 +967,23 @@ the end user.
 \label{sec:crypto}
 
 A short-range audio channel that carries pairing tokens or small payloads will
-often want confidentiality and authentication; the predecessor stack carries an
-X25519/CTR-HMAC envelope for exactly this. Whether it is worth enabling, however,
-depends sharply on the chosen MCS, and the bulk PHY makes that tradeoff explicit
-rather than hard-coding it. Computed from the real codec geometry, a per-frame
-AEAD tag (28\,B) plus a one-time handshake (80\,B) costs about \textbf{0.15\% of
-goodput at 16-QAM r3/4} ($\sim$38\,kbps, large frames) but as much as
-\textbf{87.5\% at the multitone-FSK floor} with the tiny frames that regime
-implies; the handshake amortizes in $\sim$17\,ms at the top tier versus
-$\sim$2.4\,s at the floor. The guidance to a library consumer is therefore
-conditional: enable it essentially for free on the fast tiers, and on the floor
-either batch larger frames, authenticate without encrypting, or omit it---a
-decision the application makes from the same channel quality the sounder already
-measures. The envelope is experimental and unaudited; the point here is that its
-\emph{cost} is now a documented function of channel quality, not a fixed tax.
+often want confidentiality and authentication; the project provides an optional
+X25519 + CTR/HMAC (encrypt-then-MAC) envelope for exactly this. Whether it is
+worth enabling depends sharply on the chosen MCS, and the bulk PHY makes that
+tradeoff explicit rather than hard-coding it. Computed from the real codec
+geometry, the per-frame overhead is a 12-byte nonce plus a 16-byte
+authentication tag (28\,B total) on top of a one-time 80-byte handshake; that
+costs about \textbf{0.15\% of goodput at 16-QAM r3/4} ($\sim$38\,kbps, large
+frames) but as much as \textbf{87.5\% at the multitone-FSK floor} with the tiny
+frames that regime implies, and the handshake amortizes in $\sim$17\,ms at the
+top tier versus $\sim$2.4\,s at the floor. The guidance to a library consumer is
+therefore conditional: enable it essentially for free on the fast tiers, while on
+the floor the fixed per-frame cost motivates batching larger frames so the tag
+amortizes. Dropping confidentiality is an application-specific decision with real
+security consequences, not a default we endorse; the contribution here is only
+that the \emph{cost} of the envelope is now a documented function of channel
+quality---measured from the same sounding the MCS sounder uses---rather than a
+fixed tax. The envelope is experimental and unaudited.
 
 \subsection{Measured result: the inaudible-ultrasonic variant}
 \label{sec:ultrasonic}
@@ -1049,12 +1066,12 @@ to tolerate the micro-speaker's phase incoherence, at much lower rates.
 \begin{enumerate}
   \item A laptop and a phone at contact range can exchange tens of kbps
         acoustically: \textbf{36{,}571\,bps} Mac$\rightarrow$Pixel 7a and
-        \textbf{27{,}307\,bps} Pixel$\rightarrow$Mac, byte-verified, with all
-        overhead counted --- roughly two orders of magnitude above deployed
-        data-over-sound systems, and 4.5--9$\times$ the project's own design
-        document projection. The headline enabler was abandoning the
-        inaudibility constraint, which widened the channel from 5\,kHz to
-        16--22\,kHz.
+        \textbf{27{,}307\,bps} Pixel$\rightarrow$Mac, byte-verified over the
+        active message span --- $\sim$137$\times$ the best recovered open-source
+        baseline we ran on the \emph{same} channel and geometry (ggwave at
+        267\,bps), and 4.5--9$\times$ the original design document's own
+        projection. The headline enabler was abandoning the inaudibility
+        constraint, which widened the channel from 5\,kHz to 16--22\,kHz.
   \item The measured channel, not the modeled one, dictated every major
         design parameter: CP length (delay spread is $\sim$10$\times$ the
         modeled value), pilot structure (clock skew, not Doppler, is the
@@ -1067,9 +1084,10 @@ to tolerate the micro-speaker's phase incoherence, at much lower rates.
         the highest-leverage single fix.
   \item Verification discipline matters: a deterministic cross-language PRBS
         lets the receiving phone prove goodput on-device, and a conservative
-        goodput definition (verified bytes over total airtime) keeps the
-        result honest. The predecessor stack's 80$\times$ claim-to-measurement
-        gap is the cautionary baseline.
+        goodput definition (ordered, byte-verified payload over the active
+        message span) keeps the result honest. The 80$\times$ gap between an
+        earlier capacity-formula projection and its measured goodput is the
+        cautionary baseline.
   \item Consumer audio platforms are an active part of the channel: Android
         silently zeroes capture based on UI visibility, processed capture
         paths corrupt QAM, and macOS fades stream tails. Budget for the OS.
@@ -1081,6 +1099,11 @@ to tolerate the micro-speaker's phase incoherence, at much lower rates.
         SNR/delay-spread MCS sounder that never refuses to connect, and a
         channel-metric repositioning guide---that turn the project's
         measured-channel-first philosophy into APIs an application can call.
+  \item The largest remaining gap is empirical breadth, not algorithmic depth.
+        Every result is one contact-range geometry in a quiet room; a
+        distance/orientation/surface sweep and noisier ambient conditions would
+        say more about where this link generalizes than any further modulation
+        or coding work, and is the priority next step.
 \end{enumerate}
 
 \section{Reproducibility}
@@ -1137,7 +1160,9 @@ Quiet Modem Project. ``How It Works.''
 (accessed February 12, 2026).
 
 \bibitem{researchgate}
-``Ultrasonic Communication Using Consumer Hardware.''
+P.~Getreuer, C.~Gnegy, R.~F.~Lyon, R.~A.~Saurous. ``Ultrasonic Communication
+Using Consumer Hardware.'' IEEE Transactions on Multimedia, vol.~20, no.~6,
+pp.~1277--1290, 2018. DOI 10.1109/TMM.2017.2766049.
 \url{https://www.researchgate.net/publication/320575022_Ultrasonic_Communication_Using_Consumer_Hardware}
 (accessed February 12, 2026).
 
@@ -1177,7 +1202,8 @@ LISNR. ``How Does Data over Audio Transmission Work?''
 (accessed February 12, 2026).
 
 \bibitem{cazac}
-``Timing and Frequency Synchronization Using CAZAC Sequences.'' MDPI.
+``Timing and Frequency Synchronization Using CAZAC Sequences for OFDM
+Systems.'' MDPI Sensors 23(6):3168, 2023.
 \url{https://www.mdpi.com/1424-8220/23/6/3168} (accessed February 12, 2026).
 
 \bibitem{zcfo}
@@ -1230,8 +1256,9 @@ PMC.
 (accessed June 9, 2026).
 
 \bibitem{audiosecsurvey}
-``Short-Range Audio Channels Security: Survey of Mechanisms, Applications,
-and Research Challenges.'' CRI-Lab.
+M.~Caprolu, S.~Sciancalepore, R.~Di Pietro. ``Short-Range Audio Channels
+Security: Survey of Mechanisms, Applications, and Research Challenges.'' IEEE
+Communications Surveys \& Tutorials. arXiv:2001.02877.
 \url{https://cri-lab.net/wp-content/uploads/2020/01/Audio_Channels_Security_Survey.pdf}
 (accessed June 9, 2026).
 
