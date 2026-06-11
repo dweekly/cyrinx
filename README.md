@@ -64,10 +64,11 @@ against what was actually built (and why they diverged) is
 [docs/PRD_VS_AS_BUILT.md](docs/PRD_VS_AS_BUILT.md) (fresh as of 2026-06-09).
 An academic-workshop-style LaTeX whitepaper consolidating all of the above —
 related work, channel measurements, modem design, the defect/diagnostic
-catalog, and the verified results — is
+catalog, the verified results, the portable-C library port + library-native OTA,
+and the adaptive-MCS sounder / repositioning-guidance surfaces — is
 [docs/whitepaper/cyrinx-acoustic-link.tex](docs/whitepaper/cyrinx-acoustic-link.tex)
-(compiled PDF: [docs/whitepaper/cyrinx-acoustic-link.pdf](docs/whitepaper/cyrinx-acoustic-link.pdf);
-fresh as of 2026-06-09).
+(compiled PDF: [docs/whitepaper/cyrinx-acoustic-link.pdf](docs/whitepaper/cyrinx-acoustic-link.pdf),
+19 pp; fresh as of 2026-06-10).
 
 The same bulk PHY ported to an iOS HIL app and measured over the air on an
 iPhone 17 Pro Max — **36.57 kbps Mac->iPhone** (decoded on-device by

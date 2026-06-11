@@ -263,3 +263,87 @@ tying the new library surfaces together — `BulkPHY.encode/decode` round trip,
 MT-FSK floor), and `repositioningAdvice` (→ move closer / lower volume / soft
 surface). Compiles in CI; doubles as usage docs (Examples/README.md). Output
 confirms the whole stack: 9/9 blocks, payload match, evm 0.013.
+
+### `[paper]` Whitepaper revision — conflicts resolved + publication-effort milestones folded in
+The committed `.tex` had shipped with **13 unresolved git merge conflict blocks**
+(`<<<<<<< Updated upstream` / `=======` / `>>>>>>> Stashed changes`). LaTeX
+renders those markers as literal body text, so the published PDF carried conflict
+garbage. Every conflict's "Stashed changes" side was the reviewer-revised content
+(iPhone 17 PM second pair, same-hardware baselines table, phase-jitter
+statistics, threats-to-validity, reproducibility); the other side was the
+older/shorter pre-review text. Resolved all 13 by keeping the revised side,
+recompiled clean (17 pp), gitignored LaTeX aux (`PR #35`, first commit).
+
+Then folded this session's work into the paper (17 → 19 pp):
+- **§System Design / "From research harness to portable library"** — the C-port
+  milestone: full TX+RX in `cyrinx_bulk.c`, the `cyrinx_fft` plan interface with
+  KISS (portable reference) + vDSP (Apple, flagged) backends, the Swift `BulkPHY`
+  binding, and the committed golden-vector contract (tiered exact/1e-5/byte
+  tolerance, both backends gated). Notes the RX decoded synthetic-multipath
+  `rx_wave` to exact payload first try.
+- **§Evaluation / "Library-native over-the-air decode"** — the 12.8 kbps QPSK
+  r1/2 byte-verified result through the C codec on both ends, framed honestly as
+  a code-path validation at a weaker bench coupling (~10–11 dB SINR), with the
+  16-QAM partial-decode showing the cap is the physical link, not the codec.
+- **§Limitations / "Environment-adaptive scheduling and user guidance"** — the
+  MCS ladder + per-bin loading sounder (never refuses to connect) and the
+  channel-metric repositioning guide, as implemented decision logic.
+- **§Limitations / "The optional security envelope and its rate-dependent cost"**
+  — the per-MCS crypto overhead (0.15% at r3/4 → 87.5% at the MFSK floor).
+- Updated the abstract, the contributions list (added a 5th: the portable-C
+  reference impl + adaptive surfaces), the "deliberately omits" forward-ref, the
+  "limitations as it stands" items (i)/(iii), the Summary of Findings (added a
+  6th), and the Reproducibility section (library build/test + library-OTA repro).
+  Bumped the date to June 10, 2026.
+Compiles clean, no undefined refs, 19 pp. README freshness bumped to 2026-06-10.
+
+### `[paper-review]` DSP-reviewer pass: de-internalize narrative, fix a reference misattribution, soften overclaims
+Reviewed the paper through the lens of a skeptical, well-read DSP reader hunting
+for AI-authorship tells, unearned boastfulness, and bad references. Ran a
+dedicated reference-verification subagent over the full bibliography.
+
+**Reference audit (the important find).** No hallucinated references, but the
+load-bearing "94.5 bps / 127-chip DSSS" figure was attributed to the Google
+Nearby *API doc* (`nearby`), which does not contain it and which dropped
+ultrasonic advertising in 2021. The real source is Getreuer et al., "Ultrasonic
+Communication Using Consumer Hardware," IEEE Trans. Multimedia 20(6):1277–1290,
+2018 (the `researchgate` entry). Re-pointed the figure and the intro
+spread-spectrum cite to `researchgate`; upgraded that bibitem to full metadata
+(authors/venue/pages/DOI), independently re-verified via Google Scholar +
+getreuer.info. Also gave the `audiosecsurvey` survey real author metadata
+(Caprolu, Sciancalepore, Di Pietro; IEEE Comms Surveys & Tutorials; arXiv:
+2001.02877) — and deliberately did NOT assert volume/issue/pages I couldn't
+verify (caught myself fabricating "vol 23 no 1 pp 311–339" and stripped it).
+Restored the `cazac` full title.
+
+**Narrative de-internalization.** Removed backward-facing project-retrospective
+framing that doesn't belong in a paper: "the project history now carries a
+correction notice," "we include this not to disparage the earlier effort … its
+… groundwork carried forward," and "an earlier claim in the project history."
+Recast the predecessor-stack subsection as "Capacity-formula projection versus
+measured goodput" — a forward-facing methodological point (a capacity formula
+bounds what a channel *could* carry, not what a MAC *will* deliver). Reframed the
+−32.5 dB roll-off finding as a tested design-document assumption (cites `prd`).
+
+**Physical honesty.** The Pixel bottom-mic-beats-top-mic-by-6–20 dB observation
+now notes the obvious cause (in this geometry the bottom edge is closest to the
+Mac speakers — a path-length/shadowing advantage, not independent fading), with
+MRC's real payoff moved to the higher band where the mics actually decorrelate.
+Strengthened the 2×2 MIMO future direction with the precoding framing the user
+wants: precode the two Mac speakers to null at one Pixel mic and combine at the
+other, synthesizing two near-orthogonal subchannels (contingent on a
+well-conditioned, frame-stable channel matrix — untested).
+
+**Overclaim / consistency fixes (user's 6 points).** (1) Abstract now qualifies
+the library-native OTA as QPSK r1/2 12.8 kbps under weaker coupling, not the
+36 kbps headline. (2) Goodput wording unified to "active message span (excludes
+trailing silence)" across abstract/summary, with the gross figure noted. (3)
+"normal office ambient noise" → "a quiet room." (4) Summary "two orders of
+magnitude above deployed systems" → "~137× the best recovered open-source
+baseline on the same channel." (5) Elevated the single-geometry limitation to an
+explicit priority-next-step (a distance/orientation/surface sweep would teach
+more than another algorithm). (6) Security: "AEAD tag (28 B)" → "12-byte nonce +
+16-byte tag (encrypt-then-MAC)"; softened the "omit it" guidance.
+
+Compiles clean: 20 pp, 0 warnings, 0 undefined refs, 0 overfull boxes,
+35/35 citations resolved.
