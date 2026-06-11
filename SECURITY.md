@@ -15,9 +15,9 @@ receipt and work with you on a disclosure timeline.
 - The optional crypto envelope (X25519 ECDH + CTR/HMAC) is **opt-in and OFF by
   default**. The PHY does not encrypt or authenticate by default. An application
   that needs confidentiality or integrity must explicitly enable the envelope
-  and accept its throughput cost — which is near-free on fast MCS tiers but can
-  dominate goodput on the slow fallback tiers (see docs/PUBLICATION.md PR 1.9
-  for the cost/security tradeoff).
+  and accept its throughput cost — near-free on fast MCS tiers (~0.15 %) but able
+  to dominate goodput on the slow fallback tiers. See
+  [docs/CRYPTO_TRADEOFF.md](docs/CRYPTO_TRADEOFF.md) for the per-MCS cost table.
 - Acoustic links are inherently **broadcast over the air**: anyone within
   earshot (or with a microphone) can receive the signal. Confidentiality, if
   required, must come from the application layer, not the medium.

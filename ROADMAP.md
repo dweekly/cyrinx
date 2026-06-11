@@ -138,3 +138,16 @@ transmitter chooses bins, QAM order, FEC rate, CP, interleaver depth per
 burst. Standard ingredients; the closed-loop adaptation to consumer-device
 acoustics with measured pilot health and block-level verification is the
 novel contribution to aim at.
+
+### Exploration: pleasant-sounding audible modes
+Investigate data-over-audio waveforms that occupy the **audible** band but are
+*designed not to sound unpleasant* — trading bitrate for a benign or even
+musical timbre. Ideas: map symbols onto consonant chord tones / a pentatonic
+scale instead of dense OFDM hiss; shape the spectrum to pink/ambient noise that
+reads as "background"; hide payload under a melodic carrier (à la dial-up-as-
+music, or ggwave's "audible" presets but tuned for aesthetics); psychoacoustic
+masking so the data energy sits under a pleasant cover sound. Goal: a mode a
+user would tolerate (or enjoy) playing aloud in a shared room — even at much
+lower goodput than the wideband bulk PHY. Cross-reference the crypto tradeoff
+(docs/CRYPTO_TRADEOFF.md): low-rate modes pay proportionally more envelope
+overhead, so "pleasant + authenticated" is its own design point.
