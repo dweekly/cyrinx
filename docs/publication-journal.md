@@ -263,3 +263,36 @@ tying the new library surfaces together — `BulkPHY.encode/decode` round trip,
 MT-FSK floor), and `repositioningAdvice` (→ move closer / lower volume / soft
 surface). Compiles in CI; doubles as usage docs (Examples/README.md). Output
 confirms the whole stack: 9/9 blocks, payload match, evm 0.013.
+
+### `[paper]` Whitepaper revision — conflicts resolved + publication-effort milestones folded in
+The committed `.tex` had shipped with **13 unresolved git merge conflict blocks**
+(`<<<<<<< Updated upstream` / `=======` / `>>>>>>> Stashed changes`). LaTeX
+renders those markers as literal body text, so the published PDF carried conflict
+garbage. Every conflict's "Stashed changes" side was the reviewer-revised content
+(iPhone 17 PM second pair, same-hardware baselines table, phase-jitter
+statistics, threats-to-validity, reproducibility); the other side was the
+older/shorter pre-review text. Resolved all 13 by keeping the revised side,
+recompiled clean (17 pp), gitignored LaTeX aux (`PR #35`, first commit).
+
+Then folded this session's work into the paper (17 → 19 pp):
+- **§System Design / "From research harness to portable library"** — the C-port
+  milestone: full TX+RX in `cyrinx_bulk.c`, the `cyrinx_fft` plan interface with
+  KISS (portable reference) + vDSP (Apple, flagged) backends, the Swift `BulkPHY`
+  binding, and the committed golden-vector contract (tiered exact/1e-5/byte
+  tolerance, both backends gated). Notes the RX decoded synthetic-multipath
+  `rx_wave` to exact payload first try.
+- **§Evaluation / "Library-native over-the-air decode"** — the 12.8 kbps QPSK
+  r1/2 byte-verified result through the C codec on both ends, framed honestly as
+  a code-path validation at a weaker bench coupling (~10–11 dB SINR), with the
+  16-QAM partial-decode showing the cap is the physical link, not the codec.
+- **§Limitations / "Environment-adaptive scheduling and user guidance"** — the
+  MCS ladder + per-bin loading sounder (never refuses to connect) and the
+  channel-metric repositioning guide, as implemented decision logic.
+- **§Limitations / "The optional security envelope and its rate-dependent cost"**
+  — the per-MCS crypto overhead (0.15% at r3/4 → 87.5% at the MFSK floor).
+- Updated the abstract, the contributions list (added a 5th: the portable-C
+  reference impl + adaptive surfaces), the "deliberately omits" forward-ref, the
+  "limitations as it stands" items (i)/(iii), the Summary of Findings (added a
+  6th), and the Reproducibility section (library build/test + library-OTA repro).
+  Bumped the date to June 10, 2026.
+Compiles clean, no undefined refs, 19 pp. README freshness bumped to 2026-06-10.

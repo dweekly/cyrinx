@@ -31,7 +31,7 @@ developed with substantial AI-agent assistance (Claude Code); all reported
 results are from over-the-air measurements on physical hardware recorded in
 the project's lab notebook.}}
 
-\date{June 9, 2026}
+\date{June 10, 2026}
 
 \begin{document}
 
@@ -68,7 +68,12 @@ block verification, and acoustic data-over-sound are all long established; the
 contribution is the \emph{measured} end-to-end system on commodity
 heterogeneous hardware, the discriminating-experiment diagnostic methodology,
 the physical/platform defect catalog, and on-device verification, not new
-modulation theory. We frame the result accordingly: this is a well-instrumented
+modulation theory. The modem has since been ported from the research harness
+into a portable-C reference library (transmit and receive), validated bit-exact
+against committed golden vectors with an Apple vDSP backend gated by those same
+vectors; the library's own codec decodes over the air byte-verified end to end,
+and ships with an SNR/delay-spread MCS sounder and a channel-metric-driven user
+repositioning guide. We frame the result accordingly: this is a well-instrumented
 empirical case study of how much commodity hardware delivers after real-channel
 debugging---validated on two device pairs (a Pixel 7a and an iPhone 17 Pro Max,
 each against the same MacBook Pro) in a single contact-range geometry, with
@@ -125,6 +130,12 @@ Contributions:
         the expected payload locally from a portable deterministic PRNG and
         proves goodput on-device, so no captured samples need leave the phone
         (Section~\ref{sec:detrng}).
+  \item A portable-C reference implementation of the full transmit/receive
+        codec, pinned by a committed golden-vector contract (with an Apple vDSP
+        backend gated by the same vectors), that decodes over the air byte-verified
+        through the library itself, plus the adaptive-MCS sounder and
+        channel-metric repositioning guidance built on top
+        (Sections~\ref{sec:library},~\ref{sec:libota},~\ref{sec:adaptive}).
 \end{enumerate}
 
 \section{Related Work}
@@ -433,6 +444,40 @@ path (including a double-precision radix-2 FFT written for the purpose) and
 was validated bit-compatible against the Python decoder on an identical
 capture file (225/225 blocks, matching EVM) before the live runs.
 
+\subsection{From research harness to portable library}
+\label{sec:library}
+
+The headline measurements above were produced by the Python research harness
+(transmit) and the Kotlin on-device decoder (receive). To make the result a
+\emph{reusable library} rather than a one-off experiment, the entire bulk PHY---
+both transmit and receive---was subsequently re-implemented in portable C
+(\texttt{Sources/CCyrinx/cyrinx\_bulk.c}): the \texttt{splitmix64} \texttt{DetRng},
+IEEE CRC-32, the $K{=}7$ $(171,133)_8$ convolutional encoder with puncturing, the
+frame-wide interleaver, Gray-coded QAM mapping, OFDM modulation, chirp
+matched-filter synchronization, least-squares channel estimation, three-pass
+pilot phase/CPE tracking, max-log soft-output demapping, and the soft-decision
+Viterbi decoder. The FFT sits behind a small plan interface
+(\texttt{cyrinx\_fft}) with two interchangeable backends: a vendored KISS FFT
+(BSD-3, compiled in double precision) as the portable correctness reference that
+also ships to Android via JNI, and---on Apple, under a compile flag---a
+vDSP/Accelerate double-precision DFT. A thin Swift binding (\texttt{BulkPHY})
+exposes \texttt{encode}/\texttt{decode} with no DSP of its own.
+
+Correctness is pinned by a committed golden-vector contract. The Python oracle
+emits, for three modulation/rate configurations, the intermediate products of
+every pipeline stage (coded bits, interleaved bits, QAM symbols, the OFDM
+frequency-domain frame, the transmitted waveform, and the waveform after a fixed
+synthetic multipath channel), together with a SHA-256 manifest. The C codec is
+tested stage-by-stage against these vectors under a tiered tolerance---bit-exact
+for the integer stages, $10^{-5}$ for the floating-point FFT stages, and
+byte-exact for the decoded payload---and \emph{both} FFT backends are required to
+pass the identical vectors. This is what lets the vDSP path be treated as a pure
+optimization: the portable KISS build defines correctness, and Accelerate is a
+drop-in the vectors gate. The C receiver decoded the synthetic-multipath
+\texttt{rx\_wave} to the exact transmitted payload on its first run, which we read
+as evidence that the golden-vector contract pinned the transmitter tightly enough
+to reconstruct the receiver against it.
+
 \subsection{What the bulk PHY deliberately omits}
 
 Relative to the original design document \cite{prd}, the bulk PHY drops the
@@ -442,7 +487,9 @@ predecessor stack implemented that chatty MAC, and its turnaround gaps, tiny
 payloads, and ACK timeouts consumed more than 97\% of airtime---this is why it
 measured 0.27\,kbps. For bulk transfer, long streaming frames with open-loop
 MCS selection from the measured channel are the right shape; closed-loop
-adaptation belongs at session granularity, not frame granularity. Encryption
+adaptation belongs at session granularity, not frame granularity (the
+session-granularity MCS sounder is now implemented as a decision engine,
+Section~\ref{sec:adaptive}). Encryption
 (an X25519/CTR/HMAC envelope exists in the predecessor stack), discovery, and
 ARQ are likewise out of scope for the PHY measurement reported here.
 
@@ -707,6 +754,32 @@ desktop multipath that the OFDM equalizer and convolutional code absorb. At
 recovered deployed-tool baseline (ggwave ``Fastest'' at 267\,bps) on the same
 hardware and geometry.
 
+\subsection{Library-native over-the-air decode}
+\label{sec:libota}
+
+The 36.6/27.3\,kbps headline was measured with the Python harness and the Kotlin
+on-device decoder; the portable-C library codec (Section~\ref{sec:library}) was
+validated digitally against golden vectors but not yet over the air. To close
+that gap we exercised the library code path itself end-to-end: a ctypes loader
+binds the compiled \texttt{libcyrinxbulk} dylib, the Mac \emph{C-encodes} a frame
+and plays it, the Pixel records, and the same C codec \emph{decodes the live
+capture}. In this bench session the acoustic coupling was markedly weaker than
+the historical palm-rest geometry (received peak $\sim$0.08, EVM $\sim$0.30,
+i.e.\ $\sim$10--11\,dB SINR versus the 30\,dB+ of the headline runs), so this is
+a code-path validation, not a peak-rate measurement.
+
+At that coupling, \textbf{QPSK rate 1/2 decoded fully byte-verified through the
+library on both ends: 25/25 blocks across 3 frames, 12.8\,kbps}. Pushing the
+ladder higher at the \emph{same} weak coupling was SNR-limited, not
+codec-limited: 16-QAM rate 1/2 recovered 40--49 of 50 blocks ($\sim$20--25\,kbps
+with a few CRC failures) and 16-QAM rate 3/4 only 25 of 75. That the C demapper
+and Viterbi decoder partially recover live 16-QAM at $\sim$10\,dB SINR is the
+point---the ceiling here is the physical link in this particular bench setup, not
+the library. This is precisely the regime the adaptive sounder
+(Section~\ref{sec:adaptive}) is built to detect and back off from, with ARQ
+mopping up the stragglers. Re-running the full palm-rest geometry through the
+library to reproduce the 36\,kbps figure natively remains open.
+
 \subsection{Contrast with the predecessor stack}
 
 The predecessor in-repo stack (Zadoff--Chu sync, D-CSS headers, OFDM-QPSK
@@ -785,14 +858,18 @@ We state these honestly as scope statements, so the numbers are not over-read.
 
 \textbf{Limitations of the result as it stands.} These are scope statements,
 not failures; we state them plainly so the result is not over-read. The
-measured bulk PHY: (i) is \emph{not} integrated into the project's public
-Swift/C transport API --- it lives in the research harness
-(\texttt{scratch/hw20k/}) and the Kotlin HIL decoder; (ii) is \emph{not}
+measured bulk PHY: (i) is now ported into the portable-C library with a Swift
+binding and decodes over the air through that path
+(Sections~\ref{sec:library},~\ref{sec:libota}), but it is \emph{not} yet wired
+into the project's streaming transport/MAC API, and the 36\,kbps headline has not
+been reproduced natively through the library (the library-native OTA to date is
+the weaker-coupling 12.8\,kbps bench result); (ii) is \emph{not}
 real-time streaming --- it is a batch design that records, then decodes
 offline, though the on-device decoder runs at roughly 20$\times$ real time and
-a streaming port is therefore plausible; (iii) is \emph{not} closed-loop
-rate-adaptive --- the MCS is chosen open-loop from a same-day channel
-measurement, with no per-frame feedback; (iv) is \emph{not} secured by the
+a streaming port is therefore plausible; (iii) selects its MCS open-loop --- an
+adaptive sounder now implements the \emph{decision} logic
+(Section~\ref{sec:adaptive}), but it is not yet wired into a closed feedback loop
+driven by a live sounding burst; (iv) is \emph{not} secured by the
 project's existing X25519/CTR/HMAC envelope --- the PHY measurement carries
 raw test payloads; and (v) is validated in exactly \emph{one} physical
 geometry (a phone face-up on a MacBook Pro palm rest), on two device pairs
@@ -828,6 +905,65 @@ emanations \cite{kbdacoustic}.
         underwater acoustic channels \cite{otfsreview,otfsjasa} are the
         natural candidates --- untested here.
 \end{itemize}
+
+\subsection{Environment-adaptive scheduling and user guidance}
+\label{sec:adaptive}
+
+Two of the headroom items above---rate adaptation and the human factors of a
+contact-range link---motivated decision surfaces that are now implemented in the
+library as pure, unit-tested logic (the sensing that would feed them with live
+metrics still requires a sounding burst, i.e.\ audio, and is the open half).
+
+\textbf{An MCS ladder driven by SNR and delay spread.} The sounder maps a
+measured median in-band SNR and a $-15$\,dB delay spread to the most aggressive
+modulation/rate whose two gates both clear, walking 16-QAM r3/4 $\rightarrow$
+16-QAM r1/2 $\rightarrow$ QPSK r1/2 $\rightarrow$ BPSK r1/2 and falling to a
+non-coherent multitone-FSK floor when the delay spread exceeds the cyclic-prefix
+cap (the reverberant-desk regime). It sizes the CP to cover the measured delay
+spread plus 25\% headroom (clamped to a 32\,ms cap, switching NFFT 2048
+$\rightarrow$ 4096 past a 1024-sample CP) and---importantly for a consumer
+link---\emph{never refuses to connect}: when conditions are poor it still returns
+the robust floor and merely flags that repositioning would help. A companion
+per-bin bit-loading rule assigns 0/2/4/6 bits by per-bin SNR thresholds
+(5/15/23\,dB), the mechanism behind the ``per-bin adaptive bit loading''
+headroom item. The thresholds are the operating points observed in the channel
+characterization (Section~\ref{sec:channel}); the ladder is open-loop today, but
+it is the decision core a closed feedback loop would call.
+
+\textbf{Turning channel metrics into a human instruction.} Because the channel is
+dominated by physical placement---contact coupling, clipping at high volume, a
+hard reflective surface---small user actions move the operating point more than
+any coding change. The library therefore exposes a guidance function that maps
+measured metrics to a single prioritized, actionable hint: clipping (received
+peak near full scale) $\rightarrow$ \emph{lower the volume}; ultrasonic band with
+low phase coherence $\rightarrow$ \emph{switch to the audible band}
+(Section~\ref{sec:ultrasonic}); delay spread beyond twice the CP $\rightarrow$
+\emph{rest the phone on a soft surface}; weak received level $\rightarrow$
+\emph{move the devices closer}; high-frequency roll-off $\rightarrow$ \emph{aim
+the phone's bottom edge at the speaker}. The priority order encodes which defect
+dominates when several fire at once. This is a small piece of code, but it
+reframes a finicky physical link as something a non-expert can actually seat: the
+same measured-channel-first philosophy that drove the modem design, surfaced to
+the end user.
+
+\subsection{The optional security envelope and its rate-dependent cost}
+\label{sec:crypto}
+
+A short-range audio channel that carries pairing tokens or small payloads will
+often want confidentiality and authentication; the predecessor stack carries an
+X25519/CTR-HMAC envelope for exactly this. Whether it is worth enabling, however,
+depends sharply on the chosen MCS, and the bulk PHY makes that tradeoff explicit
+rather than hard-coding it. Computed from the real codec geometry, a per-frame
+AEAD tag (28\,B) plus a one-time handshake (80\,B) costs about \textbf{0.15\% of
+goodput at 16-QAM r3/4} ($\sim$38\,kbps, large frames) but as much as
+\textbf{87.5\% at the multitone-FSK floor} with the tiny frames that regime
+implies; the handshake amortizes in $\sim$17\,ms at the top tier versus
+$\sim$2.4\,s at the floor. The guidance to a library consumer is therefore
+conditional: enable it essentially for free on the fast tiers, and on the floor
+either batch larger frames, authenticate without encrypting, or omit it---a
+decision the application makes from the same channel quality the sounder already
+measures. The envelope is experimental and unaudited; the point here is that its
+\emph{cost} is now a documented function of channel quality, not a fixed tax.
 
 \subsection{Measured result: the inaudible-ultrasonic variant}
 \label{sec:ultrasonic}
@@ -932,6 +1068,14 @@ to tolerate the micro-speaker's phase incoherence, at much lower rates.
   \item Consumer audio platforms are an active part of the channel: Android
         silently zeroes capture based on UI visibility, processed capture
         paths corrupt QAM, and macOS fades stream tails. Budget for the OS.
+  \item A measurement can be made reusable without losing its rigor: the full
+        codec ported into portable C, pinned by a committed golden-vector
+        contract under a tiered exact/float tolerance (with an Apple vDSP
+        backend gated by the same vectors), decodes over the air byte-verified
+        through the library itself. On top sit two decision surfaces---an
+        SNR/delay-spread MCS sounder that never refuses to connect, and a
+        channel-metric repositioning guide---that turn the project's
+        measured-channel-first philosophy into APIs an application can call.
 \end{enumerate}
 
 \section{Reproducibility}
@@ -947,11 +1091,22 @@ rate 3/4; frame-wide interleave; CRC32 per 256-byte block; chirp preamble plus
 2 sync symbols. Volume settings: Mac output 100\%, Mac input $\sim$22/100,
 phone media at maximum.
 
-\textbf{Repro commands.} \texttt{scratch/hw20k/ota\_test.py} (Pixel);
-\texttt{scratch/hw20k/ios\_ota\_test.py} and \texttt{ios\_campaign.py}
+\textbf{Repro commands (research harness).} \texttt{scratch/hw20k/ota\_test.py}
+(Pixel); \texttt{scratch/hw20k/ios\_ota\_test.py} and \texttt{ios\_campaign.py}
 (iPhone); \texttt{baselines.py} (ggwave/minimodem);
 \texttt{ios\_phase\_coherence.py} (phase jitter). iOS HIL details in
 \texttt{docs/IOS\_HIL.md}.
+
+\textbf{Repro commands (portable-C library).} \texttt{swift test} runs the codec
+against the committed golden vectors on the portable KISS-FFT default;
+\texttt{scripts/test-accelerate.sh} re-runs the same vectors through the Apple
+vDSP/Accelerate backend. \texttt{swift run cyrinx-example-adaptive-bulk}
+exercises the \texttt{BulkPHY} codec round trip, the MCS sounder, and the
+repositioning guidance. The library-native OTA (Section~\ref{sec:libota}) is
+driven by \texttt{scratch/hw20k/ota\_clib.py}, which ctypes-loads
+\texttt{libcyrinxbulk} (built from \texttt{Sources/CCyrinx/}); \texttt{clib.py}
+is its digital-loopback self-test. The crypto cost figures are in
+\texttt{docs/CRYPTO\_TRADEOFF.md}.
 
 \textbf{Branch commits at time of measurement.} \texttt{ios-hil-bulk}
 \texttt{0f80d8e}, \texttt{ultrasonic-band} \texttt{7699a6e}, \texttt{whitepaper}
