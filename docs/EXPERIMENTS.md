@@ -2,6 +2,56 @@
 
 Fresh as of 2026-06-11.
 
+## Measured findings — 2026-06-11 bench session (Mac ↔ Pixel 7a)
+
+First live session with the new harness, one cell: `palmrest_stand_fan` (phone
+face-up on cloth on the left palm rest, charge-port/bottom-edge toward the hinge
+≈ toward the Mac speakers, MacBook on its stand as always, house fan running).
+Data: `scratch/hw20k/data/freqresp/mac2pixel_palmrest_stand_fan.json`,
+`data/env_sweep.jsonl`, figure `data/freqresp/freqresp_by_path.png`.
+
+1. **E4 met and exceeded — library-native 39.3 kbps.** The library C codec
+   (`libcyrinxbulk`) decoded over the air, byte-verified: QPSK r½ 13.1 kbps,
+   16-QAM r½ 26.2 kbps, **16-QAM r¾ 39.3 kbps (375/375 blocks, EVM 0.157)**.
+   This *exceeds* the 36.6 kbps Python-harness headline and **removes the paper's
+   "library only hit 12.8 kbps OTA" caveat** (abstract + §Library-OTA).
+
+2. **64-QAM ceiling — the "64-QAM doubles throughput" headroom estimate is NOT
+   realized here.** 64-QAM r¾ decoded 0/339 (0%) at EVM 0.173 (~15 dB effective
+   SINR). The cap is the residual-EVM/phase-noise floor (~15 dB), *not* channel
+   SNR (the swept-sine measures the raw channel at 52 dB). The paper's headroom
+   bullet must be softened: 64/256-QAM is bounded by the effective-SINR/EVM floor
+   on this transducer, not the raw SNR.
+
+3. **Adaptive-sounder SNR estimation is unreliable for MCS selection — a real
+   finding, no clean one-line fix.** The sounder predicted QPSK (median "SNR"
+   10.5 dB) for a channel that carried 16-QAM r¾. Two failure modes bracket the
+   truth (effective SINR ≈ 15 dB):
+   - *variance across repeated pilots* (current): **pessimistic** — the −10 to
+     −25 ppm clock drift rotates the channel between symbols and is counted as
+     noise; under-calls.
+   - *detrend the per-symbol phase first* (tried, reverted): **optimistic** —
+     jumps to ~30 dB and would load 64-QAM (which fails). Refuted the
+     short-burst hypothesis: even a 64-symbol sounding stays ~30 dB. The cause is
+     that the sounding uses **identical low-PAPR pilots**, so it never excites the
+     **channel-estimation error + PAPR-driven speaker nonlinearity** that random
+     full-PAPR data incurs.
+   **Conclusion:** repeated-pilot statistics cannot predict random-data SINR. The
+   reliable sounder is a **data-representative EVM probe** (send a known random-QAM
+   frame, read its EVM through the real demod) with **empirically calibrated
+   EVM→MCS thresholds**. The sweep below *generates* that calibration curve
+   (EVM/effective-SINR vs achievable MCS), so it is the prerequisite for a proper
+   sounder redesign (roadmap item). Note the bug is confined to the SNR-estimation
+   half (`sounder.analyze`, Python reference); the C/Swift `recommend()` only
+   consumes a given SNR.
+
+4. **`rx_peak` is a poor coupling indicator.** This cell read peak 0.087
+   ("weak") yet delivered 39.3 kbps. Use SNR/EVM, not peak.
+
+Paper edits these imply: remove the library-OTA caveat (now 39.3 kbps native);
+soften the 64-QAM headroom bullet to an EVM-floor bound; add the
+sounder-SNR-estimation finding; add the first measured Mac→Pixel H(f) figure.
+
 This is the sequenced plan for the over-the-air measurements that close the
 honest gaps in [the whitepaper](whitepaper/cyrinx-acoustic-link.tex) — chiefly
 the single-geometry and single-ambient-condition limitations in its
