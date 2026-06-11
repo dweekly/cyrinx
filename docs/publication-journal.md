@@ -210,3 +210,20 @@ over the speaker, the Pixel records, and the **C codec decodes the capture**.
   case the adaptive sounder (1.4) picks the MCS for, with ARQ for the stragglers.
 - Reproducible: `clib.py` (digital loopback self-test) + `ota_clib.py [n] [bpb]
   [rate]`. The dylib is a build artifact (gitignored); rebuild line in clib.py.
+
+### `[1.9-doc]` Crypto cost/security tradeoff documented
+`docs/CRYPTO_TRADEOFF.md`: the per-MCS overhead table, computed from the real
+codec geometry (`clib.py`). Per-frame AEAD tag (28 B) is **0.15 %** at 16-QAM
+r3/4 (38 kbps) but **87.5 %** at the MT-FSK floor with tiny frames; the 80-B
+handshake amortizes in 17 ms at the top tier vs 2.4 s at the floor. Guidance:
+turn it on for free on the fast tiers; at the floor, batch larger frames /
+authenticate-don't-encrypt / or skip it. The wiring of the envelope onto the
+bulk path (the code half of 1.9) remains; the *decision surface* — the thing the
+user emphasized (apps choose bandwidth-vs-security by channel) — is now
+documented. Cited from SECURITY.md.
+
+### `[roadmap]` Pleasant-sounding audible modes
+Added a ROADMAP exploration item (user idea): data-over-audio waveforms in the
+audible band designed to sound benign/musical (chord-tone/pentatonic symbol
+maps, pink-noise spectral shaping, melodic carriers, psychoacoustic masking),
+trading bitrate for a sound a user would tolerate playing aloud in a shared room.
