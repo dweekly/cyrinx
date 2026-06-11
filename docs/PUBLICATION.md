@@ -22,6 +22,27 @@ Convention: one entry per shippable stage; ~~strikethrough~~ as each merges.
 Each stage is a tracking PR opened with its first commit, in a worktree under
 `~/dev/cyrinx-<stage>/`.
 
+## Status (2026-06-10)
+
+**Merged to `main` (73 tests green):** Phase 0 hygiene (#23); 1.1 golden-vector
+contract (#24); **1.2 + 1.3 the full portable-C bulk PHY codec — TX *and* RX**
+(#26, validated bit-exact / float-tol against the golden vectors, RX decodes the
+multipath `rx_wave` to the exact payload); 1.7-core Swift `BulkPHY` binding (#26,
+pure-Swift round trips); 1.4b repositioning-guidance API (#28). The core
+technical risk — porting the validated 36 kbps modem into a portable C library —
+is **done**.
+
+**Automatable, remaining:** 1.4 adaptive sounder + MCS ladder + MFSK floor
+(feeds 1.4b real metrics); 1.6 vDSP FFT backend; 1.7-rest (retire the HIL
+`BulkDemod` forks); 1.8 transport integration; 1.9 optional crypto + tradeoff
+doc; Phase 2 (#4 BPSK, #6 spread-spectrum, #5 research); Phase 3 paper draft;
+Phase 4 website build.
+
+**User-gated (cannot be automated):** 1.10 OTA re-validation through the C
+library (needs the phone + Mac on the bench); Phase 3 arXiv *submission* (needs
+the arXiv account + endorsement); Phase 4 Cloudflare *deploy* (needs wrangler
+auth on cyrinx.org); Phase 5 make-repo-public + tag + announce.
+
 Day-to-day decisions, measurements, dead ends, and rationale are logged in
 [publication-journal.md](publication-journal.md) as we go — raw material for the
 final paper update (Phase 3). Durable "don't do that" results still graduate to
