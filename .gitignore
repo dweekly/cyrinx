@@ -32,7 +32,10 @@ scratch/hw20k/data/_empty_result.json
 # library codec dylib (regenerable; see scratch/hw20k/clib.py)
 *.dylib
 
-# LaTeX build artifacts (the .tex and committed .pdf are tracked; aux is not)
+# LaTeX build artifacts. latexmk builds into docs/whitepaper/out/ (see
+# docs/whitepaper/.latexmkrc) and copies the finished PDF back beside the .tex.
+# The .tex, .latexmkrc, and committed .pdf are tracked; nothing else is.
+docs/whitepaper/out/
 docs/whitepaper/*.aux
 docs/whitepaper/*.log
 docs/whitepaper/*.out

@@ -694,7 +694,10 @@ Block-failure rate & 0.27\% (CI 0.14--0.53\%) & 4.0\% (CI 3.1--5.2\%) \\
 at $36.47 \pm 0.12$\,kbps (vs.\ the Pixel's 36.57\,kbps), decoded \emph{on the
 iPhone} by a Swift port of the receiver that was validated bit-exact against the
 Python decoder on an identical capture (75/75 blocks at EVM 0.0223). The
-Mac$\rightarrow$iPhone band is the full 1.1--23\,kHz, as for the Pixel.
+Mac$\rightarrow$iPhone band is the full 1.1--23\,kHz, as for the Pixel ---
+consistent with the broadband response measured for recent iPhone microphones
+\cite{iphonemic}, which receive the downlink cleanly; the asymmetry below is a
+speaker, not a microphone, limit.
 
 \textbf{iPhone$\rightarrow$Mac is lower, at $16.38 \pm 0.75$\,kbps, purely
 because the usable band is narrower.} The iPhone speaker rolls off about 18\,dB
@@ -970,7 +973,9 @@ measures. The envelope is experimental and unaudited; the point here is that its
 
 The original goal (and the obvious product form) is an inaudible link in the
 18.5--23.9\,kHz band. We subsequently ran the bulk-PHY methodology entirely in
-that band at 96\,kHz sampling \cite{ultrasonicband}; the answer is that it is
+that band at 96\,kHz sampling \cite{ultrasonicband} (the Mac output chain
+supports the high sample rate the ultrasonic band requires \cite{applerates});
+the answer is that it is
 \emph{feasible in one direction but transducer-bound in the other}.
 
 \textbf{Mac$\rightarrow$Pixel works.} In the 18.5--23.9\,kHz band at 96\,kHz
@@ -1091,11 +1096,12 @@ rate 3/4; frame-wide interleave; CRC32 per 256-byte block; chirp preamble plus
 2 sync symbols. Volume settings: Mac output 100\%, Mac input $\sim$22/100,
 phone media at maximum.
 
+{\sloppy
 \textbf{Repro commands (research harness).} \texttt{scratch/hw20k/ota\_test.py}
 (Pixel); \texttt{scratch/hw20k/ios\_ota\_test.py} and \texttt{ios\_campaign.py}
 (iPhone); \texttt{baselines.py} (ggwave/minimodem);
 \texttt{ios\_phase\_coherence.py} (phase jitter). iOS HIL details in
-\texttt{docs/IOS\_HIL.md}.
+\texttt{docs/IOS\_HIL.md}.\par}
 
 \textbf{Repro commands (portable-C library).} \texttt{swift test} runs the codec
 against the committed golden vectors on the portable KISS-FFT default;
@@ -1115,7 +1121,8 @@ is its digital-loopback self-test. The crypto cost figures are in
 {\sloppy
 \textbf{Artifact paths.} Under \texttt{scratch/hw20k/data/}:
 \texttt{ios\_campaign.jsonl}, \texttt{baselines.json}, \texttt{channel.json},
-and \texttt{ios\_phase\_coherence.json}.\par}
+and \texttt{ios\_phase\_coherence.json}. The full research writeup, lab notebook,
+and golden-vector harness are in the repository \cite{repo}.\par}
 
 \begin{thebibliography}{99}
 \small
