@@ -190,6 +190,11 @@ delivers the measured headline, plus the [cyrinx.org](https://cyrinx.org)
 companion site and an arXiv paper — is tracked in
 [docs/PUBLICATION.md](docs/PUBLICATION.md) (fresh as of 2026-06-10), with
 day-to-day rationale in [docs/publication-journal.md](docs/publication-journal.md).
+The sequenced plan for the over-the-air measurement campaign that rounds out the
+paper (distance/orientation/surface/ambient sweeps, the frequency-response figure
+grid, and the sounder predicted-vs-achieved validation) is
+[docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) (fresh as of 2026-06-11); the harness
+lives in `scratch/hw20k/` (`freqresp.py`, `plot_freqresp.py`, `env_sweep.py`).
 
 ## License
 
