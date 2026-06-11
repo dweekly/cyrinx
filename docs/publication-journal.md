@@ -179,3 +179,15 @@ the payload with every block valid; wrong-length payloads are rejected. The
 **Swift library now delivers the bulk codec end-to-end** (digitally); OTA parity
 (1.10) needs hardware. 64 tests green. (Retiring the HIL `BulkDemod` forks in
 favor of this binding is the remaining part of 1.7.)
+
+### `[1.4b]` Repositioning-guidance API — built and tested
+`cyrinx_guidance.{c,h}` + Swift `RepositioningGuidance.swift`: a pure function
+mapping measured channel metrics → one actionable hint with severity + evidence.
+Rules (priority order, thresholds documented from the measured findings):
+clipping (peak≥0.98) → lower volume; ultrasonic + coherence<0.3 → use audible
+(NEGATIVE_FINDINGS #9); delay spread > 2×CP → soft surface (#13); low SNR + weak
+peak → move closer; marginal SNR → move closer (advisory); HF roll-off < −10 dB →
+aim the phone's bottom edge. Swift surface: `repositioningAdvice(for: ChannelMetrics)
+-> RepositioningAdvice` with a localizable `.text`. 9 unit tests over each
+pathology + priority order. The sounder (1.4) will populate the metrics from a
+real sounding; the function is independently testable now. 73 tests green.
