@@ -44,6 +44,8 @@ def _load():
     for fn in sorted(glob.glob(os.path.join(DATA, "*.json"))):
         with open(fn) as f:
             r = json.load(f)
+        if "freqs_hz" not in r:        # skip roomtone-only records
+            continue
         recs.setdefault(r["path"], []).append(r)
     return recs
 
