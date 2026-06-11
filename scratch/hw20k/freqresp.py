@@ -136,17 +136,64 @@ def delay_spread(ir, peak_idx, sr=SR):
     return {"-10dB": t_at(-10), "-15dB": t_at(-15), "-20dB": t_at(-20)}
 
 
-def per_bin_snr(sig_mag, freqs, noise_capture, inv, sr=SR, nfft=16384):
-    """SNR(f) in dB: signal |H(f)| vs the noise floor measured from a silent
-    capture run through the same deconvolution chain. If no noise capture is
-    given, returns None (figures then omit the SNR overlay)."""
+def _welch(x, sr=SR, nfft=8192):
+    """Single-sided Welch PSD (Hann, 50% overlap). Returns (freqs, psd)."""
+    x = np.asarray(x, dtype=np.float64)
+    x = x - x.mean()
+    w = np.hanning(min(nfft, len(x)))
+    if len(w) < 2:
+        return np.array([0.0]), np.array([0.0])
+    step = max(1, len(w) // 2)
+    acc = np.zeros(len(w) // 2 + 1)
+    k = 0
+    for i in range(0, len(x) - len(w) + 1, step):
+        acc += np.abs(np.fft.rfft(x[i:i + len(w)] * w)) ** 2
+        k += 1
+    return np.fft.rfftfreq(len(w), 1.0 / sr), acc / max(1, k)
+
+
+def snr_from_captures(sweep_capture, noise_capture, grid_freqs, sr=SR):
+    """Received SNR(f) in dB = PSD of the sweep capture / PSD of a room-tone
+    (silent) capture taken at the SAME receiver gain, interpolated onto the
+    H(f) frequency grid. Well-defined and apples-to-apples: both are measured
+    receiver-side spectra. Returns None if no noise capture is given (figures
+    then omit the SNR overlay)."""
     if noise_capture is None:
         return None
-    nir, npk = deconvolve_ir(noise_capture, inv, sr=sr)
-    _, nmag, _ = transfer_function(nir, npk, sr=sr, nfft=nfft)
-    nmag = np.maximum(nmag, 1e-12)
-    snr = 20 * np.log10(np.maximum(sig_mag, 1e-12) / nmag)
-    return snr
+    fs, ps = _welch(sweep_capture, sr)
+    _, pn = _welch(noise_capture, sr)
+    snr_db = 10 * np.log10(np.maximum(ps, 1e-20) / np.maximum(pn, 1e-20))
+    return np.interp(grid_freqs, fs, snr_db)
+
+
+def analyze_room_tone(noise, sr=SR):
+    """Passive ambient ("room tone") analysis: no transmission, just listen.
+
+    Lets an adaptive link pre-screen the channel passively (the user's idea):
+    how loud is the band, and is there structured occupancy -- a near-ultrasonic
+    jammer, an HVAC tone -- that a transmission would have to fight? Returns the
+    broadband level, per-band PSD, and a near-ultrasonic interferer flag (a
+    18-22 kHz peak standing clearly above the in-band median)."""
+    x = np.asarray(noise, dtype=np.float64)
+    freqs, psd = _welch(x, sr)
+
+    def band_db(lo, hi):
+        sel = (freqs >= lo) & (freqs < hi)
+        return round(float(10 * np.log10(psd[sel].sum() + 1e-20)), 1) if sel.any() else -200.0
+
+    bands = {f"{lo // 1000}-{hi // 1000}kHz": band_db(lo, hi)
+             for lo, hi in [(300, 3000), (3000, 8000), (8000, 14000),
+                            (14000, 18000), (18000, 22000)]}
+    inband = (freqs >= 300) & (freqs <= 22000)
+    med = float(np.median(10 * np.log10(psd[inband] + 1e-20))) if inband.any() else -200.0
+    us = (freqs >= 18000) & (freqs <= 22000)
+    us_peak = float(10 * np.log10(psd[us].max() + 1e-20)) if us.any() else -200.0
+    return {
+        "rms_inband": float(np.sqrt(np.mean(x ** 2))),
+        "band_psd_db": bands,
+        "near_ultrasonic_excess_db": round(us_peak - med, 1),
+        "near_ultrasonic_interferer": bool(us_peak - med > 12.0),
+    }
 
 
 def measure(send_fn, env_label, path_label, noise_fn=None, sr=SR):
@@ -164,7 +211,8 @@ def measure(send_fn, env_label, path_label, noise_fn=None, sr=SR):
     freqs, mag, phase = transfer_function(ir, pk, sr=sr)
     ds = delay_spread(ir, pk, sr=sr)
     noise_cap = noise_fn() if noise_fn is not None else None
-    snr = per_bin_snr(mag, freqs, noise_cap, inv, sr=sr)
+    snr = snr_from_captures(cap, noise_cap, freqs, sr=sr)
+    room = analyze_room_tone(noise_cap, sr) if noise_cap is not None else None
 
     # relative magnitude in dB, normalized to the in-band median
     band = (freqs >= 300) & (freqs <= 20000)
@@ -181,6 +229,7 @@ def measure(send_fn, env_label, path_label, noise_fn=None, sr=SR):
         "snr_db": (snr.round(2).tolist() if snr is not None else None),
         "delay_spread_ms": ds,
         "rx_peak": float(np.abs(cap).max()),
+        "room_tone": room,
     }
     os.makedirs(DATA, exist_ok=True)
     out = os.path.join(DATA, f"{path_label}_{env_label}.json")
@@ -247,7 +296,24 @@ def _selftest():
     ds = delay_spread(ir, pk, sr=sr)
     print(f"    delay spread -15dB={ds['-15dB']:.2f} ms (expect a few ms)")
 
-    ok = ok_taps and p95 < 2.0 and 0.5 < ds["-15dB"] < 20.0
+    # 4) room-tone analysis: white noise -> no interferer; white + a 20 kHz tone
+    #    -> near-ultrasonic interferer flag fires.
+    t = np.arange(2 * sr) / sr
+    white = rng.normal(0, 1e-3, len(t))
+    rt_clean = analyze_room_tone(white, sr)
+    jam = white + 0.02 * np.sin(2 * np.pi * 20000 * t)
+    rt_jam = analyze_room_tone(jam, sr)
+    print(f"    room-tone: clean interferer={rt_clean['near_ultrasonic_interferer']} "
+          f"(expect False); jammed={rt_jam['near_ultrasonic_interferer']} "
+          f"(expect True), excess={rt_jam['near_ultrasonic_excess_db']} dB")
+    ok_room = (not rt_clean["near_ultrasonic_interferer"]) and rt_jam["near_ultrasonic_interferer"]
+
+    # 5) snr_from_captures returns a finite in-band SNR (sweep capture vs noise)
+    snr = snr_from_captures(rx, white, freqs, sr=sr)
+    ok_snr = snr is not None and np.isfinite(snr[(freqs >= 300) & (freqs <= 20000)]).all()
+    print(f"    snr_from_captures finite in-band: {ok_snr}")
+
+    ok = ok_taps and p95 < 2.0 and 0.5 < ds["-15dB"] < 20.0 and ok_room and ok_snr
     print("  SELFTEST", "PASS" if ok else "FAIL")
     return 0 if ok else 1
 
@@ -276,10 +342,47 @@ def _send_for(path_label):
     raise SystemExit(f"unknown path '{path_label}'")
 
 
+def _record_for(path_label, dur=2.0):
+    """Record-only ambient ("room tone") on the RECEIVER side of the named path
+    -- no playback. Used both as the SNR noise floor and the passive sounding."""
+    import harness as H
+    rx_is_phone = path_label in ("mac2pixel", "mac2iphone")
+    if not rx_is_phone:                       # RX is the Mac
+        return lambda: H.mac_record(dur)
+    if path_label == "mac2pixel":             # RX is the Pixel
+        def rec():
+            _, p = H.android_record(dur, out_name="rt_pixel.pcm")
+            return H.load_pcm16(p, channels=2)[:, 0]
+        return rec
+    # RX is the iPhone
+    import ios_harness as I
+    if not hasattr(I, "ios_record"):
+        raise SystemExit("iPhone room-tone needs ios_harness.ios_record")
+    return lambda: np.asarray(I.ios_record(dur), dtype=np.float64)
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "selftest"
     if cmd == "selftest":
         sys.exit(_selftest())
+    if cmd == "roomtone":
+        path = sys.argv[2]
+        env = sys.argv[3] if len(sys.argv) > 3 else "default"
+        print(f"=== room tone (passive): {path}  env={env} ===")
+        rt = analyze_room_tone(_record_for(path)(), SR)
+        os.makedirs(DATA, exist_ok=True)
+        out = os.path.join(DATA, f"{path}_roomtone_{env}.json")
+        with open(out, "w") as f:
+            json.dump({"path": path, "env": env, **rt}, f)
+        print(f"  in-band RMS={rt['rms_inband']:.2e}  near-US excess="
+              f"{rt['near_ultrasonic_excess_db']} dB  "
+              f"interferer={rt['near_ultrasonic_interferer']}")
+        print(f"  band PSD (dB): {rt['band_psd_db']}")
+        print(f"  wrote {out}")
+        sys.exit(0)
+    # otherwise cmd is a path label -> full frequency-response measure with the
+    # receiver-side room tone captured for the SNR overlay.
+    path = cmd
     env = sys.argv[2] if len(sys.argv) > 2 else "default"
-    print(f"=== frequency response: {cmd}  env={env} ===")
-    measure(_send_for(cmd), env, cmd)
+    print(f"=== frequency response: {path}  env={env} ===")
+    measure(_send_for(path), env, path, noise_fn=_record_for(path))
