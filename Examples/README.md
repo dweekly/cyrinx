@@ -67,3 +67,14 @@ swift run cyrinx-example-android-hil --fixture-wave /tmp/cyrinx_wave_f32le.bin -
 - These are transport/simulation examples using `CyrinxSession.linkInMemory`.
 - They do not require real audio hardware.
 - For live device testing, use the paired macOS+iOS HIL scaffold in `/Users/dew/dev/cyrinx/Apps/HIL/README.md`.
+
+## 6) Adaptive Bulk PHY
+
+Demonstrates:
+- bulk-PHY `BulkPHY.encode`/`decode` round trip (digital loopback)
+- `recommendMCS` choosing the MCS tier for clean / contact / reverberant channels
+- `repositioningAdvice` turning channel metrics into a human hint
+
+```bash
+swift run cyrinx-example-adaptive-bulk
+```

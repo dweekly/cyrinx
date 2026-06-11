@@ -255,3 +255,11 @@ a zero imaginary part and irfft mirrors the Hermitian half. Validated against th
 tolerance. KISS default stays green (80 tests). Repeatable via
 `scripts/test-accelerate.sh`. This is the "Apple optimization" — correctness
 comes from the portable path; the backend is a drop-in the golden vectors gate.
+
+### `[examples]` Adaptive-bulk usage example
+`Examples/AdaptiveBulk` (`cyrinx-example-adaptive-bulk`): one runnable program
+tying the new library surfaces together — `BulkPHY.encode/decode` round trip,
+`recommendMCS` across clean/contact/reverberant channels (→ 16-QAM / QPSK /
+MT-FSK floor), and `repositioningAdvice` (→ move closer / lower volume / soft
+surface). Compiles in CI; doubles as usage docs (Examples/README.md). Output
+confirms the whole stack: 9/9 blocks, payload match, evm 0.013.
