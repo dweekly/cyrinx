@@ -347,3 +347,21 @@ more than another algorithm). (6) Security: "AEAD tag (28 B)" → "12-byte nonce
 
 Compiles clean: 20 pp, 0 warnings, 0 undefined refs, 0 overfull boxes,
 35/35 citations resolved.
+
+### `[paper-robustness]` Fold the robustness/diversity layer into the whitepaper
+After the bench session that built the adaptive-robustness layer (PRs #39, #40,
+merged), folded the whole story into the paper (21 → 22 pp):
+- Updated the "measured caveat on SNR estimation" in §Adaptive to reflect the
+  FIX: the repeated-pilot variance estimator was replaced by a data-representative
+  EVM probe, validated exact across four geometries head-to-head against the old.
+- New §Robustness (`sec:robust`): the non-coherent MFSK floor (4/4 frames, 68 bps
+  where OFDM gave 0); microphone diversity chosen by decode not loudness (the
+  louder mic is often the worse one); two-mic MRC (8/11 QPSK where both mics alone
+  gave 0, EVM 1.4→0.69); adaptive CP (rescues reverberant to 10.9 kbps, shrinks to
+  5 ms on clean channels → 48 kbps); and the demonstrated graceful degradation
+  across orientations (48 kbps → 68 bps, never zero).
+- MRC future-work bullet → "now measured, not estimated" (cross-ref sec:robust).
+- Summary: added the graceful-degradation finding (most "dead" spots were receiver
+  artifacts, not channel limits).
+Compiles clean: 22 pp, 0 warnings, 0 undefined refs, 0 overfull boxes, citations
+balanced. README freshness → 2026-06-12.
