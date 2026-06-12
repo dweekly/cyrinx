@@ -202,6 +202,10 @@ paper (distance/orientation/surface/ambient sweeps, the frequency-response figur
 grid, and the sounder predicted-vs-achieved validation) is
 [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) (fresh as of 2026-06-11); the harness
 lives in `scratch/hw20k/` (`freqresp.py`, `plot_freqresp.py`, `env_sweep.py`).
+The prioritized handoff for the next working session — the paper-vs-shipped-library
+gap to close (auto-MRC, C-port diversity), the 2×2-MIMO frontier, the website
+(Phase 4), and a bench quick-start — is [docs/NEXT_SESSION.md](docs/NEXT_SESSION.md)
+(fresh as of 2026-06-12).
 
 ## License
 
