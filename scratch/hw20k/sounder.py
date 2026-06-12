@@ -189,7 +189,116 @@ def sound_channel(send_fn, sr=48000, nfft=2048, cp=768, f_lo=1100.0, f_hi=23000.
     return rec, an
 
 
+# ======================================================================
+# EVM-probe sounder (the corrected MCS-selection algorithm)
+# ----------------------------------------------------------------------
+# The repeated-pilot SNR estimate above is unreliable for MCS choice: its
+# variance is pessimistic (the -10..-25 ppm clock drift between independently
+# clocked devices rotates the channel between symbols and is counted as noise),
+# and detrending the phase over-corrects because identical low-PAPR pilots never
+# excite the channel-estimation error and PAPR-driven loudspeaker nonlinearity
+# that random data incurs. Measured at the palm-rest cell: it reported 10.5 dB ->
+# "QPSK" while the channel carried 16-QAM r3/4 (EVM 0.157).
+#
+# The fix: probe with a DATA-REPRESENTATIVE frame (a known random-QAM frame, the
+# real codec, the sized CP) and read its EVM through the actual receiver. EVM is
+# ~constellation-independent (a channel property), so one probe predicts every
+# tier; pick the densest constellation whose EVM threshold it clears. Delay
+# spread beyond the CP cap still routes to the non-coherent floor.
+#
+# EVM->MCS thresholds, calibrated from over-the-air measurements (2026-06-11/12):
+#   EVM 0.157 -> 16-QAM r3/4 decoded (39.3 kbps); EVM ~0.17 -> 64-QAM FAILED;
+#   EVM ~0.25 -> 16-QAM r1/2 decoded but r3/4 failed; EVM ~0.27 -> QPSK r1/2;
+#   EVM ~1.2 (reverberant) -> nothing. (64-QAM, needing EVM < ~0.08, omitted
+#   until a sub-0.1 cell is measured.) The sweep tightens these.
+EVM_LADDER = [
+    (0.20, "fast",   "16-QAM", "3/4", 4),
+    (0.28, "medium", "16-QAM", "1/2", 4),
+    (0.45, "qpsk",   "QPSK",   "1/2", 2),
+]
+
+
+def evm_probe(send_fn, sr=48000, nfft=2048, cp=768, f_lo=1100.0, f_hi=23000.0,
+              n_sym=64):
+    """Send one known 16-QAM r1/2 frame through the library codec at the given
+    geometry and return its measured EVM (effective-SINR proxy). Uses n_sym=64
+    so the probe accumulates the same clock-drift/ICI a real data frame does.
+    Returns inf if the receiver cannot sync (treated as non-coherent)."""
+    import clib
+    cfg = clib.make_cfg(bits_per_bin=4, rate="1/2", n_sym=n_sym,
+                        f_lo=f_lo, f_hi=f_hi, nfft=nfft, cp=cp, sr=sr)
+    g = clib.geometry(cfg)
+    payload = bytes((i * 31 + 7) & 0xFF for i in range(g.payload_bytes))
+    wave = clib.encode(cfg, payload)
+    d = clib.decode(cfg, np.asarray(send_fn(wave), dtype=np.float32))
+    return float("inf") if d is None else float(d["evm"])
+
+
+def recommend_evm(evm, ds15, sr):
+    """Pick MCS from the probe EVM (densest tier it clears) and size the CP from
+    the delay spread. Delay spread beyond the CP cap, or EVM past the QPSK
+    threshold, routes to the non-coherent floor."""
+    cp_ms = min(CP_CAP_MS, max(5.0, ds15 * 1.25))
+    cp = int(cp_ms / 1000 * sr)
+    nfft = 2048 if cp <= 1024 else 4096
+    chosen = None
+    if ds15 <= CP_CAP_MS:
+        for thr, label, mcs, rate, bpb in EVM_LADDER:
+            if evm <= thr:
+                chosen = (label, mcs, rate, bpb)
+                break
+    noncoherent = chosen is None
+    if noncoherent:
+        label, mcs, rate, bpb = (*NONCOHERENT_FLOOR[:3], 0)
+    else:
+        label, mcs, rate, bpb = chosen
+    return {
+        "tier": label, "mcs": mcs, "rate": rate, "bits_uniform": bpb,
+        "noncoherent": noncoherent, "cp": cp, "cp_ms": round(cp_ms, 1),
+        "nfft": nfft, "advise_reposition": noncoherent,
+        "probe_evm": (None if evm == float("inf") else round(evm, 3)),
+        "delay_spread_ms_15": round(ds15, 1),
+    }
+
+
+def sound_channel_evm(send_fn, sr=48000, f_lo=1100.0, f_hi=23000.0):
+    """Corrected sounder: a pilot burst sizes the CP from the delay spread, then
+    an EVM probe at that CP selects the MCS. Returns (recommendation, analysis)."""
+    cfg_s, wave_s = build_sounding(sr, 2048, 768, f_lo, f_hi, 2000.0, 16000.0)
+    an = analyze(cfg_s, np.asarray(send_fn(wave_s), dtype=float), sr)
+    ds15 = an["delay_spread_ms"]["-15dB"]
+    cp_ms = min(CP_CAP_MS, max(5.0, ds15 * 1.25))
+    cp = int(cp_ms / 1000 * sr)
+    nfft = 2048 if cp <= 1024 else 4096
+    evm = evm_probe(send_fn, sr=sr, nfft=nfft, cp=cp, f_lo=f_lo, f_hi=f_hi)
+    return recommend_evm(evm, ds15, sr), an
+
+
+def _selftest():
+    """Offline regression net for the EVM->MCS selection, anchored on the
+    over-the-air calibration points (no hardware)."""
+    cases = [
+        (0.157, 3.0, "fast"),     # 16-QAM r3/4 decoded (39.3 kbps)
+        (0.17, 3.0, "fast"),      # 64-QAM failed; 16-QAM r3/4 is the right call
+        (0.252, 3.0, "medium"),   # 16-QAM r1/2 decoded, r3/4 failed
+        (0.40, 3.0, "qpsk"),      # QPSK r1/2 regime
+        (0.98, 42.0, "mfsk"),     # reverberant: EVM + delay spread -> floor
+        (0.15, 42.0, "mfsk"),     # low EVM but delay spread > CP cap -> floor
+    ]
+    ok = True
+    for evm, ds, want in cases:
+        got = recommend_evm(evm, ds, 48000)["tier"]
+        ok &= got == want
+        print(f"  EVM={evm:5.3f} ds={ds:4.1f}ms -> {got:6s} (expect {want}) "
+              f"{'OK' if got == want else 'FAIL'}")
+    print("SELFTEST", "PASS" if ok else "FAIL")
+    return 0 if ok else 1
+
+
 if __name__ == "__main__":
+    import sys as _sys
+    if len(_sys.argv) > 1 and _sys.argv[1] == "selftest":
+        _sys.exit(_selftest())
     # Demo: sound the Mac->iPhone channel at the current physical position.
     import harness as H
     import ios_harness as I
