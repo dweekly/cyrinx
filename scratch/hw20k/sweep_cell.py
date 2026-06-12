@@ -38,8 +38,11 @@ def run(cell, reps=3):
           f"near-US interferer={rt['near_ultrasonic_interferer']}")
 
     rec, an = S.sound_channel(send)
-    print(f"  sounder: tier={rec['tier']} medSNR={rec['median_snr_db']}dB "
-          f"ds15={rec['delay_spread_ms_15']}ms peakUsable={rec['usable_bin_frac']*100:.0f}%")
+    print(f"  OLD sounder: tier={rec['tier']} medSNR={rec['median_snr_db']}dB "
+          f"ds15={rec['delay_spread_ms_15']}ms")
+    recn, _ = S.sound_channel_evm(send)
+    print(f"  NEW sounder: tier={recn['tier']} ({recn['mcs']} r{recn['rate']}) "
+          f"probeEVM={recn['probe_evm']} ds15={recn['delay_spread_ms_15']}ms")
 
     per = {}
     for tier, bpb, rate in LADDER:
@@ -71,11 +74,17 @@ def run(cell, reps=3):
                 ach = t
     best_kbps = max((per[t]["goodput_kbps"] for t in per if per[t]["verified_frac"] >= 0.95),
                     default=0.0)
-    pi, ai = TIER_ORDER.get(rec["tier"]), TIER_ORDER.get(ach)
-    verdict = ("floor" if rec["noncoherent"] else
-               "optimistic" if ai is None or (pi is not None and pi > ai) else
-               "exact" if pi == ai else "conservative")
-    print(f"  => predicted={rec['tier']} achieved={ach} ({best_kbps} kbps) verdict={verdict}")
+    ai = TIER_ORDER.get(ach)
+
+    def verdict_for(r):
+        pi = TIER_ORDER.get(r["tier"])
+        return ("floor" if r["noncoherent"] else
+                "optimistic" if ai is None or (pi is not None and pi > ai) else
+                "exact" if pi == ai else "conservative")
+    v_old, v_new = verdict_for(rec), verdict_for(recn)
+    verdict = v_new
+    print(f"  => OLD={rec['tier']} ({v_old}) | NEW={recn['tier']} ({v_new}) | "
+          f"achieved={ach} ({best_kbps} kbps)")
 
     os.makedirs(DATA, exist_ok=True)
     with open(os.path.join(DATA, "sweep.jsonl"), "a") as f:
@@ -84,7 +93,9 @@ def run(cell, reps=3):
             "room_tone": rt,
             "sounder": {"predicted_tier": rec["tier"], "median_snr_db": rec["median_snr_db"],
                         "delay_spread_ms_15": rec["delay_spread_ms_15"],
-                        "usable_bin_frac": rec["usable_bin_frac"]},
+                        "usable_bin_frac": rec["usable_bin_frac"], "verdict": v_old},
+            "sounder_evm": {"predicted_tier": recn["tier"], "probe_evm": recn["probe_evm"],
+                            "delay_spread_ms_15": recn["delay_spread_ms_15"], "verdict": v_new},
             "ladder": per, "achieved_tier": ach, "best_goodput_kbps": best_kbps,
             "prediction_verdict": verdict}) + "\n")
     print("  logged to data/sweep.jsonl")
