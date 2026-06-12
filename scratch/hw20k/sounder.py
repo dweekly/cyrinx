@@ -207,10 +207,13 @@ def sound_channel(send_fn, sr=48000, nfft=2048, cp=768, f_lo=1100.0, f_hi=23000.
 # spread beyond the CP cap still routes to the non-coherent floor.
 #
 # EVM->MCS thresholds, calibrated from over-the-air measurements (2026-06-11/12):
-#   EVM 0.157 -> 16-QAM r3/4 decoded (39.3 kbps); EVM ~0.17 -> 64-QAM FAILED;
+#   EVM 0.157 -> 16-QAM r3/4 decoded (39.3 kbps); EVM ~0.10-0.17 -> 64-QAM only
+#   partial (33% at EVM 0.097, 0% at 0.17), so its clean threshold is < ~0.08 and
+#   it stays omitted (even partial 64-QAM lost to clean 16-QAM r3/4);
 #   EVM ~0.25 -> 16-QAM r1/2 decoded but r3/4 failed; EVM ~0.27 -> QPSK r1/2;
-#   EVM ~1.2 (reverberant) -> nothing. (64-QAM, needing EVM < ~0.08, omitted
-#   until a sub-0.1 cell is measured.) The sweep tightens these.
+#   EVM ~1.2 (reverberant) -> nothing. Live head-to-head at the port_fnkey cell
+#   (EVM 0.145): new sounder -> 16-QAM r3/4 (exact), old -> QPSK (under-call).
+#   The sweep tightens these further.
 EVM_LADDER = [
     (0.20, "fast",   "16-QAM", "3/4", 4),
     (0.28, "medium", "16-QAM", "1/2", 4),
