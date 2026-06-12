@@ -920,12 +920,12 @@ emanations \cite{kbdacoustic}.
         (phase noise, channel-estimation error, PAPR-driven nonlinearity) caps
         the constellation well below what the raw SNR suggests, so higher-order
         QAM buys less than a capacity estimate predicts on this transducer.
-  \item \emph{Maximal-ratio combining} of the Pixel's two microphones. The
-        bottom mic leads the top by 6--20\,dB below 10\,kHz, but in this geometry
-        that is mostly a path-length and shadowing advantage---the phone's bottom
-        edge sits closest to the Mac speakers---rather than independent fading, so
-        MRC's real payoff is at higher frequencies where the two mics decorrelate
-        and the combiner adds genuine diversity.
+  \item \emph{Maximal-ratio combining} of the Pixel's two microphones is
+        \emph{now measured, not estimated} (Section~\ref{sec:robust}): the two
+        mics' reverberant null patterns are decorrelated, and combining them
+        decodes where either mic alone fails. What remains is to fold MRC (and
+        decode-based mic selection) into the library's main coherent path rather
+        than the reference receiver only.
   \item \emph{True 2$\times$2 MIMO} (Mac stereo speakers $\times$ Pixel stereo
         mics) Mac$\rightarrow$Pixel. With a measured $2\times2$ channel matrix
         the transmitter could precode the two speakers to place a spatial null at
@@ -984,10 +984,15 @@ over-corrects the other way (to $\sim$30\,dB, which would select a 64-QAM loadin
 that does not decode), because a sounding of identical low-PAPR pilots never
 excites the channel-estimation error and PAPR-driven nonlinearity that random
 data incurs (Section~\ref{sec:libota}). Repeated-pilot statistics, in short, do
-not predict random-data SINR; the reliable estimator is a \emph{data-representative}
-probe---a known random-QAM frame decoded through the real receiver and read out as
-EVM---with empirically calibrated EVM-to-MCS thresholds, which a geometry/ambient
-sweep would furnish. This concerns only the SNR-\emph{estimation} half; the ladder
+not predict random-data SINR. We therefore replaced the estimator with a
+\emph{data-representative} probe---a known 16-QAM frame decoded through the real
+receiver and read out as EVM---with EVM-to-MCS thresholds calibrated over the air.
+The corrected sounder is \emph{exact} where the old one under-called: at the
+palm-rest cell it now recommends 16-QAM rate 3/4 (the measured ceiling) instead of
+QPSK, picks 16-QAM rate 1/2 at a noisier cell, and drops to the non-coherent floor
+only when the EVM probe (run at the adaptive CP, Section~\ref{sec:robust}) confirms
+no coherent tier decodes---validated across four geometries, head-to-head against
+the old estimator. The fix touches only the SNR-\emph{estimation} half; the ladder
 logic itself, given a correct SINR, is a few lines.
 
 \textbf{Turning channel metrics into a human instruction.} Because the channel is
@@ -1005,6 +1010,65 @@ dominates when several fire at once. This is a small piece of code, but it
 reframes a finicky physical link as something a non-expert can actually seat: the
 same measured-channel-first philosophy that drove the modem design, surfaced to
 the end user.
+
+\subsection{Robustness across topologies: a non-coherent floor, microphone
+diversity, and an adaptive cyclic prefix}
+\label{sec:robust}
+
+The contact-range channel is acutely sensitive to placement: sliding the phone's
+overhanging edge $\sim$5\,cm across the keyboard flipped the measured $-15$\,dB
+delay spread from 3\,ms to 42\,ms, and a naive receiver---a single fixed
+microphone and a 16\,ms cyclic prefix---collapsed from 39\,kbps to a hard zero
+across that move. We found that cliff to be mostly a \emph{receiver} artifact, not
+a channel limit, and close it with four measured mechanisms; together they turn
+the cliff into a graceful slope.
+
+\textbf{A non-coherent floor.} When the delay spread exceeds what a cyclic prefix
+can cover, coherent OFDM cannot decode at any MCS, yet the channel still carries
+energy. A non-coherent multitone-FSK mode---16-FSK across eight interleaved blocks
+per symbol, per-tone energy detection, symbols longer than the delay spread (so the
+previous symbol's reverberant tail decays before detection), with a 3$\times$
+majority-vote code---survives exactly this regime, being immune to both phase
+incoherence and inter-symbol interference. Over the air at a reverberant spot where
+the coherent codec decoded \emph{zero} of every block, the floor delivered 4/4
+frames at 68\,bps: degraded, but never zero. (This is the tier the sounder already
+routed to; previously it had no implementation behind it.)
+
+\textbf{Microphone diversity, chosen by decode not by loudness.} The Pixel's two
+microphones see materially different channels---at one position one mic carried a
+42\,ms delay spread while the other saw only 11\,ms. Received \emph{loudness} is
+not a reliable way to choose between them: at a second position the louder mic
+failed to decode while the quieter one decoded with zero byte errors, so an
+RMS-based choice reported a false ``dead'' link. Selecting instead by decode
+outcome---try both, keep the one that verifies---is what works.
+
+\textbf{Two-mic maximal-ratio combining.} Better than selecting either microphone
+is combining both: a per-subcarrier conjugate-weighted sum fills the frequency
+nulls that sink one mic, because the two mics' reverberant null patterns are
+decorrelated (measured: only 1\% of bins are nulled on \emph{both} mics, versus
+12\% on \emph{either}). Over the air at a spot where \emph{both} microphones alone
+decoded 0 blocks, MRC recovered 8 of 11 QPSK blocks (EVM $1.4\rightarrow0.69$)---
+decoding where neither mic alone could.
+
+\textbf{An adaptive cyclic prefix.} The original 32\,ms CP cap bounded overhead,
+but at the high SNR of these channels, covering the delay spread is a bargain.
+Sizing the CP to the measured spread (up to 96\,ms) rescues reverberant spots into
+coherent OFDM---a position the old sounder routed to the 68\,bps floor instead
+carries 10.9\,kbps of QPSK---and, run the other way, shrinks the CP to 5\,ms on a
+clean 0.4\,ms-spread channel, cutting overhead and lifting goodput to 48\,kbps,
+above the headline figure.
+
+\textbf{Graceful degradation, demonstrated.} With the corrected sounder driving
+microphone selection, the adaptive CP, and the floor, a closed sound-then-link loop
+linked across deliberately diverse orientations on the one device pair:
+$\sim$48\,kbps face-down at a clean contact spot, $\sim$11\,kbps at a reverberant
+overhang, and 5\,kbps down to 68\,bps at a shadowed on-edge placement below the
+laptop---never zero, and flagging repositioning when even the floor is marginal.
+The recurring lesson is that the reverberant ``dead'' spots were largely artifacts
+of a single (often the wrong) microphone and a too-short CP. The two microphones
+supply real spatial diversity, which points directly at the 2$\times$2-MIMO
+direction (Section~\ref{sec:future}), where rich multipath becomes an asset rather
+than a liability.
 
 \subsection{The optional security envelope and its rate-dependent cost}
 \label{sec:crypto}
@@ -1143,10 +1207,16 @@ to tolerate the micro-speaker's phase incoherence, at much lower rates.
         SNR/delay-spread MCS sounder that never refuses to connect, and a
         channel-metric repositioning guide---that turn the project's
         measured-channel-first philosophy into APIs an application can call.
-        (A first live measurement also shows the sounder's repeated-pilot SNR
-        estimate is unreliable for MCS choice, and that higher-order QAM is
-        bounded by an effective-SINR/EVM floor well below the raw SNR;
-        Sections~\ref{sec:libota},~\ref{sec:adaptive}.)
+  \item The link degrades \emph{gracefully} across topologies, and most
+        ``dead'' reverberant spots were receiver artifacts, not channel limits.
+        The sounder's first SNR estimator (repeated-pilot variance) proved
+        unreliable and was replaced by a data-representative EVM probe, exact
+        across geometries; with decode-based microphone selection, an adaptive
+        cyclic prefix, two-mic maximal-ratio combining, and a non-coherent
+        multitone-FSK floor, a closed loop linked everywhere it was tried---
+        48\,kbps at a clean spot down to a 68\,bps floor, never zero---where a
+        naive single-mic, short-CP receiver collapsed to silence
+        (Section~\ref{sec:robust}).
   \item The largest remaining gap is empirical breadth, not algorithmic depth.
         Every result is one contact-range geometry in a quiet room; a
         distance/orientation/surface sweep and noisier ambient conditions would

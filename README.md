@@ -68,10 +68,13 @@ catalog, the verified results, the portable-C library port + library-native OTA,
 and the adaptive-MCS sounder / repositioning-guidance surfaces — is
 [docs/whitepaper/cyrinx-acoustic-link.tex](docs/whitepaper/cyrinx-acoustic-link.tex)
 (compiled PDF: [docs/whitepaper/cyrinx-acoustic-link.pdf](docs/whitepaper/cyrinx-acoustic-link.pdf),
-21 pp; fresh as of 2026-06-11). Now folds in the first live-bench findings:
-library-native 39.3 kbps OTA (exceeds the harness headline), the
-effective-SINR/EVM ceiling on higher-order QAM, the sounder SNR-estimation
-finding, and the measured channel-response figure.
+22 pp; fresh as of 2026-06-12). Folds in the live-bench findings: library-native
+39.3 kbps OTA (exceeds the harness headline), the effective-SINR/EVM ceiling on
+higher-order QAM, the measured channel-response figure, and the
+robustness/diversity layer (Section: graceful degradation) — the EVM-probe
+sounder fix, a non-coherent MFSK floor, decode-based mic selection, adaptive
+cyclic prefix, and two-mic MRC — by which the link degrades gracefully across
+topologies (48 kbps → 68 bps floor, never zero) where a naive receiver collapsed.
 
 The same bulk PHY ported to an iOS HIL app and measured over the air on an
 iPhone 17 Pro Max — **36.57 kbps Mac->iPhone** (decoded on-device by
