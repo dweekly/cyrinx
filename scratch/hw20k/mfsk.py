@@ -111,8 +111,22 @@ def _find_chirp(rx, sr=SR):
 
 
 def demodulate(rx, n_payload, sr=SR):
-    """Decode a frame of known payload length. Returns (payload_bytes, crc_ok)."""
+    """Decode a frame of known payload length. Returns (payload_bytes, crc_ok).
+
+    Accepts mono or stereo (N, n_mic). For stereo, decode-based mic selection:
+    try each mic and return the first that CRC-verifies. RMS-loudness is a poor
+    selector -- the louder mic is often the worse one in a reverberant field
+    (measured: a spot where the louder mic failed but the quieter one decoded
+    0 byte errors)."""
     rx = np.asarray(rx, dtype=np.float64)
+    if rx.ndim > 1:
+        last = (b"", False)
+        for c in range(rx.shape[1]):
+            dec, crc = demodulate(rx[:, c], n_payload, sr)
+            if crc:
+                return dec, crc
+            last = (dec, crc)
+        return last
     freqs = _tone_freqs()
     body_len = 2 + n_payload + 4
     base_n = -(-(body_len * 2) // N_BLOCKS) * N_BLOCKS   # padded base nibble count

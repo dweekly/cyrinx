@@ -45,8 +45,8 @@ def run(label, reps=3):
         payload = bytes((i * 53 + 7) & 0xFF for i in range(MFSK_PAYLOAD))
         okc = 0
         for _ in range(reps):
-            mono, _ = S.best_channel(send(mfsk.modulate(payload)))
-            dec, crc = mfsk.demodulate(mono, MFSK_PAYLOAD)
+            # pass stereo: mfsk.demodulate does decode-based mic selection
+            dec, crc = mfsk.demodulate(send(mfsk.modulate(payload)), MFSK_PAYLOAD)
             okc += int(crc and dec == payload)
         gp_bps = mfsk.bitrate(MFSK_PAYLOAD) * (okc / reps)
         mode = "MFSK floor"
