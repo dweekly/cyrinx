@@ -218,31 +218,65 @@ EVM_LADDER = [
 ]
 
 
+# Adaptive CP runs well past the old 32 ms "not worth it" cap: at the high SNR of
+# reverberant contact-range channels, covering the delay spread is a bargain.
+# Measured rescue: a ds~42 ms spot that the old cap routed to the 68 bps MFSK
+# floor carries 16-QAM r1/2 at ~15-20 kbps with a 64 ms CP on the *stronger* mic.
+CP_LONG_CAP_MS = 96.0
+
+
+def best_channel(rx):
+    """Selection diversity: from a stereo capture pick the stronger mic. Accepts
+    mono (returns as-is). Returns (mono_signal, mic_index)."""
+    a = np.asarray(rx, dtype=float)
+    if a.ndim == 1:
+        return a, 0
+    idx = int(np.argmax(np.sqrt((a ** 2).mean(axis=0))))
+    return a[:, idx], idx
+
+
+def adaptive_geometry(ds15, sr):
+    """Size the CP to cover the measured delay spread (no cap until
+    CP_LONG_CAP_MS) and pick the smallest NFFT that keeps the CP overhead sane.
+    Returns (cp_samples, cp_ms, nfft)."""
+    cp_ms = min(CP_LONG_CAP_MS, max(5.0, ds15 * 1.5))
+    cp = int(cp_ms / 1000 * sr)
+    nfft = 1 << max(11, (int(1.3 * cp)).bit_length())   # >= ~1.3x CP, min 2048
+    return cp, round(cp_ms, 1), nfft
+
+
 def evm_probe(send_fn, sr=48000, nfft=2048, cp=768, f_lo=1100.0, f_hi=23000.0,
-              n_sym=64):
-    """Send one known 16-QAM r1/2 frame through the library codec at the given
-    geometry and return its measured EVM (effective-SINR proxy). Uses n_sym=64
-    so the probe accumulates the same clock-drift/ICI a real data frame does.
-    Returns inf if the receiver cannot sync (treated as non-coherent)."""
+              n_sym=None):
+    """Send one known 16-QAM r1/2 frame at the given geometry; decode it on the
+    BEST of the (possibly stereo) mic channels and return (evm, mic_index). EVM is
+    the effective-SINR proxy. n_sym targets a ~2.5 s probe (so a long CP doesn't
+    make a 10 s frame) while still accruing real clock-drift/ICI; evm=inf if no
+    channel syncs (treated as non-coherent)."""
     import clib
+    if n_sym is None:
+        n_sym = 64 if cp <= 1024 else max(16, int(2.5 * sr / (nfft + cp)))
     cfg = clib.make_cfg(bits_per_bin=4, rate="1/2", n_sym=n_sym,
                         f_lo=f_lo, f_hi=f_hi, nfft=nfft, cp=cp, sr=sr)
     g = clib.geometry(cfg)
     payload = bytes((i * 31 + 7) & 0xFF for i in range(g.payload_bytes))
-    wave = clib.encode(cfg, payload)
-    d = clib.decode(cfg, np.asarray(send_fn(wave), dtype=np.float32))
-    return float("inf") if d is None else float(d["evm"])
+    rx = np.asarray(send_fn(clib.encode(cfg, payload)), dtype=float)
+    chans = [rx] if rx.ndim == 1 else [rx[:, c] for c in range(rx.shape[1])]
+    best_evm, best_mic = float("inf"), 0
+    for c, mono in enumerate(chans):
+        d = clib.decode(cfg, np.asarray(mono, dtype=np.float32))
+        if d is not None and d["evm"] < best_evm:
+            best_evm, best_mic = float(d["evm"]), c
+    return best_evm, best_mic
 
 
-def recommend_evm(evm, ds15, sr):
-    """Pick MCS from the probe EVM (densest tier it clears) and size the CP from
-    the delay spread. Delay spread beyond the CP cap, or EVM past the QPSK
-    threshold, routes to the non-coherent floor."""
-    cp_ms = min(CP_CAP_MS, max(5.0, ds15 * 1.25))
-    cp = int(cp_ms / 1000 * sr)
-    nfft = 2048 if cp <= 1024 else 4096
+def recommend_evm(evm, ds15, sr, mic=0):
+    """Pick MCS from the probe EVM (densest tier it clears) with an ADAPTIVE CP
+    sized to cover the delay spread. Only when the spread exceeds even the long-CP
+    cap, or the EVM (already measured at that long CP) is past the QPSK threshold,
+    does it route to the non-coherent floor."""
+    cp, cp_ms, nfft = adaptive_geometry(ds15, sr)
     chosen = None
-    if ds15 <= CP_CAP_MS:
+    if ds15 <= CP_LONG_CAP_MS:
         for thr, label, mcs, rate, bpb in EVM_LADDER:
             if evm <= thr:
                 chosen = (label, mcs, rate, bpb)
@@ -254,24 +288,26 @@ def recommend_evm(evm, ds15, sr):
         label, mcs, rate, bpb = chosen
     return {
         "tier": label, "mcs": mcs, "rate": rate, "bits_uniform": bpb,
-        "noncoherent": noncoherent, "cp": cp, "cp_ms": round(cp_ms, 1),
-        "nfft": nfft, "advise_reposition": noncoherent,
+        "noncoherent": noncoherent, "cp": cp, "cp_ms": cp_ms, "nfft": nfft,
+        "mic": mic, "advise_reposition": noncoherent,
         "probe_evm": (None if evm == float("inf") else round(evm, 3)),
         "delay_spread_ms_15": round(ds15, 1),
     }
 
 
 def sound_channel_evm(send_fn, sr=48000, f_lo=1100.0, f_hi=23000.0):
-    """Corrected sounder: a pilot burst sizes the CP from the delay spread, then
-    an EVM probe at that CP selects the MCS. Returns (recommendation, analysis)."""
+    """Robust sounder: a pilot burst (best mic) sizes an ADAPTIVE CP from the
+    delay spread, then an EVM probe AT THAT CP (best mic) selects the MCS. The
+    long CP + mic selection keep reverberant high-SNR channels in coherent OFDM
+    (tens of kbps) instead of bailing to the MFSK floor. send_fn(wave) may return
+    mono or stereo (N,2). Returns (recommendation, analysis)."""
     cfg_s, wave_s = build_sounding(sr, 2048, 768, f_lo, f_hi, 2000.0, 16000.0)
-    an = analyze(cfg_s, np.asarray(send_fn(wave_s), dtype=float), sr)
+    mono, _ = best_channel(send_fn(wave_s))
+    an = analyze(cfg_s, mono, sr)
     ds15 = an["delay_spread_ms"]["-15dB"]
-    cp_ms = min(CP_CAP_MS, max(5.0, ds15 * 1.25))
-    cp = int(cp_ms / 1000 * sr)
-    nfft = 2048 if cp <= 1024 else 4096
-    evm = evm_probe(send_fn, sr=sr, nfft=nfft, cp=cp, f_lo=f_lo, f_hi=f_hi)
-    return recommend_evm(evm, ds15, sr), an
+    cp, cp_ms, nfft = adaptive_geometry(ds15, sr)
+    evm, mic = evm_probe(send_fn, sr=sr, nfft=nfft, cp=cp, f_lo=f_lo, f_hi=f_hi)
+    return recommend_evm(evm, ds15, sr, mic=mic), an
 
 
 def _selftest():
@@ -282,8 +318,10 @@ def _selftest():
         (0.17, 3.0, "fast"),      # 64-QAM failed; 16-QAM r3/4 is the right call
         (0.252, 3.0, "medium"),   # 16-QAM r1/2 decoded, r3/4 failed
         (0.40, 3.0, "qpsk"),      # QPSK r1/2 regime
-        (0.98, 42.0, "mfsk"),     # reverberant: EVM + delay spread -> floor
-        (0.15, 42.0, "mfsk"),     # low EVM but delay spread > CP cap -> floor
+        (0.31, 42.0, "qpsk"),     # reverberant but RESCUED: long CP covers 42ms,
+                                  # EVM probed at that CP is decodable -> coherent
+        (0.98, 42.0, "mfsk"),     # reverberant, EVM still high at long CP -> floor
+        (0.15, 110.0, "mfsk"),    # spread beyond even the long-CP cap -> floor
     ]
     ok = True
     for evm, ds, want in cases:
