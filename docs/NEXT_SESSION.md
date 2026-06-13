@@ -40,7 +40,9 @@ lacks.
   `modem.py`. Wire decode-based mic selection + two-mic MRC into the loop's
   coherent decode (use `modem.demodulate_frame(rx2=...)` or port MRC to `clib`).
   Re-validate across the orientation set. *Bounded; makes the library do what the
-  paper says.* **Start here.**
+  paper says.* **Start here.** Full execution plan written up in
+  [A1_AUTO_MRC.md](A1_AUTO_MRC.md) (clib-first / MRC-escalation approach, 5 steps,
+  one PR).
 - **A2. Port diversity into the C codec.** Add 2-mic input + per-subcarrier MRC +
   caller-selectable CP/NFFT to `cyrinx_bulk` so the *shipped* library degrades
   gracefully. Extend golden vectors for the new configs. *Larger.*

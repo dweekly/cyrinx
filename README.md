@@ -205,7 +205,9 @@ lives in `scratch/hw20k/` (`freqresp.py`, `plot_freqresp.py`, `env_sweep.py`).
 The prioritized handoff for the next working session — the paper-vs-shipped-library
 gap to close (auto-MRC, C-port diversity), the 2×2-MIMO frontier, the website
 (Phase 4), and a bench quick-start — is [docs/NEXT_SESSION.md](docs/NEXT_SESSION.md)
-(fresh as of 2026-06-12).
+(fresh as of 2026-06-12). The first task there (auto-MRC in the live adaptive
+loop) has a full execution plan in [docs/A1_AUTO_MRC.md](docs/A1_AUTO_MRC.md)
+(fresh as of 2026-06-13).
 
 ## License
 
