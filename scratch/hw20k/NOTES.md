@@ -146,3 +146,24 @@ staging if run on this machine.
 Still open for A1: step 4, OTA re-validation across the orientation set
 (needs a bench: Pixel per the original cells, or iPhone TX + M1 Max
 re-calibration as the cross-hardware variant — ROADMAP A5).
+
+## A3: RS(15,11)/GF(16) + erasures replaces 3× repetition in the MFSK floor (2026-07-01)
+
+Digital-only (no hardware). New `rs16.py`: errors-and-erasures Reed–Solomon
+over GF(16) (syndromes → Forney syndromes → Berlekamp–Massey → Chien →
+Forney), exhaustive selftest over every in-budget (e, f) errata combination
+(3600 trials) + overload sanity. `mfsk.py` FEC swapped: one RS code symbol =
+one nibble = one 16-FSK tone decision; codewords block-interleaved
+position-major across OTA symbols; detector confidence (best/second tone
+energy < 1.3) flags erasures, capped at the 4-erasure budget.
+
+- **Rate: ×2.06 at the same symbol duration.** 16 B frame: 55 → 113 bps;
+  32 B: 68 → 138 bps; 256 B: 187 bps (measured-airtime formula, digital).
+- **Robustness: strictly better, not traded.** Failure-edge sweep (40 ms
+  reverb, 20 seeded trials/point, 16 B): at 0 dB SNR rep3 16/20 vs RS 20/20;
+  at −3 dB rep3 5/20 vs **RS 18/20**. Majority voting needs 2-of-3 correct
+  picks and throws confidence away; RS spends its budget exactly where the
+  detector knows it guessed. The dead-band case (5–6 kHz killed + reverb)
+  also decodes via erasures — repetition could not use that information.
+- OTA re-measurement of the floor number pending a bench (the whitepaper's
+  68 bps figure describes the repetition implementation it measured).

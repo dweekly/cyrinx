@@ -19,15 +19,29 @@ block's 16 candidate tones are interleaved across the band (a local null kills a
 most one candidate per block). Payload is framed as [len:2][payload][crc32:4],
 nibble-packed, so goodput is CRC-verified exactly like the OFDM path.
 
+FEC (A3): Reed-Solomon RS(15,11) over GF(16) (rs16.py) replaced the original
+3x repetition + majority vote -- one RS code symbol = one nibble = one tone
+decision, so a wrong pick costs exactly one code symbol. Codewords are
+block-interleaved position-major across the OTA symbols (one corrupted symbol
+costs each codeword at most ceil(N_BLOCKS/n_cw) nibbles of its budget), and
+the energy detector flags low-confidence blocks (best/second-best energy
+ratio < ERASE_CONF) as ERASURES, which RS corrects at twice the rate of hard
+errors -- confidence the majority vote threw away. Rate 11/15 vs 1/3 gives
+~2x the net bitrate at the same symbol duration.
+
 This is the implementation the adaptive sounder already routes to (sounder.py
 NONCOHERENT_FLOOR); ggwave was the stand-in reference (data/desk_noncoherent.json,
 ~267 bps). Targets the same order of magnitude, trading rate for the ability to
 link at all -- graceful degradation, never zero.
 """
+import os
 import sys
 import zlib
 
 import numpy as np
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import rs16
 
 SR = 48000
 F_LO = 2000.0
@@ -37,11 +51,8 @@ TONES_PER_BLOCK = 16     # 16-FSK -> 4 bits/block
 N_TONES = N_BLOCKS * TONES_PER_BLOCK
 T_SYM = 0.120            # symbol duration (s); must exceed the delay spread
 GUARD_SKIP = 0.045       # ignore this much at each symbol's start (prev-sym tail)
-REPEAT = 3               # FEC: each nibble sent REPEAT times, majority-voted.
-                         # The copies land in different symbols (symbol-level
-                         # diversity), so a single bad symbol corrupts at most one
-                         # copy of each nibble. Trades rate for robustness -- the
-                         # right call for a floor.
+RS_N, RS_K, RS_NSYM = 15, 11, 4   # FEC: RS(15,11) over GF(16), errors+erasures
+ERASE_CONF = 1.3         # best/second tone-energy ratio below this -> erasure
 AMP = 0.6
 CHIRP_F0, CHIRP_F1, CHIRP_DUR = 2000.0, 15000.0, 0.12
 GAP = 0.05               # silence between preamble and symbols
@@ -76,14 +87,38 @@ def _frame_nibbles(payload):
     for byte in body:
         nibs.append(byte & 0xF)
         nibs.append(byte >> 4)
-    while len(nibs) % N_BLOCKS:
-        nibs.append(0)
     return nibs
+
+
+def _stream_geometry(body_len):
+    """(n_codewords, base nibbles, stream nibbles, OTA symbols) for a body."""
+    base_n = body_len * 2
+    n_cw = -(-base_n // RS_K)
+    total = n_cw * RS_N
+    n_syms = -(-total // N_BLOCKS)
+    return n_cw, base_n, total, n_syms
+
+
+def _rs_stream(nibs):
+    """RS-encode nibbles into the interleaved TX stream. Codewords are emitted
+    position-major (stream[p*n_cw + c] = codeword c, position p) so consecutive
+    OTA blocks come from different codewords; the zero-padded tail of the last
+    codeword is transmitted (a shortened-code optimization is possible but not
+    worth the complexity at these frame sizes)."""
+    n_cw = -(-len(nibs) // RS_K)
+    cws = []
+    for c in range(n_cw):
+        chunk = nibs[c * RS_K:(c + 1) * RS_K]
+        cws.append(rs16.encode(chunk + [0] * (RS_K - len(chunk)), RS_NSYM))
+    stream = [cws[c][p] for p in range(RS_N) for c in range(n_cw)]
+    while len(stream) % N_BLOCKS:
+        stream.append(0)
+    return stream
 
 
 def modulate(payload, sr=SR):
     freqs = _tone_freqs()
-    nibs = _frame_nibbles(payload) * REPEAT
+    nibs = _rs_stream(_frame_nibbles(payload))
     n_syms = len(nibs) // N_BLOCKS
     slen = int(T_SYM * sr)
     t = np.arange(slen) / sr
@@ -129,8 +164,7 @@ def demodulate(rx, n_payload, sr=SR):
         return last
     freqs = _tone_freqs()
     body_len = 2 + n_payload + 4
-    base_n = -(-(body_len * 2) // N_BLOCKS) * N_BLOCKS   # padded base nibble count
-    n_syms = base_n * REPEAT // N_BLOCKS
+    n_cw, base_n, total, n_syms = _stream_geometry(body_len)
     start = _find_chirp(rx, sr)
     base = start + len(_chirp(CHIRP_F0, CHIRP_F1, CHIRP_DUR, sr)) + int(GAP * sr)
     slen = int(T_SYM * sr)
@@ -138,7 +172,7 @@ def demodulate(rx, n_payload, sr=SR):
     wlen = slen - skip
     # precompute the DFT basis at the tone frequencies for the detection window
     basis = np.exp(-2j * np.pi * np.outer(freqs, np.arange(wlen) / sr))
-    nibs = []
+    nibs, confs = [], []
     for s in range(n_syms):
         a = base + s * slen + skip
         win = rx[a:a + wlen]
@@ -147,11 +181,21 @@ def demodulate(rx, n_payload, sr=SR):
         E = np.abs(basis @ win) ** 2          # energy per tone
         for b in range(N_BLOCKS):
             cands = E[b::N_BLOCKS][:TONES_PER_BLOCK]
-            nibs.append(int(np.argmax(cands)))
-    # majority-vote the REPEAT copies of each nibble (symbol-diverse FEC)
-    copies = np.array(nibs[:base_n * REPEAT]).reshape(REPEAT, base_n)
-    voted = [int(np.bincount(copies[:, j], minlength=TONES_PER_BLOCK).argmax())
-             for j in range(base_n)]
+            order = np.argsort(cands)
+            nibs.append(int(order[-1]))
+            # detector confidence: best vs runner-up energy; near 1 = a guess
+            confs.append(float(cands[order[-1]] / (cands[order[-2]] + 1e-30)))
+    # deinterleave into codewords; low-confidence blocks become RS erasures
+    # (capped at the RS_NSYM budget, keeping the least confident)
+    voted = []
+    for c in range(n_cw):
+        cw = [nibs[p * n_cw + c] for p in range(RS_N)]
+        cf = [confs[p * n_cw + c] for p in range(RS_N)]
+        er = sorted((p for p in range(RS_N) if cf[p] < ERASE_CONF),
+                    key=lambda p: cf[p])[:RS_NSYM]
+        dec = rs16.decode(cw, RS_NSYM, erase_pos=er)
+        # on RS overload fall back to the raw hard decisions; CRC judges
+        voted.extend((dec if dec is not None else cw)[:RS_K])
     # reassemble bytes
     out = bytearray()
     for i in range(0, base_n - 1, 2):
@@ -164,9 +208,8 @@ def demodulate(rx, n_payload, sr=SR):
 
 
 def bitrate(n_payload):
-    """Net payload bitrate (bps) for a frame of n_payload bytes (incl. REPEAT FEC)."""
-    base_n = -(-((2 + n_payload + 4) * 2) // N_BLOCKS) * N_BLOCKS
-    n_syms = base_n * REPEAT // N_BLOCKS
+    """Net payload bitrate (bps) for a frame of n_payload bytes (incl. RS FEC)."""
+    _, _, _, n_syms = _stream_geometry(2 + n_payload + 4)
     airtime = CHIRP_DUR + GAP + n_syms * T_SYM
     return n_payload * 8 / airtime
 
@@ -185,14 +228,32 @@ def _reverb_channel(x, sr=SR, spread_ms=40.0, seed=3):
     return y
 
 
+def _notch(x, sr, lo, hi):
+    """Brick-wall kill of one frequency band -- models a deep transducer or
+    room null. RS erasure flagging (not the majority vote) is what survives
+    this: the correct tone simply has no energy, and the detector knows it."""
+    X = np.fft.rfft(x)
+    f = np.fft.rfftfreq(len(x), 1.0 / sr)
+    X[(f >= lo) & (f <= hi)] = 0.0
+    return np.fft.irfft(X, len(x))
+
+
 def _selftest():
     payload = bytes((i * 53 + 7) & 0xFF for i in range(16))
     wave = modulate(payload)
+    # rate vs the pre-A3 3x-repetition scheme, same symbol duration
+    rep_syms = (-(-((2 + len(payload) + 4) * 2) // N_BLOCKS) * N_BLOCKS) * 3 // N_BLOCKS
+    rep_bps = len(payload) * 8 / (CHIRP_DUR + GAP + rep_syms * T_SYM)
     print(f"  frame: {len(payload)} B payload, {len(wave)/SR*1000:.0f} ms airtime, "
-          f"net {bitrate(len(payload)):.0f} bps")
+          f"net {bitrate(len(payload)):.0f} bps "
+          f"(3x-repetition was {rep_bps:.0f} bps -> "
+          f"x{bitrate(len(payload))/rep_bps:.2f})")
     rng = np.random.default_rng(1)
     ok = True
-    for spread, snr_db in [(0.0, 60), (40.0, 20), (40.0, 12), (50.0, 15)]:
+    # the 0 dB case is BELOW the old 3x-repetition scheme's failure edge
+    # (measured: rep3 16/20 at 0 dB, RS 20/20; at -3 dB rep3 5/20, RS 18/20)
+    for spread, snr_db in [(0.0, 60), (40.0, 20), (40.0, 12), (50.0, 15),
+                           (40.0, 0)]:
         rx = _reverb_channel(wave, spread_ms=spread) if spread > 0 else wave.astype(float)
         sig_rms = np.sqrt((rx ** 2).mean())
         rx = rx + rng.normal(0, sig_rms / (10 ** (snr_db / 20)), len(rx))
@@ -202,6 +263,17 @@ def _selftest():
         ok &= good
         print(f"    spread={spread:4.0f}ms SNR={snr_db}dB -> crc_ok={crc} "
               f"payload_match={dec == payload}  {'OK' if good else 'FAIL'}")
+    # erasure case: a dead band on top of reverb -- correct tones inside the
+    # notch have no energy, so those blocks arrive as low-confidence erasures
+    rx = _notch(_reverb_channel(wave, spread_ms=40.0), SR, 5000.0, 6000.0)
+    sig_rms = np.sqrt((rx ** 2).mean())
+    rx = rx + rng.normal(0, sig_rms / (10 ** (15 / 20)), len(rx))
+    rx = np.concatenate([np.zeros(2000), rx, np.zeros(2000)])
+    dec, crc = demodulate(rx, len(payload))
+    good = crc and dec == payload
+    ok &= good
+    print(f"    spread=  40ms SNR=15dB + 5-6 kHz band killed -> crc_ok={crc} "
+          f"payload_match={dec == payload}  {'OK' if good else 'FAIL'}")
     print("  SELFTEST", "PASS" if ok else "FAIL",
           "(coherent CP-OFDM fails at every one of the >32ms-spread cases)")
     return 0 if ok else 1
