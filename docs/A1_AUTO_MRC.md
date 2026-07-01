@@ -1,13 +1,13 @@
 # A1 — Auto-MRC + decode-based mic selection in the live adaptive loop
 
 Fresh as of 2026-06-13. Execution plan for **Track A1** of
-[NEXT_SESSION.md](NEXT_SESSION.md). **Not yet started** — written down for a
+[../ROADMAP.md](../ROADMAP.md). **Not yet started** — written down for a
 later session. Companion to [PUBLICATION.md](PUBLICATION.md) and
 [EXPERIMENTS.md](EXPERIMENTS.md).
 
 ## Context
 
-The #1 gap from [NEXT_SESSION.md](NEXT_SESSION.md): the robustness wins (two-mic
+The #1 gap from [../ROADMAP.md](../ROADMAP.md): the robustness wins (two-mic
 maximal-ratio combining, decode-based mic selection) live only in the Python
 reference (`scratch/hw20k/modem.py`) and bench drivers, while the live adaptive
 loop (`scratch/hw20k/adaptive.py`) decodes coherent OFDM **single-mic** via the C
@@ -80,11 +80,12 @@ In the coherent branch (`adaptive.py:58-79`):
 `clib.encode` digitally (mic0 = clean+noise, mic1 = clean+different noise; plus a
 case with mic0 nulled so single-mic fails), stub `send`, assert the escalation
 logic picks the right path and decodes. Closes the "add the auto-MRC path to unit
-coverage" hygiene item from NEXT_SESSION.md.
+coverage" hygiene item from ../ROADMAP.md.
 
 ### Step 4 — OTA re-validation across the orientation set *(needs bench)*
 Requires Pixel 7a on USB (`adb`) and physical placement — **user at the bench**.
-Gain staging per NEXT_SESSION.md (Mac out 100, in 22, phone media max).
+Gain staging per the README bench quick-start (Mac out 100, in 22, phone media
+max — M4-specific; re-derive on any other Mac).
 - `python scratch/hw20k/harness.py smoke` first.
 - `adaptive.py <label>` at the known cells: clean (`port_fnkey`-style, expect
   clib-only, ~39-48 kbps, MRC never invoked), reverberant keyboard-well (expect
@@ -94,7 +95,8 @@ Gain staging per NEXT_SESSION.md (Mac out 100, in 22, phone media max).
   [EXPERIMENTS.md](EXPERIMENTS.md).
 
 ### Step 5 — Docs
-- [NEXT_SESSION.md](NEXT_SESSION.md): strike A1, update snapshot.
+- [../ROADMAP.md](../ROADMAP.md): strike A1; [../CHANGELOG.md](../CHANGELOG.md):
+  record the milestone.
 - `scratch/hw20k/NOTES.md`: one-liners for `xcompat_validate.py` and the new
   adaptive.py behavior (partial payment on the "NOTES index" hygiene item).
 - [EXPERIMENTS.md](EXPERIMENTS.md): the re-validation table.
@@ -106,7 +108,7 @@ Gain staging per NEXT_SESSION.md (Mac out 100, in 22, phone media max).
 - `scratch/hw20k/adaptive.py` (~30 lines: escalation + reporting + selftest)
 - `scratch/hw20k/clib.py` (+`modem_cfg_from_clib`, ~15 lines)
 - `scratch/hw20k/xcompat_validate.py` (new spike, ~80 lines)
-- `scratch/hw20k/NOTES.md`, `docs/NEXT_SESSION.md`, `docs/EXPERIMENTS.md`
+- `scratch/hw20k/NOTES.md`, `ROADMAP.md`, `CHANGELOG.md`, `docs/EXPERIMENTS.md`
 - No C/Swift changes (that's A2). No golden-vector changes.
 
 ## Verification
