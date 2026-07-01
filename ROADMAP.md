@@ -29,9 +29,22 @@ shipped library lacks.
 - **A2. Port diversity into the C codec.** 2-mic input + per-subcarrier MRC +
   caller-selectable CP/NFFT in `cyrinx_bulk`, so the *shipped* library degrades
   gracefully. Extend golden vectors for the new configs. *Larger.*
-- **A3. MFSK floor: Reed–Solomon over GF(16)** replacing 3× repetition
-  (68 → ~150 bps; nibble-aligned, rate-efficient). Digital-first; OTA-verifiable
-  with either phone. *~half session.*
+- **A3. MFSK floor: Reed–Solomon over GF(16) — digital DONE (2026-07-01);
+  OTA re-measurement pending.** RS(15,11) + detector-confidence erasures
+  replaced 3× repetition (`rs16.py`, `mfsk.py`): ×2.06 rate at the same symbol
+  duration (32 B frames: 68 → 138 bps) and measurably *more* robust at the
+  low-SNR edge (rep3 5/20 vs RS 18/20 at −3 dB, 40 ms reverb). Floor OTA
+  number needs re-measuring on a bench.
+- **A3b. Floor rate scaling (new — the floor is still slow by design, but not
+  this slow).** Two bench-validatable levers on top of A3: (i) *adaptive
+  symbol duration* — T_SYM is fixed at 120 ms, sized for the worst measured
+  spread (~110 ms), but the sounder already measures ds15 per cell; scaling
+  T_SYM to the actual spread roughly doubles rate at 40 ms spreads. (ii)
+  *denser tone grid* — the 75 ms integration window resolves ~15 Hz; current
+  tone spacing is ~102 Hz, so 2× the blocks (−3 dB per tone, covered by the
+  measured edge margin) is plausible. Combined: a ~0.5 kbps floor without
+  giving up the non-coherent/ISI-immune property. *Bench required to validate
+  the margins.*
 - **A4. Widen the EVM→MCS calibration** with more cells, especially a sub-0.1
   EVM cell to justify a 64-QAM tier (needs EVM ≲ 0.08; best measured 33% success
   at 0.097). *Bench.*

@@ -8,6 +8,16 @@ commands it contains.
 
 ## 2026-07-01
 
+- **A3 MFSK-floor FEC upgrade, digital complete** (OTA re-measurement pending
+  a bench): Reed–Solomon RS(15,11) over GF(16) with detector-confidence
+  erasures (`scratch/hw20k/rs16.py`) replaces the 3× repetition + majority
+  vote in `mfsk.py`. One RS code symbol = one nibble = one 16-FSK tone
+  decision; codewords block-interleaved across OTA symbols. **×2.06 net rate
+  at the same symbol duration** (32 B frames: 68 → 138 bps by the airtime
+  formula) and **more robust at the low-SNR edge**, not less (40 ms reverb,
+  20 trials: at −3 dB SNR repetition decoded 5/20, RS 18/20 — the erasure
+  flags exploit confidence the majority vote discarded). The whitepaper's
+  measured 68 bps floor figure describes the repetition implementation.
 - **A1 auto-MRC, digital steps complete** (steps 1–3 + 5 of
   [docs/A1_AUTO_MRC.md](docs/A1_AUTO_MRC.md)):
   - `scratch/hw20k/xcompat_validate.py` **proved the cross-compat hypothesis**:
