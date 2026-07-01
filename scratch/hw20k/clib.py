@@ -93,6 +93,32 @@ def decode(cfg, rx):
             "blocks_total": total.value, "evm": evm.value}
 
 
+def modem_cfg_from_clib(cfg):
+    """modem.Config equivalent of a clib Cfg (same geometry, PRNGs, framing),
+    so the Python reference RX — including two-mic MRC via
+    modem.demodulate_frame(rx2=...) — can decode frames produced by the library
+    C codec (A1, docs/A1_AUTO_MRC.md). The derived geometry is asserted against
+    cyrinx_bulk_compute_geometry so any drift between the two implementations
+    fails loudly here instead of decoding garbage."""
+    import modem as M  # local: keep clib importable with numpy alone
+    rate = cfg.rate.decode() if isinstance(cfg.rate, bytes) else cfg.rate
+    kw = dict(f_lo=cfg.f_lo, f_hi=cfg.f_hi, pilot_every=cfg.pilot_every,
+              rate=rate, n_sym=cfg.n_sym, amp=cfg.amp,
+              clip_sigma=cfg.clip_sigma, nfft=cfg.nfft, cp=cfg.cp, sr=cfg.sr,
+              chirp_f0=cfg.chirp_f0, chirp_f1=cfg.chirp_f1)
+    m = M.Config(**kw)
+    if cfg.bits_per_bin != 2:  # Config defaults to 2 bits/bin; rebuild w/ dict
+        m = M.Config(bits_per_bin={int(b): cfg.bits_per_bin for b in m.data_idx},
+                     **kw)
+    g = geometry(cfg)
+    got = (m.bin_lo, m.bin_hi, m.bits_per_sym, m.info_bits, m.n_blocks,
+           m.payload_bytes, m.frame_samples)
+    want = (g.bin_lo, g.bin_hi, g.bits_per_sym, g.info_bits, g.n_blocks,
+            g.payload_bytes, g.frame_samples)
+    assert got == want, f"clib/modem geometry mismatch: modem {got} != clib {want}"
+    return m
+
+
 if __name__ == "__main__":
     # digital loopback sanity check through the library C code
     for bpb, rate in [(2, "1/2"), (4, "3/4"), (6, "3/4")]:

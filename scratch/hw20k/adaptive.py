@@ -22,9 +22,39 @@ import harness as H
 import sounder as S
 import clib
 import mfsk
+import modem as M
 
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 MFSK_PAYLOAD = 32
+
+
+def coherent_decode_rep(cfg, st, mic, pl):
+    """One rep's coherent decode: library clib decode on the selected mic
+    first (keeps the headline numbers library-native); if that is imperfect,
+    escalate to the Python reference two-mic MRC
+    (modem.demodulate_frame(rx2=...)) and keep the better result. Cross-compat
+    of clib frames through the reference RX is proven by xcompat_validate.py
+    (A1 step 1). Returns per-rep provenance so the JSONL shows exactly what
+    single-mic delivered vs what MRC rescued."""
+    mono = st[:, mic] if st.ndim > 1 else st
+    d = clib.decode(cfg, np.ascontiguousarray(mono, dtype=np.float32))
+    total = d["blocks_total"] if d else clib.geometry(cfg).n_blocks
+    # payload-verified accounting, same as before A1
+    clib_ok = d["blocks_ok"] if (d and d["payload"] == pl) else 0
+    ver, path, rescued = clib_ok, "clib", 0
+    if clib_ok < total and st.ndim > 1 and st.shape[1] >= 2:
+        mcfg = clib.modem_cfg_from_clib(cfg)
+        r = M.demodulate_frame(mcfg, st[:, 0].astype(np.float64),
+                               rx2=st[:, 1].astype(np.float64))
+        mrc_ok = 0
+        if r.get("ok"):
+            mrc_ok = sum(1 for i, okb, data in r["blocks"]
+                         if okb and data == pl[i * M.CRC_BLOCK:
+                                               (i + 1) * M.CRC_BLOCK])
+        if mrc_ok > clib_ok:
+            ver, path, rescued = mrc_ok, "mrc", mrc_ok - clib_ok
+    return {"ver": ver, "total": total, "clib_ok": clib_ok,
+            "path": path, "rescued": rescued}
 
 
 def run(label, reps=3):
@@ -60,21 +90,26 @@ def run(label, reps=3):
                             n_sym=64, cp=rec["cp"], nfft=rec["nfft"])
         g = clib.geometry(cfg)
         mic = rec.get("mic", 0)
-        ver = tot = 0
+        ver = tot = clib_ver = rescued = 0
+        paths = []
         for _ in range(reps):
             pl = bytes((i * 31 + 7) & 0xFF for i in range(g.payload_bytes))
             st = np.asarray(send(clib.encode(cfg, pl)), dtype=np.float32)
-            mono = st[:, mic] if st.ndim > 1 else st
-            d = clib.decode(cfg, np.ascontiguousarray(mono))
-            if d:
-                ver += d["blocks_ok"] if d["payload"] == pl else 0
-                tot += d["blocks_total"]
+            rep = coherent_decode_rep(cfg, st, mic, pl)
+            ver += rep["ver"]
+            tot += rep["total"]
+            clib_ver += rep["clib_ok"]
+            rescued += rep["rescued"]
+            paths.append(rep["path"])
         span = len(clib.encode(cfg, pl)) / cfg.sr
         frac = ver / tot if tot else 0.0
         gp_bps = g.info_bits * frac / span
         mode = f"{rec['mcs']} r{rec['rate']}"
-        print(f"  OFDM {mode}: {ver}/{tot} blocks ({frac*100:.0f}%) -> {gp_bps/1000:.1f} kbps")
+        print(f"  OFDM {mode}: {clib_ver}/{tot} clib + {rescued}/{tot} "
+              f"MRC-rescued ({frac*100:.0f}%) -> {gp_bps/1000:.1f} kbps")
         result = {"mode": mode, "verified": ver, "total": tot,
+                  "clib_verified": clib_ver, "mrc_rescued_blocks": rescued,
+                  "decode_path": paths,
                   "goodput_kbps": round(gp_bps / 1000, 1)}
         delivered = gp_bps
 
@@ -89,8 +124,53 @@ def run(label, reps=3):
     return result
 
 
+def _selftest():
+    """Offline check of the clib-first / MRC-escalation decode path — no
+    hardware, no sound. Synthesizes stereo captures from clib.encode digitally
+    (A1 step 3, docs/A1_AUTO_MRC.md)."""
+    import xcompat_validate as XV
+    rng = np.random.default_rng(7)
+    cfg = clib.make_cfg(bits_per_bin=4, rate="3/4", n_sym=16)
+    g = clib.geometry(cfg)
+    pl = bytes((i * 31 + 7) & 0xFF for i in range(g.payload_bytes))
+    wave = clib.encode(cfg, pl).astype(np.float64)
+    rx = np.concatenate([np.zeros(4000), wave, np.zeros(3000)])
+    rms = float(np.sqrt(np.mean(wave ** 2)))
+    sig = 0.1 * rms
+
+    def stereo(m0, m1):
+        return np.stack([m0, m1], axis=1).astype(np.float32)
+
+    # 1: clean stereo -> clib decodes on the selected mic, MRC never invoked
+    st = stereo(rx + rng.normal(0, sig, len(rx)),
+                rx + rng.normal(0, sig, len(rx)))
+    r = coherent_decode_rep(cfg, st, 0, pl)
+    assert (r["path"], r["ver"], r["rescued"]) == ("clib", g.n_blocks, 0), r
+    print(f"  clean stereo  -> path={r['path']} {r['ver']}/{r['total']} OK")
+
+    # 2: selected mic notched hard (clib fails), other mic complementary
+    #    -> escalation rescues via MRC null-fill
+    m0 = XV.notch(rx, cfg.sr, XV.NOTCH_MIC0) + rng.normal(0, sig, len(rx))
+    m1 = XV.notch(rx, cfg.sr, XV.NOTCH_MIC1) + rng.normal(0, sig, len(rx))
+    r = coherent_decode_rep(cfg, stereo(m0, m1), 0, pl)
+    assert r["path"] == "mrc" and r["clib_ok"] < g.n_blocks \
+        and r["ver"] == g.n_blocks and r["rescued"] == r["ver"] - r["clib_ok"], r
+    print(f"  notched mic0  -> path={r['path']} clib {r['clib_ok']}/{r['total']}"
+          f" + {r['rescued']} rescued = {r['ver']}/{r['total']} OK")
+
+    # 3: mono capture (no second mic) -> degrades to clib-only, no crash
+    r = coherent_decode_rep(cfg, m0.astype(np.float32), 0, pl)
+    assert r["path"] == "clib" and r["rescued"] == 0, r
+    print(f"  mono capture  -> path={r['path']} {r['ver']}/{r['total']} "
+          f"(no escalation) OK")
+    print("SELFTEST PASS")
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print(__doc__)
         sys.exit(2)
+    if sys.argv[1] == "selftest":
+        _selftest()
+        sys.exit(0)
     run(sys.argv[1], int(sys.argv[2]) if len(sys.argv) > 2 else 3)

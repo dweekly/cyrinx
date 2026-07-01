@@ -10,7 +10,7 @@
 > platform gotchas, future directions) is
 > [docs/ACOUSTIC_BULK_PHY.md](../../docs/ACOUSTIC_BULK_PHY.md).
 
-Fresh as of 2026-06-09. Effort: measured ≥20 kbps acoustic goodput Mac↔Pixel 7a.
+Fresh as of 2026-07-01 (A1 section at end). Effort: measured ≥20 kbps acoustic goodput Mac↔Pixel 7a.
 Setup: Pixel 7a face-up on MacBook Pro palm rest on a soft cloth; both volumes max.
 
 ## Measured channel (2026-06-09, characterize.py, real OTA)
@@ -114,3 +114,35 @@ payload / span from first chirp to last data sample (all overhead included):
 
 The Kotlin decoder was first validated bit-exact against the Python decoder
 on an identical capture file (225/225 blocks, matching EVM).
+
+## A1 auto-MRC: cross-compat spike + escalation in the live loop (2026-07-01)
+
+Executed A1 steps 1–3 of [docs/A1_AUTO_MRC.md](../../docs/A1_AUTO_MRC.md),
+all digital (no hardware). Bench machine note: this session ran on an M1 Max
+MacBook Pro, not the M4 the OTA numbers were measured on — irrelevant for
+these digital steps, but step 4 (OTA re-validation) must re-derive gain
+staging if run on this machine.
+
+- `xcompat_validate.py` — **the unverified hypothesis is now proven:** frames
+  produced by the library C codec (`clib.encode`) decode through the Python
+  reference RX (`modem.demodulate_frame`), mono and two-mic MRC, across
+  {16-QAM r¾, 16-QAM r½, QPSK r½} × {nfft 2048/cp 768, nfft 4096/cp 3072}
+  (the loop-default and adaptive long-CP shapes). Per cell: (a) clean mono
+  decodes all blocks ordered-verified; (b) MRC under independent AWGN decodes;
+  (c) null-fill — complementary deep spectral notches per mic, mic0 alone 0/N,
+  MRC N/N. Also `clib.modem_cfg_from_clib(cfg)` (new, in clib.py) asserts
+  geometry parity (bins, bits/sym, info bits, blocks, frame samples) between
+  the two implementations on every construction.
+- `adaptive.py` — coherent branch now does **clib-first, MRC escalation**:
+  library single-mic decode on the sounder-selected mic stays primary; if it
+  is imperfect the rep escalates to `modem.demodulate_frame(rx2=...)` (both
+  mics, per-subcarrier MRC) and keeps the better result. JSONL rows gain
+  `clib_verified`, `mrc_rescued_blocks`, `decode_path`; the console line shows
+  `clib + MRC-rescued` per cell. Goodput definition unchanged.
+- `adaptive.py selftest` — offline stereo synth from `clib.encode`: clean
+  stereo → clib path (no escalation); notched mic0 + complementary mic1 →
+  clib 0/18, MRC rescues 18/18; mono capture → clib-only, no crash.
+
+Still open for A1: step 4, OTA re-validation across the orientation set
+(needs a bench: Pixel per the original cells, or iPhone TX + M1 Max
+re-calibration as the cross-hardware variant — ROADMAP A5).

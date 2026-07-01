@@ -8,6 +8,22 @@ commands it contains.
 
 ## 2026-07-01
 
+- **A1 auto-MRC, digital steps complete** (steps 1–3 + 5 of
+  [docs/A1_AUTO_MRC.md](docs/A1_AUTO_MRC.md)):
+  - `scratch/hw20k/xcompat_validate.py` **proved the cross-compat hypothesis**:
+    frames encoded by the library C codec decode through the Python reference
+    RX (`modem.demodulate_frame`), mono and two-mic MRC, across the full
+    MCS/CP grid the adaptive loop emits — including the null-fill case
+    (complementary per-mic spectral notches: mic0 alone 0/N blocks, MRC N/N).
+  - `clib.modem_cfg_from_clib()` bridges clib Cfg → `modem.Config` with a
+    geometry-parity assertion between the two implementations.
+  - `adaptive.py` coherent decode now escalates **clib-first → two-mic MRC**
+    when the library single-mic decode is imperfect, with per-rep provenance
+    (`clib_verified`, `mrc_rescued_blocks`, `decode_path`) in the JSONL;
+    goodput accounting unchanged. Covered by a new offline
+    `adaptive.py selftest`.
+  - Remaining for A1: step 4, OTA re-validation across the orientation set
+    (needs a bench).
 - **PR #43 merged:** A1 auto-MRC execution plan recorded as
   [docs/A1_AUTO_MRC.md](docs/A1_AUTO_MRC.md) (docs only; implementation pending).
 - **Environment reproduced on a second Mac (M1 Max MacBook Pro):** full Swift
