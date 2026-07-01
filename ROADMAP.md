@@ -18,14 +18,14 @@ shipped library lacks.
 
 ## Track A — Finish the robust library (first)
 
-- **A1. Auto-MRC + mic selection in the live adaptive loop.** Wire decode-based
-  mic selection + two-mic MRC into `adaptive.py`'s coherent decode (clib-first,
-  MRC escalation). Full plan: [docs/A1_AUTO_MRC.md](docs/A1_AUTO_MRC.md).
-  Steps 1–3 and 5 (cross-compat spike, escalation wiring, offline selftest,
-  docs) are **digital-only — no audio hardware, no sound emitted**. Step 4 (OTA
-  re-validation across the orientation set) needs a bench: the Pixel 7a bench
-  reproduces the published cells; alternatively the iPhone can transmit (MRC is
-  Mac-side) — see A5.
+- **A1. Auto-MRC + mic selection in the live adaptive loop — steps 1–3 + 5
+  DONE (2026-07-01); only step 4 (OTA re-validation) remains.** The
+  cross-compat spike (`scratch/hw20k/xcompat_validate.py`) proved clib frames
+  decode through the Python reference RX (mono + MRC, full MCS/CP grid);
+  `adaptive.py` now escalates clib-first → two-mic MRC with per-rep provenance,
+  covered by `adaptive.py selftest`. Full plan: [docs/A1_AUTO_MRC.md](docs/A1_AUTO_MRC.md).
+  Step 4 needs a bench: the Pixel 7a reproduces the published cells;
+  alternatively the iPhone can transmit (MRC is Mac-side) — see A5.
 - **A2. Port diversity into the C codec.** 2-mic input + per-subcarrier MRC +
   caller-selectable CP/NFFT in `cyrinx_bulk`, so the *shipped* library degrades
   gracefully. Extend golden vectors for the new configs. *Larger.*
@@ -82,9 +82,8 @@ OpenGraph/favicon/SEO/JSON-LD; validate rendering via the Chrome DevTools MCP.
 - **Issue #25:** ~900 pre-existing swift-format violations — pre-public blocker.
 - Golden vectors don't yet cover the sounder / MFSK floor / MRC configs.
 - `scratch/hw20k/NOTES.md`: keep the per-script index current as spikes land.
-- Unit coverage: add an `adaptive.py selftest` for the auto-MRC path once built
-  (A1 step 3); keep `sounder.py` / `mfsk.py` / `freqresp.py` / `env_sweep.py`
-  selftests green.
+- Unit coverage: keep `adaptive.py` / `sounder.py` / `mfsk.py` / `freqresp.py`
+  / `env_sweep.py` selftests and `xcompat_validate.py` green.
 - Keep CHANGELOG.md current as milestones land.
 
 ## Long-horizon / exploratory backlog

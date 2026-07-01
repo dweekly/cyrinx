@@ -1,9 +1,11 @@
 # A1 — Auto-MRC + decode-based mic selection in the live adaptive loop
 
-Fresh as of 2026-06-13. Execution plan for **Track A1** of
-[../ROADMAP.md](../ROADMAP.md). **Not yet started** — written down for a
-later session. Companion to [PUBLICATION.md](PUBLICATION.md) and
-[EXPERIMENTS.md](EXPERIMENTS.md).
+Fresh as of 2026-07-01. Execution plan for **Track A1** of
+[../ROADMAP.md](../ROADMAP.md). **Status: steps 1–3 + 5 executed 2026-07-01**
+(spike passed across the full grid — the cross-compat hypothesis below is now
+proven; escalation wired into `adaptive.py` with selftest). **Step 4 (OTA
+re-validation) remains** — needs a bench. Companion to
+[PUBLICATION.md](PUBLICATION.md) and [EXPERIMENTS.md](EXPERIMENTS.md).
 
 ## Context
 
