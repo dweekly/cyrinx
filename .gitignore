@@ -44,3 +44,6 @@ docs/whitepaper/*.fdb_latexmk
 docs/whitepaper/*.bbl
 docs/whitepaper/*.blg
 docs/whitepaper/*.toc
+
+# local python env (bench harness)
+.venv/
