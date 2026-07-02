@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="12" fill="#12101A"/>
+  <!-- chirp sweep, colored like the magma colormap -->
+  <path d="M8 50 Q 30 48 40 30 T 56 10" fill="none" stroke="#DE4968" stroke-width="5" stroke-linecap="round"/>
+  <!-- OFDM carrier ticks -->
+  <g fill="#FE9F6D">
+    <rect x="44" y="40" width="4" height="12" rx="2"/>
+    <rect x="51" y="34" width="4" height="18" rx="2"/>
+    <rect x="37" y="45" width="4" height="7" rx="2"/>
+  </g>
+</svg>
