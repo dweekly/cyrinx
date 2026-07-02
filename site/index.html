@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cyrinx — data over sound, measured</title>
+<meta name="description" content="An acoustic modem for consumer hardware: 36.6 kbps of byte-verified data from a laptop speaker to a phone microphone, over the air. Open measurements, open dead ends, open source.">
+<link rel="canonical" href="https://cyrinx.org/">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+<link rel="stylesheet" href="/styles.css">
+
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://cyrinx.org/">
+<meta property="og:site_name" content="Cyrinx">
+<meta property="og:title" content="Cyrinx — data over sound, measured">
+<meta property="og:description" content="36.6 kbps of byte-verified data from a laptop speaker to a phone microphone, over the air. An acoustic modem for consumer hardware, with its measurements — and its dead ends — published.">
+<meta property="og:image" content="https://cyrinx.org/assets/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Cyrinx — data over sound, measured">
+<meta name="twitter:description" content="36.6 kbps of byte-verified data from a laptop speaker to a phone microphone, over the air.">
+<meta name="twitter:image" content="https://cyrinx.org/assets/og-card.png">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://cyrinx.org/#website",
+      "url": "https://cyrinx.org/",
+      "name": "Cyrinx",
+      "description": "An acoustic modem for consumer hardware, measured over the air."
+    },
+    {
+      "@type": "ScholarlyArticle",
+      "@id": "https://cyrinx.org/#paper",
+      "headline": "Cyrinx: A Measured 36.6/27.3 kbps Bidirectional Acoustic Data Link Between a Laptop and a Phone",
+      "author": { "@type": "Person", "name": "David E. Weekly" },
+      "url": "https://cyrinx.org/cyrinx-acoustic-link.pdf",
+      "encodingFormat": "application/pdf",
+      "about": "Data-over-sound: OFDM acoustic modem design, channel measurements, physical-layer defect catalog, and graceful-degradation architecture for laptop-to-phone links.",
+      "isPartOf": { "@id": "https://cyrinx.org/#website" }
+    },
+    {
+      "@type": "SoftwareSourceCode",
+      "@id": "https://cyrinx.org/#code",
+      "name": "cyrinx",
+      "codeRepository": "https://github.com/dweekly/cyrinx",
+      "programmingLanguage": ["C", "Swift", "Python", "Kotlin"],
+      "license": "https://www.apache.org/licenses/LICENSE-2.0",
+      "isPartOf": { "@id": "https://cyrinx.org/#website" }
+    }
+  ]
+}
+</script>
+</head>
+<body>
+
+<header class="topbar">
+  <a class="wordmark" href="/">cyrinx</a>
+  <nav aria-label="Primary">
+    <a href="#results">Results</a>
+    <a href="#how">How it works</a>
+    <a href="#degradation">Robustness</a>
+    <a href="/cyrinx-acoustic-link.pdf">Paper<span class="mono-note"> · PDF</span></a>
+  </nav>
+</header>
+
+<main>
+
+<section class="hero">
+  <p class="eyebrow">Acoustic data link · measured over the air</p>
+  <h1>Your laptop can talk<br>to your phone.<br><em>Out loud.</em></h1>
+  <p class="thesis">
+    Cyrinx is a research modem that moves real data through the air as sound —
+    from an ordinary laptop speaker to an ordinary phone microphone. No radio,
+    no pairing, no network. Measured, byte-verified goodput:
+    <strong>36.6&nbsp;kbps</strong> MacBook&nbsp;→&nbsp;Pixel&nbsp;7a, and
+    <strong>39.3&nbsp;kbps</strong> decoded by the shipped C library itself.
+  </p>
+
+  <figure class="instrument" id="instrument">
+    <div class="instrument-head">
+      <span class="inst-title">One transmitted frame</span>
+      <span class="inst-params">48 kHz · OFDM, NFFT 2048 · 1.1–23 kHz · 16-QAM r¾ · K=7 Viterbi · CRC-32/block</span>
+    </div>
+    <div class="spectro-wrap">
+      <canvas id="spectrogram" role="img"
+        aria-label="Spectrogram of one Cyrinx frame: a rising chirp for synchronization, a guard gap, two channel-estimation symbols, then dense OFDM data symbols spanning 1.1 to 23 kilohertz."></canvas>
+      <div class="anatomy" aria-hidden="true">
+        <span class="anat" id="anat-chirp">chirp<small>sync</small></span>
+        <span class="anat" id="anat-guard">guard</span>
+        <span class="anat" id="anat-sync">sync ×2<small>channel est.</small></span>
+        <span class="anat" id="anat-data">OFDM payload<small>pilot comb every 8th bin</small></span>
+      </div>
+    </div>
+    <figcaption class="instrument-foot">
+      <button id="listen" type="button" aria-pressed="false">
+        <span class="glyph" aria-hidden="true">▶</span> Listen · 0.7 s
+      </button>
+      <span class="foot-note">This is the actual frame structure, synthesized in your browser.
+      It sounds like a chirp and a breath of static — that static is the data.</span>
+    </figcaption>
+  </figure>
+</section>
+
+<section class="sec" id="results">
+  <h2><span class="secmark">§1</span> Measured results</h2>
+  <p>
+    Every number below is <strong>ordered byte-verified goodput</strong>: a block
+    counts only if its CRC-32 passes <em>and</em> its bytes match the transmitted
+    payload at the same position — and the clock runs across everything
+    (preambles, pilots, FEC, CRCs, gaps). Bench: MacBook&nbsp;Pro&nbsp;M4
+    transmitting and receiving in ordinary rooms, phone resting near the palm rest.
+  </p>
+  <div class="table-scroll">
+  <table>
+    <caption class="visually-hidden">Measured over-the-air goodput by device pair and direction</caption>
+    <thead>
+      <tr><th scope="col">Peer</th><th scope="col">Direction</th><th scope="col">Goodput</th><th scope="col">Decoded by</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Pixel 7a</td><td>Mac → Pixel</td><td class="num">36.6 kbps</td><td>on-device (Kotlin port)</td></tr>
+      <tr><td>Pixel 7a</td><td>Pixel → Mac</td><td class="num">27.3 kbps</td><td>reference decoder</td></tr>
+      <tr class="hot"><td>Pixel 7a</td><td>Mac → Pixel</td><td class="num">39.3 kbps</td><td><strong>the shipped C library</strong>, 16-QAM r¾, 375/375 blocks</td></tr>
+      <tr><td>iPhone 17 Pro Max</td><td>Mac → iPhone</td><td class="num">36.57 kbps</td><td>on-device (Swift port)</td></tr>
+      <tr><td>iPhone 17 Pro Max</td><td>iPhone → Mac</td><td class="num">16.87 kbps</td><td>reference decoder <span class="dim">(iPhone speaker is band-limited)</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="aside">
+    For scale: the fastest dial-up modems reached 56 kbps over a copper phone
+    line. This is more than half of that, through open air, on hardware that was
+    never designed for it.
+  </p>
+</section>
+
+<section class="sec" id="how">
+  <h2><span class="secmark">§2</span> How it works</h2>
+
+  <div class="register">
+    <h3>In plain terms</h3>
+    <p>
+      Sound is pressure waves; a speaker can shape them and a microphone can read
+      them. Cyrinx splits the audible spectrum into hundreds of narrow slices
+      (like lanes on a highway) and wiggles the phase and loudness of each lane a
+      little bit, many times per second. Each wiggle carries a few bits. A sharp
+      rising <em>chirp</em> at the start tells the receiver exactly when to start
+      listening, and known reference tones let it learn how the room distorts
+      each lane so it can undo the damage.
+    </p>
+  </div>
+
+  <div class="register">
+    <h3>The signal path</h3>
+    <ol class="chain">
+      <li><b>Chirp sync.</b> A 2→16 kHz sweep; a matched filter finds it to within a sample or two.</li>
+      <li><b>Channel estimation.</b> Two known full-band symbols measure the room's response per subcarrier — including the echoes.</li>
+      <li><b>OFDM + cyclic prefix.</b> 2048-point FFT frames with a guard copy so echoes land harmlessly inside the prefix.</li>
+      <li><b>Pilot tracking.</b> Every 8th subcarrier carries a known tone; per-symbol phase and timing drift are fitted and removed (the two devices' sample clocks disagree by ~25 ppm — ignore that and the constellation spins).</li>
+      <li><b>Soft decisions.</b> Each 16-QAM point becomes log-likelihood ratios weighted by that subcarrier's measured SNR — a noisy lane whispers instead of lying.</li>
+      <li><b>FEC + verification.</b> A K=7 convolutional code with soft Viterbi decoding repairs the survivors; CRC-32 per 256-byte block accepts nothing on faith.</li>
+    </ol>
+  </div>
+
+  <div class="register">
+    <h3>Why not just crank up the constellation?</h3>
+    <p>
+      Because the transducers lie. The raw channel measures ~52 dB SNR, but the
+      speaker-air-microphone chain has an <em>effective</em> error floor around
+      EVM 0.15 (~15 dB SINR) that no amount of volume fixes. 16-QAM rides
+      comfortably above it; 64-QAM drowns — measured 0 of 339 blocks at EVM 0.173.
+      Drag the slider to see the difference on the constellation.
+    </p>
+    <figure class="constellation-panel">
+      <canvas id="constellation" role="img"
+        aria-label="16-QAM constellation diagram. A slider controls simulated error-vector magnitude, showing tight decodable clusters at low EVM and overlapping undecodable clusters at high EVM."></canvas>
+      <div class="const-controls">
+        <label for="evm">EVM <output id="evm-out" for="evm">0.105</output></label>
+        <input type="range" id="evm" min="0.02" max="0.25" step="0.005" value="0.105"
+          list="evm-marks" aria-describedby="evm-verdict">
+        <datalist id="evm-marks">
+          <option value="0.105" label="measured, clean cell"></option>
+          <option value="0.173" label="measured, 64-QAM failure"></option>
+        </datalist>
+        <p id="evm-verdict" class="verdict" aria-live="polite"></p>
+      </div>
+    </figure>
+  </div>
+</section>
+
+<section class="sec" id="degradation">
+  <h2><span class="secmark">§3</span> It degrades. It doesn't die.</h2>
+  <p>
+    Acoustic channels are moody: move the phone six inches and a clean 48 kbps
+    cell becomes a reverberant mess. A naive receiver simply collapses. Cyrinx
+    is built to lose <em>gracefully</em> — measured across placements on the
+    same bench:
+  </p>
+  <ul class="ladder" role="list">
+    <li style="--w:99%"><span class="rung-label">clean placement</span><span class="rung-bar"></span><span class="rung-val">48 kbps</span></li>
+    <li style="--w:79%"><span class="rung-label">reverberant <small>rescued by adaptive cyclic prefix + mic selection</small></span><span class="rung-bar"></span><span class="rung-val">~11 kbps</span></li>
+    <li style="--w:69%"><span class="rung-label">shadowed <small>rescued by two-microphone combining</small></span><span class="rung-bar"></span><span class="rung-val">~5 kbps</span></li>
+    <li style="--w:10%"><span class="rung-label">nearly hopeless <small>non-coherent multitone floor</small></span><span class="rung-bar"></span><span class="rung-val">68 bps</span></li>
+  </ul>
+  <p>
+    The rescue that matters most: <strong>maximal-ratio combining</strong> across
+    the laptop's two microphones. The mics sit far apart, so the room's dead
+    spots differ between them; combining per subcarrier fills each mic's nulls
+    with the other's signal. In the worst measured placement, <em>neither</em>
+    microphone could decode a single block alone — combined, 8 of 11 blocks
+    came through. That path now ships in the portable C library, pinned by
+    cross-implementation test vectors.
+  </p>
+  <p>
+    And when even that fails, a non-coherent multitone floor mode — energy
+    detection with symbols longer than the echo tail, now Reed–Solomon-coded —
+    keeps a trickle flowing where phase-coherent modems get nothing at all.
+    Slow is a mode. Silence is a failure.
+  </p>
+</section>
+
+<section class="sec" id="context">
+  <h2><span class="secmark">§4</span> Standing on prior art</h2>
+  <p>
+    Data-over-sound is a well-trodden field, and Cyrinx borrows its techniques
+    gladly — OFDM, pilot tracking, convolutional codes are textbook material.
+  </p>
+  <dl class="prior">
+    <div><dt>minimodem</dt><dd>the classic audio FSK software modem — Bell-era protocols, kilobit rates.</dd></div>
+    <div><dt>ggwave</dt><dd>compact FSK data-over-sound for short messages; widely embedded.</dd></div>
+    <div><dt>Quiet</dt><dd>OFDM/GMSK modem library for sound, the closest open-source relative.</dd></div>
+    <div><dt>Chirp / LISNR</dt><dd>commercial acoustic data transfer for payments and pairing.</dd></div>
+    <div><dt>Google Nearby</dt><dd>used near-ultrasonic tokens for device discovery.</dd></div>
+  </dl>
+  <p>
+    What Cyrinx adds is <strong>the measurement discipline</strong>: end-to-end
+    byte-verified throughput on named consumer hardware, a catalog of the four
+    physical-layer defects that actually limited the link, a published log of
+    <a href="https://github.com/dweekly/cyrinx/blob/main/docs/NEGATIVE_FINDINGS.md">negative
+    findings</a> so dead ends stay dead, and a receiver architecture whose
+    graceful-degradation claims were demonstrated placement by placement — then
+    ported into a portable C core that reproduces the headline number itself.
+  </p>
+</section>
+
+<section class="sec" id="paper">
+  <h2><span class="secmark">§5</span> Read the paper, run the code</h2>
+  <div class="cta-row">
+    <a class="cta" href="/cyrinx-acoustic-link.pdf">
+      <span class="cta-kind">Whitepaper · PDF · 22 pages</span>
+      <span class="cta-title">A measured 36.6/27.3 kbps bidirectional acoustic data link between a laptop and a phone</span>
+      <span class="cta-sub">Building, breaking, and verifying a wideband OFDM acoustic modem on commodity hardware</span>
+    </a>
+    <a class="cta" href="https://github.com/dweekly/cyrinx">
+      <span class="cta-kind">Source · Apache-2.0</span>
+      <span class="cta-title">github.com/dweekly/cyrinx</span>
+      <span class="cta-sub">Portable C core · Swift binding · Python reference · golden vectors</span>
+    </a>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <p>© 2026 Primatech Paper Co LLC · Apache-2.0 · A research prototype — measured honestly, including the parts that failed.</p>
+</footer>
+
+<script src="/cyrinx.js" defer></script>
+</body>
+</html>

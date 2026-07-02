@@ -80,14 +80,19 @@ spatial multiplexing (~2×) + transmit precoding. Reverberation becomes an asset
 - B3. Spatial multiplexing: 2 streams, ZF/MMSE separation; measure the gain.
 - B4. Transmit precoding / null-steering: weight the speakers to fill RX nulls.
 
-## Track C — The website (untouched)
+## Track C — The website (BUILT 2026-07-02; deploy user-gated)
 
-[cyrinx.org](https://cyrinx.org) (registered; Cloudflare Pages). Static site:
-encoding-waveform visualizations, multi-audience explainer (how acoustic data
-encoding works; prior art — minimodem, ggwave, Quiet, Chirp/LISNR, BatNet; what
-Cyrinx did differently incl. the robustness story). Full
-OpenGraph/favicon/SEO/JSON-LD; validate rendering via the Chrome DevTools MCP.
-*Big separate deliverable; nothing started.*
+[cyrinx.org](https://cyrinx.org) (registered; Cloudflare Pages). **Built** in
+`site/`: static single page (no framework, no build step, no third-party
+requests; self-hosted IBM Plex). Hero synthesizes an actual bulk-PHY frame in
+the browser (chirp → guard → sync → OFDM at the real geometry), renders its
+spectrogram live, and plays it via WebAudio on click; interactive EVM
+constellation (the 64-QAM ceiling finding); graceful-degradation ladder;
+measured-results table; prior-art section; whitepaper PDF. Full
+OpenGraph/JSON-LD/favicon/sitemap/robots/_headers; desktop + mobile rendering
+and console validated via the Chrome DevTools MCP. **Remaining (user):**
+`wrangler pages deploy site --project-name cyrinx` (auth on cyrinx.org);
+GitHub links 404 publicly until the Phase 5 repo flip. See `site/README.md`.
 
 ## Track D — Publication finalization (user-gated)
 

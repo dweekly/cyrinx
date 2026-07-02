@@ -1,0 +1,251 @@
+/* Cyrinx — datasheet-you-can-hear. Tokens first, everything derives. */
+
+@font-face {
+  font-family: 'IBM Plex Sans Condensed';
+  font-style: normal; font-weight: 600; font-display: swap;
+  src: url('fonts/IBMPlexSansCondensed-600.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal; font-weight: 400; font-display: swap;
+  src: url('fonts/IBMPlexSans-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal; font-weight: 600; font-display: swap;
+  src: url('fonts/IBMPlexSans-600.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal; font-weight: 400; font-display: swap;
+  src: url('fonts/IBMPlexMono-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal; font-weight: 500; font-display: swap;
+  src: url('fonts/IBMPlexMono-500.woff2') format('woff2');
+}
+
+:root {
+  --paper: #F6F5F2;
+  --ink: #191624;
+  --ink-2: #6B6675;
+  --accent: #5B21B6;        /* violet — the quiet end of the magma colormap */
+  --hot: #E8890C;           /* signal amber — reserved for signal energy */
+  --panel: #12101A;         /* instrument inset */
+  --panel-ink: #C9C4D4;
+  --line: #DAD7CF;
+  --display: 'IBM Plex Sans Condensed', 'Arial Narrow', sans-serif;
+  --body: 'IBM Plex Sans', system-ui, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
+  --measure: 44rem;
+  --gutter: clamp(1.25rem, 5vw, 4rem);
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 1.0625rem;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--accent); text-underline-offset: 3px; }
+a:hover { color: var(--ink); }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap;
+}
+
+/* ---- top bar ---- */
+.topbar {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 1rem; flex-wrap: wrap;
+  padding: 1.1rem var(--gutter);
+  border-bottom: 1px solid var(--line);
+}
+.wordmark {
+  font-family: var(--mono); font-weight: 500; font-size: 1.05rem;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--ink); text-decoration: none;
+}
+.topbar nav { display: flex; gap: 1.4rem; flex-wrap: wrap; }
+.topbar nav a {
+  font-family: var(--mono); font-size: 0.82rem; letter-spacing: 0.04em;
+  color: var(--ink-2); text-decoration: none;
+}
+.topbar nav a:hover { color: var(--accent); }
+.mono-note { color: var(--ink-2); }
+
+/* ---- hero ---- */
+.hero { padding: clamp(2.5rem, 7vh, 5rem) var(--gutter) 3rem; max-width: 72rem; margin: 0 auto; }
+.eyebrow {
+  font-family: var(--mono); font-size: 0.8rem; font-weight: 500;
+  letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent);
+  margin: 0 0 1.2rem;
+}
+h1 {
+  font-family: var(--display); font-weight: 600;
+  font-size: clamp(2.7rem, 7.5vw, 5.4rem);
+  line-height: 0.98; letter-spacing: -0.015em;
+  margin: 0 0 1.4rem; max-width: 20ch;
+}
+h1 em { font-style: normal; color: var(--accent); }
+.thesis { max-width: var(--measure); font-size: 1.15rem; margin: 0 0 2.6rem; }
+.thesis strong { font-family: var(--mono); font-weight: 500; font-size: 0.95em; white-space: nowrap; }
+
+/* ---- the instrument ---- */
+.instrument {
+  margin: 0; border: 1px solid var(--line); border-radius: 10px;
+  background: #FCFBF9; overflow: hidden;
+  box-shadow: 0 1px 0 rgba(25, 22, 36, 0.04), 0 12px 40px -18px rgba(25, 22, 36, 0.25);
+}
+.instrument-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 1rem; flex-wrap: wrap;
+  padding: 0.8rem 1.1rem;
+  border-bottom: 1px solid var(--line);
+}
+.inst-title { font-family: var(--mono); font-weight: 500; font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.inst-params { font-family: var(--mono); font-size: 0.75rem; color: var(--ink-2); }
+.spectro-wrap { position: relative; background: var(--panel); }
+#spectrogram { display: block; width: 100%; height: clamp(200px, 32vw, 300px); }
+.anatomy {
+  position: absolute; inset: auto 0 0 0; display: flex;
+  border-top: 1px solid rgba(201, 196, 212, 0.25);
+  background: rgba(18, 16, 26, 0.55); backdrop-filter: blur(2px);
+}
+.anat {
+  font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.06em;
+  color: var(--panel-ink); text-transform: uppercase;
+  padding: 0.35rem 0.5rem 0.4rem; overflow: hidden; white-space: nowrap;
+  border-left: 1px solid rgba(201, 196, 212, 0.35);
+}
+.anat:first-child { border-left: 0; }
+.anat small { display: block; text-transform: none; letter-spacing: 0; color: rgba(201, 196, 212, 0.6); }
+.instrument-foot {
+  display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+  padding: 0.85rem 1.1rem;
+}
+#listen {
+  font-family: var(--mono); font-weight: 500; font-size: 0.85rem;
+  letter-spacing: 0.05em;
+  color: var(--panel); background: var(--hot);
+  border: 0; border-radius: 999px; padding: 0.55rem 1.1rem;
+  cursor: pointer;
+}
+#listen:hover { filter: brightness(1.07); }
+#listen[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.foot-note { font-size: 0.85rem; color: var(--ink-2); max-width: 34rem; }
+
+/* ---- sections ---- */
+.sec { padding: clamp(2.8rem, 8vh, 5rem) var(--gutter); max-width: 72rem; margin: 0 auto; border-top: 1px solid var(--line); }
+.sec > p, .sec .register, .sec .prior, .sec > .ladder { max-width: var(--measure); }
+h2 {
+  font-family: var(--display); font-weight: 600;
+  font-size: clamp(1.7rem, 3.4vw, 2.4rem); line-height: 1.05;
+  letter-spacing: -0.01em; margin: 0 0 1.2rem;
+}
+.secmark {
+  font-family: var(--mono); font-weight: 500; font-size: 0.55em;
+  color: var(--accent); vertical-align: 0.5em; margin-right: 0.6em;
+  letter-spacing: 0.1em;
+}
+h3 { font-family: var(--body); font-weight: 600; font-size: 1.05rem; margin: 2rem 0 0.5rem; }
+
+/* results table */
+.table-scroll { overflow-x: auto; margin: 1.6rem 0; }
+table { border-collapse: collapse; width: 100%; max-width: 58rem; font-size: 0.95rem; }
+th {
+  font-family: var(--mono); font-weight: 500; font-size: 0.72rem;
+  text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-2);
+  text-align: left; padding: 0.5rem 1rem 0.5rem 0;
+  border-bottom: 2px solid var(--ink);
+}
+td { padding: 0.6rem 1rem 0.6rem 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+td.num { font-family: var(--mono); font-weight: 500; white-space: nowrap; }
+tr.hot td { background: linear-gradient(90deg, rgba(232, 137, 12, 0.10), transparent 70%); }
+tr.hot td.num { color: var(--hot); filter: brightness(0.82); }
+.dim { color: var(--ink-2); }
+.aside { font-size: 0.95rem; color: var(--ink-2); border-left: 3px solid var(--hot); padding-left: 1rem; }
+
+/* how it works */
+.chain { padding-left: 1.2rem; margin: 0.8rem 0; }
+.chain li { margin: 0.55rem 0; }
+.chain b { font-weight: 600; }
+
+.constellation-panel {
+  margin: 1.4rem 0 0; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel); overflow: hidden; max-width: 34rem;
+}
+#constellation { display: block; width: 100%; aspect-ratio: 2 / 1.15; }
+.const-controls { padding: 0.8rem 1rem 1rem; background: #FCFBF9; border-top: 1px solid var(--line); }
+.const-controls label {
+  font-family: var(--mono); font-size: 0.8rem; font-weight: 500;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2);
+  display: flex; gap: 0.6rem; align-items: baseline;
+}
+.const-controls output { color: var(--ink); font-size: 0.95rem; }
+input[type="range"] { width: 100%; margin: 0.5rem 0 0.2rem; accent-color: var(--accent); }
+.verdict { font-family: var(--mono); font-size: 0.8rem; margin: 0.3rem 0 0; min-height: 1.4em; }
+.verdict.ok { color: #1A7F37; }
+.verdict.bad { color: #B3261E; }
+
+/* degradation ladder */
+.ladder { list-style: none; padding: 0; margin: 1.8rem 0; }
+.ladder li {
+  display: grid; grid-template-columns: minmax(9rem, 16rem) 1fr auto;
+  align-items: center; gap: 0.9rem; padding: 0.45rem 0;
+}
+.rung-label { font-size: 0.92rem; line-height: 1.25; }
+.rung-label small { display: block; color: var(--ink-2); font-size: 0.8rem; }
+.rung-bar {
+  display: block; height: 14px; width: var(--w); border-radius: 3px;
+  background: linear-gradient(90deg, #3B0F70, #8C2981 45%, #DE4968 75%, #FE9F6D);
+  min-width: 6px;
+}
+.rung-val { font-family: var(--mono); font-weight: 500; font-size: 0.9rem; white-space: nowrap; }
+
+/* prior art */
+.prior { margin: 1.4rem 0; }
+.prior div { display: grid; grid-template-columns: minmax(7rem, 10rem) 1fr; gap: 1rem; padding: 0.5rem 0; border-bottom: 1px dotted var(--line); }
+.prior dt { font-family: var(--mono); font-weight: 500; font-size: 0.9rem; }
+.prior dd { margin: 0; color: var(--ink-2); font-size: 0.95rem; }
+
+/* paper & code */
+.cta-row { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); max-width: 58rem; }
+.cta {
+  display: block; text-decoration: none; color: var(--ink);
+  border: 1px solid var(--line); border-radius: 10px; padding: 1.2rem 1.3rem;
+  background: #FCFBF9;
+  transition: border-color 120ms ease, transform 120ms ease;
+}
+.cta:hover { border-color: var(--accent); color: var(--ink); transform: translateY(-1px); }
+.cta-kind { display: block; font-family: var(--mono); font-size: 0.72rem; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin-bottom: 0.5rem; }
+.cta-title { display: block; font-family: var(--display); font-weight: 600; font-size: 1.35rem; line-height: 1.15; margin-bottom: 0.4rem; }
+.cta-sub { display: block; font-size: 0.85rem; color: var(--ink-2); }
+
+/* footer */
+.foot { border-top: 1px solid var(--line); padding: 1.6rem var(--gutter) 2.2rem; }
+.foot p { font-family: var(--mono); font-size: 0.75rem; color: var(--ink-2); max-width: 72rem; margin: 0 auto; }
+
+@media (max-width: 640px) {
+  .anat small { display: none; }
+  .ladder li { grid-template-columns: 1fr; gap: 0.25rem; }
+  .rung-val { order: -1; }
+  .prior div { grid-template-columns: 1fr; gap: 0.15rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cta { transition: none; }
+}

@@ -8,6 +8,17 @@ commands it contains.
 
 ## 2026-07-02
 
+- **cyrinx.org website built** (Track C; deploy pending user auth on
+  Cloudflare). Static, dependency-free single page in `site/`: the hero
+  synthesizes a real bulk-PHY frame in-browser (correct geometry: chirp,
+  guard, 2 sync symbols, OFDM 1.1–23 kHz at NFFT 2048/CP 768), renders its
+  spectrogram on canvas, and plays it via WebAudio on click; interactive
+  16-QAM/EVM constellation demonstrating the measured 64-QAM ceiling;
+  graceful-degradation ladder; measured-results table with the honest goodput
+  definition; prior-art section; whitepaper PDF. OpenGraph card generated
+  from a real frame spectrogram (`scripts/gen-site-assets.py`); JSON-LD,
+  sitemap, robots, cache/security headers. Rendering validated desktop +
+  mobile via Chrome DevTools (clean console).
 - **A2: two-mic MRC ported into the shipped C codec** (digital validation
   complete; OTA pending a bench). `cyrinx_bulk_demodulate2` implements
   per-subcarrier maximal-ratio combining exactly as the validated Python
