@@ -49,6 +49,12 @@ _LIB.cyrinx_bulk_demodulate.argtypes = [
     ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t,
     ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_double)]
 _LIB.cyrinx_bulk_demodulate.restype = ctypes.c_long
+_LIB.cyrinx_bulk_demodulate2.argtypes = [
+    ctypes.POINTER(Cfg), ctypes.POINTER(ctypes.c_float), ctypes.c_size_t,
+    ctypes.POINTER(ctypes.c_float), ctypes.c_size_t,
+    ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t,
+    ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_double)]
+_LIB.cyrinx_bulk_demodulate2.restype = ctypes.c_long
 
 
 def make_cfg(bits_per_bin=4, rate="3/4", n_sym=64, f_lo=1100.0, f_hi=23000.0,
@@ -87,6 +93,29 @@ def decode(cfg, rx):
     n = _LIB.cyrinx_bulk_demodulate(ctypes.byref(cfg), rxp, len(rxf), out,
                                     g.payload_bytes, ctypes.byref(ok),
                                     ctypes.byref(total), ctypes.byref(evm))
+    if n < 0:
+        return None
+    return {"payload": bytes(out), "blocks_ok": ok.value,
+            "blocks_total": total.value, "evm": evm.value}
+
+
+def decode2(cfg, rx, rx2):
+    """Two-mic library decode with per-subcarrier MRC (cyrinx_bulk_demodulate2,
+    A2). rx/rx2: sample-aligned captures (two channels of one stereo capture);
+    sync runs on rx."""
+    g = geometry(cfg)
+    r1 = np.ascontiguousarray(rx, dtype=np.float32)
+    r2 = np.ascontiguousarray(rx2, dtype=np.float32)
+    out = (ctypes.c_uint8 * g.payload_bytes)()
+    ok = ctypes.c_int(0)
+    total = ctypes.c_int(0)
+    evm = ctypes.c_double(0.0)
+    n = _LIB.cyrinx_bulk_demodulate2(
+        ctypes.byref(cfg),
+        r1.ctypes.data_as(ctypes.POINTER(ctypes.c_float)), len(r1),
+        r2.ctypes.data_as(ctypes.POINTER(ctypes.c_float)), len(r2),
+        out, g.payload_bytes, ctypes.byref(ok), ctypes.byref(total),
+        ctypes.byref(evm))
     if n < 0:
         return None
     return {"payload": bytes(out), "blocks_ok": ok.value,

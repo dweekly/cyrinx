@@ -30,31 +30,36 @@ MFSK_PAYLOAD = 32
 
 def coherent_decode_rep(cfg, st, mic, pl):
     """One rep's coherent decode: library clib decode on the selected mic
-    first (keeps the headline numbers library-native); if that is imperfect,
-    escalate to the Python reference two-mic MRC
-    (modem.demodulate_frame(rx2=...)) and keep the better result. Cross-compat
-    of clib frames through the reference RX is proven by xcompat_validate.py
-    (A1 step 1). Returns per-rep provenance so the JSONL shows exactly what
-    single-mic delivered vs what MRC rescued."""
+    first; if that is imperfect, escalate to the LIBRARY two-mic MRC
+    (cyrinx_bulk_demodulate2 via clib.decode2 — A2; validated against the
+    Python reference modem.demodulate_frame(rx2=...) by xcompat_validate.py)
+    and keep the better result. The whole path is library-native. Returns
+    per-rep provenance so the JSONL shows exactly what single-mic delivered
+    vs what MRC rescued."""
     mono = st[:, mic] if st.ndim > 1 else st
     d = clib.decode(cfg, np.ascontiguousarray(mono, dtype=np.float32))
     total = d["blocks_total"] if d else clib.geometry(cfg).n_blocks
-    # payload-verified accounting, same as before A1
-    clib_ok = d["blocks_ok"] if (d and d["payload"] == pl) else 0
+    clib_ok = _ordered_verified(d, pl)
     ver, path, rescued = clib_ok, "clib", 0
     if clib_ok < total and st.ndim > 1 and st.shape[1] >= 2:
-        mcfg = clib.modem_cfg_from_clib(cfg)
-        r = M.demodulate_frame(mcfg, st[:, 0].astype(np.float64),
-                               rx2=st[:, 1].astype(np.float64))
-        mrc_ok = 0
-        if r.get("ok"):
-            mrc_ok = sum(1 for i, okb, data in r["blocks"]
-                         if okb and data == pl[i * M.CRC_BLOCK:
-                                               (i + 1) * M.CRC_BLOCK])
+        r = clib.decode2(cfg, st[:, 0], st[:, 1])
+        mrc_ok = _ordered_verified(r, pl)
         if mrc_ok > clib_ok:
-            ver, path, rescued = mrc_ok, "mrc", mrc_ok - clib_ok
+            ver, path, rescued = mrc_ok, "clib_mrc", mrc_ok - clib_ok
     return {"ver": ver, "total": total, "clib_ok": clib_ok,
             "path": path, "rescued": rescued}
+
+
+def _ordered_verified(d, pl, blk=256):
+    """Blocks CRC-valid AND byte-identical at their ordered position — the
+    goodput definition the measured results use. (Byte-compare against the
+    known transmitted payload per CRC block, capped by the decoder's CRC
+    count; the old `payload == pl` shortcut gave partial decodes 0 credit.)"""
+    if not d:
+        return 0
+    matches = sum(1 for i in range(len(pl) // blk)
+                  if d["payload"][i * blk:(i + 1) * blk] == pl[i * blk:(i + 1) * blk])
+    return min(matches, d["blocks_ok"])
 
 
 def run(label, reps=3):
@@ -149,11 +154,11 @@ def _selftest():
     print(f"  clean stereo  -> path={r['path']} {r['ver']}/{r['total']} OK")
 
     # 2: selected mic notched hard (clib fails), other mic complementary
-    #    -> escalation rescues via MRC null-fill
+    #    -> escalation rescues via the LIBRARY MRC (cyrinx_bulk_demodulate2)
     m0 = XV.notch(rx, cfg.sr, XV.NOTCH_MIC0) + rng.normal(0, sig, len(rx))
     m1 = XV.notch(rx, cfg.sr, XV.NOTCH_MIC1) + rng.normal(0, sig, len(rx))
     r = coherent_decode_rep(cfg, stereo(m0, m1), 0, pl)
-    assert r["path"] == "mrc" and r["clib_ok"] < g.n_blocks \
+    assert r["path"] == "clib_mrc" and r["clib_ok"] < g.n_blocks \
         and r["ver"] == g.n_blocks and r["rescued"] == r["ver"] - r["clib_ok"], r
     print(f"  notched mic0  -> path={r['path']} clib {r['clib_ok']}/{r['total']}"
           f" + {r['rescued']} rescued = {r['ver']}/{r['total']} OK")

@@ -9,12 +9,14 @@ track: [docs/PUBLICATION.md](docs/PUBLICATION.md) (publication effort),
 
 ## The gap that matters most
 
-**The robustness/diversity wins (mic selection, two-mic MRC, adaptive CP, MFSK
-floor) live in the Python reference and bench loop, NOT in the shippable C
-library.** `cyrinx_bulk` is still single-mic, fixed-CP, so a consumer of the
-library does not get the graceful-degradation behavior the whitepaper describes.
-Closing that gap is priority #1 — otherwise the paper claims capabilities the
-shipped library lacks.
+~~The robustness/diversity wins live in the Python reference, NOT in the
+shippable C library.~~ **Mostly closed as of 2026-07-02:** two-mic MRC ships in
+the C codec (`cyrinx_bulk_demodulate2`, golden-pinned; A2), CP/NFFT are
+caller-selectable, and the adaptive loop's escalation path is library-native
+(A1). What remains bench-layer Python: the EVM-probe sounder, the
+mic-selection policy, and the MFSK floor modem. What remains unproven: **all
+of the new C diversity paths over the air** (every OTA number so far predates
+them) — A1 step 4 / the floor re-measurement are the referees.
 
 ## Track A — Finish the robust library (first)
 
@@ -26,9 +28,14 @@ shipped library lacks.
   covered by `adaptive.py selftest`. Full plan: [docs/A1_AUTO_MRC.md](docs/A1_AUTO_MRC.md).
   Step 4 needs a bench: the Pixel 7a reproduces the published cells;
   alternatively the iPhone can transmit (MRC is Mac-side) — see A5.
-- **A2. Port diversity into the C codec.** 2-mic input + per-subcarrier MRC +
-  caller-selectable CP/NFFT in `cyrinx_bulk`, so the *shipped* library degrades
-  gracefully. Extend golden vectors for the new configs. *Larger.*
+- **A2. Port diversity into the C codec — DONE (2026-07-02), OTA pending.**
+  `cyrinx_bulk_demodulate2` (per-subcarrier two-mic MRC, ports the validated
+  modem.py math; EVM parity to 4 decimals on identical captures across the
+  MCS/CP grid), Swift `BulkPHY.decode(_:combining:)`, and a committed golden
+  MRC rescue fixture (`qam16_r34_mrc`: notched mic0 fails alone, MRC decodes
+  byte-exact; pinned on both KISS and vDSP FFT backends). CP/NFFT were already
+  caller-selectable (verified at 4096/3072). The adaptive loop's escalation now
+  uses the library MRC end-to-end.
 - **A3. MFSK floor: Reed–Solomon over GF(16) — digital DONE (2026-07-01);
   OTA re-measurement pending.** RS(15,11) + detector-confidence erasures
   replaced 3× repetition (`rs16.py`, `mfsk.py`): ×2.06 rate at the same symbol

@@ -175,6 +175,7 @@ final class CyrinxBulkTXTests: XCTestCase {
     func testDemodulateRxWave() throws {
         for c in try cases() {
             let cfg = c.config
+            let isMRC = c.artifacts.contains { $0.stage == "rx_wave2" }
             let rxWave = GoldenVectors.float32s(
                 try GoldenVectors.rawData(c.name, try artifactObj(c, "rx_wave")))
             let expPayload = try bytes(c, "decoded_payload")
@@ -194,10 +195,56 @@ final class CyrinxBulkTXTests: XCTestCase {
                 }
                 XCTAssertEqual(n, Int(geo.payload_bytes), "\(c.name): demod return")
                 XCTAssertEqual(Int(total), cfg.nBlocks, "\(c.name): blocks_total")
-                XCTAssertEqual(Int(ok), Int(total), "\(c.name): blocks_ok \(ok)/\(total)")
-                XCTAssertEqual(payload, expPayload, "\(c.name): decoded payload")
+                if isMRC {
+                    // MRC fixture: mic0 ALONE must reproduce the recorded
+                    // partial decode (< total) — the rescue premise.
+                    let expOK = try XCTUnwrap(cfg.mic0AloneBlocksOk, "\(c.name)")
+                    XCTAssertEqual(Int(ok), expOK, "\(c.name): mic0-alone blocks")
+                    XCTAssertLessThan(Int(ok), Int(total), "\(c.name): mic0 must fail")
+                } else {
+                    XCTAssertEqual(Int(ok), Int(total), "\(c.name): blocks_ok \(ok)/\(total)")
+                    XCTAssertEqual(payload, expPayload, "\(c.name): decoded payload")
+                }
             }
         }
+    }
+
+    /// Two-mic MRC (A2, cyrinx_bulk_demodulate2): the committed MRC fixture's
+    /// complementarily-notched channels — where mic0 alone FAILS (asserted
+    /// above) — decode byte-exact when combined per subcarrier.
+    func testDemodulateRxWaveMRC() throws {
+        var covered = 0
+        for c in try cases() where c.artifacts.contains(where: { $0.stage == "rx_wave2" }) {
+            covered += 1
+            let cfg = c.config
+            let rx0 = GoldenVectors.float32s(
+                try GoldenVectors.rawData(c.name, try artifactObj(c, "rx_wave")))
+            let rx1 = GoldenVectors.float32s(
+                try GoldenVectors.rawData(c.name, try artifactObj(c, "rx_wave2")))
+            let expPayload = try bytes(c, "decoded_payload")
+
+            var bc = makeBulkConfig(cfg)
+            try cfg.rate.withCString { rptr in
+                bc.rate = rptr
+                var geo = cyrinx_bulk_geometry()
+                XCTAssertEqual(cyrinx_bulk_compute_geometry(&bc, &geo), 0)
+                var payload = [UInt8](repeating: 0, count: Int(geo.payload_bytes))
+                var ok: Int32 = 0
+                var total: Int32 = 0
+                var evm = 0.0
+                let n = rx0.withUnsafeBufferPointer { p0 in
+                    rx1.withUnsafeBufferPointer { p1 in
+                        cyrinx_bulk_demodulate2(
+                            &bc, p0.baseAddress, p0.count, p1.baseAddress, p1.count,
+                            &payload, payload.count, &ok, &total, &evm)
+                    }
+                }
+                XCTAssertEqual(n, Int(geo.payload_bytes), "\(c.name): demod2 return")
+                XCTAssertEqual(Int(ok), Int(total), "\(c.name): MRC blocks \(ok)/\(total)")
+                XCTAssertEqual(payload, expPayload, "\(c.name): MRC decoded payload")
+            }
+        }
+        XCTAssertGreaterThan(covered, 0, "no MRC golden case found")
     }
 
     // MARK: helpers

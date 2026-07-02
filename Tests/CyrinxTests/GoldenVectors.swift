@@ -54,6 +54,10 @@ enum GoldenVectors {
         let bitsPerBin: Int
         let chirpF0: Double
         let chirpF1: Double
+        /// MRC cases only (rx_wave2 present): blocks mic0 decodes ALONE —
+        /// asserted < nBlocks at fixture-build time, so the two-mic decode
+        /// demonstrably rescues the frame.
+        let mic0AloneBlocksOk: Int?
         enum CodingKeys: String, CodingKey {
             case nfft, cp, sr, rate, seed, amp
             case nSym = "n_sym"
@@ -70,6 +74,7 @@ enum GoldenVectors {
             case bitsPerBin = "bits_per_bin_uniform"
             case chirpF0 = "chirp_f0"
             case chirpF1 = "chirp_f1"
+            case mic0AloneBlocksOk = "mic0_alone_blocks_ok"
         }
     }
 

@@ -6,6 +6,23 @@ no version numbers yet (pre-public research prototype); entries are dated
 milestones. Detailed evidence for every claim: the cited doc + the reproduction
 commands it contains.
 
+## 2026-07-02
+
+- **A2: two-mic MRC ported into the shipped C codec** (digital validation
+  complete; OTA pending a bench). `cyrinx_bulk_demodulate2` implements
+  per-subcarrier maximal-ratio combining exactly as the validated Python
+  reference (`modem.demodulate_frame(rx2=...)`): identical payloads/block
+  counts and EVM equal to 4 decimals on the same captures across the MCS/CP
+  grid, including the null-fill rescue where mic0 alone decodes 0/N and MRC
+  decodes N/N. Pinned by a new committed golden case (`qam16_r34_mrc`:
+  complementary per-mic dead bands over distinct multipath, mic0-alone failure
+  recorded in the manifest) on both KISS and vDSP FFT backends. Swift surface:
+  `BulkPHY.decode(_:combining:)`. The adaptive loop's MRC escalation is now
+  library-native end-to-end, and its per-rep accounting was fixed to
+  per-block ordered verification (the old all-or-nothing payload check gave
+  partial decodes zero credit). The single-mic path is bit-identical to
+  before. 83/83 Swift tests + 23/23 Accelerate-backend tests green.
+
 ## 2026-07-01
 
 - **A3 MFSK-floor FEC upgrade, digital complete** (OTA re-measurement pending

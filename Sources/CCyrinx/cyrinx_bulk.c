@@ -561,18 +561,31 @@ static int cyrinx_matched_filter(const double *sig, int sig_len, const double *r
     return best_i;
 }
 
-long cyrinx_bulk_demodulate(const cyrinx_bulk_config *cfg, const float *rx,
-                            size_t rx_len, uint8_t *out_payload, size_t out_cap,
-                            int *blocks_ok, int *blocks_total, double *evm_rms) {
+/* Shared single/dual-mic demodulator. rx2 == NULL -> single-mic (bit-identical
+ * to the original cyrinx_bulk_demodulate); rx2 != NULL -> per-subcarrier MRC
+ * (ports modem.py demodulate_frame(rx2=...), the validated Python reference).
+ * Sync runs on rx; rx2 must be sample-aligned (a second channel of the same
+ * capture). */
+static long cyrinx_bulk_demod_impl(const cyrinx_bulk_config *cfg, const float *rx,
+                                   size_t rx_len, const float *rx2, size_t rx2_len,
+                                   uint8_t *out_payload, size_t out_cap,
+                                   int *blocks_ok, int *blocks_total,
+                                   double *evm_rms) {
     cyrinx_bulk_geometry g;
     if (cyrinx_bulk_compute_geometry(cfg, &g) != 0) return -1;
     if ((size_t)g.payload_bytes > out_cap) return -1;
     const int nfft = cfg->nfft, cp = cfg->cp, sym = nfft + cp;
     const int n_used = g.n_used, cap = g.cap;
     const int half = nfft / 2 + 1;
+    const int nch = rx2 ? 2 : 1;
 
     double *sig = (double *)malloc(rx_len * sizeof(double));
     for (size_t i = 0; i < rx_len; ++i) sig[i] = (double)rx[i];
+    double *sig1 = NULL;
+    if (rx2) {
+        sig1 = (double *)malloc(rx2_len * sizeof(double));
+        for (size_t i = 0; i < rx2_len; ++i) sig1[i] = (double)rx2[i];
+    }
 
     /* ---- coarse sync: chirp matched filter ---- */
     double *chirp = (double *)malloc((size_t)CYRINX_BULK_CHIRP_LEN * sizeof(double));
@@ -602,57 +615,68 @@ long cyrinx_bulk_demodulate(const cyrinx_bulk_config *cfg, const float *rx,
     base -= 24; /* bias early so pre-cursor taps stay in the CP */
     cyrinx_irfft_destroy(iplan);
 
-    /* ---- channel estimation from the 2 sync symbols ---- */
+    /* ---- channel estimation from the 2 sync symbols, per microphone ---- */
     cyrinx_rfft_plan *fplan = cyrinx_rfft_create(nfft);
     double *Yr = (double *)malloc((size_t)half * sizeof(double));
     double *Yi = (double *)malloc((size_t)half * sizeof(double));
-    double *Hr = (double *)malloc((size_t)n_used * sizeof(double));
-    double *Hi = (double *)malloc((size_t)n_used * sizeof(double));
-    double *nv = (double *)malloc((size_t)n_used * sizeof(double));
+    double *Hr = (double *)malloc((size_t)(nch * n_used) * sizeof(double));
+    double *Hi = (double *)malloc((size_t)(nch * n_used) * sizeof(double));
+    double *nv = (double *)malloc((size_t)(nch * n_used) * sizeof(double));
     double *dre = (double *)malloc((size_t)n_used * sizeof(double));
     double *dim = (double *)malloc((size_t)n_used * sizeof(double));
     double *sre = (double *)malloc((size_t)n_used * sizeof(double));
     double *sim = (double *)malloc((size_t)n_used * sizeof(double));
-    /* H0 from sync0, H1 from sync1; H = mean, diff for noise var */
-    for (int w = 0; w < 2; ++w) {
-        int pos = base + w * sym + cp;
-        if (pos < 0 || pos + nfft > (int)rx_len) { free(sig); return -1; }
-        cyrinx_rfft(fplan, sig + pos, Yr, Yi);
-        double *xr, *xi;
-        if (w == 0) { xr = sync0_re; xi = sync0_im; }
-        else {
-            cyrinx_phase_symbols(0x5EED + 1, n_used, sre, sim);
-            xr = sre; xi = sim;
-        }
-        for (int k = 0; k < n_used; ++k) {
-            int b = g.bin_lo + k;
-            /* H = Y / X (X unit-modulus): Y * conj(X) / |X|^2, |X|=1 */
-            double yr = Yr[b], yi = Yi[b];
-            double hr = yr * xr[k] + yi * xi[k];   /* conj(X)=xr-ixi; Y*conj(X) */
-            double hi = yi * xr[k] - yr * xi[k];
-            if (w == 0) { Hr[k] = hr; Hi[k] = hi; }
-            else {
-                dre[k] = Hr[k] - hr; dim[k] = Hi[k] - hi;  /* H0 - H1 */
-                Hr[k] = 0.5 * (Hr[k] + hr);
-                Hi[k] = 0.5 * (Hi[k] + hi);
+    double *nraw = (double *)malloc((size_t)n_used * sizeof(double));
+    cyrinx_phase_symbols(0x5EED + 1, n_used, sre, sim);
+    for (int ch = 0; ch < nch; ++ch) {
+        const double *csig = ch ? sig1 : sig;
+        size_t clen = ch ? rx2_len : rx_len;
+        double *chr = Hr + ch * n_used, *chi = Hi + ch * n_used;
+        double *cnv = nv + ch * n_used;
+        /* H0 from sync0, H1 from sync1; H = mean, diff for noise var */
+        for (int w = 0; w < 2; ++w) {
+            int pos = base + w * sym + cp;
+            if (pos < 0 || pos + nfft > (int)clen) { free(sig); free(sig1); return -1; }
+            cyrinx_rfft(fplan, csig + pos, Yr, Yi);
+            const double *xr = (w == 0) ? sync0_re : sre;
+            const double *xi = (w == 0) ? sync0_im : sim;
+            for (int k = 0; k < n_used; ++k) {
+                int b = g.bin_lo + k;
+                /* H = Y / X (X unit-modulus): Y * conj(X) / |X|^2, |X|=1 */
+                double yr = Yr[b], yi = Yi[b];
+                double h_r = yr * xr[k] + yi * xi[k]; /* conj(X)=xr-ixi; Y*conj(X) */
+                double h_i = yi * xr[k] - yr * xi[k];
+                if (w == 0) { chr[k] = h_r; chi[k] = h_i; }
+                else {
+                    dre[k] = chr[k] - h_r; dim[k] = chi[k] - h_i;  /* H0 - H1 */
+                    chr[k] = 0.5 * (chr[k] + h_r);
+                    chi[k] = 0.5 * (chi[k] + h_i);
+                }
             }
         }
-    }
-    /* noise var: box-filter(|H0-H1|^2/2, 9) + 1e-12 */
-    double *nraw = (double *)malloc((size_t)n_used * sizeof(double));
-    for (int k = 0; k < n_used; ++k) nraw[k] = (dre[k] * dre[k] + dim[k] * dim[k]) * 0.5;
-    for (int k = 0; k < n_used; ++k) {
-        double acc = 0.0; int cnt = 0;
-        for (int j = k - 4; j <= k + 4; ++j) {
-            if (j >= 0 && j < n_used) { acc += nraw[j]; }
-            cnt++; /* np.convolve 'same' with ones/9 divides by 9 incl. zero-pad */
+        /* noise var: box-filter(|H0-H1|^2/2, 9) + 1e-12 */
+        for (int k = 0; k < n_used; ++k)
+            nraw[k] = (dre[k] * dre[k] + dim[k] * dim[k]) * 0.5;
+        for (int k = 0; k < n_used; ++k) {
+            double acc = 0.0;
+            for (int j = k - 4; j <= k + 4; ++j) {
+                /* np.convolve 'same' with ones/9 divides by 9 incl. zero-pad */
+                if (j >= 0 && j < n_used) acc += nraw[j];
+            }
+            cnv[k] = acc / 9.0 + 1e-12;
         }
-        nv[k] = acc / 9.0 + 1e-12;
     }
-    /* snr_bin = |H|^2 / nv */
+    /* per-bin effective SNR = sum across mics of |H|^2 / nv (MRC null-fill);
+     * for one mic this reduces to the previous behavior */
     double *snr = (double *)malloc((size_t)n_used * sizeof(double));
-    for (int k = 0; k < n_used; ++k)
-        snr[k] = (Hr[k] * Hr[k] + Hi[k] * Hi[k]) / nv[k];
+    for (int k = 0; k < n_used; ++k) {
+        double acc = 0.0;
+        for (int ch = 0; ch < nch; ++ch) {
+            double hr = Hr[ch * n_used + k], hi = Hi[ch * n_used + k];
+            acc += (hr * hr + hi * hi) / nv[ch * n_used + k];
+        }
+        snr[k] = acc;
+    }
 
     /* ---- pilots ---- */
     double *pil_re = (double *)malloc((size_t)g.n_pilots * sizeof(double));
@@ -663,20 +687,34 @@ long cyrinx_bulk_demodulate(const cyrinx_bulk_config *cfg, const float *rx,
     double *llr_stream = (double *)malloc((size_t)cap * sizeof(double));
     double *Zr = (double *)malloc((size_t)n_used * sizeof(double));
     double *Zi = (double *)malloc((size_t)n_used * sizeof(double));
+    double *den = (double *)malloc((size_t)n_used * sizeof(double));
     double evm_acc = 0.0;
     int lpos = 0;
     for (int s = 0; s < cfg->n_sym; ++s) {
-        int pos = base + (2 + s) * sym + cp;
-        if (pos < 0 || pos + nfft > (int)rx_len) { free(sig); return -1; }
-        cyrinx_rfft(fplan, sig + pos, Yr, Yi);
-        /* Z = Y / H  (G = 1) */
+        /* equalize: one mic Z = Y/H (G = 1); two mics combine per subcarrier
+         * by MRC: Z = sum_m conj(H_m) Y_m / (sum_m |H_m|^2 + 1e-12), matching
+         * modem.py demodulate_frame */
+        for (int k = 0; k < n_used; ++k) { Zr[k] = 0.0; Zi[k] = 0.0; den[k] = 0.0; }
+        for (int ch = 0; ch < nch; ++ch) {
+            const double *csig = ch ? sig1 : sig;
+            size_t clen = ch ? rx2_len : rx_len;
+            int pos = base + (2 + s) * sym + cp;
+            if (pos < 0 || pos + nfft > (int)clen) { free(sig); free(sig1); return -1; }
+            cyrinx_rfft(fplan, csig + pos, Yr, Yi);
+            const double *chr = Hr + ch * n_used, *chi = Hi + ch * n_used;
+            for (int k = 0; k < n_used; ++k) {
+                int b = g.bin_lo + k;
+                double yr = Yr[b], yi = Yi[b], hr = chr[k], hi = chi[k];
+                Zr[k] += yr * hr + yi * hi;   /* conj(H) * Y, real */
+                Zi[k] += yi * hr - yr * hi;   /* conj(H) * Y, imag */
+                den[k] += hr * hr + hi * hi;
+            }
+        }
         for (int k = 0; k < n_used; ++k) {
-            int b = g.bin_lo + k;
-            double yr = Yr[b], yi = Yi[b], hr = Hr[k], hi = Hi[k];
-            double den = hr * hr + hi * hi + 0.0;
-            if (den < 1e-300) den = 1e-300;
-            Zr[k] = (yr * hr + yi * hi) / den;
-            Zi[k] = (yi * hr - yr * hi) / den;
+            double d = (nch == 1) ? (den[k] < 1e-300 ? 1e-300 : den[k])
+                                  : den[k] + 1e-12;
+            Zr[k] /= d;
+            Zi[k] /= d;
         }
         /* pilot phase tracking: 3-pass slope, then CPE */
         int np = g.n_pilots;
@@ -785,10 +823,25 @@ long cyrinx_bulk_demodulate(const cyrinx_bulk_config *cfg, const float *rx,
     if (blocks_total) *blocks_total = g.n_blocks;
 
     cyrinx_rfft_destroy(fplan);
-    free(sig); free(chirp); free(spec_re); free(spec_im); free(tbuf);
+    free(sig); free(sig1); free(chirp); free(spec_re); free(spec_im); free(tbuf);
     free(sync0_re); free(sync0_im); free(ref); free(Yr); free(Yi); free(Hr);
     free(Hi); free(nv); free(dre); free(dim); free(sre); free(sim); free(nraw);
     free(snr); free(pil_re); free(pil_im); free(llr_stream); free(Zr); free(Zi);
-    free(perm); free(llr); free(llr_full); free(l0); free(l1); free(info);
+    free(den); free(perm); free(llr); free(llr_full); free(l0); free(l1); free(info);
     return g.payload_bytes;
+}
+
+long cyrinx_bulk_demodulate(const cyrinx_bulk_config *cfg, const float *rx,
+                            size_t rx_len, uint8_t *out_payload, size_t out_cap,
+                            int *blocks_ok, int *blocks_total, double *evm_rms) {
+    return cyrinx_bulk_demod_impl(cfg, rx, rx_len, NULL, 0, out_payload, out_cap,
+                                  blocks_ok, blocks_total, evm_rms);
+}
+
+long cyrinx_bulk_demodulate2(const cyrinx_bulk_config *cfg, const float *rx,
+                             size_t rx_len, const float *rx2, size_t rx2_len,
+                             uint8_t *out_payload, size_t out_cap,
+                             int *blocks_ok, int *blocks_total, double *evm_rms) {
+    return cyrinx_bulk_demod_impl(cfg, rx, rx_len, rx2, rx2_len, out_payload,
+                                  out_cap, blocks_ok, blocks_total, evm_rms);
 }

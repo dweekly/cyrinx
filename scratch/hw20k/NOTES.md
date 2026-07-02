@@ -167,3 +167,31 @@ energy < 1.3) flags erasures, capped at the 4-erasure budget.
   also decodes via erasures — repetition could not use that information.
 - OTA re-measurement of the floor number pending a bench (the whitepaper's
   68 bps figure describes the repetition implementation it measured).
+
+## A2: two-mic MRC ported into the C codec (2026-07-02)
+
+Digital-only. `cyrinx_bulk_demodulate2` added to the library
+(Sources/CCyrinx/cyrinx_bulk.c): the single-mic demodulator generalized to a
+shared impl — per-mic H/noise estimation from the sync symbols, per-bin
+effective SNR summed across mics, data symbols combined per subcarrier
+(Z = Σ conj(Hₘ)Yₘ / (Σ|Hₘ|² + 1e-12)), pilot tracking on the combined Z.
+Mono path arithmetic unchanged (bit-identical). Ports
+`modem.demodulate_frame(rx2=...)` exactly.
+
+- **C ≡ Python:** `xcompat_validate.py` now decodes the same captures through
+  both — payloads identical, block counts identical, EVM equal to 4 decimals,
+  across the MCS/CP grid incl. the null-fill rescue (mic0 0/N → MRC N/N).
+- **Golden-pinned:** new committed case `qam16_r34_mrc` (mic0 notched
+  [3–8, 12–18 kHz] over one multipath, mic1 complementary [1.1–3, 8–12,
+  18–23 kHz] over a different multipath, no noise): mic0 alone decodes 0
+  blocks (recorded in the manifest and asserted), MRC decodes 4/4 byte-exact.
+  Passes on both KISS and vDSP FFT backends (83/83 + 23/23 accelerate).
+- Swift surface: `BulkPHY.decode(_:combining:)` + binding tests (identity
+  channels; deterministic zeroed-data-mic rescue at QPSK).
+- `adaptive.py` escalation switched from Python MRC to `clib.decode2` — the
+  loop's whole coherent path is now library-native. Per-rep accounting also
+  fixed to per-block ordered verification (`_ordered_verified`): the old
+  `payload == pl` shortcut gave partial decodes 0 credit, under-counting vs
+  the documented goodput definition.
+
+OTA validation of the C MRC path pending a bench (A1 step 4 doubles as it).

@@ -116,6 +116,23 @@ long cyrinx_bulk_demodulate(const cyrinx_bulk_config *cfg, const float *rx,
                             size_t rx_len, uint8_t *out_payload, size_t out_cap,
                             int *blocks_ok, int *blocks_total, double *evm_rms);
 
+/* Two-microphone demodulate with per-subcarrier maximal-ratio combining
+ * (the diversity path measured to rescue placements where NEITHER mic decodes
+ * alone — see docs/ACOUSTIC_BULK_PHY.md robustness layer and
+ * scratch/hw20k/modem.py demodulate_frame(rx2=...), the validated reference
+ * this ports). `rx` and `rx2` must be sample-aligned captures of the same
+ * frame (two channels of one stereo capture). Sync (chirp + fine alignment)
+ * runs on `rx`; each mic gets its own channel/noise estimate from the sync
+ * symbols; data symbols are combined per subcarrier:
+ *   Z = sum_m conj(H_m) Y_m / (sum_m |H_m|^2 + 1e-12)
+ * and the per-bin effective SNR feeding the soft LLRs is the sum across mics,
+ * so a null on one mic is filled by the other. `rx2 == NULL` degrades to the
+ * single-mic path (bit-identical to cyrinx_bulk_demodulate). */
+long cyrinx_bulk_demodulate2(const cyrinx_bulk_config *cfg, const float *rx,
+                             size_t rx_len, const float *rx2, size_t rx2_len,
+                             uint8_t *out_payload, size_t out_cap,
+                             int *blocks_ok, int *blocks_total, double *evm_rms);
+
 /* Default chirp/guard constants (modem.py). */
 #define CYRINX_BULK_CHIRP_LEN 4096
 #define CYRINX_BULK_GUARD 2048
