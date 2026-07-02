@@ -75,24 +75,42 @@ def run_cell(bpb, rate, nfft, cp, rng):
 
     # (b) two-mic MRC under independent AWGN (~20 dB SNR — plumbing test)
     sig = 0.1 * rms
-    rb = M.demodulate_frame(mcfg, rx + rng.normal(0, sig, len(rx)),
-                            rx2=rx + rng.normal(0, sig, len(rx)))
+    rx_a = rx + rng.normal(0, sig, len(rx))
+    rx_b = rx + rng.normal(0, sig, len(rx))
+    rb = M.demodulate_frame(mcfg, rx_a, rx2=rx_b)
     b_ok = ordered_blocks_ok(rb, payload) == g.n_blocks
 
     # (c) null-fill: mic0 alone must fail, MRC must fully decode
     m0 = notch(rx, cfg.sr, NOTCH_MIC0) + rng.normal(0, sig, len(rx))
     m1 = notch(rx, cfg.sr, NOTCH_MIC1) + rng.normal(0, sig, len(rx))
     c_mono = ordered_blocks_ok(M.demodulate_frame(mcfg, m0), payload)
-    c_mrc = ordered_blocks_ok(M.demodulate_frame(mcfg, m0, rx2=m1), payload)
+    rc = M.demodulate_frame(mcfg, m0, rx2=m1)
+    c_mrc = ordered_blocks_ok(rc, payload)
     c_ok = c_mono < g.n_blocks and c_mrc == g.n_blocks
 
-    tag = "PASS" if (a_ok and b_ok and c_ok) else "FAIL"
+    # (d) C-library MRC (cyrinx_bulk_demodulate2) parity with the Python
+    # reference on the SAME captures: same block counts / payload, EVM within
+    # float32-conversion tolerance (A2)
+    db = clib.decode2(cfg, rx_a, rx_b)
+    dc = clib.decode2(cfg, m0, m1)
+    dmono = clib.decode(cfg, np.ascontiguousarray(m0, dtype=np.float32))
+    d_ok = (db is not None and db["payload"] == payload
+            and db["blocks_ok"] == g.n_blocks
+            and abs(db["evm"] - rb["evm_rms"]) < 2e-3
+            and dc is not None and dc["payload"] == payload
+            and dc["blocks_ok"] == g.n_blocks
+            and abs(dc["evm"] - rc["evm_rms"]) < 2e-3
+            and (dmono is None or dmono["blocks_ok"] < g.n_blocks))
+
+    tag = "PASS" if (a_ok and b_ok and c_ok and d_ok) else "FAIL"
     print(f"  bpb={bpb} r{rate} nfft={nfft} cp={cp} n_sym={n_sym} "
           f"({g.n_blocks} blocks): mono={'OK' if a_ok else 'FAIL'} "
           f"mrc_awgn={'OK' if b_ok else 'FAIL'} "
           f"nullfill mic0={c_mono}/{g.n_blocks} mrc={c_mrc}/{g.n_blocks} "
+          f"c_mrc={'OK' if d_ok else 'FAIL'}"
+          f"{'' if dc is None else f' (evm C {dc['evm']:.4f} vs py {rc['evm_rms']:.4f})'} "
           f"-> {tag}")
-    return a_ok and b_ok and c_ok
+    return a_ok and b_ok and c_ok and d_ok
 
 
 def main():

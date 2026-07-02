@@ -12,14 +12,15 @@ desktop-to-phone links (1-2 ft). It contains two largely separate strands:
    Swift binding (`BulkPHY`), validated bit-exact / float-tolerant against
    committed golden vectors, and re-measured **library-native at 39.3 kbps OTA**
    (the shipped C codec, not the Python reference — see the results table
-   below). A robustness/diversity layer (EVM-probe sounder, decode-based mic
-   selection, adaptive cyclic prefix, two-mic MRC, non-coherent MFSK floor)
-   gives graceful degradation across placements — measured 48 kbps down to a
-   68 bps floor, never zero — but currently lives in the Python reference /
-   bench loop; porting it into the shipped C codec is the top item in
-   [ROADMAP.md](ROADMAP.md). Still pending: transport-API integration and the
-   optional X25519 envelope. An inaudible ultrasonic-band variant was
-   investigated (docs/ULTRASONIC_BAND.md).
+   below). A robustness/diversity layer gives graceful degradation across
+   placements — measured 48 kbps down to a bps-scale floor, never zero.
+   **Two-mic maximal-ratio combining now ships in the C codec**
+   (`cyrinx_bulk_demodulate2`, golden-vector-pinned, Swift
+   `BulkPHY.decode(_:combining:)`), and CP/NFFT are caller-selectable; the
+   EVM-probe sounder, mic-selection policy, and the RS-coded MFSK floor remain
+   in the Python bench layer ([ROADMAP.md](ROADMAP.md)). Still pending:
+   transport-API integration and the optional X25519 envelope. An inaudible
+   ultrasonic-band variant was investigated (docs/ULTRASONIC_BAND.md).
 
 On originality: the communications techniques used (OFDM, cyclic prefixes,
 pilot tracking, QAM, convolutional/Viterbi FEC, CRC block verification) are
@@ -33,8 +34,10 @@ This repository currently provides:
 - A C core (`CCyrinx`) with a stable C ABI
 - A **portable-C wideband bulk PHY codec** (`cyrinx_bulk`: DetRng, CRC-32, K=7
   convolutional FEC + puncturing, Gray QAM, OFDM via a vendored KISS FFT behind
-  the `cyrinx_fft` plan interface, soft Viterbi) with a Swift binding (`BulkPHY`),
-  validated against committed golden vectors
+  the `cyrinx_fft` plan interface, soft Viterbi, **two-mic MRC demodulation**
+  `cyrinx_bulk_demodulate2`) with a Swift binding (`BulkPHY`), validated
+  against committed golden vectors — including a two-channel rescue fixture
+  where mic0 alone fails and MRC decodes byte-exact
 - A native Swift wrapper (`Cyrinx`)
 - Frame codec with bit-packed headers, CRC16/CRC32C, fragmentation/reassembly
 - Half-duplex ping-pong MAC with ACK and selective retransmission policy hooks

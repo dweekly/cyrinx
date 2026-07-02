@@ -68,6 +68,25 @@ RX_CHANNEL_TAPS = [(0, 1.0), (37, 0.45), (113, -0.22), (260, 0.12)]
 RX_PRE_PAD = 3000     # leading silence before the frame in rx_wave
 RX_POST_PAD = 2000    # trailing silence
 
+# ---- two-mic MRC fixture (A2: cyrinx_bulk_demodulate2) ----
+# mic1 sees a different (still deterministic, still CP-bounded) multipath.
+RX2_CHANNEL_TAPS = [(0, 1.0), (53, -0.38), (141, 0.19), (230, -0.09)]
+# Complementary brick-wall dead bands per mic (Hz). Each mic loses large chunks
+# of the data band — mic0 alone must FAIL at 16-QAM r3/4 — but together they
+# cover it, so per-subcarrier MRC decodes byte-exact. The chirp (2-16 kHz)
+# keeps enough support on mic0 (the sync channel) to lock. No noise, so the
+# fixture is exactly reproducible.
+MRC_NOTCH_MIC0 = [(3000.0, 8000.0), (12000.0, 18000.0)]
+MRC_NOTCH_MIC1 = [(1100.0, 3000.0), (8000.0, 12000.0), (18000.0, 23000.0)]
+
+
+def _notch(x, sr, bands):
+    X = np.fft.rfft(x)
+    f = np.fft.rfftfreq(len(x), 1.0 / sr)
+    for lo, hi in bands:
+        X[(f >= lo) & (f <= hi)] = 0.0
+    return np.fft.irfft(X, len(x))
+
 
 def _apply_channel(wave, taps):
     span = len(wave) + max(d for d, _ in taps)
@@ -109,6 +128,10 @@ CASES = [
     ("qpsk_r12", _cfg_qpsk, 0x1234),
     ("qam16_r34", _cfg_qam16, 0x5678),
     ("qpsk_r23", _cfg_qpsk_r23, 0x9ABC),
+    # Two-mic MRC rescue fixture (A2): rx_wave (mic0) is notched so a single-mic
+    # decode FAILS; rx_wave2 (mic1) is complementarily notched; the MRC decode
+    # (cyrinx_bulk_demodulate2 / modem.demodulate_frame(rx2=)) must be byte-exact.
+    ("qam16_r34_mrc", _cfg_qam16, 0xD00D),
 ]
 
 
@@ -136,6 +159,7 @@ TOL = {
     "interleave_perm": "exact", "interleaved_bits": "exact",
     "decoded_payload": "exact",
     "rx_wave": "input",   # the receive waveform the RX port decodes (PR 1.3)
+    "rx_wave2": "input",  # second mic for the MRC case (A2); absent elsewhere
     "pilots": "float", "sync_freq": "float", "data_freq": "float",
     # The full `wave` validates the IFFT transitively and is the TX contract.
     # ofdm_time_raw (post-IFFT pre-normalization) and ofdm_time_norm (= wave tail)
@@ -155,15 +179,34 @@ def _storage_dtype(arr):
 
 
 def build_case(name, cfg, seed):
+    mrc = name.endswith("_mrc")
     payload = M.DetRng(seed).bytes(cfg.payload_bytes)
     taps = {}
     wave = M.modulate_frame(cfg, payload, taps=taps)
-    # RX fixture: TX through the fixed multipath channel, with leading/trailing
-    # silence, at a known offset. Decoding THIS waveform must reproduce the
-    # payload byte-for-byte and recover every block (the RX-side contract, 1.3).
-    body = _apply_channel(wave.astype(float), RX_CHANNEL_TAPS)
-    rx = np.concatenate([np.zeros(RX_PRE_PAD), body, np.zeros(RX_POST_PAD)])
-    res = M.demodulate_frame(cfg, rx)
+    mic0_alone_ok = None
+    rx2 = None
+    if not mrc:
+        # RX fixture: TX through the fixed multipath channel, with leading/
+        # trailing silence, at a known offset. Decoding THIS waveform must
+        # reproduce the payload byte-for-byte and recover every block (1.3).
+        body = _apply_channel(wave.astype(float), RX_CHANNEL_TAPS)
+        rx = np.concatenate([np.zeros(RX_PRE_PAD), body, np.zeros(RX_POST_PAD)])
+        res = M.demodulate_frame(cfg, rx)
+    else:
+        # MRC fixture: per-mic multipath + complementary dead bands. mic0 alone
+        # must FAIL; the two-mic MRC decode must be byte-exact (A2 contract).
+        b0 = _apply_channel(wave.astype(float), RX_CHANNEL_TAPS)
+        b1 = _apply_channel(wave.astype(float), RX2_CHANNEL_TAPS)
+        pad = lambda b: np.concatenate(  # noqa: E731 — local fixture glue
+            [np.zeros(RX_PRE_PAD), b, np.zeros(RX_POST_PAD)])
+        rx = _notch(pad(b0), cfg.sr, MRC_NOTCH_MIC0)
+        rx2 = _notch(pad(b1), cfg.sr, MRC_NOTCH_MIC1)
+        mono = M.demodulate_frame(cfg, rx)
+        mic0_alone_ok = int(mono["blocks_ok"]) if mono.get("ok") else 0
+        assert mic0_alone_ok < cfg.n_blocks, \
+            f"{name}: mic0 alone decoded {mic0_alone_ok}/{cfg.n_blocks} — " \
+            f"notches too shallow to prove the rescue"
+        res = M.demodulate_frame(cfg, rx, rx2=rx2)
     assert res["blocks_ok"] == res["blocks_total"], \
         f"{name}: rx_wave decode {res['blocks_ok']}/{res['blocks_total']}"
     assert res["payload"] == payload, f"{name}: decoded payload != input"
@@ -171,6 +214,8 @@ def build_case(name, cfg, seed):
     arts = {"payload": np.frombuffer(payload, dtype=np.uint8).copy()}
     arts.update({k: v for k, v in taps.items() if k in TOL})
     arts["rx_wave"] = rx.astype(np.float64)   # serialized as float32 like `wave`
+    if rx2 is not None:
+        arts["rx_wave2"] = rx2.astype(np.float64)
     arts["decoded_payload"] = np.frombuffer(res["payload"], dtype=np.uint8).copy()
 
     cfgmeta = {
@@ -196,6 +241,11 @@ def build_case(name, cfg, seed):
         "decode_blocks_total": int(res["blocks_total"]),
         "pad_fill_bits_len": int(taps["pad_fill_bits"].size),
     }
+    if mrc:
+        cfgmeta["rx2_channel_taps"] = RX2_CHANNEL_TAPS
+        cfgmeta["rx_notch_mic0"] = MRC_NOTCH_MIC0
+        cfgmeta["rx_notch_mic1"] = MRC_NOTCH_MIC1
+        cfgmeta["mic0_alone_blocks_ok"] = mic0_alone_ok
     return arts, cfgmeta
 
 

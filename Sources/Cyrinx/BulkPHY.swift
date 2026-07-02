@@ -136,6 +136,31 @@ public struct BulkPHY: Sendable {
         }
     }
 
+    /// Demodulate with two sample-aligned microphone channels combined per
+    /// subcarrier by maximal-ratio combining (MRC) — the diversity path
+    /// measured to rescue placements where NEITHER mic decodes alone. Sync
+    /// runs on `samples`; `second` is the other channel of the same capture.
+    public func decode(_ samples: [Float], combining second: [Float]) -> Decoded? {
+        withCConfig { bc in
+            var g = cyrinx_bulk_geometry()
+            guard cyrinx_bulk_compute_geometry(&bc, &g) == 0 else { return nil }
+            var payload = [UInt8](repeating: 0, count: Int(g.payload_bytes))
+            var ok: Int32 = 0
+            var total: Int32 = 0
+            var evm = 0.0
+            let n = samples.withUnsafeBufferPointer { p0 in
+                second.withUnsafeBufferPointer { p1 in
+                    cyrinx_bulk_demodulate2(
+                        &bc, p0.baseAddress, p0.count, p1.baseAddress, p1.count,
+                        &payload, payload.count, &ok, &total, &evm)
+                }
+            }
+            guard n == Int(g.payload_bytes) else { return nil }
+            return Decoded(
+                payload: Data(payload), blocksOK: Int(ok), blockCount: Int(total), evmRMS: evm)
+        }
+    }
+
     /// Demodulate a captured mono frame. Returns the decoded payload (whatever
     /// blocks were recovered) plus per-block CRC results and pilot EVM.
     public func decode(_ samples: [Float]) -> Decoded? {

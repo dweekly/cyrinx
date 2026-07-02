@@ -74,11 +74,32 @@ static const cyrinx_golden_artifact cyrinx_golden__qpsk_r23[] = {
     {"decoded_payload", "qpsk_r23/decoded_payload.bin", "uint8", "exact", "49de5eebd1a31dd8489582bf612c440f66c046e1eb94133df23a2f863a16660e", 512},
 };
 
+static const cyrinx_golden_artifact cyrinx_golden__qam16_r34_mrc[] = {
+    {"payload", "qam16_r34_mrc/payload.bin", "uint8", "exact", "c136cbc89b46c8a0cabc7c9007e90ced34d2861e9cda4fab4e185f2e06fc57b5", 1024},
+    {"stream_with_crc", "qam16_r34_mrc/stream_with_crc.bin", "uint8", "exact", "b33f209591ecd577714bceec1c80c70df371a5656164a63e25f8f5d6f7d0cb13", 1040},
+    {"info_bits", "qam16_r34_mrc/info_bits.bin", "uint8", "exact", "64d2fae1b5787f4a9fb36af2aedd49def69beeefb11733e23c83671f3b289539", 9810},
+    {"pad_info_bits", "qam16_r34_mrc/pad_info_bits.bin", "uint8", "exact", "b8db578caf6c1172fce805f032a2f087e00a0e8045a64b32609b38e5e6550498", 1490},
+    {"coded_bits", "qam16_r34_mrc/coded_bits.bin", "uint8", "exact", "6e64a072b87d859cd8f3b76934a96164901a0023d0d18ea3c9e9b2ee87c4bd8b", 19632},
+    {"punctured_bits", "qam16_r34_mrc/punctured_bits.bin", "uint8", "exact", "c663676c4962b54b2de2e103e6d62bb003b994005bcac1d5464a28e8b784e8d0", 13088},
+    {"pad_fill_bits", "qam16_r34_mrc/pad_fill_bits.bin", "uint8", "exact", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", 0},
+    {"coded_filled_bits", "qam16_r34_mrc/coded_filled_bits.bin", "uint8", "exact", "c663676c4962b54b2de2e103e6d62bb003b994005bcac1d5464a28e8b784e8d0", 13088},
+    {"interleave_perm", "qam16_r34_mrc/interleave_perm.bin", "int64", "exact", "a34a6723d3d1eb8944dddb78768ca42a3e1b897a138ce7ab39881416bb16f216", 104704},
+    {"interleaved_bits", "qam16_r34_mrc/interleaved_bits.bin", "uint8", "exact", "eed4321c4f59158ccd608835de52e00a1f99cfe039db0b3b17aa01c1668ec31c", 13088},
+    {"pilots", "qam16_r34_mrc/pilots.bin", "complex64", "float", "a6e79e7a150d21ad3d23259adecb91e56a0bd18ed0a59d4b28b00b56bc5b58c3", 936},
+    {"sync_freq", "qam16_r34_mrc/sync_freq.bin", "complex64", "float", "f66e0abb3135272af5f2aaf48d29ab544a3758b958697f8f92139beb1de6c23b", 14960},
+    {"data_freq", "qam16_r34_mrc/data_freq.bin", "complex64", "float", "a921a5a2e8645fa521bca046e7e7966022acceea52c30d11a96f93c572dc1893", 29920},
+    {"wave", "qam16_r34_mrc/wave.bin", "float32", "float", "6058431d2137c76d7a09de6f94f3e9f3bb17e4d499e33377743c6778abce897d", 92160},
+    {"rx_wave", "qam16_r34_mrc/rx_wave.bin", "float32", "input", "b8ce8ba228ee9655136ec41b6413f272c62a4dbac59e169ebb3e842f4c4b1f33", 113200},
+    {"rx_wave2", "qam16_r34_mrc/rx_wave2.bin", "float32", "input", "db62f4ff7940ab108106f9ffc2ff237365067962ad2b567b438e4a04a5511d18", 113080},
+    {"decoded_payload", "qam16_r34_mrc/decoded_payload.bin", "uint8", "exact", "c136cbc89b46c8a0cabc7c9007e90ced34d2861e9cda4fab4e185f2e06fc57b5", 1024},
+};
+
 static const cyrinx_golden_case cyrinx_golden_cases[] = {
     {"qpsk_r12", 16, cyrinx_golden__qpsk_r12},
     {"qam16_r34", 16, cyrinx_golden__qam16_r34},
     {"qpsk_r23", 16, cyrinx_golden__qpsk_r23},
+    {"qam16_r34_mrc", 17, cyrinx_golden__qam16_r34_mrc},
 };
-static const size_t cyrinx_golden_ncases = 3;
+static const size_t cyrinx_golden_ncases = 4;
 
 #endif /* CYRINX_GOLDEN_MANIFEST_H */
