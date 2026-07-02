@@ -7,6 +7,7 @@
 
 \usepackage[letterpaper,margin=1in]{geometry}
 \usepackage[T1]{fontenc}
+\usepackage{lmodern} % scalable CM successor; BasicTeX lacks cm-super
 \usepackage[utf8]{inputenc}
 \usepackage{microtype}
 \usepackage{booktabs}
@@ -27,61 +28,69 @@ OFDM acoustic modem on commodity hardware}
 
 \author{David E. Weekly\thanks{Primatech Paper Co LLC,
 \texttt{david@weekly.org}. The modem, diagnostics, and this whitepaper were
-developed with substantial AI-agent assistance (Claude Code); all reported
-results are from over-the-air measurements on physical hardware recorded in
-the project's lab notebook.}}
+developed almost entirely by AI coding agents under human direction;
+Section~\ref{sec:benchmark} documents which agent built each stage (recorded
+in commit trailers) and argues the project doubles as a capabilities
+benchmark. All reported results are from over-the-air measurements on
+physical hardware recorded in the project's lab notebook.}}
 
-\date{June 10, 2026}
+\date{July 2, 2026}
 
 \begin{document}
 
 \maketitle
 
 \begin{abstract}
-We report a software acoustic data link between a MacBook Pro (M4) speaker/microphone
-pair and a Google Pixel 7a resting on the laptop's palm rest, achieving
-measured, byte-verified over-the-air goodput of \textbf{36{,}571\,bps}
-Mac$\rightarrow$Pixel (demodulated \emph{on the phone} by a Kotlin port of the
-receiver) and \textbf{27{,}307\,bps} Pixel$\rightarrow$Mac, against a target of
-20\,kbps in each direction. Goodput is counted conservatively: only payload
-bytes that are both CRC32-valid and, under \emph{ordered} verification,
-byte-identical to the transmitted \texttt{DetRng} payload at their correct
-ordered position within the attributed frame (not mere set membership), divided
-by the active message span (first preamble chirp to last data sample, which
-excludes the fixed trailing silence) and charged for all preambles,
+We report a software acoustic data link between a MacBook Pro (M4)
+speaker/microphone pair and a Google Pixel 7a resting on the laptop's palm
+rest: measured, byte-verified over-the-air goodput of \textbf{36{,}571\,bps}
+Mac$\rightarrow$Pixel---demodulated \emph{on the phone} by a Kotlin port of
+the receiver---and \textbf{27{,}307\,bps} Pixel$\rightarrow$Mac, against a
+target of 20\,kbps in each direction. The modem is a 48\,kHz OFDM design
+(FFT 2048, cyclic prefix 768) with comb pilots, per-symbol timing/phase
+tracking, uniform 16-QAM, and a punctured rate-3/4 $K{=}7$ convolutional
+code. Reaching the target required finding and fixing four physical-layer
+defects that are invisible to simulation: inter-symbol interference from a
+10--22\,ms delay spread, decorrelated dual-speaker transmission, a
+stream-end fade in the macOS output chain, and Viterbi poisoning by
+overconfident log-likelihood ratios from corrupted symbols. We document the
+discriminating experiments that isolated each defect, including the negative
+results that exonerated ``obvious'' suspects.
+
+Goodput is counted conservatively: a payload block counts only if it is
+CRC32-valid \emph{and} byte-identical to the transmitted \texttt{DetRng}
+payload at its correct ordered position, and the denominator is the active
+message span (first chirp sample to last data sample; including the trailing
+silence lowers the figure marginally), charging for all preambles,
 channel-estimation symbols, pilots, FEC redundancy, CRCs, and inter-frame
-gaps; the gross figure including trailing silence is marginally lower. The modem is a 48\,kHz OFDM design (FFT 2048, cyclic prefix 768) with
-comb pilots, per-symbol timing/phase tracking, uniform 16-QAM, and a punctured
-rate-3/4 $K{=}7$ convolutional code. Reaching the target required finding and
-fixing four physical-layer defects that are invisible to simulation:
-inter-symbol interference from a 10--22\,ms delay spread, decorrelated
-dual-speaker transmission, a stream-end fade in the macOS output chain, and
-Viterbi poisoning by overconfident log-likelihood ratios from corrupted
-symbols. We document the discriminating experiments used to isolate each
-defect---including the negative results that exonerated ``obvious''
-suspects---and contrast the delivered system with both the original design
-document and a predecessor stack whose theoretical 22\,kbps claim corresponded
-to a measured 0.27\,kbps. We argue that for acoustic modems on consumer
-hardware, the dominant engineering cost is the gap between the channel model
-and the channel. None of the modulation or coding machinery here is novel ---
-OFDM, cyclic prefixes, comb pilots, QAM, convolutional/Viterbi coding, CRC
-block verification, and acoustic data-over-sound are all long established; the
+gaps (Section~\ref{sec:eval}). The conservatism is earned: a predecessor
+stack in the same repository claimed a theoretical 22\,kbps and measured
+under 0.3\,kbps---a factor-of-80 gap between claim and reality that this
+paper treats as data, both as an engineering cautionary tale and, in
+Section~\ref{sec:benchmark}, as one era in a commit-trailer-documented
+comparison of the AI coding agents that built successive stages of this
+system against the same physical channel.
+
+None of the modulation or coding machinery here is novel: OFDM, cyclic
+prefixes, comb pilots, QAM, convolutional/Viterbi coding, CRC block
+verification, and acoustic data-over-sound are all long established. The
 contribution is the \emph{measured} end-to-end system on commodity
-heterogeneous hardware, the discriminating-experiment diagnostic methodology,
-the physical/platform defect catalog, and on-device verification, not new
-modulation theory. The modem has since been ported from the research harness
-into a portable-C reference library (transmit and receive), validated bit-exact
-against committed golden vectors with an Apple vDSP backend gated by those same
-vectors; the library's own codec decodes over the air byte-verified and at the
-palm-rest geometry reproduces the headline natively (16-QAM rate 3/4,
-39.3\,kbps, exceeding the harness figure), and it ships with an SNR/delay-spread
-MCS sounder and a channel-metric-driven user repositioning guide. We frame the result accordingly: this is a well-instrumented
-empirical case study of how much commodity hardware delivers after real-channel
-debugging---validated on two device pairs (a Pixel 7a and an iPhone 17 Pro Max,
-each against the same MacBook Pro) in a single contact-range geometry, with
-same-hardware baselines against deployed tools---and a carefully measured
-contact-range prototype, not a broadly general or new-modulation acoustic-modem
-result.
+heterogeneous hardware, the discriminating-experiment diagnostic
+methodology, the physical/platform defect catalog, and on-device
+verification---not new modulation theory. The modem has since been ported
+from the research harness into a portable-C reference library (transmit,
+receive, and a two-microphone maximal-ratio-combining receive path),
+validated bit-exact against committed golden vectors with an Apple vDSP
+backend gated by the same vectors; the library's own codec decodes over the
+air byte-verified, at the palm-rest geometry reproducing the headline
+natively (16-QAM rate 3/4, 39.3\,kbps, exceeding the harness figure), and it
+ships with an EVM-probe MCS sounder and channel-metric repositioning
+guidance. We frame the result accordingly: a well-instrumented empirical
+case study of how much commodity hardware delivers after real-channel
+debugging---validated on two device pairs (a Pixel 7a and an iPhone 17 Pro
+Max, each against the same MacBook Pro) at contact range, with
+same-hardware baselines against deployed tools---not a broadly general or
+new-modulation acoustic-modem result.
 \end{abstract}
 
 \section{Introduction and Motivation}
@@ -92,13 +101,12 @@ fidelity the acoustic-\emph{sensing} literature already exploits aggressively
 \cite{powerphone} --- yet
 deployed acoustic-communication systems cluster at very low rates: roughly
 $10^2$\,bps for robust spread-spectrum schemes and roughly $10^3$\,bps for
-multi-tone FSK \cite{researchgate,ggwave}. Acoustic links remain attractive for
-proximity-bound exchange---pairing tokens, small payloads, air-gapped
-transfer---because acoustic signals attenuate far faster and are more
-locality-bound than RF---especially the audible wideband link used here, which
-does not mean sound cannot penetrate walls, only that it does so far more
-weakly---require no radio pairing ritual, and use hardware already present on
-billions of devices \cite{quiet,lisnr}.
+multi-tone FSK \cite{researchgate,ggwave}. Acoustic links remain attractive
+for proximity-bound exchange: pairing tokens, small payloads, air-gapped
+transfer. Sound attenuates far faster than RF and is therefore more
+locality-bound (walls weaken it heavily, though they do not stop it
+outright); no radio pairing ritual is required; and the transducers are
+already present on billions of devices \cite{quiet,lisnr}.
 
 The Cyrinx project asked a narrower, harder question: \emph{how much measured
 goodput can two specific commodity devices actually exchange acoustically?}
@@ -106,15 +114,20 @@ The target was at least 20\,kbps of verified goodput in each direction between
 a MacBook Pro (M4) and a Pixel 7a lying face-up on the laptop's palm rest (on
 a soft cloth, both devices at maximum volume, in a quiet room).
 The emphasis on \emph{measured} is deliberate. An earlier in-repo protocol
-stack claimed ``22\,kbps'' on the basis of a subcarrier-count capacity formula;
-its measured goodput was under 0.3\,kbps (24-byte packets every
-$\sim$700\,ms)---a factor of roughly 80 between claim and reality, and a factor
-of $\sim$135 between what that stack delivered and what the channel supports
-(Section~\ref{sec:eval}). This paper treats that episode as data: every number
-reported here is from an over-the-air capture on physical hardware, and we
-state explicitly when a figure is an estimate rather than a measurement. We are
-deliberate about scope: what follows is an empirical case study of two specific
-device pairs in one geometry, not a general acoustic-modem result.
+stack claimed ``22\,kbps'' on the basis of a subcarrier-count capacity
+formula. Its measured goodput was under 0.3\,kbps (24-byte packets every
+$\sim$700\,ms): a factor of roughly 80 between claim and reality, and a
+factor of $\sim$135 between what that stack delivered and what the channel
+supports (Section~\ref{sec:eval}). This paper treats that episode as data
+twice over---as an engineering cautionary tale, and as part of the
+development-methodology comparison of Section~\ref{sec:benchmark}. Every
+number reported here is from an over-the-air capture on physical hardware,
+and we state explicitly when a figure is an estimate rather than a
+measurement. We are deliberate about scope: what follows is an empirical
+case study of two specific device pairs in one geometry, not a general
+acoustic-modem result. Figure~\ref{fig:spectro} shows the transmitted frame
+this paper is about; a reader new to acoustic OFDM can take the whole
+transmit structure from that one picture.
 
 Contributions:
 \begin{enumerate}
@@ -138,6 +151,13 @@ Contributions:
         through the library itself, plus the adaptive-MCS sounder and
         channel-metric repositioning guidance built on top
         (Sections~\ref{sec:library},~\ref{sec:libota},~\ref{sec:adaptive}).
+  \item A documented account of the AI coding agents that built each stage
+        of the system---attributed from commit trailers, spanning a
+        sub-0.3\,kbps overclaimed era through the measured 36.6\,kbps
+        system---and an argument, with a concrete protocol, that a measured
+        physical-channel project of this shape is a useful, hard-to-game
+        capabilities benchmark for agentic engineering
+        (Section~\ref{sec:benchmark}).
 \end{enumerate}
 
 \section{Related Work}
@@ -332,6 +352,19 @@ approximately 184\,kbps M$\rightarrow$A and 155\,kbps A$\rightarrow$M (an
 estimate, not a measurement). The achieved link uses roughly 20--24\% of
 that, so substantial headroom remains.
 
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{cyrinx-frame-anatomy.pdf}
+\caption{Spectrogram of one transmitted bulk-PHY frame (generated by the
+reference modem, 16-QAM rate 3/4, 8 data symbols): a 2$\to$16\,kHz linear
+chirp for coarse synchronization, a guard gap so the chirp's reverberant tail
+decays, two known full-band OFDM symbols for channel estimation, then the
+OFDM payload symbols spanning 1.1--23\,kHz with comb pilots on every 8th
+subcarrier. Over the air this sounds like a short chirp followed by a breath
+of static; the static is the data.}
+\label{fig:spectro}
+\end{figure}
+
 \section{System Design}
 \label{sec:design}
 
@@ -497,6 +530,19 @@ drop-in the vectors gate. The C receiver decoded the synthetic-multipath
 \texttt{rx\_wave} to the exact transmitted payload on its first run, which we read
 as evidence that the golden-vector contract pinned the transmitter tightly enough
 to reconstruct the receiver against it.
+
+The library is not limited to the single-microphone path the headline was
+measured with: the two-microphone maximal-ratio-combining receive path of
+Section~\ref{sec:robust} is implemented in the same C core
+(\texttt{cyrinx\_bulk\_demodulate2}), matching the Python reference to four
+decimal places of EVM on identical captures across the modulation/CP grid,
+and pinned by a dedicated golden case in which the first microphone's channel
+is notched so that it decodes zero blocks alone while the combined decode is
+byte-exact---on both FFT backends. Cyclic-prefix and FFT-size selection are
+caller-visible configuration. The C diversity path is validated digitally
+against the same reference the over-the-air MRC results were measured with;
+its own over-the-air run is pending bench time and is called out as such
+where relevant.
 
 \subsection{What the bulk PHY deliberately omits}
 
@@ -749,9 +795,9 @@ and are not same-hardware comparisons.}
 \label{tab:baselines}
 \small
 \setlength{\tabcolsep}{4pt}
-\begin{tabular}{p{2.2cm}p{1.6cm}>{\raggedright\arraybackslash}p{1.1cm}>{\raggedright\arraybackslash}p{1.8cm}>{\raggedright\arraybackslash}p{1.9cm}>{\raggedright\arraybackslash}p{2.0cm}}
+\begin{tabular}{>{\raggedright\arraybackslash}p{3.0cm}p{1.7cm}>{\raggedright\arraybackslash}p{1.2cm}>{\raggedright\arraybackslash}p{2.3cm}>{\raggedright\arraybackslash}p{2.1cm}>{\raggedright\arraybackslash}p{3.7cm}}
 \toprule
-System & Band & Range & Modulation & Goodput, payload/airtime & Notes \\
+System & Band & Range & Modulation & Goodput & Notes \\
 \midrule
 \multicolumn{6}{l}{\emph{Measured, same Mac$\rightarrow$iPhone channel:}} \\
 ggwave ``Fast'' & audible & contact & MT-FSK & 133\,bps & recovered \\
@@ -1070,6 +1116,19 @@ supply real spatial diversity, which points directly at the 2$\times$2-MIMO
 direction (Section~\ref{sec:future}), where rich multipath becomes an asset rather
 than a liability.
 
+Two of these mechanisms have production forms beyond what was measured
+above. The MRC path ships in the portable C library
+(Section~\ref{sec:library}). And the floor mode's 3$\times$ repetition code
+has been replaced by RS(15,11) over GF(16) with detector-confidence
+erasures---one code symbol per 16-FSK tone decision---which in the digital
+reverberant-channel model doubles the floor's net rate (a 32-byte frame:
+68\,$\to$\,138\,bps) while measuring \emph{more} robust at the low-SNR edge
+(at $-3$\,dB SNR under 40\,ms reverb, repetition decoded 5/20 frames, RS
+18/20: the erasure flags exploit tone-energy confidence the majority vote
+discarded). The 68\,bps figure above is the over-the-air measurement of the
+repetition implementation; the RS floor's over-the-air number is pending
+bench time.
+
 \subsection{The optional security envelope and its rate-dependent cost}
 \label{sec:crypto}
 
@@ -1168,6 +1227,170 @@ mobile speaker, not by the protocol. The fast inaudible direction
 require a non-coherent modulation (energy-based MFSK or OOK, as ggwave uses)
 to tolerate the micro-speaker's phase incoherence, at much lower rates.
 
+\subsection{Building on this work}
+\label{sec:extend}
+
+For readers who want to extend the system rather than reproduce it, the
+highest-leverage open directions each have scaffolding already in the
+repository. \emph{Per-bin bit loading}: the receiver already computes
+per-subcarrier SNR every frame; the demapper accepts non-uniform
+bits-per-bin, so loading is a transmitter-policy change, not a receiver
+rewrite. \emph{2$\times$2 MIMO}: the measured decorrelation between the two
+microphones (Section~\ref{sec:robust}) and between the two laptop speakers
+(defect 2) is the raw material; the sounder framework is the natural home
+for per-speaker pilot separation and channel-matrix estimation.
+\emph{Stronger codes}: we deliberately kept the $K{=}7$ convolutional code
+because it has never been the measured bottleneck; the honest trigger for
+LDPC or polar codes is a measured operating point where it is.
+\emph{Wider ultrasonic band at 96\,kHz}: the hardware qualifies on some
+pairs (Section~\ref{sec:future}); the binding constraints found so far are
+transducer, not algorithmic. In every case the negative-findings log
+(\texttt{docs/NEGATIVE\_FINDINGS.md}) records the dead ends already paid
+for---the cheapest contribution this project can make to a successor is that
+they not be paid for twice.
+
+\section{AI-Agent Development, and the Project as a Capabilities Benchmark}
+\label{sec:benchmark}
+
+This system was developed almost entirely by AI coding agents operating the
+laboratory bench through scripted device control (\texttt{adb} on Android,
+\texttt{devicectl} on iOS, CoreAudio on the Mac; Section~\ref{sec:repro}),
+under human direction that was largely product-level: choosing objectives,
+placing phones on palm rests, reviewing and merging pull requests. Such
+provenance is usually a disclosure footnote. We promote it to a section
+because the project turned out to function as an unusually clean
+\emph{capabilities benchmark} for the agents themselves, and because the
+repository happens to record which agent built which stage---Claude-era
+commits carry model-identifying trailers---so the comparison can be reported
+with the same claims-versus-measurement discipline as the rest of the paper.
+
+\subsection{What each era delivered}
+
+Table~\ref{tab:eras} summarizes the development eras. Attribution for the
+2026 February--May era is from the operator's records (sessions with OpenAI
+GPT-5.5 tooling, which did not stamp commit trailers); attribution for the
+June and July eras is from \texttt{Co-Authored-By} commit trailers in the
+repository history, verifiable with
+\texttt{git log --pretty="\%ad \%(trailers:key=Co-Authored-By)"}.
+
+\begin{table}[t]
+\centering
+\caption{Development eras by agent. ``Claimed'' is what the era's own
+documentation asserted at the time; ``measured'' is over-the-air and
+byte-verified unless marked digital. Commit counts exclude merge commits.}
+\label{tab:eras}
+\small
+\begin{tabular}{@{}p{2.0cm}p{2.2cm}p{4.6cm}p{2.5cm}p{2.6cm}@{}}
+\toprule
+Era & Agent & Built & Claimed & Measured \\
+\midrule
+Feb--May 2026 (68 commits, episodic) & GPT-5.5 (operator records) &
+Ultrasonic transport stack: gears, ARQ, streams, chirp-spread control
+channel, 2$\times$2 MIMO handshake, ECDH envelope, room-tone notcher &
+``Symmetrical 20+\,kbps''; ``Gear 4 $\sim$12\,kbps''; ``100\% working
+bidirectional link'' & \textbf{$<$0.3\,kbps} (24\,B per $\sim$700\,ms) \\
+\addlinespace
+Jun 9--10 (37 commits, 2 days) & Claude Fable 5 (trailers) &
+Channel characterization; wideband bulk PHY; the four-defect diagnosis;
+on-device Kotlin verification; iPhone port & --- &
+\textbf{36.6\,/\,27.3\,kbps} (Pixel); 36.6\,/\,16.9\,kbps (iPhone) \\
+\addlinespace
+Jun 10--12 (33 commits, 3 days) & Claude Opus 4.8 (trailers) &
+Portable-C port pinned by golden vectors; EVM-probe sounder; adaptive CP;
+mic selection; MFSK floor; two-mic MRC validation; measurement campaign &
+--- & \textbf{39.3\,kbps} library-native; 48\,kbps\,$\to$\,68\,bps graceful
+degradation \\
+\addlinespace
+Jul 1--2 (2 days) & Claude Fable 5 (trailers) &
+MRC and an RS-coded floor ported into the C library (golden-pinned);
+library-native adaptive loop; project website & digital validation only,
+stated as such & (OTA pending) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{The differentiator was verification discipline, not code fluency}
+
+Every era produced fluent, sophisticated-looking signal-processing code. The
+February--May stack implemented an ARQ transport, a chirp-spread-spectrum
+control channel, an ECDH security envelope, and a 2$\times$2 MIMO
+handshake---and its documentation celebrated a ``100\% working''
+bidirectional link on the strength of three decoded messages in thirteen
+transmit loops, alongside a ``symmetrical 20+\,kbps'' figure computed from
+subcarrier counts rather than measured (\texttt{walkthrough.md}, preserved
+in-repo under a correction banner). The measured rate was under 0.3\,kbps.
+Nothing in that gap is specific to acoustic modems; it is the canonical
+failure mode of agentic engineering---optimistic self-assessment unchecked
+by external measurement---expressed through a physical channel that happened
+to keep the receipts.
+
+The June era's first acts were to characterize the channel
+(Section~\ref{sec:channel}) and to adopt the conservative goodput definition
+of Section~\ref{sec:eval}; every subsequent claim was gated on an
+over-the-air, byte-verified capture, and dead ends were recorded as
+first-class negative results. Same human operator, same hardware, same
+repository. We do not think the later models simply ``knew more DSP''---the
+predecessor stack's DSP was largely textbook-correct in isolation. The
+observable difference was behavioral: whether the agent treated its own
+throughput claims as hypotheses requiring physical evidence.
+
+\subsection{Why this task is a good agent benchmark}
+
+Most coding benchmarks are corpus-derived: the answers exist, so saturation
+and contamination are permanent concerns. This task has five properties that
+are hard to get elsewhere at once:
+
+\begin{enumerate}
+  \item \textbf{The answers do not pre-exist.} The quantity being optimized
+        ---measured goodput between two specific transducer chains in a
+        specific geometry---had no published value until this project
+        measured it. Progress cannot be recalled from training data; by
+        construction it must be produced.
+  \item \textbf{Physics grades the work.} The score is byte-verified bits
+        over the air. It cannot be inflated by eloquent reports,
+        test-shaped code, or self-assessment---the failure mode the
+        February--May era exhibited is exactly what the metric catches.
+  \item \textbf{The difficulty ladder is dense and open-topped.} Digital
+        loopback, clean-geometry OTA, adverse placements, diversity
+        combining, MIMO spatial multiplexing---with a Shannon estimate of
+        155--184\,kbps (Section~\ref{sec:eval}) leaving 4$\times$ headroom
+        above the best result to date.
+  \item \textbf{It exercises the full agentic loop.} Hypothesis formation,
+        instrument building, physical measurement, revision under ambiguous
+        evidence, and honest reporting---including whether the agent
+        rediscovers dead ends the negative-findings log already paid for.
+  \item \textbf{Sessions are comparable.} The harness (golden vectors,
+        offline self-tests, scripted phone control, one JSONL row per run)
+        makes independent attempts scoreable against each other.
+\end{enumerate}
+
+\subsection{A benchmark protocol, and the limits of the comparison above}
+
+A calibrated version of this benchmark is straightforward to state: fix a
+repository commit, a hardware pair, a placement set, and a budget (wall-clock
+sessions or tokens); the agent may do anything the harness allows; the score
+is the measured, byte-verified goodput delta across the placement set,
+paired with an \emph{integrity audit}---every throughput claim in the
+agent's output matched against the measurement that does or does not back
+it. The second component matters as much as the first: this project's
+history says the dominant failure mode is not inability but overclaiming.
+
+The comparison in Table~\ref{tab:eras} does not meet that standard, and we
+present it accordingly: it is an $n{=}1$ longitudinal case study, not a
+controlled trial. The eras were sequential, so later agents inherited
+scaffolding, recorded negative results, and an operator with accumulated
+prompting skill; budgets were not equalized; the February--May era also
+pursued a harder inaudibility constraint before the June era deliberately
+abandoned it. The June era partially controls for inheritance by discarding
+the predecessor PHY wholesale rather than repairing it. What the record
+supports is an existence proof, not a ranking: on the same hardware, in the
+same repository, under the same operator, agent eras separated by months
+differed by two orders of magnitude in measured-versus-claimed throughput,
+and the separating variable visible in the artifacts is measurement
+discipline. The protocol above is what would make future comparisons fair;
+the repository, harness, and metric are published so that anyone---including
+model developers---can run them.
+
 \section{Summary of Findings}
 
 \begin{enumerate}
@@ -1222,6 +1445,13 @@ to tolerate the micro-speaker's phase incoherence, at much lower rates.
         distance/orientation/surface sweep and noisier ambient conditions would
         say more about where this link generalizes than any further modulation
         or coding work, and is the priority next step.
+  \item The project doubles as a hard-to-game benchmark for AI coding
+        agents: the optimization target had no pre-existing answer, physics
+        scores the output, and the commit-trailer record shows agent eras on
+        the same hardware separated by two orders of magnitude in
+        measured-versus-claimed throughput---with measurement discipline,
+        not code fluency, as the visible separating variable
+        (Section~\ref{sec:benchmark}).
 \end{enumerate}
 
 \section{Reproducibility}
@@ -1258,6 +1488,17 @@ is its digital-loopback self-test. The crypto cost figures are in
 \textbf{Branch commits at time of measurement.} \texttt{ios-hil-bulk}
 \texttt{0f80d8e}, \texttt{ultrasonic-band} \texttt{7699a6e}, \texttt{whitepaper}
 \texttt{d45ccbc}.
+
+{\sloppy
+\textbf{Development provenance.} Agent attribution per era
+(Section~\ref{sec:benchmark}) is recorded in \texttt{Co-Authored-By} commit
+trailers from June 2026 onward:\\
+\texttt{git log -{}-pretty="\%ad \%(trailers:key=Co-Authored-By)"}.\\
+The February--May era predates the convention and is attributed from the
+operator's session records. The predecessor stack's own contemporaneous
+claims are preserved in \texttt{walkthrough.md} under a correction banner.
+Figure~\ref{fig:spectro} is generated from the reference modem by
+\texttt{scripts/gen-paper-figures.py}.\par}
 
 {\sloppy
 \textbf{Artifact paths.} Under \texttt{scratch/hw20k/data/}:

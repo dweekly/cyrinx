@@ -92,9 +92,11 @@ Everything above is consolidated in an academic-workshop-style whitepaper —
 [docs/whitepaper/cyrinx-acoustic-link.tex](docs/whitepaper/cyrinx-acoustic-link.tex)
 (compiled PDF:
 [docs/whitepaper/cyrinx-acoustic-link.pdf](docs/whitepaper/cyrinx-acoustic-link.pdf),
-22 pp; fresh as of 2026-06-12) — including related work, the effective-SINR/EVM
-ceiling on higher-order QAM, the measured channel-response figures, and the
-graceful-degradation section.
+25 pp; fresh as of 2026-07-02) — including related work, the effective-SINR/EVM
+ceiling on higher-order QAM, the measured channel-response and frame-anatomy
+figures, the graceful-degradation section, and a development-provenance
+section documenting which AI agent built each era (from commit trailers) and
+framing the project as a hard-to-game agent capabilities benchmark.
 
 ## Implemented Protocol Model
 
