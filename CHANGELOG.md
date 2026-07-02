@@ -8,6 +8,20 @@ commands it contains.
 
 ## 2026-07-02
 
+- **Whitepaper revised (22 → 25 pp)** for flow, approachability, and the
+  benchmark framing: restructured three-paragraph abstract; de-nested
+  introduction; new frame-anatomy spectrogram figure generated from the
+  reference modem (`scripts/gen-paper-figures.py`); "Building on this work"
+  extension-points subsection; MRC-in-C-library and RS-floor results
+  integrated with explicit measured-vs-digital labeling; and a new section
+  "AI-Agent Development, and the Project as a Capabilities Benchmark" — a
+  commit-trailer-documented era table (GPT-5.5 Feb–May: <0.3 kbps measured
+  vs 20+ kbps claimed; Fable 5 Jun 9–10: 36.6/27.3 kbps; Opus 4.8 Jun
+  10–12: 39.3 kbps library-native + robustness; Fable 5 Jul: library
+  diversity + site), the verification-discipline analysis, five properties
+  that make the task a hard-to-game agent benchmark, a scoring protocol
+  (goodput delta + claims-integrity audit), and the honest limits of the
+  n=1 comparison. Builds clean on BasicTeX via `lmodern`.
 - **cyrinx.org website built** (Track C; deploy pending user auth on
   Cloudflare). Static, dependency-free single page in `site/`: the hero
   synthesizes a real bulk-PHY frame in-browser (correct geometry: chirp,
