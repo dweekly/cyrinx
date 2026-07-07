@@ -19,7 +19,8 @@ struct OOKToneCodec {
         halfSamples = max(240, bitSamples / 2)
         txGainCap = min(max(config.txGainCap, 0.01), 0.80)
         let toneHz = Int(min(max(config.bandStartHz, 700), config.bandEndHz))
-        toneRef = Self.makeReference(freqHz: toneHz, sampleRateHz: sampleRateHz, halfSamples: halfSamples, gain: txGainCap)
+        toneRef = Self.makeReference(
+            freqHz: toneHz, sampleRateHz: sampleRateHz, halfSamples: halfSamples, gain: txGainCap)
         let preamble = (0..<24).map { UInt8(($0 % 2) == 0 ? 1 : 0) }
         preambleBits = preamble + Self.byteToBits(0x7E)
         minPreambleScore = preambleBits.count - 4
@@ -132,7 +133,8 @@ struct OOKToneCodec {
     }
 
     private func findLeaderStart() -> Int? {
-        let maxStart = rxBuffer.count - ((leaderToneHalves + leaderGapHalves + (preambleBits.count * 2)) * halfSamples)
+        let maxStart =
+            rxBuffer.count - ((leaderToneHalves + leaderGapHalves + (preambleBits.count * 2)) * halfSamples)
         if maxStart <= 0 {
             return nil
         }

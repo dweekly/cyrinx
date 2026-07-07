@@ -179,12 +179,12 @@ public struct Config {
     /// Resolves the local device's hardware signature based on system info.
     public static func resolveLocalDeviceSignature() -> UInt8 {
         #if os(macOS)
-        let name = ProcessInfo.processInfo.hostName.lowercased()
-        if name.contains("macbookpro") || name.contains("macbook pro") || name.contains("macbook") {
-            return 0x01 // CYRINX_DEVICE_MACBOOK_PRO
-        }
+            let name = ProcessInfo.processInfo.hostName.lowercased()
+            if name.contains("macbookpro") || name.contains("macbook pro") || name.contains("macbook") {
+                return 0x01  // CYRINX_DEVICE_MACBOOK_PRO
+            }
         #endif
-        return 0x00 // CYRINX_DEVICE_GENERIC
+        return 0x00  // CYRINX_DEVICE_GENERIC
     }
 
     /// Creates a PRD-aligned session configuration.
@@ -404,7 +404,7 @@ public struct Metrics {
             c.peer_notch_mask.0, c.peer_notch_mask.1, c.peer_notch_mask.2, c.peer_notch_mask.3,
             c.peer_notch_mask.4, c.peer_notch_mask.5, c.peer_notch_mask.6, c.peer_notch_mask.7,
             c.peer_notch_mask.8, c.peer_notch_mask.9, c.peer_notch_mask.10, c.peer_notch_mask.11,
-            c.peer_notch_mask.12, c.peer_notch_mask.13
+            c.peer_notch_mask.12, c.peer_notch_mask.13,
         ]
         peerPublicKey = Data([
             c.peer_public_key.0, c.peer_public_key.1, c.peer_public_key.2, c.peer_public_key.3,
@@ -414,7 +414,7 @@ public struct Metrics {
             c.peer_public_key.16, c.peer_public_key.17, c.peer_public_key.18, c.peer_public_key.19,
             c.peer_public_key.20, c.peer_public_key.21, c.peer_public_key.22, c.peer_public_key.23,
             c.peer_public_key.24, c.peer_public_key.25, c.peer_public_key.26, c.peer_public_key.27,
-            c.peer_public_key.28, c.peer_public_key.29, c.peer_public_key.30, c.peer_public_key.31
+            c.peer_public_key.28, c.peer_public_key.29, c.peer_public_key.30, c.peer_public_key.31,
         ])
     }
 }

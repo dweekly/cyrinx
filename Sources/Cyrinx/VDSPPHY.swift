@@ -107,7 +107,8 @@ public enum VDSPPHY {
         expectedLength: Int? = nil
     ) throws -> [UInt8] {
         #if canImport(Accelerate)
-            return try OFDMModem(config: config, mode: mode).demodulate(samples: samples, expectedLength: expectedLength)
+            return try OFDMModem(config: config, mode: mode).demodulate(
+                samples: samples, expectedLength: expectedLength)
         #else
             throw VDSPPHYError.unavailable("Accelerate/vDSP unavailable on this platform")
         #endif
@@ -262,12 +263,13 @@ public enum VDSPPHY {
                     bits.reserveCapacity(frameCount * activeBins.count * bitsPerSymbol)
 
                     for (eqRe, eqIm) in equalizedFrames {
-                        bits.append(contentsOf: demapBits(
-                            reOut: eqRe,
-                            imOut: eqIm,
-                            rotationQuadrant: q,
-                            conjugate: conj
-                        ))
+                        bits.append(
+                            contentsOf: demapBits(
+                                reOut: eqRe,
+                                imOut: eqIm,
+                                rotationQuadrant: q,
+                                conjugate: conj
+                            ))
                     }
 
                     if let payload = try? BitPacking.decodeLengthPrefixed(bits: bits) {
@@ -285,12 +287,13 @@ public enum VDSPPHY {
             var bits: [UInt8] = []
             bits.reserveCapacity(frameCount * activeBins.count * bitsPerSymbol)
             for (eqRe, eqIm) in equalizedFrames {
-                bits.append(contentsOf: demapBits(
-                    reOut: eqRe,
-                    imOut: eqIm,
-                    rotationQuadrant: 0,
-                    conjugate: false
-                ))
+                bits.append(
+                    contentsOf: demapBits(
+                        reOut: eqRe,
+                        imOut: eqIm,
+                        rotationQuadrant: 0,
+                        conjugate: false
+                    ))
             }
             return try BitPacking.decodeLengthPrefixed(bits: bits)
         }
@@ -331,12 +334,20 @@ public enum VDSPPHY {
 
                 var eqFactor = Float(1.0)
                 let freq = Float(bin) * binWidth
-                if config.peerDeviceSignature == 0x01 { // CYRINX_DEVICE_MACBOOK_PRO
-                    let x = max(0.0, min(1.0, (freq - config.bandStartHz) / max(1.0, config.bandEndHz - config.bandStartHz)))
+                if config.peerDeviceSignature == 0x01 {  // CYRINX_DEVICE_MACBOOK_PRO
+                    let x = max(
+                        0.0,
+                        min(
+                            1.0, (freq - config.bandStartHz) / max(1.0, config.bandEndHz - config.bandStartHz)
+                        ))
                     let dbBoost = 3.0 + 9.0 * x
                     eqFactor = pow(10.0, dbBoost / 20.0)
-                } else if config.peerDeviceSignature == 0x02 { // CYRINX_DEVICE_PIXEL_7A
-                    let x = max(0.0, min(1.0, (freq - config.bandStartHz) / max(1.0, config.bandEndHz - config.bandStartHz)))
+                } else if config.peerDeviceSignature == 0x02 {  // CYRINX_DEVICE_PIXEL_7A
+                    let x = max(
+                        0.0,
+                        min(
+                            1.0, (freq - config.bandStartHz) / max(1.0, config.bandEndHz - config.bandStartHz)
+                        ))
                     let dbBoost = 3.0 + 12.0 * x
                     eqFactor = pow(10.0, dbBoost / 20.0)
                 }
@@ -397,14 +408,14 @@ public enum VDSPPHY {
                 }
 
                 switch rotationQuadrant {
-                case 1: // 90 degrees CCW: (x, y) -> (-y, x)
+                case 1:  // 90 degrees CCW: (x, y) -> (-y, x)
                     let tmp = reNorm
                     reNorm = -imNorm
                     imNorm = tmp
-                case 2: // 180 degrees: (x, y) -> (-x, -y)
+                case 2:  // 180 degrees: (x, y) -> (-x, -y)
                     reNorm = -reNorm
                     imNorm = -imNorm
-                case 3: // 270 degrees CCW: (x, y) -> (y, -x)
+                case 3:  // 270 degrees CCW: (x, y) -> (y, -x)
                     let tmp = reNorm
                     reNorm = imNorm
                     imNorm = -tmp
@@ -533,24 +544,42 @@ public enum VDSPPHY {
         private func demap64QAM(re: Float, im: Float) -> UInt8 {
             let d: Float = 0.15430335
             let i_val: UInt8
-            if re < -6.0 * d { i_val = 0 }
-            else if re < -4.0 * d { i_val = 1 }
-            else if re < -2.0 * d { i_val = 2 }
-            else if re < 0.0 { i_val = 3 }
-            else if re < 2.0 * d { i_val = 4 }
-            else if re < 4.0 * d { i_val = 5 }
-            else if re < 6.0 * d { i_val = 6 }
-            else { i_val = 7 }
+            if re < -6.0 * d {
+                i_val = 0
+            } else if re < -4.0 * d {
+                i_val = 1
+            } else if re < -2.0 * d {
+                i_val = 2
+            } else if re < 0.0 {
+                i_val = 3
+            } else if re < 2.0 * d {
+                i_val = 4
+            } else if re < 4.0 * d {
+                i_val = 5
+            } else if re < 6.0 * d {
+                i_val = 6
+            } else {
+                i_val = 7
+            }
 
             let q_val: UInt8
-            if im < -6.0 * d { q_val = 0 }
-            else if im < -4.0 * d { q_val = 1 }
-            else if im < -2.0 * d { q_val = 2 }
-            else if im < 0.0 { q_val = 3 }
-            else if im < 2.0 * d { q_val = 4 }
-            else if im < 4.0 * d { q_val = 5 }
-            else if im < 6.0 * d { q_val = 6 }
-            else { q_val = 7 }
+            if im < -6.0 * d {
+                q_val = 0
+            } else if im < -4.0 * d {
+                q_val = 1
+            } else if im < -2.0 * d {
+                q_val = 2
+            } else if im < 0.0 {
+                q_val = 3
+            } else if im < 2.0 * d {
+                q_val = 4
+            } else if im < 4.0 * d {
+                q_val = 5
+            } else if im < 6.0 * d {
+                q_val = 6
+            } else {
+                q_val = 7
+            }
 
             return i_val | (q_val << 3)
         }
@@ -665,17 +694,27 @@ public enum VDSPPHY {
                             let d: Float = 0.15430335
                             let absR = abs(rRot)
                             let errR: Float
-                            if absR < 2.0 * d { errR = abs(absR - d) }
-                            else if absR < 4.0 * d { errR = abs(absR - 3.0 * d) }
-                            else if absR < 6.0 * d { errR = abs(absR - 5.0 * d) }
-                            else { errR = abs(absR - 7.0 * d) }
+                            if absR < 2.0 * d {
+                                errR = abs(absR - d)
+                            } else if absR < 4.0 * d {
+                                errR = abs(absR - 3.0 * d)
+                            } else if absR < 6.0 * d {
+                                errR = abs(absR - 5.0 * d)
+                            } else {
+                                errR = abs(absR - 7.0 * d)
+                            }
 
                             let absI = abs(iRot)
                             let errI: Float
-                            if absI < 2.0 * d { errI = abs(absI - d) }
-                            else if absI < 4.0 * d { errI = abs(absI - 3.0 * d) }
-                            else if absI < 6.0 * d { errI = abs(absI - 5.0 * d) }
-                            else { errI = abs(absI - 7.0 * d) }
+                            if absI < 2.0 * d {
+                                errI = abs(absI - d)
+                            } else if absI < 4.0 * d {
+                                errI = abs(absI - 3.0 * d)
+                            } else if absI < 6.0 * d {
+                                errI = abs(absI - 5.0 * d)
+                            } else {
+                                errI = abs(absI - 7.0 * d)
+                            }
                             err = errR * errR + errI * errI
                         default:
                             let norm: Float = 0.70710677
@@ -733,17 +772,27 @@ public enum VDSPPHY {
                                     let d: Float = 0.15430335
                                     let absR = abs(rRot)
                                     let errR: Float
-                                    if absR < 2.0 * d { errR = abs(absR - d) }
-                                    else if absR < 4.0 * d { errR = abs(absR - 3.0 * d) }
-                                    else if absR < 6.0 * d { errR = abs(absR - 5.0 * d) }
-                                    else { errR = abs(absR - 7.0 * d) }
+                                    if absR < 2.0 * d {
+                                        errR = abs(absR - d)
+                                    } else if absR < 4.0 * d {
+                                        errR = abs(absR - 3.0 * d)
+                                    } else if absR < 6.0 * d {
+                                        errR = abs(absR - 5.0 * d)
+                                    } else {
+                                        errR = abs(absR - 7.0 * d)
+                                    }
 
                                     let absI = abs(iRot)
                                     let errI: Float
-                                    if absI < 2.0 * d { errI = abs(absI - d) }
-                                    else if absI < 4.0 * d { errI = abs(absI - 3.0 * d) }
-                                    else if absI < 6.0 * d { errI = abs(absI - 5.0 * d) }
-                                    else { errI = abs(absI - 7.0 * d) }
+                                    if absI < 2.0 * d {
+                                        errI = abs(absI - d)
+                                    } else if absI < 4.0 * d {
+                                        errI = abs(absI - 3.0 * d)
+                                    } else if absI < 6.0 * d {
+                                        errI = abs(absI - 5.0 * d)
+                                    } else {
+                                        errI = abs(absI - 7.0 * d)
+                                    }
                                     err = errR * errR + errI * errI
                                 default:
                                     let norm: Float = 0.70710677
@@ -770,13 +819,13 @@ public enum VDSPPHY {
                 let tauFine: [Float] = [
                     bestCoarseTau - 1.0, bestCoarseTau - 0.75, bestCoarseTau - 0.5, bestCoarseTau - 0.25,
                     bestCoarseTau,
-                    bestCoarseTau + 0.25, bestCoarseTau + 0.5, bestCoarseTau + 0.75, bestCoarseTau + 1.0
+                    bestCoarseTau + 0.25, bestCoarseTau + 0.5, bestCoarseTau + 0.75, bestCoarseTau + 1.0,
                 ].filter { $0 >= -8.0 && $0 <= 8.0 }
 
                 let thetaFineIdx: [Int] = [
                     bestCoarseThetaIdx - 2, bestCoarseThetaIdx - 1,
                     bestCoarseThetaIdx,
-                    bestCoarseThetaIdx + 1, bestCoarseThetaIdx + 2
+                    bestCoarseThetaIdx + 1, bestCoarseThetaIdx + 2,
                 ].filter { $0 >= 0 && $0 <= 16 }
 
                 bestConj = bestCoarseConj
@@ -809,17 +858,27 @@ public enum VDSPPHY {
                                 let d: Float = 0.15430335
                                 let absR = abs(rRot)
                                 let errR: Float
-                                if absR < 2.0 * d { errR = abs(absR - d) }
-                                else if absR < 4.0 * d { errR = abs(absR - 3.0 * d) }
-                                else if absR < 6.0 * d { errR = abs(absR - 5.0 * d) }
-                                else { errR = abs(absR - 7.0 * d) }
+                                if absR < 2.0 * d {
+                                    errR = abs(absR - d)
+                                } else if absR < 4.0 * d {
+                                    errR = abs(absR - 3.0 * d)
+                                } else if absR < 6.0 * d {
+                                    errR = abs(absR - 5.0 * d)
+                                } else {
+                                    errR = abs(absR - 7.0 * d)
+                                }
 
                                 let absI = abs(iRot)
                                 let errI: Float
-                                if absI < 2.0 * d { errI = abs(absI - d) }
-                                else if absI < 4.0 * d { errI = abs(absI - 3.0 * d) }
-                                else if absI < 6.0 * d { errI = abs(absI - 5.0 * d) }
-                                else { errI = abs(absI - 7.0 * d) }
+                                if absI < 2.0 * d {
+                                    errI = abs(absI - d)
+                                } else if absI < 4.0 * d {
+                                    errI = abs(absI - 3.0 * d)
+                                } else if absI < 6.0 * d {
+                                    errI = abs(absI - 5.0 * d)
+                                } else {
+                                    errI = abs(absI - 7.0 * d)
+                                }
                                 err = errR * errR + errI * errI
                             default:
                                 let norm: Float = 0.70710677

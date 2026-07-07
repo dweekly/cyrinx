@@ -15,7 +15,7 @@ struct MorseToneCodec {
     private static let charToMorse: [Character: String] = [
         "0": "-----", "1": ".----", "2": "..---", "3": "...--", "4": "....-",
         "5": ".....", "6": "-....", "7": "--...", "8": "---..", "9": "----.",
-        "A": ".-", "B": "-...", "C": "-.-.", "D": "-..", "E": ".", "F": "..-."
+        "A": ".-", "B": "-...", "C": "-.-.", "D": "-..", "E": ".", "F": "..-.",
     ]
     private static let morseToChar: [String: Character] = {
         var out: [String: Character] = [:]
@@ -31,7 +31,8 @@ struct MorseToneCodec {
         txGainCap = min(max(config.txGainCap, 0.01), 0.80)
         let requestedToneHz = Int(min(config.bandStartHz, config.bandEndHz))
         let toneHz = requestedToneHz > 4_000 ? 1_200 : max(700, requestedToneHz)
-        toneRef = Self.makeReference(freqHz: toneHz, sampleRateHz: sampleRateHz, unitSamples: unitSamples, gain: txGainCap)
+        toneRef = Self.makeReference(
+            freqHz: toneHz, sampleRateHz: sampleRateHz, unitSamples: unitSamples, gain: txGainCap)
     }
 
     mutating func encode(payload: Data) -> [Float] {

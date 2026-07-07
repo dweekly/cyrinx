@@ -23,11 +23,14 @@ struct NibbleToneCodec {
         let fallbackHighHz = min(3_400, nyquistGuardHz)
         let requestedLowHz = Int(config.bandStartHz)
         let requestedHighHz = Int(config.bandEndHz)
-        let usesConfiguredAudibleBand = requestedLowHz >= 300 && requestedLowHz < 8_000 && requestedHighHz > requestedLowHz
-        let lowHz = usesConfiguredAudibleBand
+        let usesConfiguredAudibleBand =
+            requestedLowHz >= 300 && requestedLowHz < 8_000 && requestedHighHz > requestedLowHz
+        let lowHz =
+            usesConfiguredAudibleBand
             ? min(max(requestedLowHz, 300), max(300, nyquistGuardHz - 450))
             : fallbackLowHz
-        let highHz = usesConfiguredAudibleBand
+        let highHz =
+            usesConfiguredAudibleBand
             ? max(lowHz + 450, min(nyquistGuardHz, requestedHighHz))
             : fallbackHighHz
         let span = max(15, highHz - lowHz)
@@ -37,12 +40,13 @@ struct NibbleToneCodec {
         refs.reserveCapacity(4)
         for index in 0..<4 {
             let freq = lowHz + ((span * index) / 3)
-            refs.append(Self.makeReference(
-                freqHz: freq,
-                sampleRateHz: sampleRateHz,
-                symbolSamples: symbolCount,
-                txGainCap: gain
-            ))
+            refs.append(
+                Self.makeReference(
+                    freqHz: freq,
+                    sampleRateHz: sampleRateHz,
+                    symbolSamples: symbolCount,
+                    txGainCap: gain
+                ))
         }
         toneRefs = refs
     }
@@ -131,7 +135,8 @@ struct NibbleToneCodec {
             for _ in 0..<length {
                 guard
                     let hi = decodeRepeatedNibble(at: start, symbolIndex: payloadSymbolIndex),
-                    let lo = decodeRepeatedNibble(at: start, symbolIndex: payloadSymbolIndex + symbolsPerNibble)
+                    let lo = decodeRepeatedNibble(
+                        at: start, symbolIndex: payloadSymbolIndex + symbolsPerNibble)
                 else {
                     valid = false
                     break
@@ -145,7 +150,8 @@ struct NibbleToneCodec {
             }
             guard
                 let crcHi = decodeRepeatedNibble(at: start, symbolIndex: payloadSymbolIndex),
-                let crcLo = decodeRepeatedNibble(at: start, symbolIndex: payloadSymbolIndex + symbolsPerNibble)
+                let crcLo = decodeRepeatedNibble(
+                    at: start, symbolIndex: payloadSymbolIndex + symbolsPerNibble)
             else {
                 dropFront(start + symbolSamples)
                 continue
@@ -186,7 +192,8 @@ struct NibbleToneCodec {
         while candidate <= maxStart {
             if windowRms(start: candidate) >= minLeaderRms {
                 let scored = scoreSyncWithMagnitude(at: candidate)
-                if scored.score > bestScore || (scored.score == bestScore && scored.magnitude > bestMagnitude) {
+                if scored.score > bestScore || (scored.score == bestScore && scored.magnitude > bestMagnitude)
+                {
                     bestScore = scored.score
                     bestMagnitude = scored.magnitude
                     bestStart = candidate
@@ -199,7 +206,8 @@ struct NibbleToneCodec {
             let fineTo = min(maxStart, bestStart + coarseStep)
             for candidate in fineFrom...fineTo {
                 let scored = scoreSyncWithMagnitude(at: candidate)
-                if scored.score > bestScore || (scored.score == bestScore && scored.magnitude > bestMagnitude) {
+                if scored.score > bestScore || (scored.score == bestScore && scored.magnitude > bestMagnitude)
+                {
                     bestScore = scored.score
                     bestMagnitude = scored.magnitude
                     bestStart = candidate
@@ -250,7 +258,9 @@ struct NibbleToneCodec {
         decodeSymbolWithMagnitude(at: start, symbolIndex: symbolIndex)?.symbol
     }
 
-    private func decodeSymbolWithMagnitude(at start: Int, symbolIndex: Int) -> (symbol: UInt8, magnitude: Float)? {
+    private func decodeSymbolWithMagnitude(at start: Int, symbolIndex: Int) -> (
+        symbol: UInt8, magnitude: Float
+    )? {
         decodeSymbolAtSample(start + (symbolIndex * symbolSamples))
     }
 
