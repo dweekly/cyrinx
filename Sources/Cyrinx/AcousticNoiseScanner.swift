@@ -1,4 +1,5 @@
 import Foundation
+
 #if canImport(Accelerate)
     import Accelerate
 #endif
@@ -20,12 +21,14 @@ public final class AcousticNoiseScanner {
             guard samples.count >= fftSize else { return notchMask }
 
             // 1. Setup Discrete Fourier Transform
-            guard let dft = try? vDSP.DiscreteFourierTransform(
-                count: fftSize,
-                direction: .forward,
-                transformType: .complexComplex,
-                ofType: Float.self
-            ) else {
+            guard
+                let dft = try? vDSP.DiscreteFourierTransform(
+                    count: fftSize,
+                    direction: .forward,
+                    transformType: .complexComplex,
+                    ofType: Float.self
+                )
+            else {
                 return notchMask
             }
 

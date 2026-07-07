@@ -110,7 +110,8 @@ struct ReverseBurstCodec {
             }
 
             let searchFrom = max(0, refinedStart - (symbolSamples / 2))
-            let searchTo = min(rxBuffer.count - (totalBits * symbolSamples), refinedStart + (symbolSamples / 2))
+            let searchTo = min(
+                rxBuffer.count - (totalBits * symbolSamples), refinedStart + (symbolSamples / 2))
             var accepted: (payload: Data, frameEnd: Int)?
             if searchFrom <= searchTo {
                 for candidateStart in searchFrom...searchTo {
@@ -121,7 +122,10 @@ struct ReverseBurstCodec {
                     var frame = [UInt8](repeating: 0, count: frameBytes)
                     var valid = true
                     for index in 0..<frameBytes {
-                        guard let byte = decodeByte(at: candidateStart, startBit: preambleBits.count + (index * 8)) else {
+                        guard
+                            let byte = decodeByte(
+                                at: candidateStart, startBit: preambleBits.count + (index * 8))
+                        else {
                             valid = false
                             break
                         }
@@ -131,7 +135,8 @@ struct ReverseBurstCodec {
                         continue
                     }
 
-                    let payloadTriples = frame[guardBytes.count..<(guardBytes.count + (fixedPayloadBytes * repetitionCount))]
+                    let payloadTriples = frame[
+                        guardBytes.count..<(guardBytes.count + (fixedPayloadBytes * repetitionCount))]
                     var correctedPayload = [UInt8]()
                     correctedPayload.reserveCapacity(fixedPayloadBytes)
                     for index in 0..<fixedPayloadBytes {

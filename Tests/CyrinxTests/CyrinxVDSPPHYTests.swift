@@ -120,7 +120,8 @@ final class CyrinxVDSPPHYTests: XCTestCase {
             for i in 0..<symbolLength {
                 let srcIdx = i + 2
                 if srcIdx < symbolLength {
-                    shiftedFrame[i] = -0.9 * frame[srcIdx] // Negation corresponds to 180 degree phase rotation!
+                    // Negation corresponds to 180 degree phase rotation!
+                    shiftedFrame[i] = -0.9 * frame[srcIdx]
                 }
             }
             for i in 0..<symbolLength {
@@ -128,8 +129,8 @@ final class CyrinxVDSPPHYTests: XCTestCase {
             }
         }
 
-        let decoded = try VDSPPHY.demodulateOFDM(samples: shiftedSamples, mode: 2, config: config, expectedLength: payload.count)
+        let decoded = try VDSPPHY.demodulateOFDM(
+            samples: shiftedSamples, mode: 2, config: config, expectedLength: payload.count)
         XCTAssertEqual(decoded, Array(payload))
     }
 }
-

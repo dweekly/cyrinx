@@ -353,16 +353,19 @@ final class CyrinxTests: XCTestCase {
 
     func testMultiVariableCapabilityHandshake() throws {
         // Master config with custom signature and buffer capacity
-        let a = try CyrinxSession(config: Config(role: .master, channels: 2, deviceSignature: 0x01, maxBufferCapacity: 32768))
+        let a = try CyrinxSession(
+            config: Config(role: .master, channels: 2, deviceSignature: 0x01, maxBufferCapacity: 32768))
         // Slave config with custom signature and buffer capacity
-        let b = try CyrinxSession(config: Config(role: .slave, channels: 1, deviceSignature: 0x02, maxBufferCapacity: 65536))
+        let b = try CyrinxSession(
+            config: Config(role: .slave, channels: 1, deviceSignature: 0x02, maxBufferCapacity: 65536))
 
         try CyrinxSession.linkInMemory(a, b)
         try a.start()
         try b.start()
 
         // Master sends a packet to trigger handshake & gear transition
-        try a.send(Data("cap_handshake".utf8), streamID: 1, qos: .bestEffort, priority: .normal, flags: [.fin])
+        try a.send(
+            Data("cap_handshake".utf8), streamID: 1, qos: .bestEffort, priority: .normal, flags: [.fin])
 
         // Drain b
         _ = try b.receive(timeoutMS: 150)
@@ -376,90 +379,94 @@ final class CyrinxTests: XCTestCase {
 
     func testAmbientNoiseScannerPSD() {
         #if canImport(Accelerate)
-        // Simulate a 48 kHz buffer with a strong spike at 19.2 kHz
-        var samples = [Float](repeating: 0, count: 1024)
-        let sampleRate: Float = 48_000.0
-        let spikeFreq: Float = 19_200.0
+            // Simulate a 48 kHz buffer with a strong spike at 19.2 kHz
+            var samples = [Float](repeating: 0, count: 1024)
+            let sampleRate: Float = 48_000.0
+            let spikeFreq: Float = 19_200.0
 
-        for i in 0..<1024 {
-            let t = Float(i) / sampleRate
-            // High-power tone at 19.2 kHz
-            let tone = sin(2.0 * .pi * spikeFreq * t) * 15.0
-            // Some lower-frequency ambient noise to set the baseline
-            let noise = sin(2.0 * .pi * 1_000.0 * t) * 0.01
-            samples[i] = tone + noise
-        }
+            for i in 0..<1024 {
+                let t = Float(i) / sampleRate
+                // High-power tone at 19.2 kHz
+                let tone = sin(2.0 * .pi * spikeFreq * t) * 15.0
+                // Some lower-frequency ambient noise to set the baseline
+                let noise = sin(2.0 * .pi * 1_000.0 * t) * 0.01
+                samples[i] = tone + noise
+            }
 
-        let mask = AcousticNoiseScanner.generateNotchMask(
-            samples: samples,
-            sampleRateHz: 48_000,
-            fftSize: 1024,
-            bandStartHz: 18_500,
-            bandEndHz: 23_500,
-            thresholdDB: 8.0
-        )
+            let mask = AcousticNoiseScanner.generateNotchMask(
+                samples: samples,
+                sampleRateHz: 48_000,
+                fftSize: 1024,
+                bandStartHz: 18_500,
+                bandEndHz: 23_500,
+                thresholdDB: 8.0
+            )
 
-        XCTAssertEqual(mask.count, 14)
+            XCTAssertEqual(mask.count, 14)
 
-        // Find which subcarrier index corresponds to ~19.2 kHz
-        let binWidth = 48_000.0 / 1024.0
-        let startBin = Int(ceil(18_500.0 / binWidth))
-        let targetBin = Int(round(19_200.0 / binWidth))
-        let targetSubcarrierIdx = targetBin - startBin
+            // Find which subcarrier index corresponds to ~19.2 kHz
+            let binWidth = 48_000.0 / 1024.0
+            let startBin = Int(ceil(18_500.0 / binWidth))
+            let targetBin = Int(round(19_200.0 / binWidth))
+            let targetSubcarrierIdx = targetBin - startBin
 
-        let byteIdx = targetSubcarrierIdx / 8
-        let bitIdx = targetSubcarrierIdx % 8
+            let byteIdx = targetSubcarrierIdx / 8
+            let bitIdx = targetSubcarrierIdx % 8
 
-        // The subcarrier at the spike frequency should be notched out (bit is 0)
-        let bitVal = (mask[byteIdx] >> (7 - bitIdx)) & 1
-        XCTAssertEqual(bitVal, 0, "Subcarrier near 19.2 kHz should be notched out due to the high-power spike")
+            // The subcarrier at the spike frequency should be notched out (bit is 0)
+            let bitVal = (mask[byteIdx] >> (7 - bitIdx)) & 1
+            XCTAssertEqual(
+                bitVal, 0, "Subcarrier near 19.2 kHz should be notched out due to the high-power spike")
         #endif
     }
 
     func testClosedLoopNotchMaskApplication() throws {
         #if canImport(Accelerate)
-        // 1. Create a notch mask with a couple of notched-out subcarriers
-        var customMask = [UInt8](repeating: 0xFF, count: 14)
-        // Notch subcarriers at index 5 and 20
-        customMask[0] &= ~(1 << (7 - 5))
-        customMask[2] &= ~(1 << (7 - 4)) // index 20: 20/8 = 2, 20%8 = 4
+            // 1. Create a notch mask with a couple of notched-out subcarriers
+            var customMask = [UInt8](repeating: 0xFF, count: 14)
+            // Notch subcarriers at index 5 and 20
+            customMask[0] &= ~(1 << (7 - 5))
+            customMask[2] &= ~(1 << (7 - 4))  // index 20: 20/8 = 2, 20%8 = 4
 
-        let config = VDSPOFDMConfig(
-            sampleRateHz: 48_000,
-            fftSize: 1024,
-            cpSamples: 96,
-            bandStartHz: 18_500,
-            bandEndHz: 23_500,
-            txGainCap: 0.12,
-            peerNotchMask: customMask
-        )
+            let config = VDSPOFDMConfig(
+                sampleRateHz: 48_000,
+                fftSize: 1024,
+                cpSamples: 96,
+                bandStartHz: 18_500,
+                bandEndHz: 23_500,
+                txGainCap: 0.12,
+                peerNotchMask: customMask
+            )
 
-        let payload: [UInt8] = [42, 100, 200, 5, 9, 210]
+            let payload: [UInt8] = [42, 100, 200, 5, 9, 210]
 
-        // Modulate with custom mask
-        let modulated = try VDSPPHY.modulateOFDMQPSK(payload: payload, config: config)
+            // Modulate with custom mask
+            let modulated = try VDSPPHY.modulateOFDMQPSK(payload: payload, config: config)
 
-        // Demodulate with the identical mask should succeed perfectly
-        let demodulated = try VDSPPHY.demodulateOFDMQPSK(samples: modulated, config: config)
-        XCTAssertEqual(demodulated, payload)
+            // Demodulate with the identical mask should succeed perfectly
+            let demodulated = try VDSPPHY.demodulateOFDMQPSK(samples: modulated, config: config)
+            XCTAssertEqual(demodulated, payload)
 
-        // Demodulating with a different mask (e.g. default/no-notch) should fail or result in incorrect data
-        let mismatchedConfig = VDSPOFDMConfig(
-            sampleRateHz: 48_000,
-            fftSize: 1024,
-            cpSamples: 96,
-            bandStartHz: 18_500,
-            bandEndHz: 23_500,
-            txGainCap: 0.12,
-            peerNotchMask: [UInt8](repeating: 0xFF, count: 14) // all enabled
-        )
+            // Demodulating with a different mask (e.g. default/no-notch) should fail or result in incorrect data
+            let mismatchedConfig = VDSPOFDMConfig(
+                sampleRateHz: 48_000,
+                fftSize: 1024,
+                cpSamples: 96,
+                bandStartHz: 18_500,
+                bandEndHz: 23_500,
+                txGainCap: 0.12,
+                peerNotchMask: [UInt8](repeating: 0xFF, count: 14)  // all enabled
+            )
 
-        do {
-            let mismatchedDemodulated = try VDSPPHY.demodulateOFDMQPSK(samples: modulated, config: mismatchedConfig)
-            XCTAssertNotEqual(mismatchedDemodulated, payload, "Demodulating with a mismatched notch mask must yield incorrect data")
-        } catch {
-            // Throwing an error is also a completely correct failure path for a mismatched mask
-        }
+            do {
+                let mismatchedDemodulated = try VDSPPHY.demodulateOFDMQPSK(
+                    samples: modulated, config: mismatchedConfig)
+                XCTAssertNotEqual(
+                    mismatchedDemodulated, payload,
+                    "Demodulating with a mismatched notch mask must yield incorrect data")
+            } catch {
+                // Throwing an error is also a completely correct failure path for a mismatched mask
+            }
         #endif
     }
 
@@ -477,7 +484,8 @@ final class CyrinxTests: XCTestCase {
         XCTAssertEqual(b.metrics.peerPublicKey, Data(repeating: 0, count: 32))
 
         // 2. Trigger handshake by sending a best-effort packet
-        try a.send(Data("ecdh_handshake".utf8), streamID: 1, qos: .bestEffort, priority: .normal, flags: [.fin])
+        try a.send(
+            Data("ecdh_handshake".utf8), streamID: 1, qos: .bestEffort, priority: .normal, flags: [.fin])
 
         // Drain b
         _ = try b.receive(timeoutMS: 150)

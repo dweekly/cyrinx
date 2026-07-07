@@ -102,7 +102,8 @@ struct BasicToneCodec {
             let guardStartBit = preambleBits.count
             let payloadStartBit = guardStartBit + 8
             let searchFrom = max(0, refinedStart - (symbolSamples / 2))
-            let searchTo = min(rxBuffer.count - (preambleBits.count * symbolSamples), refinedStart + (symbolSamples / 2))
+            let searchTo = min(
+                rxBuffer.count - (preambleBits.count * symbolSamples), refinedStart + (symbolSamples / 2))
             var acceptedFrame: (payload: Data, frameEnd: Int)?
             for candidateStart in searchFrom...searchTo {
                 let preambleScore = scorePreamble(at: candidateStart)
@@ -126,7 +127,8 @@ struct BasicToneCodec {
                 var frame = [UInt8](repeating: 0, count: totalFrameBytes)
                 var valid = true
                 for index in 0..<totalFrameBytes {
-                    guard let byte = decodeByte(at: candidateStart, startBit: payloadStartBit + (index * 8)) else {
+                    guard let byte = decodeByte(at: candidateStart, startBit: payloadStartBit + (index * 8))
+                    else {
                         valid = false
                         break
                     }

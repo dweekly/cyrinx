@@ -25,13 +25,17 @@ struct DTMFCodec {
         var rows: [(sin: [Float], cos: [Float])] = []
         rows.reserveCapacity(rowHz.count)
         for freqHz in rowHz {
-            rows.append(Self.makeReference(freqHz: freqHz, sampleRateHz: sampleRateHz, symbolSamples: symbolCount, gain: gain))
+            rows.append(
+                Self.makeReference(
+                    freqHz: freqHz, sampleRateHz: sampleRateHz, symbolSamples: symbolCount, gain: gain))
         }
         rowRefs = rows
         var cols: [(sin: [Float], cos: [Float])] = []
         cols.reserveCapacity(colHz.count)
         for freqHz in colHz {
-            cols.append(Self.makeReference(freqHz: freqHz, sampleRateHz: sampleRateHz, symbolSamples: symbolCount, gain: gain))
+            cols.append(
+                Self.makeReference(
+                    freqHz: freqHz, sampleRateHz: sampleRateHz, symbolSamples: symbolCount, gain: gain))
         }
         colRefs = cols
         symbolTable = (0..<16).map { nibble in
@@ -128,7 +132,9 @@ struct DTMFCodec {
                 continue
             }
             let length = Int((lenHi << 4) | lenLo)
-            let totalNibbles = syncNibbles.count + (2 * repetitionCount) + (length * 2 * repetitionCount) + (2 * repetitionCount)
+            let totalNibbles =
+                syncNibbles.count + (2 * repetitionCount) + (length * 2 * repetitionCount)
+                + (2 * repetitionCount)
             let frameEnd = start + (totalNibbles * symbolSamples)
             if rxBuffer.count < frameEnd {
                 if leaderStart > 0 {

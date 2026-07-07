@@ -180,17 +180,22 @@ final class CyrinxAcousticPHYTests: XCTestCase {
         // 3. Verify THD measurement math on a pure 3kHz sine tone vs distorted tone
         let fs: Float = 48000
         let f0: Float = 3000
-        let cleanTone = AcousticPHYLink.generateSineTone(frequencyHz: f0, durationSecs: 0.1, sampleRateHz: fs, amplitude: 0.5)
-        let cleanTHD = AcousticPHYLink.calculateTHD(samples: cleanTone, sampleRateHz: Int(fs), fundamentalHz: f0)
+        let cleanTone = AcousticPHYLink.generateSineTone(
+            frequencyHz: f0, durationSecs: 0.1, sampleRateHz: fs, amplitude: 0.5)
+        let cleanTHD = AcousticPHYLink.calculateTHD(
+            samples: cleanTone, sampleRateHz: Int(fs), fundamentalHz: f0)
         XCTAssertLessThan(cleanTHD, 0.5)
 
         var distortedTone = cleanTone
-        let h2Tone = AcousticPHYLink.generateSineTone(frequencyHz: f0 * 2, durationSecs: 0.1, sampleRateHz: fs, amplitude: 0.05)
-        let h3Tone = AcousticPHYLink.generateSineTone(frequencyHz: f0 * 3, durationSecs: 0.1, sampleRateHz: fs, amplitude: 0.025)
+        let h2Tone = AcousticPHYLink.generateSineTone(
+            frequencyHz: f0 * 2, durationSecs: 0.1, sampleRateHz: fs, amplitude: 0.05)
+        let h3Tone = AcousticPHYLink.generateSineTone(
+            frequencyHz: f0 * 3, durationSecs: 0.1, sampleRateHz: fs, amplitude: 0.025)
         for i in 0..<distortedTone.count {
             distortedTone[i] += h2Tone[i] + h3Tone[i]
         }
-        let distTHD = AcousticPHYLink.calculateTHD(samples: distortedTone, sampleRateHz: Int(fs), fundamentalHz: f0)
+        let distTHD = AcousticPHYLink.calculateTHD(
+            samples: distortedTone, sampleRateHz: Int(fs), fundamentalHz: f0)
         XCTAssertGreaterThan(distTHD, 9.0)
         XCTAssertLessThan(distTHD, 13.0)
     }
