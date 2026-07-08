@@ -1125,9 +1125,38 @@ reverberant-channel model doubles the floor's net rate (a 32-byte frame:
 68\,$\to$\,138\,bps) while measuring \emph{more} robust at the low-SNR edge
 (at $-3$\,dB SNR under 40\,ms reverb, repetition decoded 5/20 frames, RS
 18/20: the erasure flags exploit tone-energy confidence the majority vote
-discarded). The 68\,bps figure above is the over-the-air measurement of the
-repetition implementation; the RS floor's over-the-air number is pending
-bench time.
+discarded).
+
+\textbf{The over-the-air re-validation of both paths} (same device pair,
+laptop raised on a stand so the desk plane sits in the up-firing speakers'
+shadow) delivered the doubled floor---\textbf{138\,bps, 9/9 frames} at two
+shadowed placements with probe EVM 1.1--1.6---but only after exposing, and
+forcing fixes for, three defects invisible to the digital channel model.
+First, the RS floor's first over-the-air contact decoded \emph{zero} frames:
+real reverberation yields low tone-energy confidence on many \emph{correct}
+decisions, and those false erasures overloaded codewords (2 errors + 1
+spurious erasure exceeds the $2e+s\le4$ budget) that plain error correction
+decodes---the decoder now attempts the errors-only decode first and holds
+erasure assistance in reserve for the genuinely ambiguous low-SNR regime.
+Second, the floor gained the combining rung the coherent path already had:
+when neither microphone's decode verifies alone, the per-microphone
+tone-energy matrices are summed at equal total frame energy and re-decided
+(tone-decision errors proved position-independent across the two
+microphones). Third, and most consequential: the sounder's single-microphone
+EVM probe \emph{cannot see MRC potential}. At the reverberant overhang, both
+microphones probed undecodable (EVM 0.76/1.33) while the two-microphone MRC
+probe read 0.25--0.32---so the loop was conceding to the 138\,bps floor at a
+cell where MRC sustains coherent OFDM. With the probe now decoded through the
+library MRC path as well, and one probe retry at twice the delay-spread-sized
+CP before conceding (heavy-tailed reverberation carries energy well past the
+$-15$\,dB spread), the live loop at that cell chose QPSK r1/2 via MRC and
+carried \textbf{11.6\,kbps with 0/75 blocks decodable on either single
+microphone and 75/75 recovered by MRC}---the diversity claim of this section
+demonstrated end-to-end in the closed adaptive loop, through the shipping
+library code, at $84\times$ the floor rate it previously accepted. The
+methodological lesson mirrors Section~\ref{sec:adaptive}'s: digital-only
+calibration systematically misses how real acoustic fields fail, and each
+over-the-air pass on new code has paid for itself.
 
 \subsection{The optional security envelope and its rate-dependent cost}
 \label{sec:crypto}
