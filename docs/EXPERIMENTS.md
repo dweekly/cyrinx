@@ -1,6 +1,6 @@
 # Cyrinx physical-measurement campaign (to round out the whitepaper)
 
-Fresh as of 2026-06-11.
+Fresh as of 2026-07-08.
 
 ## Measured findings — 2026-06-11 bench session (Mac ↔ Pixel 7a)
 
@@ -57,6 +57,43 @@ honest gaps in [the whitepaper](whitepaper/cyrinx-acoustic-link.tex) — chiefly
 the single-geometry and single-ambient-condition limitations in its
 threats-to-validity section. It is the experiment-side companion to
 [PUBLICATION.md](PUBLICATION.md).
+
+## Measured findings — 2026-07-06→08 OTA re-validation (Mac M4 ↔ Pixel 7a)
+
+The A1-step-4 referee session: every prior OTA number predated the new C
+diversity paths (A1 escalation, A2 `cyrinx_bulk_demodulate2`, A3 RS floor).
+Bench geometry note: the MacBook now sits on a ~5" four-post stand, so the
+desk plane is in the up-firing speakers' shadow — the June "middle" cell
+(QPSK @ 4.3 kbps, EVM 0.45) is not reproducible with this geometry; desk
+cells degrade straight to the floor tier. A Pixel OS update mid-session was
+A/B-cleared (clean cell identical pre/post: EVM 0.064/0.066, 48.0 kbps both).
+
+| Cell (`adaptive.py` label) | Probe (EVM single / MRC, ds15) | Tier chosen | Result |
+|---|---|---|---|
+| `facedown_port_fnkey` (clean) | 0.064 / — , 0.4 ms | 16-QAM r3/4, clib | **48.0 kbps**, 225/225, MRC never invoked (escalation is free on clean links) |
+| `overhang_kbwell` (reverberant well) | 0.61 / **0.32**, 15.8 ms | QPSK r1/2 **via MRC**, CP-escalated | **11.6 kbps** — 0/75 blocks single-mic, **75/75 MRC-rescued** |
+| `center_front_portaway` (desk, shadowed) | 1.60 / —, 41.5 ms | MFSK floor | **138 bps**, 3/3 |
+| `edge_below_laptop` (under stand, shadowed) | 1.1–1.6 / —, ~42 ms | MFSK floor | **138 bps**, 6/6 across two runs (after the fixes below; was 0/6) |
+
+Three product-grade defects were found and fixed only because of this OTA
+pass (digital calibration alone missed all three — details in
+`scratch/hw20k/NOTES.md` and PR #52):
+
+1. **RS floor erasure budget burn** — reverb yields low-confidence *correct*
+   tone decisions; false erasures overloaded codewords plain error
+   correction decodes. Errors-only decode now runs first. (0/6 → 6/6 at
+   `edge_below_laptop`.)
+2. **The floor lacked a combining rung** — added unit-total-energy stereo
+   tone-energy combining (the non-coherent MRC analog); never worse than
+   the best single mic on all saved captures.
+3. **Single-mic EVM probe cannot see MRC potential** — at `overhang_kbwell`
+   both mics probe undecodable yet MRC probes 0.25–0.32. The sounder now
+   probes library-MRC EVM too (`via_mrc` tiers) and retries once at 2× CP
+   before conceding to the floor (heavy-tailed reverb carries energy past
+   the −15 dB spread). Floor 138 bps → coherent 11.6 kbps at that cell (84×).
+
+The graceful-degradation ladder post-fix: 48 kbps → 11.6 kbps (100 %
+MRC-carried) → 138 bps floor (×2.03 the June repetition floor) → never zero.
 
 ## The through-line
 

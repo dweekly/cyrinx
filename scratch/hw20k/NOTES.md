@@ -198,6 +198,30 @@ saved captures):
   measured 68 bps repetition floor. (One harness timeout mid-session was the
   Pixel rebooting for an OS update — benign; relaunch the HIL app and rerun.)
 
+## MRC-aware sounding + CP escalation (2026-07-08)
+
+At `overhang_kbwell` (phone face-down, port edge over the key well) the live
+loop bailed to the 138 bps floor while `mrc_validate.py` at the same placement
+ran 16-QAM r1/2 **22/22 via MRC where BOTH single mics decoded 0 blocks**
+(EVMs 0.76/1.33 vs MRC 0.25). Two sounder gaps, both fixed in `sounder.py`:
+
+- **The EVM probe was single-mic** — it cannot see MRC potential, so exactly
+  the cells the paper's MRC story targets never entered the coherent branch
+  (where the A1 escalation lives). `evm_probe` now also decodes the probe
+  through library MRC (`clib.decode2`) and returns `evm_mrc`;
+  `recommend_evm(evm_mrc=...)` selects on the better of the two and marks
+  `via_mrc` tiers. Selftest anchored on the measured cell.
+- **CP sized from ds15 under-covers heavy-tailed reverb** (energy past the
+  −15 dB spread): ds15 15.8 ms sized a 23.6 ms CP → MRC EVM 0.49 (floor),
+  while 2× the CP measured MRC EVM 0.25–0.32 (QPSK/16-QAM clean).
+  `sound_channel_evm` now retries the probe once at 2× CP (capped at
+  CP_LONG_CAP_MS) before conceding to the floor.
+
+Live result at the cell: **138 bps floor → 11.6 kbps QPSK r1/2, 0/75 blocks
+single-mic, 75/75 MRC-rescued (84×)** — the paper's "MRC rescues cells where
+neither mic decodes alone" claim, demonstrated end-to-end in the live
+adaptive loop, library-native. JSONL rows gain `probe_evm_mrc` / `via_mrc`.
+
 ## A2: two-mic MRC ported into the C codec (2026-07-02)
 
 Digital-only. `cyrinx_bulk_demodulate2` added to the library

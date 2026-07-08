@@ -238,23 +238,33 @@ def best_channel(rx):
     return a[:, idx], idx
 
 
+def geometry_for_cp_ms(cp_ms, sr):
+    """(cp_samples, cp_ms, nfft) for a target CP duration: the smallest NFFT
+    that keeps the CP overhead sane (>= ~1.3x CP, min 2048)."""
+    cp = int(cp_ms / 1000 * sr)
+    nfft = 1 << max(11, (int(1.3 * cp)).bit_length())
+    return cp, round(cp_ms, 1), nfft
+
+
 def adaptive_geometry(ds15, sr):
     """Size the CP to cover the measured delay spread (no cap until
-    CP_LONG_CAP_MS) and pick the smallest NFFT that keeps the CP overhead sane.
-    Returns (cp_samples, cp_ms, nfft)."""
-    cp_ms = min(CP_LONG_CAP_MS, max(5.0, ds15 * 1.5))
-    cp = int(cp_ms / 1000 * sr)
-    nfft = 1 << max(11, (int(1.3 * cp)).bit_length())   # >= ~1.3x CP, min 2048
-    return cp, round(cp_ms, 1), nfft
+    CP_LONG_CAP_MS). Returns (cp_samples, cp_ms, nfft)."""
+    return geometry_for_cp_ms(min(CP_LONG_CAP_MS, max(5.0, ds15 * 1.5)), sr)
 
 
 def evm_probe(send_fn, sr=48000, nfft=2048, cp=768, f_lo=1100.0, f_hi=23000.0,
               n_sym=None):
     """Send one known 16-QAM r1/2 frame at the given geometry; decode it on the
-    BEST of the (possibly stereo) mic channels and return (evm, mic_index). EVM is
-    the effective-SINR proxy. n_sym targets a ~2.5 s probe (so a long CP doesn't
-    make a 10 s frame) while still accruing real clock-drift/ICI; evm=inf if no
-    channel syncs (treated as non-coherent)."""
+    BEST of the (possibly stereo) mic channels and return
+    (evm, mic_index, evm_mrc). evm is the best SINGLE-mic EVM (the
+    effective-SINR proxy); evm_mrc is the two-mic library-MRC EVM (inf when
+    the capture is mono or MRC does not sync). Single-mic EVM cannot see MRC
+    potential — there are measured cells where BOTH mics fail alone yet MRC
+    is clean (overhang_kbwell 2026-07-08: per-mic EVM 0.76/1.33 -> 0 blocks
+    each, MRC EVM 0.25 -> 16-QAM r1/2 22/22) — so MCS selection must consider
+    both. n_sym targets a ~2.5 s probe (so a long CP doesn't make a 10 s
+    frame) while still accruing real clock-drift/ICI; evm=inf if no channel
+    syncs (treated as non-coherent)."""
     import clib
     if n_sym is None:
         n_sym = 64 if cp <= 1024 else max(16, int(2.5 * sr / (nfft + cp)))
@@ -269,20 +279,36 @@ def evm_probe(send_fn, sr=48000, nfft=2048, cp=768, f_lo=1100.0, f_hi=23000.0,
         d = clib.decode(cfg, np.asarray(mono, dtype=np.float32))
         if d is not None and d["evm"] < best_evm:
             best_evm, best_mic = float(d["evm"]), c
-    return best_evm, best_mic
+    evm_mrc = float("inf")
+    if len(chans) >= 2:
+        d2 = clib.decode2(cfg, chans[0], chans[1])
+        if d2 is not None:
+            evm_mrc = float(d2["evm"])
+    return best_evm, best_mic, evm_mrc
 
 
-def recommend_evm(evm, ds15, sr, mic=0):
+def recommend_evm(evm, ds15, sr, mic=0, evm_mrc=float("inf"), geometry=None):
     """Pick MCS from the probe EVM (densest tier it clears) with an ADAPTIVE CP
-    sized to cover the delay spread. Only when the spread exceeds even the long-CP
-    cap, or the EVM (already measured at that long CP) is past the QPSK threshold,
-    does it route to the non-coherent floor."""
-    cp, cp_ms, nfft = adaptive_geometry(ds15, sr)
-    chosen = None
+    sized to cover the delay spread. Selection uses the BETTER of the
+    single-mic and two-mic-MRC probe EVMs: measured cells exist where neither
+    mic decodes alone but MRC runs 16-QAM clean (overhang_kbwell 2026-07-08),
+    and a single-mic-only policy routes those to the ~0.14 kbps floor when
+    ~14 kbps coherent is available (~100x). `via_mrc` marks a tier the
+    single-mic EVM would NOT have cleared — the loop's per-rep MRC escalation
+    then carries the decode. Only when the spread exceeds even the long-CP
+    cap, or the effective EVM (already measured at that long CP) is past the
+    QPSK threshold, does it route to the non-coherent floor. `geometry`
+    overrides the ds-derived (cp, cp_ms, nfft) — used by the CP-escalation
+    retry in sound_channel_evm, where the probe ran at a longer CP than the
+    measured spread suggests."""
+    cp, cp_ms, nfft = geometry if geometry else adaptive_geometry(ds15, sr)
+    eff = min(evm, evm_mrc)
+    chosen, via_mrc = None, False
     if ds15 <= CP_LONG_CAP_MS:
         for thr, label, mcs, rate, bpb in EVM_LADDER:
-            if evm <= thr:
+            if eff <= thr:
                 chosen = (label, mcs, rate, bpb)
+                via_mrc = evm > thr
                 break
     noncoherent = chosen is None
     if noncoherent:
@@ -292,8 +318,9 @@ def recommend_evm(evm, ds15, sr, mic=0):
     return {
         "tier": label, "mcs": mcs, "rate": rate, "bits_uniform": bpb,
         "noncoherent": noncoherent, "cp": cp, "cp_ms": cp_ms, "nfft": nfft,
-        "mic": mic, "advise_reposition": noncoherent,
+        "mic": mic, "advise_reposition": noncoherent, "via_mrc": via_mrc,
         "probe_evm": (None if evm == float("inf") else round(evm, 3)),
+        "probe_evm_mrc": (None if evm_mrc == float("inf") else round(evm_mrc, 3)),
         "delay_spread_ms_15": round(ds15, 1),
     }
 
@@ -309,8 +336,26 @@ def sound_channel_evm(send_fn, sr=48000, f_lo=1100.0, f_hi=23000.0):
     an = analyze(cfg_s, mono, sr)
     ds15 = an["delay_spread_ms"]["-15dB"]
     cp, cp_ms, nfft = adaptive_geometry(ds15, sr)
-    evm, mic = evm_probe(send_fn, sr=sr, nfft=nfft, cp=cp, f_lo=f_lo, f_hi=f_hi)
-    return recommend_evm(evm, ds15, sr, mic=mic), an
+    evm, mic, evm_mrc = evm_probe(send_fn, sr=sr, nfft=nfft, cp=cp,
+                                  f_lo=f_lo, f_hi=f_hi)
+    rec = recommend_evm(evm, ds15, sr, mic=mic, evm_mrc=evm_mrc)
+    if rec["noncoherent"] and cp_ms < CP_LONG_CAP_MS:
+        # CP escalation: heavy-tailed reverb carries energy well past the
+        # -15 dB spread, so the ds-sized CP can under-cover the ISI (measured
+        # overhang_kbwell 2026-07-08: ds15 15.8 ms sized a 23.6 ms CP -> MRC
+        # EVM 0.49 = floor, while a doubled CP measured MRC EVM 0.25 ->
+        # 16-QAM r1/2 ran 22/22 — ~100x the floor rate). One retry probe at
+        # 2x the sized CP (capped) before conceding to the floor: one extra
+        # ~2.5 s sounding buys keeping such cells coherent.
+        cp2, cp2_ms, nfft2 = geometry_for_cp_ms(min(2.0 * cp_ms, CP_LONG_CAP_MS), sr)
+        evm2, mic2, evm_mrc2 = evm_probe(send_fn, sr=sr, nfft=nfft2, cp=cp2,
+                                         f_lo=f_lo, f_hi=f_hi)
+        rec2 = recommend_evm(evm2, ds15, sr, mic=mic2, evm_mrc=evm_mrc2,
+                             geometry=(cp2, cp2_ms, nfft2))
+        if not rec2["noncoherent"]:
+            rec2["cp_escalated"] = True
+            return rec2, an
+    return rec, an
 
 
 def _selftest():
@@ -332,6 +377,21 @@ def _selftest():
         ok &= got == want
         print(f"  EVM={evm:5.3f} ds={ds:4.1f}ms -> {got:6s} (expect {want}) "
               f"{'OK' if got == want else 'FAIL'}")
+    # MRC-aware selection (OTA anchor: overhang_kbwell 2026-07-08 — per-mic
+    # EVMs 0.76/1.33 decode 0 blocks, MRC EVM 0.25 runs 16-QAM r1/2 22/22)
+    mrc_cases = [
+        (1.245, 0.25, 16.1, "medium", True),   # the measured cell: MRC tier
+        (1.245, float("inf"), 16.1, "mfsk", False),  # mono capture -> floor
+        (0.15, 0.25, 3.0, "fast", False),      # clean single mic: MRC not needed
+        (1.2, 0.9, 16.0, "mfsk", False),       # MRC better but still past QPSK
+    ]
+    for evm, evm_mrc, ds, want, want_via in mrc_cases:
+        rec = recommend_evm(evm, ds, 48000, evm_mrc=evm_mrc)
+        good = rec["tier"] == want and rec["via_mrc"] == want_via
+        ok &= good
+        print(f"  EVM={evm:5.3f} mrc={evm_mrc if evm_mrc != float('inf') else '-':>5} "
+              f"ds={ds:4.1f}ms -> {rec['tier']:6s} via_mrc={rec['via_mrc']} "
+              f"(expect {want}, {want_via}) {'OK' if good else 'FAIL'}")
     print("SELFTEST", "PASS" if ok else "FAIL")
     return 0 if ok else 1
 
