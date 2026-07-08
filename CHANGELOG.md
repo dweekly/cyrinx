@@ -6,6 +6,35 @@ no version numbers yet (pre-public research prototype); entries are dated
 milestones. Detailed evidence for every claim: the cited doc + the reproduction
 commands it contains.
 
+## 2026-07-08
+
+- **OTA re-validation of the diversity stack (A1 step 4) — the paper's
+  robustness claims now demonstrated end-to-end in the live loop** (PR #52;
+  docs/EXPERIMENTS.md 2026-07-06→08 table). Clean cell reproduced exactly
+  (48.0 kbps, 225/225, MRC never invoked — identical pre/post a Pixel OS
+  update). Three defects invisible to digital calibration were found and
+  fixed OTA: RS-floor false-erasure budget burn (first OTA contact decoded
+  0/6 frames; errors-only decode now runs first → 9/9 at 138 bps, ×2.03 the
+  June repetition floor); the floor gained a stereo tone-energy combining
+  rung (non-coherent MRC analog, never worse than the best mic on all saved
+  captures); and the sounder's single-mic EVM probe couldn't see MRC
+  potential — it now probes library-MRC EVM (`via_mrc` tiers) with one 2×-CP
+  retry before conceding to the floor. Result at the reverberant overhang:
+  **11.6 kbps QPSK with 0/75 blocks decodable on either mic alone and 75/75
+  MRC-rescued** (84× the floor it previously accepted). New diagnostic
+  spike: `scratch/hw20k/mfsk_diag.py`.
+- **swift-format gate green** (issue #25, PR #51): pinned 602.0.0, 890 → 0
+  violations, 83/83 tests, formatting-only reformat.
+- **Pre-public secret/PII sweep: CLEAR TO PUBLISH** (gitleaks + independent
+  greps + per-blob strings over full history, all branches; only benign
+  path-leak notes).
+- **Whitepaper 25 → 26 pp:** §Robustness gains the OTA re-validation
+  paragraph (the measured RS-floor number replaces "pending"; the live-loop
+  MRC demonstration; the three digital-blind defects as a methods lesson).
+  Site ladder/copy updated to match (138 bps floor, 75/75 MRC, 26 pp).
+- **Site deployed to Cloudflare Pages** (`cyrinx.pages.dev`; custom-domain
+  binding to cyrinx.org pending a dashboard action).
+
 ## 2026-07-02
 
 - **Whitepaper revised (22 → 25 pp)** for flow, approachability, and the

@@ -202,24 +202,26 @@
   </p>
   <ul class="ladder" role="list">
     <li style="--w:99%"><span class="rung-label">clean placement</span><span class="rung-bar"></span><span class="rung-val">48 kbps</span></li>
-    <li style="--w:79%"><span class="rung-label">reverberant <small>rescued by adaptive cyclic prefix + mic selection</small></span><span class="rung-bar"></span><span class="rung-val">~11 kbps</span></li>
-    <li style="--w:69%"><span class="rung-label">shadowed <small>rescued by two-microphone combining</small></span><span class="rung-bar"></span><span class="rung-val">~5 kbps</span></li>
-    <li style="--w:10%"><span class="rung-label">nearly hopeless <small>non-coherent multitone floor</small></span><span class="rung-bar"></span><span class="rung-val">68 bps</span></li>
+    <li style="--w:79%"><span class="rung-label">reverberant <small>carried entirely by two-microphone combining</small></span><span class="rung-bar"></span><span class="rung-val">11.6 kbps</span></li>
+    <li style="--w:69%"><span class="rung-label">shadowed <small>rescued by mic selection + adaptive cyclic prefix</small></span><span class="rung-bar"></span><span class="rung-val">~5 kbps</span></li>
+    <li style="--w:12%"><span class="rung-label">nearly hopeless <small>non-coherent multitone floor, Reed–Solomon-coded</small></span><span class="rung-bar"></span><span class="rung-val">138 bps</span></li>
   </ul>
   <p>
     The rescue that matters most: <strong>maximal-ratio combining</strong> across
     the laptop's two microphones. The mics sit far apart, so the room's dead
     spots differ between them; combining per subcarrier fills each mic's nulls
-    with the other's signal. In the worst measured placement, <em>neither</em>
-    microphone could decode a single block alone — combined, 8 of 11 blocks
-    came through. That path now ships in the portable C library, pinned by
-    cross-implementation test vectors.
+    with the other's signal. At the worst coherent placement measured,
+    <em>neither</em> microphone could decode a single block alone — combined,
+    the closed adaptive loop carried <strong>11.6&nbsp;kbps with all 75 of 75
+    blocks recovered by MRC</strong>, through the same portable C library that
+    ships, pinned by cross-implementation test vectors.
   </p>
   <p>
     And when even that fails, a non-coherent multitone floor mode — energy
-    detection with symbols longer than the echo tail, now Reed–Solomon-coded —
-    keeps a trickle flowing where phase-coherent modems get nothing at all.
-    Slow is a mode. Silence is a failure.
+    detection with symbols longer than the echo tail, Reed–Solomon-coded with
+    two-microphone energy combining — keeps a measured 138&nbsp;bps flowing
+    (twice the earlier repetition-coded floor) where phase-coherent modems get
+    nothing at all. Slow is a mode. Silence is a failure.
   </p>
 </section>
 
@@ -251,7 +253,7 @@
   <h2><span class="secmark">§5</span> Read the paper, run the code</h2>
   <div class="cta-row">
     <a class="cta" href="/cyrinx-acoustic-link.pdf">
-      <span class="cta-kind">Whitepaper · PDF · 22 pages</span>
+      <span class="cta-kind">Whitepaper · PDF · 26 pages</span>
       <span class="cta-title">A measured 36.6/27.3 kbps bidirectional acoustic data link between a laptop and a phone</span>
       <span class="cta-sub">Building, breaking, and verifying a wideband OFDM acoustic modem on commodity hardware</span>
     </a>
