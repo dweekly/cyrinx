@@ -541,8 +541,9 @@ is notched so that it decodes zero blocks alone while the combined decode is
 byte-exact---on both FFT backends. Cyclic-prefix and FFT-size selection are
 caller-visible configuration. The C diversity path is validated digitally
 against the same reference the over-the-air MRC results were measured with;
-its own over-the-air run is pending bench time and is called out as such
-where relevant.
+over the air it has since carried the live adaptive loop end-to-end---75/75
+blocks recovered by MRC at a placement where neither microphone decoded a
+single block alone (Section~\ref{sec:robust}).
 
 \subsection{What the bulk PHY deliberately omits}
 
@@ -909,10 +910,14 @@ We state these honestly as scope statements, so the numbers are not over-read.
         downlink result and the uplink transducer limit. But both phones are
         mobile devices and the laptop side is a single Mac; a wider device
         matrix (other laptops, other phone classes) is untested.
-  \item \textbf{Single physical geometry.} Every measurement uses one
-        geometry: the phone resting face-up on a soft cloth on the MacBook
-        palm rest. A distance and orientation robustness sweep is identified as
-        future work and has not yet been performed.
+  \item \textbf{Geometry breadth.} The headline bidirectional rates use the
+        nominal contact-range geometry: the phone resting face-up on a soft
+        cloth on the MacBook palm rest. The robustness results
+        (Section~\ref{sec:robust}) span several deliberately diverse
+        placements---clean contact, reverberant overhang, shadowed desk
+        plane---but all on the same bench and device pair at contact range. A
+        true distance sweep, and placements across rooms and surfaces, remain
+        future work.
   \item \textbf{Single ambient condition.} All runs are in one quiet room,
         measured near-silent (in-band RMS $\sim$5$\times$10$^{-8}$). Behavior
         under office, street, or adversarial near-ultrasonic conditions is
@@ -939,10 +944,10 @@ binding and reproduces the headline natively over the air through that path
 yet wired into the project's streaming transport/MAC API; (ii) is \emph{not}
 real-time streaming --- it is a batch design that records, then decodes
 offline, though the on-device decoder runs at roughly 20$\times$ real time and
-a streaming port is therefore plausible; (iii) selects its MCS open-loop --- an
-adaptive sounder now implements the \emph{decision} logic
-(Section~\ref{sec:adaptive}), but it is not yet wired into a closed feedback loop
-driven by a live sounding burst; (iv) is \emph{not} secured by the
+a streaming port is therefore plausible; (iii) selects its MCS open-loop in the library API --- the adaptive sounder
+demonstrates a closed sound-then-link loop at the bench
+(Sections~\ref{sec:adaptive},~\ref{sec:robust}), but that loop is not wired
+into the streaming transport/MAC API; (iv) is \emph{not} secured by the
 project's existing X25519/CTR/HMAC envelope --- the PHY measurement carries
 raw test payloads; and (v) is validated in exactly \emph{one} physical
 geometry (a phone face-up on a MacBook Pro palm rest), on two device pairs
@@ -1333,7 +1338,14 @@ degradation \\
 Jul 1--2 (2 days) & Claude Fable 5 (trailers) &
 MRC and an RS-coded floor ported into the C library (golden-pinned);
 library-native adaptive loop; project website & digital validation only,
-stated as such & (OTA pending) \\
+stated as such & (OTA: next row) \\
+\addlinespace
+Jul 6--8 (3 days) & Claude Fable 5 (trailers) &
+Over-the-air re-validation of the diversity stack; three defects invisible
+to digital calibration found and fixed (floor erasure policy, floor stereo
+combining, MRC-aware sounding + CP escalation) & --- &
+\textbf{138\,bps} RS floor (9/9 frames); \textbf{11.6\,kbps} with 75/75
+blocks MRC-carried where neither microphone decoded alone \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -1373,8 +1385,13 @@ are hard to get elsewhere at once:
   \item \textbf{The answers do not pre-exist.} The quantity being optimized
         ---measured goodput between two specific transducer chains in a
         specific geometry---had no published value until this project
-        measured it. Progress cannot be recalled from training data; by
-        construction it must be produced.
+        measured it; with publication, these numbers become the published
+        \emph{baseline}, not the score. Evaluations stay
+        contamination-resistant because the score is re-measured, never
+        recalled: grade future runs on withheld placements, device pairs,
+        and payloads chosen after submission, so training-data recall of
+        this paper reproduces the starting line, and any improvement still
+        has to be produced over the air.
   \item \textbf{Physics grades the work.} The score is byte-verified bits
         over the air. It cannot be inflated by eloquent reports,
         test-shaped code, or self-assessment---the failure mode the
@@ -1466,9 +1483,10 @@ model developers---can run them.
         across geometries; with decode-based microphone selection, an adaptive
         cyclic prefix, two-mic maximal-ratio combining, and a non-coherent
         multitone-FSK floor, a closed loop linked everywhere it was tried---
-        48\,kbps at a clean spot down to a 68\,bps floor, never zero---where a
-        naive single-mic, short-CP receiver collapsed to silence
-        (Section~\ref{sec:robust}).
+        48\,kbps at a clean spot, through an 11.6\,kbps rescue carried
+        entirely by microphone diversity, down to a 138\,bps RS-coded floor,
+        never zero---where a naive single-mic, short-CP receiver collapsed to
+        silence (Section~\ref{sec:robust}).
   \item The largest remaining gap is empirical breadth, not algorithmic depth.
         Every result is one contact-range geometry in a quiet room; a
         distance/orientation/surface sweep and noisier ambient conditions would
