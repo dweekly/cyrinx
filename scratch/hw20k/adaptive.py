@@ -72,8 +72,10 @@ def run(label, reps=3):
 
     print(f"=== adaptive link @ {label} ===")
     rec, _ = S.sound_channel_evm(send)
+    mrc_note = (f" (mrcEVM={rec['probe_evm_mrc']} -> MRC tier)" if rec.get("via_mrc")
+                else "")
     print(f"  sounded: probeEVM={rec['probe_evm']} ds15={rec['delay_spread_ms_15']}ms "
-          f"-> recommend {rec['tier']} ({rec['mcs']} r{rec['rate']})")
+          f"-> recommend {rec['tier']} ({rec['mcs']} r{rec['rate']}){mrc_note}")
 
     if rec["noncoherent"]:
         # Coherent OFDM infeasible -> the non-coherent floor.
@@ -124,6 +126,8 @@ def run(label, reps=3):
     with open(os.path.join(DATA, "adaptive_demo.jsonl"), "a") as f:
         f.write(json.dumps({"label": label, "recommend": rec["tier"],
                             "probe_evm": rec["probe_evm"],
+                            "probe_evm_mrc": rec.get("probe_evm_mrc"),
+                            "via_mrc": rec.get("via_mrc", False),
                             "delay_spread_ms_15": rec["delay_spread_ms_15"],
                             **result, "delivered_bps": round(delivered, 1)}) + "\n")
     return result

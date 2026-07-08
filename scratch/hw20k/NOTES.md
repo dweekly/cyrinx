@@ -168,6 +168,60 @@ energy < 1.3) flags erasures, capped at the 4-erasure budget.
 - OTA re-measurement of the floor number pending a bench (the whitepaper's
   68 bps figure describes the repetition implementation it measured).
 
+## A3 OTA fix: erasure budget burn + stereo energy combining (2026-07-07)
+
+First OTA contact for the RS floor (Pixel 7a, `edge_below_laptop`,
+probe EVM 1.1–1.6, ds15 ~42 ms) FAILED 0/6 frames across two placements —
+digital-only calibration had two gaps, found via `mfsk_diag.py` (new spike;
+saves the stereo capture, instruments chirp lock / raw SER / timing sweep /
+confidence distribution / per-codeword RS budget, `replay` mode re-analyzes
+saved captures):
+
+- **Erasure-first burns the RS budget over the air.** Reverb yields low
+  best/runner-up energy ratios on many *correct* decisions, so ERASE_CONF
+  flags false erasures; 2 real errors + 1 false erasure = 5 > 4 overloads a
+  codeword that plain error correction decodes (measured: raw SER 6.2%,
+  ≤2 err/cw, frame still failed). Fix: errors-only RS decode first,
+  erasure-assisted only as fallback — the digital low-SNR erasure wins are
+  preserved (errors-only overloads → None → erasure path).
+- **The floor now has a combining rung** (was selection-only): if no single
+  mic CRC-verifies, sum the mics' tone-energy matrices scaled to unit total
+  frame energy and re-decide — the non-coherent analog of the coherent MRC
+  escalation. Tone-decision errors are position-independent across mics
+  (measured: same codeword 3-err on mic0, 1-err on mic1). Total-energy
+  normalization chosen over median/noise-floor normalization empirically:
+  SER 5.4/2.7/4.5/3.6% on the four saved captures vs best-single-mic
+  6.2/6.2/4.5/6.2% (never worse); median-norm was sometimes worse than the
+  best mic alone. Selftest gained a complementary-dead-band stereo case.
+- **OTA result: 0/6 → 6/6 frames, 138 bps** at the same cell/placement —
+  the graceful-degradation floor is again never-zero AND ×2.03 the old
+  measured 68 bps repetition floor. (One harness timeout mid-session was the
+  Pixel rebooting for an OS update — benign; relaunch the HIL app and rerun.)
+
+## MRC-aware sounding + CP escalation (2026-07-08)
+
+At `overhang_kbwell` (phone face-down, port edge over the key well) the live
+loop bailed to the 138 bps floor while `mrc_validate.py` at the same placement
+ran 16-QAM r1/2 **22/22 via MRC where BOTH single mics decoded 0 blocks**
+(EVMs 0.76/1.33 vs MRC 0.25). Two sounder gaps, both fixed in `sounder.py`:
+
+- **The EVM probe was single-mic** — it cannot see MRC potential, so exactly
+  the cells the paper's MRC story targets never entered the coherent branch
+  (where the A1 escalation lives). `evm_probe` now also decodes the probe
+  through library MRC (`clib.decode2`) and returns `evm_mrc`;
+  `recommend_evm(evm_mrc=...)` selects on the better of the two and marks
+  `via_mrc` tiers. Selftest anchored on the measured cell.
+- **CP sized from ds15 under-covers heavy-tailed reverb** (energy past the
+  −15 dB spread): ds15 15.8 ms sized a 23.6 ms CP → MRC EVM 0.49 (floor),
+  while 2× the CP measured MRC EVM 0.25–0.32 (QPSK/16-QAM clean).
+  `sound_channel_evm` now retries the probe once at 2× CP (capped at
+  CP_LONG_CAP_MS) before conceding to the floor.
+
+Live result at the cell: **138 bps floor → 11.6 kbps QPSK r1/2, 0/75 blocks
+single-mic, 75/75 MRC-rescued (84×)** — the paper's "MRC rescues cells where
+neither mic decodes alone" claim, demonstrated end-to-end in the live
+adaptive loop, library-native. JSONL rows gain `probe_evm_mrc` / `via_mrc`.
+
 ## A2: two-mic MRC ported into the C codec (2026-07-02)
 
 Digital-only. `cyrinx_bulk_demodulate2` added to the library
