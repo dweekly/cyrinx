@@ -775,6 +775,27 @@ limit, stated as such---not a protocol or tuning failure. Across both pairs the
 downlink (Mac$\rightarrow$phone) is robust and rate-matched; the uplink
 (phone$\rightarrow$Mac) is bounded by the specific mobile speaker.
 
+\textbf{Third device pair: a budget phone (Moto G, 2026).} After
+publication of the first draft we added a deliberately non-premium device
+(driven over Wi-Fi \texttt{adb}; single runs, not a reliability campaign,
+and stated as such). At the clean contact placement the downlink ran
+\textbf{16-QAM r3/4 at 48.0\,kbps, 225/225 blocks, probe EVM 0.096 ---
+identical to the Pixel at the same placement}: the headline rate is not a
+premium-transducer artifact. The shadowed desk placement held the RS-coded
+floor at 46--92\,bps (3/6 frames across two runs; lossier than the Pixel's
+6/6 at an equivalent channel, an honest budget-microphone difference) ---
+never zero. The uplink linked at \textbf{8.8\,kbps} (QPSK r1/2, 90/90
+blocks), below the Pixel's 27.3 and the iPhone's 16.9: a third confirmation
+that the mobile speaker bounds the uplink. Reaching even that number
+required defeating three budget-device pathologies worth recording: the
+phone's Dolby processing chain sits on the media playback path and adds an
+EVM floor (disabled via \texttt{adb pm disable-user}); its
+speaker-protection DSP adapts over the first seconds of playback,
+destroying the first frame unless a $\sim$3\,s low-level preroll precedes
+it; and its unusually loud speaker clipped the Mac's input at the gain
+staging every other pair used (reproduction:
+\texttt{scratch/hw20k/uplink\_qpsk.py}).
+
 \subsection{Same-hardware baselines}
 \label{sec:baselines}
 
@@ -904,12 +925,13 @@ showed, the output chain's stream-end fade is part of the channel.
 We state these honestly as scope statements, so the numbers are not over-read.
 
 \begin{enumerate}
-  \item \textbf{Device pairs.} Two device pairs are now measured---a Pixel 7a
-        and an iPhone 17 Pro Max, each against the same MacBook Pro
-        (Section~\ref{sec:iphone})---which strengthens the generality of the
-        downlink result and the uplink transducer limit. But both phones are
-        mobile devices and the laptop side is a single Mac; a wider device
-        matrix (other laptops, other phone classes) is untested.
+  \item \textbf{Device pairs.} Three device pairs are now measured---a
+        Pixel 7a, an iPhone 17 Pro Max, and a budget Moto G (2026), each
+        against the same MacBook Pro (Section~\ref{sec:iphone})---spanning
+        premium and budget phone classes: the downlink result and the
+        uplink transducer limit replicate on all three (the Moto's single
+        runs are stated as such). The laptop side remains a single Mac; a
+        wider matrix (other laptops, non-phone devices) is untested.
   \item \textbf{Geometry breadth.} The headline bidirectional rates use the
         nominal contact-range geometry: the phone resting face-up on a soft
         cloth on the MacBook palm rest. The robustness results

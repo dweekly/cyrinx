@@ -274,3 +274,8 @@ passed; wireless debugging pair/connect worked immediately). Clean cell
      pair.
 - Ambient and smoke: rms floors comparable to the Pixel bench; Moto speaker
   ~6× hotter into the Mac mic at the 1 kHz smoke tone.
+- Shadowed desk cell (`motog_desk_below_stand`, probe EVM 1.51-1.56,
+  ds15 ~40 ms): RS floor LINKED at 46-92 bps, 3/6 frames across two runs —
+  never zero, but lossier than the Pixel's 6/6 at an equivalent channel
+  (honest budget-microphone difference). Paper §Third-pair + site table +
+  threats item updated.
