@@ -47,3 +47,12 @@ docs/whitepaper/*.toc
 
 # local python env (bench harness)
 .venv/
+
+# forward insurance before/after the public flip: never commit credentials
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.keystore
+*.jks
