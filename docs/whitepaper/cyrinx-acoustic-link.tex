@@ -819,10 +819,23 @@ The single-carrier FSK failures at 600\,baud and above are an honest
 illustration of \emph{why} wideband-plus-FEC matters on this channel, not a
 knock on minimodem: it targets a clean, narrowband channel and deliberately
 omits integrated FEC \cite{minimodemissue}, so it has no defense against the
-desktop multipath that the OFDM equalizer and convolutional code absorb. At
-36{,}470\,bps verified, Cyrinx is roughly 137$\times$ the best
-recovered deployed-tool baseline (ggwave ``Fastest'' at 267\,bps) on the same
-hardware and geometry.
+desktop multipath that the OFDM equalizer and convolutional code absorb.
+They are also \emph{pair- and placement-specific}, not a property of the
+tool: minimodem's author reports successful air-gapped 600+\,baud on other
+laptop/PC speaker--microphone pairs (Kamal Mostafa, personal communication,
+July 2026), and prompted by that report we re-ran the ladder on the
+\emph{second} device pair (Mac$\rightarrow$Pixel~7a) at the cleanest
+contact placement: 300\,baud recovered 100\% and \textbf{1200\,baud
+recovered 99.8\% of bytes ($\sim$0.96\,kbps effective)}, while 600 and
+2400\,baud still failed ($\le$3\%; forcing alternative mark/space tones did
+not rescue 600\,baud, so that failure remains unexplained rather than
+attributed). The pattern reinforces this paper's central methodological
+point: on consumer acoustic hardware, the transducer pair and the placement
+are part of the modem. At 36{,}470\,bps verified, Cyrinx is roughly
+137$\times$ the best recovered deployed-tool baseline (ggwave ``Fastest''
+at 267\,bps) on the same hardware and geometry, and $\sim$38$\times$ the
+best minimodem configuration measured on any pair
+(\texttt{scratch/hw20k/minimodem\_bench.py}).
 
 \subsection{Library-native over-the-air decode}
 \label{sec:libota}
