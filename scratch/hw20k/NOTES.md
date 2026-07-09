@@ -249,3 +249,28 @@ Mono path arithmetic unchanged (bit-identical). Ports
   the documented goodput definition.
 
 OTA validation of the C MRC path pending a bench (A1 step 4 doubles as it).
+
+## A5: third device pair — Moto G 2026 (2026-07-09)
+
+Budget-hardware generality run (Wi-Fi adb: the phone's USB data path was
+dead — charged fine, never enumerated on the bus, on a cable+port the Pixel
+passed; wireless debugging pair/connect worked immediately). Clean cell
+(`facedown_port_fnkey`), Mac M4:
+
+- **Downlink Mac→Moto: 48.0 kbps, 225/225 blocks, 16-QAM r3/4, probe EVM
+  0.096 — identical to the Pixel at the same cell**, first try, zero MRC.
+  The headline rate is not premium-phone-specific.
+- **Uplink Moto→Mac: 8,777 bps, 90/90 blocks at QPSK r1/2** (Pixel: 27.3
+  kbps; iPhone: 16.9) — third confirmation that the phone speaker is the
+  uplink bottleneck. Three Moto-specific mechanisms found (all in
+  `uplink_qpsk.py`, the new spike):
+  1. **Dolby DAX** effect chain on the media stream adds an EVM floor
+     (0.42 at the Pixel profile). `pm disable-user --user 0
+     com.dolby.daxservice` (reversible) improved it.
+  2. **Speaker-protection DSP settle**: first frame EVM 2.5-2.8 while later
+     frames read ~0.35; a 3 s low-level noise preroll fixes it (all 5
+     frames verify with it).
+  3. **Hot speaker**: Mac input 22 clipped (peak 1.03) → use 15 for this
+     pair.
+- Ambient and smoke: rms floors comparable to the Pixel bench; Moto speaker
+  ~6× hotter into the Mac mic at the 1 kHz smoke tone.
