@@ -279,3 +279,13 @@ passed; wireless debugging pair/connect worked immediately). Clean cell
   never zero, but lossier than the Pixel's 6/6 at an equivalent channel
   (honest budget-microphone difference). Paper §Third-pair + site table +
   threats item updated.
+- **Band-fitting recovered the uplink** (freqresp sweep `motog_palmrest`):
+  the Moto speaker cliffs at 14 kHz (−40 dB by 14–17 kHz), so the Pixel's
+  0.6–17 kHz profile wasted 3 kHz. Fitted 0.6–14 kHz: **14.6 kbps 16-QAM
+  r1/2 (150/150)** and **22.5 kbps r3/4** (184 blocks; frame 1 fails at the
+  thinner margin) — the budget uplink now beats the iPhone (16.9k), 82% of
+  the Pixel. Ladder: 0 (stock) → 8.8k (Dolby off + settle + gain) → 14.6k
+  (band-fit r1/2) → 22.5k (r3/4). Captures:
+  `data/motog_a2m_16qam{,_r34}_bandfit.npy`. Downlink freqresp capture
+  clipped (rx_peak 1.0) — magnitudes above 8 kHz suspect, SNR fine;
+  re-sweep at lower amp if the downlink curve is ever needed precisely.
