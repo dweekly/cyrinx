@@ -228,9 +228,11 @@ function setupInstrument() {
     cancelAnimationFrame(rafId);
     paint();
   }
-  btn.addEventListener('click', () => {
-    if (playing) { stop(); return; }
-    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+  function audioHint(msg) {
+    const foot = document.querySelector('.instrument-foot .foot-note');
+    if (foot) foot.textContent = msg;
+  }
+  function startPlayback() {
     const buf = audioCtx.createBuffer(1, FRAME.length, SR);
     buf.copyToChannel(FRAME, 0);
     srcNode = audioCtx.createBufferSource();
@@ -244,6 +246,12 @@ function setupInstrument() {
     playing = true;
     btn.setAttribute('aria-pressed', 'true');
     btn.querySelector('.glyph').textContent = '◼';
+    // Older iOS (no Audio Session API) mutes ALL WebAudio when the silent
+    // switch is engaged -- undetectable from JS, so hint. On current iOS the
+    // 'playback' session type set at click time exempts us, like <audio>.
+    if (!('audioSession' in navigator) && /iPhone|iPad/.test(navigator.userAgent)) {
+      audioHint('No sound? iOS silent mode mutes web audio on this iOS version — flip the ring/silent switch and raise the volume.');
+    }
     const durS = FRAME.length / SR;
     (function follow() {
       if (!playing) return;
@@ -251,6 +259,31 @@ function setupInstrument() {
       paint();
       rafId = requestAnimationFrame(follow);
     })();
+  }
+  btn.addEventListener('click', () => {
+    if (playing) { stop(); return; }
+    try {
+      // W3C Audio Session API (WebKit implements it): WebAudio defaults to
+      // the 'ambient' category on iOS, which the ring/silent switch mutes;
+      // 'playback' plays through silent mode exactly like <audio>/<video>.
+      // https://github.com/w3c/audio-session / webkit.org bug 237322
+      if ('audioSession' in navigator) navigator.audioSession.type = 'playback';
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      // Safari can hand back a context that is (or stays) 'suspended' even
+      // inside a user gesture, e.g. after an audio interruption or on some
+      // iOS versions -- and iOS additionally uses a NON-standard
+      // 'interrupted' state. source.start() on a non-running context is a
+      // silent no-op. Resume anything not running, then start.
+      if (audioCtx.state !== 'running') {
+        audioCtx.resume().then(startPlayback).catch(function () {
+          audioHint('Audio is blocked by the browser. Tap again, or check site audio permissions.');
+        });
+      } else {
+        startPlayback();
+      }
+    } catch (e) {
+      audioHint('Web audio failed to start in this browser (' + e.name + ').');
+    }
   });
 }
 
