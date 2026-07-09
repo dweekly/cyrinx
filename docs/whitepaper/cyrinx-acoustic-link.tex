@@ -63,8 +63,8 @@ payload at its correct ordered position, and the denominator is the active
 message span (first chirp sample to last data sample; including the trailing
 silence lowers the figure marginally), charging for all preambles,
 channel-estimation symbols, pilots, FEC redundancy, CRCs, and inter-frame
-gaps (Section~\ref{sec:eval}). The conservatism is earned: a predecessor
-stack in the same repository claimed a theoretical 22\,kbps and measured
+gaps (Section~\ref{sec:eval}). The conservatism is earned: an earlier
+development era of this same codebase claimed a theoretical 22\,kbps and measured
 under 0.3\,kbps---a factor-of-80 gap between claim and reality that this
 paper treats as data, both as an engineering cautionary tale and, in
 Section~\ref{sec:benchmark}, as one era in a commit-trailer-documented
@@ -214,7 +214,7 @@ demonstration that consumer phone transducers can sustain a coherent
 (Section~\ref{sec:future}) are consistent with it on one direction and
 illuminate why the other direction fails on the specific Pixel 7a micro-speaker.
 
-\textbf{Synchronization literature.} The predecessor Cyrinx stack used
+\textbf{Synchronization literature.} The project's first-era ultrasonic stack used
 Zadoff--Chu CAZAC sequences for preamble synchronization and CFO estimation,
 following standard practice \cite{cazac,zcfo}, and its robust control-header
 modulation (``D-CSS'') was inspired by LoRa-style chirp spread spectrum
@@ -550,14 +550,14 @@ single block alone (Section~\ref{sec:robust}).
 Relative to the original design document \cite{prd}, the bulk PHY drops the
 per-frame TDD ping-pong MAC with ACK/channel-state reports, rateless
 (Raptor/LDPC) coding, and the rate-adaptation ``gear'' state machine. The
-predecessor stack implemented that chatty MAC, and its turnaround gaps, tiny
+first-era stack implemented that chatty MAC, and its turnaround gaps, tiny
 payloads, and ACK timeouts consumed more than 97\% of airtime---this is why it
 measured 0.27\,kbps. For bulk transfer, long streaming frames with open-loop
 MCS selection from the measured channel are the right shape; closed-loop
 adaptation belongs at session granularity, not frame granularity (the
 session-granularity MCS sounder is now implemented as a decision engine,
 Section~\ref{sec:adaptive}). Encryption
-(an X25519/CTR/HMAC envelope exists in the predecessor stack), discovery, and
+(an X25519/CTR/HMAC envelope survives from the first era), discovery, and
 ARQ are likewise out of scope for the PHY measurement reported here.
 
 \section{What Didn't Work: Four Defects and the Experiments That Found Them}
@@ -1419,7 +1419,7 @@ of Section~\ref{sec:eval}; every subsequent claim was gated on an
 over-the-air, byte-verified capture, and dead ends were recorded as
 first-class negative results. Same human operator, same hardware, same
 repository. We do not think the later models simply ``knew more DSP''---the
-predecessor stack's DSP was largely textbook-correct in isolation. The
+first era's DSP was largely textbook-correct in isolation. The
 observable difference was behavioral: whether the agent treated its own
 throughput claims as hypotheses requiring physical evidence.
 
@@ -1476,7 +1476,7 @@ scaffolding, recorded negative results, and an operator with accumulated
 prompting skill; budgets were not equalized; the February--May era also
 pursued a harder inaudibility constraint before the June era deliberately
 abandoned it. The June era partially controls for inheritance by discarding
-the predecessor PHY wholesale rather than repairing it. What the record
+the first era's PHY wholesale rather than repairing it. What the record
 supports is an existence proof, not a ranking: on the same hardware, in the
 same repository, under the same operator, agent eras separated by months
 differed by two orders of magnitude in measured-versus-claimed throughput,
@@ -1590,7 +1590,7 @@ is its digital-loopback self-test. The crypto cost figures are in
 trailers from June 2026 onward:\\
 \texttt{git log -{}-pretty="\%ad \%(trailers:key=Co-Authored-By)"}.\\
 The February--May era predates the convention and is attributed from the
-operator's session records. The predecessor stack's own contemporaneous
+operator's session records. The first era's own contemporaneous
 claims are preserved in \texttt{walkthrough.md} under a correction banner.
 Figure~\ref{fig:spectro} is generated from the reference modem by
 \texttt{scripts/gen-paper-figures.py}.\par}
