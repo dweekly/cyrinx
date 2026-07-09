@@ -111,51 +111,79 @@ GitHub links 404 publicly until the Phase 5 repo flip. See `site/README.md`.
   / `env_sweep.py` selftests and `xcompat_validate.py` green.
 - Keep CHANGELOG.md current as milestones land.
 
-## Further research directions (2026-07-08 review; springboard list)
+## Further research directions (2026-07-08 review, stack-ranked with critique)
 
-Post-re-validation directions, deduped against the tracks above and folded
-into the whitepaper's "Building on this work" subsection. The ones not
-already tracked as A/B items:
+Candidate directions assessed against the measured record, deduped against
+the tracks above, ranked by value-to-effort. The paper's "Building on this
+work" subsection carries the reader-facing version; this is the working
+assessment of which are worth *our* bench time and why.
 
-- **Withheld physical benchmark** — formalize the paper's §Benchmark: fixed
-  repo, hidden placements/device pairs/payloads chosen after submission,
-  ordered byte verification, goodput delta + claims-integrity audit. The
-  most conceptually distinctive meta-extension.
-- **Real-time streaming receiver** — ring-buffer live decode with bounded
-  latency; the substantive work is a continuous sliding-window sync
-  correlator (not per-capture matched filtering). Converts the batch PHY
-  into a transport substrate (pairs with PUBLICATION 1.8).
-- **Closed adaptive link layer / session MAC** — sounder + MCS/CP + mic
-  selection + MRC + floor + block ARQ in one session; score = reliable
-  transfer across *changing* placements, not peak goodput.
-- **Device/geometry matrix** — laptops × phones × surfaces × distances ×
-  orientations × noise × volume: an empirical map of commodity acoustic
-  channels (extends A5).
-- **Generalized multi-mic diversity** — beyond the Pixel pair: laptop mic
-  arrays, iPhone mic selection, per-band combining (extends A2).
-- **Effective-SINR bit loading** — EVM-calibrated per-bin loading that
-  predicts which bins survive transducer phase noise (extends A4; the
-  measured PSD-vs-EVM divergence is the motivation).
-- **Hybrid coherent/non-coherent modem** — coherent fast path + RS-MFSK
-  universal floor with smooth transitions ("never fast everywhere, nearly
-  always works"); the adaptive loop is the prototype.
-- **Ultrasonic asymmetric protocol** — fast ultrasonic Mac→phone + low-rate
-  non-coherent return + authorized audible fallback (accepts the measured
-  phone-speaker phase incoherence).
-- **Motion-robust mode** — pickup/typing/rotation; shorter frames, denser
-  pilots, time-domain EQ, or OTFS-style delay–Doppler modes if OFDM
-  collapses under motion.
-- **Secure pairing product layer** — authenticated encryption + replay
-  protection + pairing UX; overhead measured honestly at each MCS (the
-  handshake costs ~4.6 s at the 138 bps floor).
-- **Open acoustic channel corpus** — publish raw captures, metadata, block
-  maps, SNR/EVM/delay-spread estimates, negative findings; lets others test
-  receivers/sounders/learned demodulators without the bench.
+**Top tier — do these; the evidence already argues for them:**
 
-External critique note (2026-07-08, third-party agent PDF): ~90% restatement;
-its two usable adds (streaming sync correlator, floor handshake latency) are
-folded in above/paper. Its bibliography was largely keyword-collision junk —
-a useful caution about agent-generated citations.
+- **Real-time streaming receiver.** The single biggest gap between "PHY
+  demonstration" and "transport substrate," and honestly bounded: the buffer
+  plumbing is easy, the real work is replacing per-capture matched filtering
+  with a continuous sliding-window sync correlator that holds timing lock
+  across stream boundaries. The on-device decoder already runs ~20× real
+  time, so the CPU budget exists. Prerequisite for almost everything below
+  (pairs with PUBLICATION 1.8).
+- **Device/geometry matrix + open channel corpus** (one campaign, two
+  outputs). The paper's own threats-to-validity says breadth is the largest
+  remaining gap — this is boring, decisive, and mostly automated already
+  (`env_sweep.py`, `freqresp.py`). Publishing the raw captures + block maps
+  + negative findings as a corpus costs little extra and is the cheapest way
+  for the project to matter to people without an audio bench. Do them
+  together; a matrix without the corpus wastes the labor.
+- **Generalized multi-mic diversity.** The measured 84× rescue came from
+  exactly this class of work, on the *first* mic pair we tried; iPhone
+  stereo capture is already scoped (PUBLICATION 1.5) and laptop arrays are
+  unexplored. Highest measured-ROI-per-effort on the list. Per-band
+  (frequency-selective) mic weighting is the natural refinement — the MRC
+  math already computes the per-bin weights.
+- **Withheld physical benchmark.** Conceptually the most distinctive
+  extension, and cheap to stand up given §Benchmark already defines the
+  scoring. Honest caveats: it is one task (n=1 generalization), someone must
+  maintain the withheld set, and "claims-integrity audit" needs a rubric
+  before it is a score rather than an anecdote. Worth doing *because* those
+  objections are addressable in a one-page protocol.
+
+**Middle tier — real but sequenced or scoped:**
+
+- **Closed adaptive link layer / session MAC.** The right north-star metric
+  (reliable transfer across *changing* placements, not peak goodput) and the
+  natural consolidation of sounder + MCS/CP + mic/MRC + floor + block ARQ.
+  Sequenced behind the streaming receiver — a session layer over a batch
+  decoder would be rework. Note: the proposed "hybrid coherent/non-coherent
+  modem with smooth transitions" is this same item wearing a different hat —
+  the adaptive loop already *is* the hybrid prototype; what's missing is the
+  session machinery, so it's folded in here rather than tracked separately.
+- **Effective-SINR bit loading.** The insight is right — the measured
+  PSD-vs-EVM divergence proves raw SNR mispredicts which bins survive
+  transducer phase noise — but the measured upside of per-bin loading was
+  +10%, so this is a refinement, not a headline. Rides along with A4's
+  calibration sweep rather than deserving its own campaign.
+- **2×2 acoustic MIMO** (Track B above). The glamour item, kept honest: the
+  theoretical ceiling is ~2×, the conditioning of H is unproven, and the
+  effort is multi-session research. The measured speaker/mic decorrelation
+  says it's *plausible*, not that it's *cheap*. Stays on the roadmap as the
+  frontier, not the next step.
+
+**Demand-driven — wait for a forcing use case:**
+
+- **Ultrasonic asymmetric protocol.** Physics already measured: fast
+  inaudible downlink is real (~9 kbps), the return path must be non-coherent
+  and slow. Assembling that into a protocol is straightforward *once
+  something needs inaudibility*; until then it's a solution seeking a user.
+- **Motion-robust mode.** Before reaching for OTFS-style delay–Doppler
+  machinery, measure whether motion actually matters at contact range — the
+  use case is a phone *resting* on a laptop, and casual motion mostly breaks
+  placement (a repositioning-guidance problem, already shipped) rather than
+  Doppler budget. First deliverable: a cheap motion-sensitivity
+  characterization, not a new modem.
+- **Secure pairing product layer.** Product engineering, not research: the
+  envelope exists, the cost table exists (~4.6 s handshake at the 138 bps
+  floor is the honest pain point). Build it when an application exists;
+  research-wise there is nothing left to learn here except UX.
 
 ## Long-horizon / exploratory backlog
 
