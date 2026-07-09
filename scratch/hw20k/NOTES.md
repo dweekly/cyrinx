@@ -249,3 +249,17 @@ Mono path arithmetic unchanged (bit-identical). Ports
   the documented goodput definition.
 
 OTA validation of the C MRC path pending a bench (A1 step 4 doubles as it).
+
+## minimodem honor-defense run (2026-07-09)
+
+Prompted by K. Mostafa's reply to the launch outreach (600+ baud works
+air-gapped on some pairs). `minimodem_bench.py` (new spike): minimodem TX
+WAV -> Mac speakers -> Pixel stereo capture -> minimodem RX per mic, byte
+accuracy vs sent text. At `facedown_port_fnkey` (clean cell): 300 bd 100%
+(240 bps), **1200 bd 99.8% (~958 bps effective)**, 600/2400 bd <=3%.
+Forcing 600 bd onto Bell202 tones (1200/2200) or higher (2400/4400) did NOT
+rescue it (1.1%/30%) -- the 600 failure is NOT simple tone placement and is
+recorded as unexplained. 2400's failure is consistent with ISI (0.42 ms
+symbols, no equalizer) but was not isolated. Paper baselines discussion
+updated: the FAIL rows are pair/placement-specific, per Mostafa's report +
+this measurement.
