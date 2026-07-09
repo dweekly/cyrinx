@@ -1,5 +1,7 @@
 # cyrinx
 
+**Data over sound, measured** — [cyrinx.org](https://cyrinx.org) · [whitepaper (PDF, 27 pp)](docs/whitepaper/cyrinx-acoustic-link.pdf) · [v1.0.0 release](https://github.com/dweekly/cyrinx/releases/tag/v1.0.0)
+
 `cyrinx` is a **research prototype** exploring data-over-sound for close-range
 desktop-to-phone links (1-2 ft). It contains two largely separate strands:
 
@@ -73,9 +75,11 @@ Pro M4, palm-rest-class geometry.
 | iPhone 17 Pro Max | iPhone → Mac | **16.87 kbps** | `modem.py` (iPhone speaker is band-limited to ≈11 kHz usable) |
 
 With the robustness/diversity layer engaged, the link degrades gracefully
-across placements — 48 kbps (clean) → ~11 kbps (reverberant, rescued by
-adaptive CP + mic selection) → 5 kbps–68 bps (shadowed, rescued by MRC / the
-MFSK floor) — never zero. Milestone history: [CHANGELOG.md](CHANGELOG.md).
+across placements — OTA re-validated 2026-07-08: **48 kbps** (clean) →
+**11.6 kbps** (reverberant — 0/75 blocks decodable on either mic alone,
+75/75 recovered by two-mic MRC through the shipped C library) → **138 bps**
+(shadowed; the RS-coded MFSK floor, ×2 the earlier repetition floor) — never
+zero. Milestone history: [CHANGELOG.md](CHANGELOG.md).
 
 Writeups: [docs/ACOUSTIC_BULK_PHY.md](docs/ACOUSTIC_BULK_PHY.md) (channel
 measurements, modem design, the four physical-layer defects, diagnostic
@@ -92,11 +96,36 @@ Everything above is consolidated in an academic-workshop-style whitepaper —
 [docs/whitepaper/cyrinx-acoustic-link.tex](docs/whitepaper/cyrinx-acoustic-link.tex)
 (compiled PDF:
 [docs/whitepaper/cyrinx-acoustic-link.pdf](docs/whitepaper/cyrinx-acoustic-link.pdf),
-25 pp; fresh as of 2026-07-02) — including related work, the effective-SINR/EVM
+27 pp; fresh as of 2026-07-08) — including related work, the effective-SINR/EVM
 ceiling on higher-order QAM, the measured channel-response and frame-anatomy
 figures, the graceful-degradation section, and a development-provenance
 section documenting which AI agent built each era (from commit trailers) and
 framing the project as a hard-to-game agent capabilities benchmark.
+
+## Using the library (SwiftPM)
+
+```swift
+// Package.swift
+.package(url: "https://github.com/dweekly/cyrinx.git", from: "1.0.0")
+// target dependency: .product(name: "Cyrinx", package: "cyrinx")
+```
+
+```swift
+import Cyrinx
+import Foundation
+
+let phy = BulkPHY()                        // the measured wideband bulk PHY
+let g = phy.geometry()!                    // frame geometry for the config
+let payload = Data(repeating: 0xA5, count: g.payloadBytes)
+let wave = phy.encode(payload)!            // Float samples at 48 kHz
+let decoded = phy.decode(wave)!            // or decode(_:combining:) for two-mic MRC
+assert(decoded.isComplete && decoded.payload == payload)
+```
+
+(That snippet is the release smoke test — it round-trips 75/75 CRC blocks
+digitally. Real links need audio I/O and the level/geometry guidance in the
+bench quick-start below.) Android binds the same C core via JNI; Python
+drives it via `ctypes` (`scratch/hw20k/clib.py`).
 
 ## Implemented Protocol Model
 
@@ -170,7 +199,7 @@ interface, validated against the same golden vectors.
 
 ## Sample Programs
 
-Sample runnable programs live in `/Users/dew/dev/cyrinx/Examples/README.md`.
+Sample runnable programs live in [Examples/README.md](Examples/README.md).
 
 ```bash
 swift run cyrinx-example-loopback
@@ -217,10 +246,11 @@ swift run cyrinx-sim-bench --profile quiet --out artifacts/bench/sim-quiet.json
 - **Smoke test (emits audio):** `.venv/bin/python3 scratch/hw20k/harness.py smoke`.
 - **Adaptive loop (emits audio):** `.venv/bin/python3 scratch/hw20k/adaptive.py <label>`.
 - **M4 bench settings:** Mac output 100 %, Mac input ~22/100 (clips above),
-  phone media volume max. Good geometry: phone face-up on a soft cloth over the
-  function-key area, charge port toward the Mac speakers (39–48 kbps). Avoid
-  overhanging the mic into the keyboard well (reverberant) or placing the phone
-  below the laptop stand (shadowed — the speakers fire upward).
+  phone media volume max. Good geometry: phone face-down on a soft cloth over
+  the function-key area, charge port toward the Mac speakers (39–48 kbps).
+  Overhanging the mic into the keyboard well is reverberant (the MRC-carried
+  ~11.6 kbps cell); the desk plane below a laptop stand is shadowed — the
+  speakers fire upward — and degrades to the 138 bps floor.
 
 ## Roadmap & documentation map
 
@@ -234,8 +264,9 @@ swift run cyrinx-sim-bench --profile quiet --out artifacts/bench/sim-quiet.json
   [docs/publication-journal.md](docs/publication-journal.md).
 - [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) — the OTA measurement campaign and
   its live-bench findings.
-- [docs/A1_AUTO_MRC.md](docs/A1_AUTO_MRC.md) — execution plan for the next
-  implementation task (auto-MRC in the live adaptive loop).
+- [docs/A1_AUTO_MRC.md](docs/A1_AUTO_MRC.md) — the executed plan for auto-MRC
+  in the live adaptive loop (completed 2026-07-08, PR #52; kept as the
+  worked example of a plan → bench → referee cycle).
 
 ## License
 
