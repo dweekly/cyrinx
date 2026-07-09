@@ -263,3 +263,43 @@ recorded as unexplained. 2400's failure is consistent with ISI (0.42 ms
 symbols, no equalizer) but was not isolated. Paper baselines discussion
 updated: the FAIL rows are pair/placement-specific, per Mostafa's report +
 this measurement.
+
+## A5: third device pair — Moto G 2026 (2026-07-09)
+
+Budget-hardware generality run (Wi-Fi adb: the phone's USB data path was
+dead — charged fine, never enumerated on the bus, on a cable+port the Pixel
+passed; wireless debugging pair/connect worked immediately). Clean cell
+(`facedown_port_fnkey`), Mac M4:
+
+- **Downlink Mac→Moto: 48.0 kbps, 225/225 blocks, 16-QAM r3/4, probe EVM
+  0.096 — identical to the Pixel at the same cell**, first try, zero MRC.
+  The headline rate is not premium-phone-specific.
+- **Uplink Moto→Mac: 8,777 bps, 90/90 blocks at QPSK r1/2** (Pixel: 27.3
+  kbps; iPhone: 16.9) — third confirmation that the phone speaker is the
+  uplink bottleneck. Three Moto-specific mechanisms found (all in
+  `uplink_qpsk.py`, the new spike):
+  1. **Dolby DAX** effect chain on the media stream adds an EVM floor
+     (0.42 at the Pixel profile). `pm disable-user --user 0
+     com.dolby.daxservice` (reversible) improved it.
+  2. **Speaker-protection DSP settle**: first frame EVM 2.5-2.8 while later
+     frames read ~0.35; a 3 s low-level noise preroll fixes it (all 5
+     frames verify with it).
+  3. **Hot speaker**: Mac input 22 clipped (peak 1.03) → use 15 for this
+     pair.
+- Ambient and smoke: rms floors comparable to the Pixel bench; Moto speaker
+  ~6× hotter into the Mac mic at the 1 kHz smoke tone.
+- Shadowed desk cell (`motog_desk_below_stand`, probe EVM 1.51-1.56,
+  ds15 ~40 ms): RS floor LINKED at 46-92 bps, 3/6 frames across two runs —
+  never zero, but lossier than the Pixel's 6/6 at an equivalent channel
+  (honest budget-microphone difference). Paper §Third-pair + site table +
+  threats item updated.
+- **Band-fitting recovered the uplink** (freqresp sweep `motog_palmrest`):
+  the Moto speaker cliffs at 14 kHz (−40 dB by 14–17 kHz), so the Pixel's
+  0.6–17 kHz profile wasted 3 kHz. Fitted 0.6–14 kHz: **14.6 kbps 16-QAM
+  r1/2 (150/150)** and **22.5 kbps r3/4** (184 blocks; frame 1 fails at the
+  thinner margin) — the budget uplink now beats the iPhone (16.9k), 82% of
+  the Pixel. Ladder: 0 (stock) → 8.8k (Dolby off + settle + gain) → 14.6k
+  (band-fit r1/2) → 22.5k (r3/4). Captures:
+  `data/motog_a2m_16qam{,_r34}_bandfit.npy`. Downlink freqresp capture
+  clipped (rx_peak 1.0) — magnitudes above 8 kHz suspect, SNR fine;
+  re-sweep at lower amp if the downlink curve is ever needed precisely.
