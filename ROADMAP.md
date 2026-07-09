@@ -111,6 +111,52 @@ GitHub links 404 publicly until the Phase 5 repo flip. See `site/README.md`.
   / `env_sweep.py` selftests and `xcompat_validate.py` green.
 - Keep CHANGELOG.md current as milestones land.
 
+## Further research directions (2026-07-08 review; springboard list)
+
+Post-re-validation directions, deduped against the tracks above and folded
+into the whitepaper's "Building on this work" subsection. The ones not
+already tracked as A/B items:
+
+- **Withheld physical benchmark** — formalize the paper's §Benchmark: fixed
+  repo, hidden placements/device pairs/payloads chosen after submission,
+  ordered byte verification, goodput delta + claims-integrity audit. The
+  most conceptually distinctive meta-extension.
+- **Real-time streaming receiver** — ring-buffer live decode with bounded
+  latency; the substantive work is a continuous sliding-window sync
+  correlator (not per-capture matched filtering). Converts the batch PHY
+  into a transport substrate (pairs with PUBLICATION 1.8).
+- **Closed adaptive link layer / session MAC** — sounder + MCS/CP + mic
+  selection + MRC + floor + block ARQ in one session; score = reliable
+  transfer across *changing* placements, not peak goodput.
+- **Device/geometry matrix** — laptops × phones × surfaces × distances ×
+  orientations × noise × volume: an empirical map of commodity acoustic
+  channels (extends A5).
+- **Generalized multi-mic diversity** — beyond the Pixel pair: laptop mic
+  arrays, iPhone mic selection, per-band combining (extends A2).
+- **Effective-SINR bit loading** — EVM-calibrated per-bin loading that
+  predicts which bins survive transducer phase noise (extends A4; the
+  measured PSD-vs-EVM divergence is the motivation).
+- **Hybrid coherent/non-coherent modem** — coherent fast path + RS-MFSK
+  universal floor with smooth transitions ("never fast everywhere, nearly
+  always works"); the adaptive loop is the prototype.
+- **Ultrasonic asymmetric protocol** — fast ultrasonic Mac→phone + low-rate
+  non-coherent return + authorized audible fallback (accepts the measured
+  phone-speaker phase incoherence).
+- **Motion-robust mode** — pickup/typing/rotation; shorter frames, denser
+  pilots, time-domain EQ, or OTFS-style delay–Doppler modes if OFDM
+  collapses under motion.
+- **Secure pairing product layer** — authenticated encryption + replay
+  protection + pairing UX; overhead measured honestly at each MCS (the
+  handshake costs ~4.6 s at the 138 bps floor).
+- **Open acoustic channel corpus** — publish raw captures, metadata, block
+  maps, SNR/EVM/delay-spread estimates, negative findings; lets others test
+  receivers/sounders/learned demodulators without the bench.
+
+External critique note (2026-07-08, third-party agent PDF): ~90% restatement;
+its two usable adds (streaming sync correlator, floor handshake latency) are
+folded in above/paper. Its bibliography was largely keyword-collision junk —
+a useful caution about agent-generated citations.
+
 ## Long-horizon / exploratory backlog
 
 Unranked ideas retained from the original ROI-ranked roadmap, pruned of items

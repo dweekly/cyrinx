@@ -1176,7 +1176,7 @@ authentication tag (28\,B total) on top of a one-time 80-byte handshake; that
 costs about \textbf{0.15\% of goodput at 16-QAM r3/4} ($\sim$38\,kbps, large
 frames) but as much as \textbf{87.5\% at the multitone-FSK floor} with the tiny
 frames that regime implies, and the handshake amortizes in $\sim$17\,ms at the
-top tier versus $\sim$2.4\,s at the floor. The guidance to a library consumer is
+top tier versus $\sim$4.6\,s at the measured 138\,bps floor. The guidance to a library consumer is
 therefore conditional: enable it essentially for free on the fast tiers, while on
 the floor the fixed per-frame cost motivates batching larger frames so the tag
 amortizes. Dropping confidentiality is an application-specific decision with real
@@ -1264,18 +1264,66 @@ to tolerate the micro-speaker's phase incoherence, at much lower rates.
 \subsection{Building on this work}
 \label{sec:extend}
 
-For readers who want to extend the system rather than reproduce it, the
-highest-leverage open directions each have scaffolding already in the
-repository. \emph{Per-bin bit loading}: the receiver already computes
-per-subcarrier SNR every frame; the demapper accepts non-uniform
-bits-per-bin, so loading is a transmitter-policy change, not a receiver
-rewrite. \emph{2$\times$2 MIMO}: the measured decorrelation between the two
-microphones (Section~\ref{sec:robust}) and between the two laptop speakers
-(defect 2) is the raw material; the sounder framework is the natural home
-for per-speaker pilot separation and channel-matrix estimation.
+For readers who want to extend the system rather than reproduce it, the open
+directions below each have scaffolding already in the repository. They are
+grouped by what they would mature.
+
+\emph{Toward a transport.} \emph{Real-time streaming receiver}: move from
+record-then-decode to a ring-buffer live decode with bounded latency; beyond
+the buffer plumbing, the substantive change is synchronization---a
+continuous sliding-window correlator that holds timing lock across stream
+boundaries rather than the current per-capture matched filter. \emph{A
+closed adaptive link layer}: wire the sounder, MCS/CP selection, microphone
+selection, MRC, the floor mode, and block-level ARQ into a session-level
+MAC, and score it not on peak goodput but on \emph{reliable transfer across
+changing placements}---a harder and more honest metric than any single
+number in this paper.
+
+\emph{Toward empirical breadth.} \emph{A device/geometry matrix}: a
+systematic campaign across laptops, phones, surfaces, distances,
+orientations, ambient noise, and volume settings would turn ``works on
+these devices'' into an empirical map of commodity acoustic channels.
+\emph{An open channel corpus}: publishing raw captures with metadata,
+decoded block maps, SNR/EVM/delay-spread estimates, and the negative
+findings would let others evaluate receivers, equalizers, sounders, and
+learned demodulators without owning the bench. \emph{Motion robustness}:
+hand motion, pickup, and typing vibration are untested; if coherent OFDM
+collapses under motion, the candidates are shorter frames, denser pilots,
+time-domain equalization, or delay--Doppler (OTFS-style) modes.
+
+\emph{Toward signal-processing depth.} \emph{Per-bin bit loading}: the
+receiver already computes per-subcarrier SNR every frame and the demapper
+accepts non-uniform bits-per-bin, so loading is a transmitter-policy change,
+not a receiver rewrite---and the interesting version is
+\emph{effective-SINR} loading calibrated on measured EVM, which predicts
+which bins survive real transducer phase noise rather than which have raw
+SNR (Section~\ref{sec:eval} shows those diverge). \emph{Generalized
+microphone diversity}: MRC is measured on one phone's two microphones;
+laptop microphone arrays, iPhone microphone selection, and per-band
+combining are unexplored. \emph{2$\times$2 MIMO}: the measured decorrelation
+between the two microphones (Section~\ref{sec:robust}) and between the two
+laptop speakers (defect 2) is the raw material for channel-matrix
+estimation, MMSE/ZF stream separation, or SVD precoding; the sounder
+framework is the natural home for per-speaker pilot separation.
+\emph{A hybrid coherent/non-coherent modem}: coherent OFDM as the fast path
+and the RS-coded MFSK floor as the universal fallback, with smooth
+transitions---a link that is never fast everywhere but nearly always works.
 \emph{Stronger codes}: we deliberately kept the $K{=}7$ convolutional code
 because it has never been the measured bottleneck; the honest trigger for
 LDPC or polar codes is a measured operating point where it is.
+
+\emph{Toward products.} \emph{An asymmetric inaudible protocol}: symmetric
+ultrasonic QAM is physically blocked by the phone speaker
+(Section~\ref{sec:ultrasonic}), but a fast ultrasonic downlink with a
+low-rate non-coherent return and an authorized audible fallback is not.
+\emph{A secure pairing layer}: authenticated encryption, replay protection,
+and explicit pairing UX on top of the existing envelope, with the overhead
+measured honestly at every MCS (Section~\ref{sec:crypto}). \emph{A withheld
+physical benchmark}: formalize Section~\ref{sec:benchmark}---fixed repository,
+hidden placements, device pairs, and payloads, ordered byte verification,
+goodput delta plus a claims-integrity audit---into a standing evaluation for
+coding agents.
+
 \emph{Wider ultrasonic band at 96\,kHz}: the hardware qualifies on some
 pairs (Section~\ref{sec:future}); the binding constraints found so far are
 transducer, not algorithmic. In every case the negative-findings log
