@@ -39,13 +39,13 @@ During our fine-tuned sweet-spot trial:
 ## 🚀 Core Work Completed
 
 ### 1. High-Performance Radix-2 Cooley-Tukey FFT in Kotlin
-To support real-time 1024-point forward and inverse Fourier transforms without introducing garbage collection pauses or thread stalls, we developed [FFT.kt](file:///Users/dew/dev/cyrinx/Apps/HIL/android/app/src/main/java/com/dweekly/cyrinxhil/FFT.kt) featuring:
+To support real-time 1024-point forward and inverse Fourier transforms without introducing garbage collection pauses or thread stalls, we developed [FFT.kt](https://github.com/dweekly/cyrinx/blob/main/Apps/HIL/android/app/src/main/java/com/dweekly/cyrinxhil/FFT.kt) featuring:
 * **In-place Radix-2 decimation-in-time algorithm** operating on flat real/imaginary `FloatArray`s.
 * **Precomputed Bit-Reversal Tables** computed once on instantiation to eliminate real-time bitwise operations.
 * **Precomputed Twiddle Factors** utilizing trigonometric symmetries to avoid dynamic `sin` and `cos` CPU calls during DSP callbacks.
 
 ### 2. Complete Kotlin OFDM Modulator & Demodulator Port
-We ported the Swift/C physical layers into the Android companion app's [AcousticPhyLink.kt](file:///Users/dew/dev/cyrinx/Apps/HIL/android/app/src/main/java/com/dweekly/cyrinxhil/AcousticPhyLink.kt):
+We ported the Swift/C physical layers into the Android companion app's [AcousticPhyLink.kt](https://github.com/dweekly/cyrinx/blob/main/Apps/HIL/android/app/src/main/java/com/dweekly/cyrinxhil/AcousticPhyLink.kt):
 * **Bin Mapping & Conjugate Symmetry**: Dynamically mapped raw active carrier bins according to configured frequency bands ($\Delta f = \frac{F_s}{N_{FFT}}$) and applied Hermite mirroring for real-valued time-domain signal generation.
 * **Modulation**: Integrated inverse FFT transforms, pre-pended a 96-sample Cyclic Prefix (CP) for multipath guard immunity, and enforced adaptive transmit-gain safety limits.
 * **Demodulation**: Stripped the CP guard, ran forward FFT transforms, executed QPSK phase constellation demapping, and unpacked length-prefixed binary payloads with MSB decoding.
@@ -153,7 +153,7 @@ graph TD
 
 ### 1. POC 4: Ambient "Room Tone" Noise Floor Sensing & Notcher
 * **Goal**: Sense static narrow-band acoustic interferences (such as HVAC rumble or electrical coil whine) ambiently, compute local noise-floors, and dynamically generate OFDM subcarrier notch masks to protect transmissions.
-* **Core Code**: [room_tone_notcher.py](file:///Users/dew/dev/cyrinx/scratch/room_tone_notcher.py)
+* **Core Code**: [room_tone_notcher.py](https://github.com/dweekly/cyrinx/blob/main/scratch/room_tone_notcher.py)
 * **Physical Measurements & Results**:
   * Scanned 24,001 frequency bins (0 to 24.0 kHz) under ambient room tone.
   * Successfully identified persistent peaks in the Cyrinx ultrasonic band (18 - 22 kHz):
@@ -163,7 +163,7 @@ graph TD
 * **Scientific Critique**:
   * Static room-tone calibration is completely blind to transient burst noises (such as keyboard key-caps or hand claps) and fast spatial fading, which can immediately corrupt un-notched carriers mid-frame.
 * **Follow-up Responsive Exploration**:
-  * Developed [room_tone_dynamic.py](file:///Users/dew/dev/cyrinx/scratch/room_tone_dynamic.py) simulating a transient key-click (15 ms Gaussian noise burst) at $t = 0.4$s during transmission.
+  * Developed [room_tone_dynamic.py](https://github.com/dweekly/cyrinx/blob/main/scratch/room_tone_dynamic.py) simulating a transient key-click (15 ms Gaussian noise burst) at $t = 0.4$s during transmission.
   * **Static Strategy**: Suffered **CRC FAIL** with EVM shooting up to **85.5%** during transient bursts.
   * **Dynamic + FEC Strategy**: Maintained **CRC PASS** by pairing a soft-demodulation carrier-weighting engine with Forward Error Correction (FEC), recovering QPSK data with only **32.0% EVM** under the burst.
 
@@ -171,14 +171,14 @@ graph TD
 
 ### 2. POC 5: Reverb-Decay PDP Guard (CP) Adaptation
 * **Goal**: Measure multi-path delay spread using Zadoff-Chu correlation and dynamically scale the OFDM Cyclic Prefix (CP) guard samples to prevent Inter-Symbol Interference (ISI).
-* **Core Code**: [reverb_guard_adaptation.py](file:///Users/dew/dev/cyrinx/scratch/reverb_guard_adaptation.py)
+* **Core Code**: [reverb_guard_adaptation.py](https://github.com/dweekly/cyrinx/blob/main/scratch/reverb_guard_adaptation.py)
 * **Physical Measurements & Results**:
   * **Office Profile**: Measured delay spread of **105 samples** (2.19 ms). Adapted CP to **256 samples** (5.33 ms), yielding an **80.0% spectral efficiency**.
   * **Cathedral Profile**: Measured delay spread of **444 samples** (9.25 ms). Adapted CP to **512 samples** (10.67 ms), yielding a **66.7% spectral efficiency**.
 * **Scientific Critique**:
   * Scaling the CP to engulf all reflections is a brute-force throughput destroyer. Furthermore, large echoic delays cause frequency-selective fading (notches) that cannot be corrected by CP expansion alone, leaving phase constellations severely rotated.
 * **Follow-up Responsive Exploration**:
-  * Developed [reverb_fde_vs_cp.py](file:///Users/dew/dev/cyrinx/scratch/reverb_fde_vs_cp.py) simulating a highly reverberant cathedral channel.
+  * Developed [reverb_fde_vs_cp.py](https://github.com/dweekly/cyrinx/blob/main/scratch/reverb_fde_vs_cp.py) simulating a highly reverberant cathedral channel.
   * **Strategy 1 (Brute CP = 512, No FDE)**: Decimated spectral efficiency to **66.7%** and suffered an un-decodable **54.9% EVM** due to phase rotation.
   * **Strategy 2 (Short CP = 64 + MMSE FDE)**: Reclaimed a blazing **94.1% spectral efficiency** and recovered a crisp **22.6% EVM** using a single-tap frequency-domain equalizer, demonstrating that a tight CP combined with receiver equalization is mathematically superior.
 
@@ -186,7 +186,7 @@ graph TD
 
 ### 3. POC 6: 96 kHz Extended Ultrasonic Bandwidth Qualification
 * **Goal**: Query native macOS CoreAudio default hardware devices for 96 kHz capabilities, and evaluate high-frequency acoustic sweeps up to 48 kHz Nyquist limits.
-* **Core Code**: [ultra_bandwidth_probe.py](file:///Users/dew/dev/cyrinx/scratch/ultra_bandwidth_probe.py)
+* **Core Code**: [ultra_bandwidth_probe.py](https://github.com/dweekly/cyrinx/blob/main/scratch/ultra_bandwidth_probe.py)
 * **Physical Measurements & Results**:
   * Executed a native Swift compiler subprocess accessing macOS AVFoundation and CoreAudio frameworks.
   * **🎙️ Input**: `MacBook Pro Microphone` running at a hardware rate of **48,000.0 Hz**.
@@ -195,7 +195,7 @@ graph TD
 * **Scientific Critique**:
   * To bypass transducer attenuation, engineers are tempted to apply high-gain pre-emphasis (+30 dB). However, class-D amplifiers are non-linear; boosting high-amplitude ultrasonic frequencies generates severe harmonic mixing and audible intermodulation whine.
 * **Follow-up Responsive Exploration**:
-  * Developed [ultra_intermod_safety.py](file:///Users/dew/dev/cyrinx/scratch/ultra_intermod_safety.py) modeling third-order amplifier non-linearities.
+  * Developed [ultra_intermod_safety.py](https://github.com/dweekly/cyrinx/blob/main/scratch/ultra_intermod_safety.py) modeling third-order amplifier non-linearities.
   * Boosting two ultrasonic carriers (25 kHz and 26 kHz) by +30 dB generated a highly annoying, **-28.5 dB intermodulation whine directly at 1.0 kHz** (audible band), proving that ultrasonic boosting physically ruins acoustic silence.
   * **Safety Limit**: Strictly cap digital boost to **+12 dB** and restrict active carriers to **< 22.5 kHz**.
 
@@ -203,7 +203,7 @@ graph TD
 
 ### 4. POC 7: ECDH Cryptographic Key Exchange Envelope
 * **Goal**: Establish a mathematically secure, encrypted session out-of-band using ephemeral Elliptic-Curve Diffie-Hellman (ECDH) X25519 key exchanges and secure transmissions with an Encrypt-then-MAC (EtM) envelope.
-* **Core Code**: [crypto_handshake.py](file:///Users/dew/dev/cyrinx/scratch/crypto_handshake.py)
+* **Core Code**: [crypto_handshake.py](https://github.com/dweekly/cyrinx/blob/main/scratch/crypto_handshake.py)
 * **Physical Measurements & Results**:
   * Programmed a zero-dependency, constant-time Montgomery Ladder X25519 point multiplication engine in pure Python.
   * Alice and Bob generated ephemeral private scalars, successfully exchanged $u$-coordinates, and derived identical shared secrets mathematically.
@@ -211,7 +211,7 @@ graph TD
 * **Scientific Critique**:
   * Ephemeral public key exchanges are completely vulnerable to active Man-in-the-Middle (MitM) attacks because acoustics lack a trusted certificate authority or rooted out-of-band anchors. An attacker can intercept and replace the keys silently.
 * **Follow-up Responsive Exploration**:
-  * Developed [crypto_mitm_mitigation.py](file:///Users/dew/dev/cyrinx/scratch/crypto_mitm_mitigation.py) introducing a Short Authentication Code (SAC) commitment protocol.
+  * Developed [crypto_mitm_mitigation.py](https://github.com/dweekly/cyrinx/blob/main/scratch/crypto_mitm_mitigation.py) introducing a Short Authentication Code (SAC) commitment protocol.
   * **No MitM Case**: Alice and Bob computed matching commitment PINs (**1307**) and played identical ultrasonic signature melodies: `['18.7 kHz', '19.1 kHz', '18.5 kHz', '19.9 kHz']`.
   * **MitM Active Intercept**: Mallory's injected keys shifted the shared secret, resulting in mismatched PINs (Alice: **9051** vs Bob: **6406**) and divergent acoustic melodies, instantly neutralizing the intercept.
 
@@ -339,7 +339,7 @@ We have successfully designed, implemented, and scientifically validated the com
 
 ### 1. Zero-Dependency Montgomery Ladder X25519 for Android Portability
 * **The API 33 Limitation**: Android's JCA (Java Cryptography Architecture) only introduced standard native `X25519` key agreements in API Level 33. Because the Cyrinx companion app targets `minSdk = 26`, standard solutions would crash on older targets.
-* **Pure-Kotlin Implementation**: We engineered [X25519.kt](file:///Users/dew/dev/cyrinx/Apps/HIL/android/app/src/main/java/com/dweekly/cyrinxhil/X25519.kt), a zero-dependency, constant-time Montgomery ladder point multiplication engine using standard Java `BigInteger` modulo $2^{255} - 19$. This guarantees absolute timing-attack immunity and 100% portability down to Android 8.0 (API 26).
+* **Pure-Kotlin Implementation**: We engineered [X25519.kt](https://github.com/dweekly/cyrinx/blob/main/Apps/HIL/android/app/src/main/java/com/dweekly/cyrinxhil/X25519.kt), a zero-dependency, constant-time Montgomery ladder point multiplication engine using standard Java `BigInteger` modulo $2^{255} - 19$. This guarantees absolute timing-attack immunity and 100% portability down to Android 8.0 (API 26).
 
 ### 2. Expanded 56-Byte Capabilities Payload (`0xE1`) & Safe Fallback
 * Ephemeral 256-bit X25519 public keys are generated at startup on both Master (macOS) and Slave (Android) nodes.
@@ -352,7 +352,7 @@ We have successfully designed, implemented, and scientifically validated the com
 * **Integrity Tag**: An HMAC-SHA256 authentication tag is computed over the sequence number and ciphertext, and truncated to **8 bytes** to minimize ultrasonic overhead, keeping total envelope overhead to a modest 16 bytes.
 
 ### 4. Rigorous Symmetrical Verification Results
-* **C Core & Swift Integration**: Appended `testECDHKeyAgreementAndSecureEnvelope` to [CyrinxTests.swift](file:///Users/dew/dev/cyrinx/Tests/CyrinxTests/CyrinxTests.swift) to verify the ECDH handshake, key derivation, encrypted data transfer, and active tampering rejection.
+* **C Core & Swift Integration**: Appended `testECDHKeyAgreementAndSecureEnvelope` to [CyrinxTests.swift](https://github.com/dweekly/cyrinx/blob/main/Tests/CyrinxTests/CyrinxTests.swift) to verify the ECDH handshake, key derivation, encrypted data transfer, and active tampering rejection.
 * **Swift Test Suite**: Confirmed all 42 tests pass with **zero failures**:
   ```
   Test Suite 'cyrinxPackageTests.xctest' passed at 2026-05-24 08:28:24.924.
