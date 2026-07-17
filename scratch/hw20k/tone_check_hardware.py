@@ -63,6 +63,8 @@ PRE_END_SYNC_GUARD_S = 0.15
 TAIL_SILENCE_S = 0.50
 CAPTURE_PRE_ROLL_S = 0.40
 CAPTURE_POST_ROLL_S = 0.40
+TONE_GUARD_S = 0.035
+TONE_RAMP_S = 0.010
 # Bound all route/APK validation performed after AudioRecord starts and before
 # the speaker is energized. Callers fail closed if this budget is exceeded.
 CAPTURE_SETUP_BUDGET_S = 4.0
@@ -164,6 +166,11 @@ class ToneProgram:
             "tone_probe_sample": self.tone_probe_sample,
             "sync_marker_samples": int(len(self.sync_marker)),
             "sync_marker_peak": float(np.max(np.abs(self.sync_marker))),
+            "tone_guard_samples": _samples(TONE_GUARD_S),
+            "tone_edge_ramp_samples": _samples(TONE_RAMP_S),
+            "tone_component_peak_policy": (
+                "single=digital_peak; imd-pair=half-digital-peak-per-component"
+            ),
             "mono_sha256": array_sha256(self.mono),
             "sync_sha256": array_sha256(self.sync_marker),
             "segments": [segment.to_dict() for segment in self.segments],
@@ -290,6 +297,14 @@ def _finite(value: float, fallback: float = -600.0) -> float:
     return float(value) if math.isfinite(float(value)) else fallback
 
 
+def _squared_sine_ramp(sample_count: int) -> np.ndarray:
+    if sample_count <= 0:
+        raise ValueError("edge ramp requires a positive sample count")
+    return np.sin(
+        np.linspace(0.0, np.pi / 2.0, sample_count, endpoint=False, dtype=np.float64)
+    ) ** 2
+
+
 def build_sync_marker(digital_peak: float) -> np.ndarray:
     """Build a low-amplitude, click-free deterministic chirp marker."""
 
@@ -303,7 +318,7 @@ def build_sync_marker(digital_peak: float) -> np.ndarray:
     )
     marker = np.sin(phase)
     ramp_count = _samples(0.012)
-    ramp = np.sin(np.linspace(0, np.pi / 2, ramp_count, endpoint=False)) ** 2
+    ramp = _squared_sine_ramp(ramp_count)
     marker[:ramp_count] *= ramp
     marker[-ramp_count:] *= ramp[::-1]
     marker *= peak / max(float(np.max(np.abs(marker))), np.finfo(float).tiny)
@@ -311,7 +326,7 @@ def build_sync_marker(digital_peak: float) -> np.ndarray:
 
 
 def _tone_schedule(tone_start_sample: int) -> tuple[ToneSegment, ...]:
-    guard = _samples(0.035)
+    guard = _samples(TONE_GUARD_S)
     cursor = tone_start_sample + guard
     result: list[ToneSegment] = []
     for frequency in SINGLE_TONES_HZ:
@@ -341,16 +356,50 @@ def _tone_schedule(tone_start_sample: int) -> tuple[ToneSegment, ...]:
     return tuple(result)
 
 
+def _build_tone_probe(
+    digital_peak: float,
+) -> tuple[np.ndarray, tuple[ToneSegment, ...]]:
+    """Render the deterministic tone schedule without importing hardware code.
+
+    ``_tone_schedule`` is the single source of truth for both synthesis and
+    analysis metadata.  Each single-tone segment uses the requested peak.  An
+    IMD pair assigns half of that peak to each component, bounding their sum by
+    the same requested peak.  Ten-millisecond raised-cosine edges suppress
+    clicks while remaining outside the analysis core's 20 ms trim.
+    """
+
+    segments = _tone_schedule(0)
+    guard_samples = _samples(TONE_GUARD_S)
+    total_samples = segments[-1].end_sample + guard_samples
+    probe = np.zeros(total_samples, dtype=np.float64)
+    ramp_samples = _samples(TONE_RAMP_S)
+
+    for segment in segments:
+        count = segment.end_sample - segment.start_sample
+        if count <= 2 * ramp_samples:
+            raise AssertionError("tone segment is too short for its edge ramps")
+        positions = np.arange(segment.start_sample, segment.end_sample, dtype=np.float64)
+        component_peak = digital_peak / len(segment.frequencies_hz)
+        value = np.zeros(count, dtype=np.float64)
+        for frequency in segment.frequencies_hz:
+            value += component_peak * np.sin(2 * np.pi * frequency * positions / SAMPLE_RATE)
+
+        ramp = _squared_sine_ramp(ramp_samples)
+        value[:ramp_samples] *= ramp
+        value[-ramp_samples:] *= ramp[::-1]
+        probe[segment.start_sample : segment.end_sample] = value
+
+    if float(np.max(np.abs(probe))) > digital_peak + 1e-12:
+        raise AssertionError("tone probe exceeds its requested digital peak")
+    return np.ascontiguousarray(probe, dtype=np.float32), segments
+
+
 def build_tone_program(digital_peak: float = DEFAULT_DIGITAL_PEAK) -> ToneProgram:
     """Build the complete, inert waveform and exact sample schedule."""
 
     if not 0 < digital_peak <= MAX_DIGITAL_PEAK:
         raise ValueError(f"digital_peak must be in (0, {MAX_DIGITAL_PEAK}]")
-    # Safe to import during planning: this module contains only deterministic DSP
-    # and deliberately has no hardware adapter import on its planning path.
-    import calibration_campaign
-
-    tone_probe = calibration_campaign.build_tone_probe(SAMPLE_RATE, digital_peak)
+    tone_probe, relative_segments = _build_tone_probe(digital_peak)
     sync = build_sync_marker(digital_peak)
     lead = np.zeros(_samples(LEAD_SILENCE_S), dtype=np.float32)
     post_sync = np.zeros(_samples(POST_SYNC_GUARD_S), dtype=np.float32)
@@ -364,10 +413,17 @@ def build_tone_program(digital_peak: float = DEFAULT_DIGITAL_PEAK) -> ToneProgra
     if float(np.max(np.abs(mono))) > digital_peak + 1e-7:
         raise AssertionError("program exceeds its requested digital peak")
 
-    segments = _tone_schedule(tone_probe_sample)
-    expected_tone_end = segments[-1].end_sample + _samples(0.035)
+    segments = tuple(
+        dataclasses.replace(
+            segment,
+            start_sample=segment.start_sample + tone_probe_sample,
+            end_sample=segment.end_sample + tone_probe_sample,
+        )
+        for segment in relative_segments
+    )
+    expected_tone_end = segments[-1].end_sample + _samples(TONE_GUARD_S)
     if expected_tone_end != tone_probe_sample + len(tone_probe):
-        raise AssertionError("tone segment schedule diverges from build_tone_probe")
+        raise AssertionError("tone segment schedule diverges from rendered probe")
     return ToneProgram(
         sample_rate_hz=SAMPLE_RATE,
         digital_peak=digital_peak,
