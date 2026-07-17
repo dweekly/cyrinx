@@ -2,11 +2,12 @@
 
 Validated, backward-looking milestones — what was built, measured, and proven,
 by date. Forward-looking work lives in [ROADMAP.md](ROADMAP.md). The repository
-has a v1.0.0 release; post-release research milestones remain date-labelled.
+has public v1.0.0 and v2.0.0 releases; intervening research milestones remain
+date-labelled.
 Detailed evidence for every claim is in the cited document and its reproduction
 commands or content hashes.
 
-## 2026-07-17 — Cyrinx 2.0 Pixel receiver and goodput campaign
+## v2.0.0 — 2026-07-17 — Cyrinx 2.0 Pixel receiver and goodput campaign
 
 - **Swift Format advanced to 603.0.0.** The strict `Sources`/`Tests` formatter
   pass remains clean under the current release. The repository keeps an exact

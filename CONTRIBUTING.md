@@ -3,8 +3,7 @@
 Thanks for your interest. Cyrinx is a research prototype exploring
 data-over-sound for close-range desktop-to-phone links; see
 [README.md](README.md) for scope and measured results, and
-[docs/PUBLICATION.md](docs/PUBLICATION.md) for the active roadmap toward the
-v1.0 public release.
+[ROADMAP.md](ROADMAP.md) for the active post-2.0 engineering priorities.
 
 ## Ground rules
 

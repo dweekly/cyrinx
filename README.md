@@ -3,7 +3,7 @@
 **Data over sound, measured** — [cyrinx.org](https://cyrinx.org) ·
 [Cyrinx 2.0 follow-on (PDF, 11 pp)](docs/whitepaper/cyrinx-2-goodput.pdf) ·
 [Cyrinx 1.0 paper (PDF, 28 pp)](docs/whitepaper/cyrinx-acoustic-link.pdf) ·
-[v1.0.0 release](https://github.com/dweekly/cyrinx/releases/tag/v1.0.0)
+[v2.0.0 release](https://github.com/dweekly/cyrinx/releases/tag/v2.0.0)
 
 `cyrinx` is a **research prototype** exploring data-over-sound for close-range
 desktop-to-phone links. It contains two largely separate strands:
@@ -162,7 +162,7 @@ and pleasant-audible status, evidence availability, and claim boundaries.
 
 ```swift
 // Package.swift
-.package(url: "https://github.com/dweekly/cyrinx.git", from: "1.0.0")
+.package(url: "https://github.com/dweekly/cyrinx.git", from: "2.0.0")
 // target dependency: .product(name: "Cyrinx", package: "cyrinx")
 ```
 

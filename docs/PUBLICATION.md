@@ -2,8 +2,8 @@
 
 Fresh as of 2026-07-17. This document retains the sequenced, multi-PR plan that
 took Cyrinx from a private prototype to a public Apache-2.0 v1.0.0 release. The
-remaining publication work is to archive the raw Cyrinx 2.0 evidence, publish
-the updated companion website, and prepare an arXiv submission.
+remaining publication work is to archive the raw Cyrinx 2.0 evidence and
+prepare an arXiv submission. The v2.0.0 package and companion site are public.
 
 Decisions locked (2026-06-10):
 
@@ -23,9 +23,9 @@ The detailed phase checklist below preserves historical sequencing and is not
 the authoritative status tracker; use this section, README.md, and ROADMAP.md
 for current state.
 
-## Status (2026-07-17)
+## Status (v2.0.0, 2026-07-17)
 
-**Public baseline:** v1.0.0, the portable-C TX/RX bulk PHY, the thin Swift
+**Public baseline:** v2.0.0, the portable-C TX/RX bulk PHY, the thin Swift
 `BulkPHY` binding, golden-vector validation, the repositioning-guidance API,
 the site, and the public repository are complete. `main` includes the Moto G
 findings through PR #65. The core technical risk—porting the measured bulk PHY
@@ -42,7 +42,7 @@ Python is retained as a research oracle and independent measurement referee.
 (feeds 1.4b real metrics); full Android JNI migration and retirement of the
 Kotlin HIL `BulkDemod` fork; 1.8 transport integration; 1.9 optional crypto +
 tradeoff doc; Phase 2 (#4 BPSK, #6 spread-spectrum, #5 research); a stable raw
-evidence archive; and deployment of the Cyrinx 2.0 site update. A separate
+evidence archive. A separate
 11-page Cyrinx 2.0 follow-on source/PDF now documents the 2026-07-17 results;
 the 28-page Cyrinx 1.0 paper remains the historical system report.
 
@@ -53,9 +53,8 @@ the 36.571 kbps benchmark with the current C receiver. The remaining 1.10 work
 is cross-direction and cross-device breadth, not proof that the library can
 carry a high-rate OTA result.
 
-**User-gated:** the arXiv *submission* needs the account and endorsement, and
-deployment of the updated site needs authenticated Cloudflare access. The
-repository-public and v1.0.0 release steps are already complete.
+**User-gated:** the arXiv *submission* needs the account and endorsement. The
+repository, v2.0.0 release, and updated companion site are public.
 
 Day-to-day decisions, measurements, dead ends, and rationale are logged in
 [publication-journal.md](publication-journal.md) as we go — raw material for the
@@ -306,7 +305,7 @@ assertions at the tiered tolerance above.
 
 - [ ] **5.1** Final secret/PII sweep of full history; squash-free.
 - [ ] **5.2** `gh repo edit --visibility public`; set description + homepage.
-- [ ] **5.3** Tag `v1.0.0`; GitHub Release with paper PDF + key artifacts;
+- [x] **5.3** Tag `v1.0.0`; GitHub Release with paper PDF + key artifacts;
       confirm SwiftPM-consumable (`.package(url:…)` smoke test from a scratch
       project).
 - [ ] **5.4** Announce (links from david.weekly.org; optional social).

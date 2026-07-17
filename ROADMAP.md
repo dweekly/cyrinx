@@ -127,7 +127,7 @@ spatial multiplexing (~2×) + transmit precoding. Reverberation becomes an asset
 - B3. Spatial multiplexing: 2 streams, ZF/MMSE separation; measure the gain.
 - B4. Transmit precoding / null-steering: weight the speakers to fill RX nulls.
 
-## Track C — The website (built; publishing this update is user-gated)
+## Track C — The website (Cyrinx 2.0 update deployed)
 
 [cyrinx.org](https://cyrinx.org) (registered; Cloudflare Pages). **Built** in
 `site/`: static single page (no framework, no build step, no third-party
@@ -139,22 +139,19 @@ constellation illustrating the historical failed 64-QAM profile;
 graceful-degradation ladder;
 measured-results table; prior-art section; both whitepaper PDFs. Full
 OpenGraph/JSON-LD/favicon/sitemap/robots/_headers; desktop + mobile rendering
-and console were validated for the original site. The repository and v1.0.0
-release are public. The Cyrinx 2.0 site source and separate 11-page follow-on
-paper are staged; the site update still needs visual QA and an authenticated
-deployment. Editing `site/` does not change the live site. See `site/README.md`.
+and console were validated for the original site. The repository and v2.0.0
+release are public. The Cyrinx 2.0 site and separate 11-page follow-on paper
+are deployed. Static asset, metadata, MIME, header, and byte-identity checks
+were repeated without launching a local browser. See `site/README.md`.
 
 ## Track D — Publication finalization (user-gated)
 
 - The 2026-07-17 implementation and measurements are documented in the
   separate 11-page Cyrinx 2.0 follow-on, preserving the gap-class, reliability,
-  host-decode, and artifact-availability caveats. The revised website is staged
-  locally but not deployed.
+  host-decode, and artifact-availability caveats. The revised website is live.
 - arXiv submission (cs.NI / eess.SP) — needs the user (account + endorsement).
   Decide whether to submit the 28-page system paper, the focused follow-on, or
   both as related reports; neither has been submitted.
-- Deploy the Cyrinx 2.0 site update after visual review and authenticated
-  Cloudflare access.
 
 ## Tech debt / hygiene
 - **Converge the bulk PHY on the C core.** The Android and iOS HIL receivers

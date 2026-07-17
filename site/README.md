@@ -42,5 +42,6 @@ or connect the repo in the Cloudflare dashboard with build output directory
 
 ## Publication status
 
-The repository and v1.0.0 release are public. Changes in `site/` do not update
-the live site until the authenticated Cloudflare deployment step is run.
+The repository, v2.0.0 release, and Cyrinx 2.0 site are public. Future changes
+in `site/` do not update the live site until an authenticated Cloudflare
+deployment is run.
