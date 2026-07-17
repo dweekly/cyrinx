@@ -6,19 +6,30 @@ over-the-air goodput is library-native (docs/PUBLICATION.md PR 1.10), not the
 Python reference modem.
 
 Rebuild the dylib:
-  clang -O2 -dynamiclib -Dkiss_fft_scalar=double \
+  clang -std=c11 -O2 -dynamiclib -Dkiss_fft_scalar=double \
     -ISources/CCyrinx/include -ISources/CCyrinx/kissfft \
     Sources/CCyrinx/cyrinx_bulk.c Sources/CCyrinx/cyrinx_fft.c \
     Sources/CCyrinx/kissfft/kiss_fft.c Sources/CCyrinx/kissfft/kiss_fftr.c \
     -o scratch/hw20k/libcyrinxbulk.dylib -lm
 """
 import ctypes
+import math
 import os
+from pathlib import Path
+import threading
 
 import numpy as np
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_LIB = ctypes.CDLL(os.path.join(_HERE, "libcyrinxbulk.dylib"))
+CODEC_PATH_ENV = "CYRINX_BULK_CODEC_PATH"
+AUTO_V1_DIAGNOSTICS_ABI_VERSION = 1
+AUTO_V1_POLICY_VERSION = 1
+AUTO_V1_MAX_MRC_TO_PRIMARY_PILOT_RMS_RATIO = 0.95
+RECEIVER_CONTRACT_ABI_VERSION = 1
+RECEIVER_SEMANTICS_VERSION = 1
+RECEIVER_ESTIMATOR_KNOWN_PILOT_LOCAL_LINEAR_BOXCAR_V1 = 1
+RECEIVER_EDGE_REPLICATE = 1
+RECEIVER_FINAL_COMB_EXTEND_LAST = 1
 
 
 class Cfg(ctypes.Structure):
@@ -38,88 +49,490 @@ class Geo(ctypes.Structure):
         "cap", "info_bits", "n_blocks", "payload_bytes", "frame_samples")]
 
 
-_LIB.cyrinx_bulk_compute_geometry.argtypes = [ctypes.POINTER(Cfg), ctypes.POINTER(Geo)]
-_LIB.cyrinx_bulk_compute_geometry.restype = ctypes.c_int
-_LIB.cyrinx_bulk_modulate.argtypes = [
-    ctypes.POINTER(Cfg), ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t,
-    ctypes.POINTER(ctypes.c_float), ctypes.c_size_t, ctypes.POINTER(ctypes.c_double)]
-_LIB.cyrinx_bulk_modulate.restype = ctypes.c_long
-_LIB.cyrinx_bulk_demodulate.argtypes = [
-    ctypes.POINTER(Cfg), ctypes.POINTER(ctypes.c_float), ctypes.c_size_t,
-    ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t,
-    ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_double)]
-_LIB.cyrinx_bulk_demodulate.restype = ctypes.c_long
-_LIB.cyrinx_bulk_demodulate2.argtypes = [
-    ctypes.POINTER(Cfg), ctypes.POINTER(ctypes.c_float), ctypes.c_size_t,
-    ctypes.POINTER(ctypes.c_float), ctypes.c_size_t,
-    ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t,
-    ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_double)]
-_LIB.cyrinx_bulk_demodulate2.restype = ctypes.c_long
+class DiversityDiagnostics(ctypes.Structure):
+    _fields_ = [
+        ("struct_size", ctypes.c_uint32),
+        ("abi_version", ctypes.c_uint32),
+        ("policy_version", ctypes.c_int),
+        ("selected_receiver", ctypes.c_int),
+        ("scores_valid", ctypes.c_int),
+        ("selection_reason", ctypes.c_int),
+        ("validation_observations", ctypes.c_int),
+        ("primary_holdout_pilot_rms", ctypes.c_double),
+        ("mrc_holdout_pilot_rms", ctypes.c_double),
+        ("observed_mrc_to_primary_pilot_rms_ratio", ctypes.c_double),
+        ("maximum_mrc_to_primary_pilot_rms_ratio", ctypes.c_double),
+    ]
+
+
+class ReceiverContractV1(ctypes.Structure):
+    _fields_ = [
+        ("struct_size", ctypes.c_uint32),
+        ("abi_version", ctypes.c_uint32),
+        ("semantics_version", ctypes.c_uint32),
+        ("reliability_estimator", ctypes.c_uint32),
+        ("local_pilot_window", ctypes.c_uint32),
+        ("edge_mode", ctypes.c_uint32),
+        ("global_weight_numerator", ctypes.c_uint32),
+        ("local_weight_numerator", ctypes.c_uint32),
+        ("weight_denominator", ctypes.c_uint32),
+        ("final_comb_mode", ctypes.c_uint32),
+        ("reserved", ctypes.c_uint32 * 4),
+        ("snr_floor", ctypes.c_double),
+        ("nonfinite_residual_ceiling", ctypes.c_double),
+    ]
+
+
+def _configure_library(library):
+    library.cyrinx_bulk_compute_geometry.argtypes = [ctypes.POINTER(Cfg), ctypes.POINTER(Geo)]
+    library.cyrinx_bulk_compute_geometry.restype = ctypes.c_int
+    library.cyrinx_bulk_modulate.argtypes = [
+        ctypes.POINTER(Cfg), ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_float), ctypes.c_size_t, ctypes.POINTER(ctypes.c_double)]
+    library.cyrinx_bulk_modulate.restype = ctypes.c_long
+    library.cyrinx_bulk_demodulate.argtypes = [
+        ctypes.POINTER(Cfg), ctypes.POINTER(ctypes.c_float), ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_double)]
+    library.cyrinx_bulk_demodulate.restype = ctypes.c_long
+    library.cyrinx_bulk_demodulate2.argtypes = [
+        ctypes.POINTER(Cfg), ctypes.POINTER(ctypes.c_float), ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_float), ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_double)]
+    library.cyrinx_bulk_demodulate2.restype = ctypes.c_long
+
+    demodulate_with_block_validity = getattr(
+        library, "cyrinx_bulk_demodulate_with_block_validity", None)
+    demodulate2_with_block_validity = getattr(
+        library, "cyrinx_bulk_demodulate2_with_block_validity", None)
+    demodulate2_auto_v1 = getattr(library, "cyrinx_bulk_demodulate2_auto_v1", None)
+    demodulate2_auto_v1_with_block_validity = getattr(
+        library, "cyrinx_bulk_demodulate2_auto_v1_with_block_validity", None)
+    get_receiver_contract_v1 = getattr(
+        library, "cyrinx_bulk_get_receiver_contract_v1", None)
+    has_block_validity_api = (
+        demodulate_with_block_validity is not None
+        and demodulate2_with_block_validity is not None
+    )
+    if has_block_validity_api:
+        demodulate_with_block_validity.argtypes = [
+            ctypes.POINTER(Cfg), ctypes.POINTER(ctypes.c_float), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
+            ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_uint8),
+            ctypes.c_size_t,
+        ]
+        demodulate_with_block_validity.restype = ctypes.c_long
+        demodulate2_with_block_validity.argtypes = [
+            ctypes.POINTER(Cfg), ctypes.POINTER(ctypes.c_float), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_float), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
+            ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_uint8),
+            ctypes.c_size_t,
+        ]
+        demodulate2_with_block_validity.restype = ctypes.c_long
+    if demodulate2_auto_v1 is not None:
+        demodulate2_auto_v1.argtypes = [
+            ctypes.POINTER(Cfg), ctypes.POINTER(ctypes.c_float), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_float), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
+            ctypes.POINTER(ctypes.c_double), ctypes.POINTER(DiversityDiagnostics),
+        ]
+        demodulate2_auto_v1.restype = ctypes.c_long
+    if demodulate2_auto_v1_with_block_validity is not None:
+        demodulate2_auto_v1_with_block_validity.argtypes = [
+            ctypes.POINTER(Cfg), ctypes.POINTER(ctypes.c_float), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_float), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
+            ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_uint8),
+            ctypes.c_size_t, ctypes.POINTER(DiversityDiagnostics),
+        ]
+        demodulate2_auto_v1_with_block_validity.restype = ctypes.c_long
+    if get_receiver_contract_v1 is not None:
+        get_receiver_contract_v1.argtypes = [
+            ctypes.POINTER(ReceiverContractV1),
+            ctypes.c_size_t,
+        ]
+        get_receiver_contract_v1.restype = ctypes.c_int
+    return (
+        demodulate_with_block_validity,
+        demodulate2_with_block_validity,
+        demodulate2_auto_v1,
+        demodulate2_auto_v1_with_block_validity,
+        get_receiver_contract_v1,
+    )
+
+
+class BulkCodec:
+    """One explicitly selected bulk-PHY dynamic library.
+
+    The physical runner continues to use the module-level default codec. Offline
+    reanalysis uses this class so the caller-selected binary cannot be replaced
+    by import-path or current-working-directory behavior.
+    """
+
+    def __init__(self, library_path):
+        path = Path(library_path).expanduser().resolve(strict=True)
+        if not path.is_file():
+            raise ValueError(f"bulk codec path is not a file: {path}")
+        self.library_path = path
+        self._lib = ctypes.CDLL(str(path))
+        functions = _configure_library(self._lib)
+        self._demodulate_with_block_validity = functions[0]
+        self._demodulate2_with_block_validity = functions[1]
+        self._demodulate2_auto_v1 = functions[2]
+        self._demodulate2_auto_v1_with_block_validity = functions[3]
+        self._get_receiver_contract_v1 = functions[4]
+        self.has_block_validity_api = all(function is not None for function in functions[:2])
+        self.has_auto_v1_api = all(function is not None for function in functions[2:4])
+        self.has_receiver_contract_v1 = self._get_receiver_contract_v1 is not None
+
+    def receiver_contract_v1(self):
+        if not self.has_receiver_contract_v1:
+            raise RuntimeError(
+                f"{self.library_path} lacks the receiver-contract-v1 symbol; "
+                "rebuild it from the current Sources/CCyrinx sources"
+            )
+        contract = ReceiverContractV1()
+        result = self._get_receiver_contract_v1(
+            ctypes.byref(contract), ctypes.sizeof(contract)
+        )
+        if result != 0:
+            raise RuntimeError("receiver-contract-v1 query failed")
+        return {
+            "struct_size": contract.struct_size,
+            "binding_struct_size": ctypes.sizeof(contract),
+            "abi_version": contract.abi_version,
+            "semantics_version": contract.semantics_version,
+            "reliability_estimator": contract.reliability_estimator,
+            "local_pilot_window": contract.local_pilot_window,
+            "edge_mode": contract.edge_mode,
+            "global_weight_numerator": contract.global_weight_numerator,
+            "local_weight_numerator": contract.local_weight_numerator,
+            "weight_denominator": contract.weight_denominator,
+            "final_comb_mode": contract.final_comb_mode,
+            "reserved": list(contract.reserved),
+            "snr_floor": contract.snr_floor,
+            "nonfinite_residual_ceiling": contract.nonfinite_residual_ceiling,
+        }
+
+    def geometry(self, cfg):
+        g = Geo()
+        if self._lib.cyrinx_bulk_compute_geometry(ctypes.byref(cfg), ctypes.byref(g)) != 0:
+            raise ValueError("invalid config")
+        return g
+
+    def encode(self, cfg, payload):
+        g = self.geometry(cfg)
+        if len(payload) != g.payload_bytes:
+            raise ValueError(f"payload has {len(payload)} bytes, expected {g.payload_bytes}")
+        wave = (ctypes.c_float * g.frame_samples)()
+        pb = (ctypes.c_uint8 * len(payload)).from_buffer_copy(payload)
+        n = self._lib.cyrinx_bulk_modulate(
+            ctypes.byref(cfg), pb, len(payload), wave, g.frame_samples, None)
+        if n < 0:
+            raise RuntimeError("modulate failed")
+        return np.ctypeslib.as_array(wave)[:n].copy()
+
+    def _require_block_validity_api(self, allow_legacy_block_counts):
+        if self.has_block_validity_api or allow_legacy_block_counts:
+            return
+        raise RuntimeError(
+            f"{self.library_path} lacks ordered block-validity symbols; rebuild it "
+            "from the current Sources/CCyrinx sources, or explicitly pass "
+            "allow_legacy_block_counts=True for aggregate-only diagnostics")
+
+    def decode(self, cfg, rx, *, allow_legacy_block_counts=False):
+        self._require_block_validity_api(allow_legacy_block_counts)
+        g = self.geometry(cfg)
+        rxf = np.ascontiguousarray(rx, dtype=np.float32)
+        out = (ctypes.c_uint8 * g.payload_bytes)()
+        mask = (ctypes.c_uint8 * g.n_blocks)()
+        ok = ctypes.c_int(0)
+        total = ctypes.c_int(0)
+        evm = ctypes.c_double(0.0)
+        rxp = rxf.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
+        if self.has_block_validity_api:
+            n = self._demodulate_with_block_validity(
+                ctypes.byref(cfg), rxp, len(rxf), out, g.payload_bytes,
+                ctypes.byref(ok), ctypes.byref(total), ctypes.byref(evm), mask,
+                g.n_blocks)
+            block_valid = [bool(mask[index]) for index in range(g.n_blocks)]
+        else:
+            n = self._lib.cyrinx_bulk_demodulate(
+                ctypes.byref(cfg), rxp, len(rxf), out, g.payload_bytes,
+                ctypes.byref(ok), ctypes.byref(total), ctypes.byref(evm))
+            block_valid = None
+        return _decode_result(n, out, ok, total, evm, block_valid)
+
+    def decode2(self, cfg, rx, rx2, *, allow_legacy_block_counts=False):
+        self._require_block_validity_api(allow_legacy_block_counts)
+        g = self.geometry(cfg)
+        r1 = np.ascontiguousarray(rx, dtype=np.float32)
+        r2 = np.ascontiguousarray(rx2, dtype=np.float32)
+        out = (ctypes.c_uint8 * g.payload_bytes)()
+        mask = (ctypes.c_uint8 * g.n_blocks)()
+        ok = ctypes.c_int(0)
+        total = ctypes.c_int(0)
+        evm = ctypes.c_double(0.0)
+        if self.has_block_validity_api:
+            n = self._demodulate2_with_block_validity(
+                ctypes.byref(cfg),
+                r1.ctypes.data_as(ctypes.POINTER(ctypes.c_float)), len(r1),
+                r2.ctypes.data_as(ctypes.POINTER(ctypes.c_float)), len(r2),
+                out, g.payload_bytes, ctypes.byref(ok), ctypes.byref(total),
+                ctypes.byref(evm), mask, g.n_blocks)
+            block_valid = [bool(mask[index]) for index in range(g.n_blocks)]
+        else:
+            n = self._lib.cyrinx_bulk_demodulate2(
+                ctypes.byref(cfg),
+                r1.ctypes.data_as(ctypes.POINTER(ctypes.c_float)), len(r1),
+                r2.ctypes.data_as(ctypes.POINTER(ctypes.c_float)), len(r2),
+                out, g.payload_bytes, ctypes.byref(ok), ctypes.byref(total),
+                ctypes.byref(evm))
+            block_valid = None
+        return _decode_result(n, out, ok, total, evm, block_valid)
+
+    def decode2_auto_v1(self, cfg, rx, rx2):
+        if not self.has_auto_v1_api:
+            raise RuntimeError(
+                f"{self.library_path} lacks automatic-diversity policy-v1 symbols; "
+                "rebuild it from the current Sources/CCyrinx sources")
+        g = self.geometry(cfg)
+        r1 = np.ascontiguousarray(rx, dtype=np.float32)
+        if rx2 is None:
+            r2 = None
+        else:
+            candidate = np.ascontiguousarray(rx2, dtype=np.float32)
+            r2 = None if candidate.size == 0 else candidate
+        out = (ctypes.c_uint8 * g.payload_bytes)()
+        mask = (ctypes.c_uint8 * g.n_blocks)()
+        ok = ctypes.c_int(0)
+        total = ctypes.c_int(0)
+        evm = ctypes.c_double(0.0)
+        diagnostics = DiversityDiagnostics()
+        r2_pointer = (
+            None if r2 is None
+            else r2.ctypes.data_as(ctypes.POINTER(ctypes.c_float)))
+        r2_length = 0 if r2 is None else len(r2)
+        n = self._demodulate2_auto_v1_with_block_validity(
+            ctypes.byref(cfg),
+            r1.ctypes.data_as(ctypes.POINTER(ctypes.c_float)), len(r1),
+            r2_pointer, r2_length,
+            out, g.payload_bytes, ctypes.byref(ok), ctypes.byref(total),
+            ctypes.byref(evm), mask, g.n_blocks, ctypes.byref(diagnostics))
+        if n < 0:
+            return None
+        block_valid = [bool(mask[index]) for index in range(g.n_blocks)]
+        return _decode_result(
+            n, out, ok, total, evm, block_valid,
+            diversity=_diversity_result(diagnostics))
+
+
+def _diversity_result(diagnostics):
+    reasons = {
+        0: "not_evaluated",
+        1: "mrc_improved",
+        2: "primary_margin_not_met",
+        3: "insufficient_pilots",
+        4: "nonfinite_score",
+        5: "resource_failure",
+        6: "second_unavailable",
+    }
+    expected_size = ctypes.sizeof(DiversityDiagnostics)
+    if diagnostics.struct_size != expected_size:
+        raise RuntimeError(
+            f"automatic-diversity diagnostics size {diagnostics.struct_size} "
+            f"!= binding size {expected_size}")
+    if (diagnostics.abi_version != AUTO_V1_DIAGNOSTICS_ABI_VERSION
+            or diagnostics.policy_version != AUTO_V1_POLICY_VERSION):
+        raise RuntimeError(
+            "unsupported automatic-diversity diagnostics ABI/policy: "
+            f"abi={diagnostics.abi_version}, policy={diagnostics.policy_version}")
+    if diagnostics.selected_receiver not in (0, 1):
+        raise RuntimeError(
+            f"unknown automatic-diversity receiver: {diagnostics.selected_receiver}")
+    if diagnostics.scores_valid not in (0, 1):
+        raise RuntimeError(
+            f"invalid automatic-diversity score-valid flag: {diagnostics.scores_valid}")
+    if diagnostics.selection_reason not in reasons:
+        raise RuntimeError(
+            f"unknown automatic-diversity reason: {diagnostics.selection_reason}")
+    maximum_ratio = diagnostics.maximum_mrc_to_primary_pilot_rms_ratio
+    if (not math.isfinite(maximum_ratio)
+            or maximum_ratio != AUTO_V1_MAX_MRC_TO_PRIMARY_PILOT_RMS_RATIO):
+        raise RuntimeError(
+            "unsupported automatic-diversity maximum MRC pilot RMS ratio: "
+            f"{maximum_ratio!r} != "
+            f"{AUTO_V1_MAX_MRC_TO_PRIMARY_PILOT_RMS_RATIO!r}")
+
+    def finite_or_none(value):
+        return value if math.isfinite(value) else None
+
+    return {
+        "struct_size": diagnostics.struct_size,
+        "abi_version": diagnostics.abi_version,
+        "policy_version": diagnostics.policy_version,
+        "selected_receiver": "mrc01" if diagnostics.selected_receiver == 1 else "mic0",
+        "scores_valid": bool(diagnostics.scores_valid),
+        "selection_reason": reasons.get(diagnostics.selection_reason, "unknown"),
+        "payload_or_crc_used_for_selection": False,
+        "data_bins_used_for_selection": False,
+        "validation_observations": diagnostics.validation_observations,
+        "primary_holdout_pilot_rms": finite_or_none(
+            diagnostics.primary_holdout_pilot_rms),
+        "mrc_holdout_pilot_rms": finite_or_none(
+            diagnostics.mrc_holdout_pilot_rms),
+        "observed_mrc_to_primary_pilot_rms_ratio": (
+            finite_or_none(diagnostics.observed_mrc_to_primary_pilot_rms_ratio)),
+        "maximum_mrc_to_primary_pilot_rms_ratio": maximum_ratio,
+    }
+
+
+def _decode_result(n, out, ok, total, evm, block_valid, diversity=None):
+    if n < 0:
+        return None
+    if block_valid is not None and sum(block_valid) != ok.value:
+        raise RuntimeError("ordered CRC-validity mask disagrees with blocks_ok")
+    result = {
+        "payload": bytes(out),
+        "blocks_ok": ok.value,
+        "blocks_total": total.value,
+        "block_valid": block_valid,
+        "evm": evm.value,
+    }
+    if diversity is not None:
+        result["automatic_diversity"] = diversity
+    return result
+
+
+def ordered_verified_blocks(decoded, expected_payload, block_bytes=256):
+    """Count CRC-valid blocks that match the expected payload position."""
+    if decoded is None:
+        return 0
+    if block_bytes <= 0 or len(expected_payload) % block_bytes:
+        raise ValueError("expected payload must contain whole positive-sized blocks")
+    expected_blocks = len(expected_payload) // block_bytes
+    payload = decoded["payload"]
+    block_valid = decoded.get("block_valid")
+    if block_valid is None:
+        # Aggregate-only legacy decoders cannot safely score a partial frame.
+        full_frame_valid = (
+            decoded.get("blocks_ok") == expected_blocks
+            and decoded.get("blocks_total") == expected_blocks
+        )
+        return expected_blocks if full_frame_valid and payload == expected_payload else 0
+    if len(block_valid) != expected_blocks or len(payload) < len(expected_payload):
+        raise ValueError("decoder block map does not match expected payload geometry")
+    return sum(
+        1 for index, valid in enumerate(block_valid)
+        if valid
+        and payload[index * block_bytes:(index + 1) * block_bytes]
+        == expected_payload[index * block_bytes:(index + 1) * block_bytes]
+    )
+
+
+_DEFAULT_CODEC_PATH = os.environ.get(
+    CODEC_PATH_ENV, os.path.join(_HERE, "libcyrinxbulk.dylib"))
+_DEFAULT_CODEC = None
+_DEFAULT_CODEC_LOCK = threading.Lock()
+_LIB = None
+_DEMODULATE_WITH_BLOCK_VALIDITY = None
+_DEMODULATE2_WITH_BLOCK_VALIDITY = None
+_HAS_BLOCK_VALIDITY_API = None
+_DEMODULATE2_AUTO_V1 = None
+_DEMODULATE2_AUTO_V1_WITH_BLOCK_VALIDITY = None
+_HAS_AUTO_V1_API = None
+_GET_RECEIVER_CONTRACT_V1 = None
+_HAS_RECEIVER_CONTRACT_V1 = None
+
+
+def _default_codec():
+    """Load the module-level codec only when a module-level operation needs it."""
+    global _DEFAULT_CODEC
+    global _LIB
+    global _DEMODULATE_WITH_BLOCK_VALIDITY
+    global _DEMODULATE2_WITH_BLOCK_VALIDITY
+    global _HAS_BLOCK_VALIDITY_API
+    global _DEMODULATE2_AUTO_V1
+    global _DEMODULATE2_AUTO_V1_WITH_BLOCK_VALIDITY
+    global _HAS_AUTO_V1_API
+    global _GET_RECEIVER_CONTRACT_V1
+    global _HAS_RECEIVER_CONTRACT_V1
+    if _DEFAULT_CODEC is None:
+        with _DEFAULT_CODEC_LOCK:
+            if _DEFAULT_CODEC is None:
+                codec = BulkCodec(_DEFAULT_CODEC_PATH)
+                _DEFAULT_CODEC = codec
+                _LIB = codec._lib
+                _DEMODULATE_WITH_BLOCK_VALIDITY = codec._demodulate_with_block_validity
+                _DEMODULATE2_WITH_BLOCK_VALIDITY = codec._demodulate2_with_block_validity
+                _HAS_BLOCK_VALIDITY_API = codec.has_block_validity_api
+                _DEMODULATE2_AUTO_V1 = codec._demodulate2_auto_v1
+                _DEMODULATE2_AUTO_V1_WITH_BLOCK_VALIDITY = (
+                    codec._demodulate2_auto_v1_with_block_validity)
+                _HAS_AUTO_V1_API = codec.has_auto_v1_api
+                _GET_RECEIVER_CONTRACT_V1 = codec._get_receiver_contract_v1
+                _HAS_RECEIVER_CONTRACT_V1 = codec.has_receiver_contract_v1
+    return _DEFAULT_CODEC
 
 
 def make_cfg(bits_per_bin=4, rate="3/4", n_sym=64, f_lo=1100.0, f_hi=23000.0,
-             nfft=2048, cp=768, sr=48000, amp=0.5, clip_sigma=3.3):
-    return Cfg(f_lo, f_hi, 8, bits_per_bin, rate.encode(), n_sym, nfft, cp, sr,
+             nfft=2048, cp=768, sr=48000, amp=0.5, clip_sigma=3.3,
+             pilot_every=8):
+    return Cfg(f_lo, f_hi, pilot_every, bits_per_bin, rate.encode(), n_sym, nfft, cp, sr,
                amp, clip_sigma, 2000.0, 16000.0)
 
 
 def geometry(cfg):
-    g = Geo()
-    if _LIB.cyrinx_bulk_compute_geometry(ctypes.byref(cfg), ctypes.byref(g)) != 0:
-        raise ValueError("invalid config")
-    return g
+    return _default_codec().geometry(cfg)
 
 
 def encode(cfg, payload):
-    g = geometry(cfg)
-    assert len(payload) == g.payload_bytes, (len(payload), g.payload_bytes)
-    wave = (ctypes.c_float * g.frame_samples)()
-    pb = (ctypes.c_uint8 * len(payload)).from_buffer_copy(payload)
-    n = _LIB.cyrinx_bulk_modulate(ctypes.byref(cfg), pb, len(payload), wave,
-                                  g.frame_samples, None)
-    if n < 0:
-        raise RuntimeError("modulate failed")
-    return np.ctypeslib.as_array(wave)[:n].copy()
+    return _default_codec().encode(cfg, payload)
 
 
-def decode(cfg, rx):
-    g = geometry(cfg)
-    rxf = np.ascontiguousarray(rx, dtype=np.float32)
-    out = (ctypes.c_uint8 * g.payload_bytes)()
-    ok = ctypes.c_int(0)
-    total = ctypes.c_int(0)
-    evm = ctypes.c_double(0.0)
-    rxp = rxf.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
-    n = _LIB.cyrinx_bulk_demodulate(ctypes.byref(cfg), rxp, len(rxf), out,
-                                    g.payload_bytes, ctypes.byref(ok),
-                                    ctypes.byref(total), ctypes.byref(evm))
-    if n < 0:
-        return None
-    return {"payload": bytes(out), "blocks_ok": ok.value,
-            "blocks_total": total.value, "evm": evm.value}
+def _require_block_validity_api(allow_legacy_block_counts):
+    _default_codec()._require_block_validity_api(allow_legacy_block_counts)
 
 
-def decode2(cfg, rx, rx2):
+def decode(cfg, rx, *, allow_legacy_block_counts=False):
+    """Decode one channel and return an ordered per-payload-block CRC mask.
+
+    Current-library decoding is strict by default. The opt-in legacy path is
+    retained only for old local dylibs and returns ``block_valid=None`` because
+    an aggregate count cannot identify which payload positions are valid.
+    """
+    return _default_codec().decode(
+        cfg, rx, allow_legacy_block_counts=allow_legacy_block_counts)
+
+
+def decode2(cfg, rx, rx2, *, allow_legacy_block_counts=False):
     """Two-mic library decode with per-subcarrier MRC (cyrinx_bulk_demodulate2,
     A2). rx/rx2: sample-aligned captures (two channels of one stereo capture);
-    sync runs on rx."""
-    g = geometry(cfg)
-    r1 = np.ascontiguousarray(rx, dtype=np.float32)
-    r2 = np.ascontiguousarray(rx2, dtype=np.float32)
-    out = (ctypes.c_uint8 * g.payload_bytes)()
-    ok = ctypes.c_int(0)
-    total = ctypes.c_int(0)
-    evm = ctypes.c_double(0.0)
-    n = _LIB.cyrinx_bulk_demodulate2(
-        ctypes.byref(cfg),
-        r1.ctypes.data_as(ctypes.POINTER(ctypes.c_float)), len(r1),
-        r2.ctypes.data_as(ctypes.POINTER(ctypes.c_float)), len(r2),
-        out, g.payload_bytes, ctypes.byref(ok), ctypes.byref(total),
-        ctypes.byref(evm))
-    if n < 0:
-        return None
-    return {"payload": bytes(out), "blocks_ok": ok.value,
-            "blocks_total": total.value, "evm": evm.value}
+    sync runs on rx. Returns the same ordered ``block_valid`` mask as decode;
+    old aggregate-only dylibs require an explicit opt-in and return None."""
+    return _default_codec().decode2(
+        cfg, rx, rx2, allow_legacy_block_counts=allow_legacy_block_counts)
+
+
+def decode2_auto_v1(cfg, rx, rx2):
+    """Decode with frozen payload-independent automatic-diversity policy v1."""
+    return _default_codec().decode2_auto_v1(cfg, rx, rx2)
+
+
+def loaded_library_path():
+    """Return the resolved binary backing the module-level physical codec."""
+    return _default_codec().library_path
+
+
+def receiver_contract_v1():
+    """Return the receiver semantics reported by the loaded C binary."""
+    return _default_codec().receiver_contract_v1()
 
 
 def modem_cfg_from_clib(cfg):
@@ -157,6 +570,9 @@ if __name__ == "__main__":
         wave = encode(cfg, payload)
         rx = np.concatenate([np.zeros(3000, np.float32), wave, np.zeros(2000, np.float32)])
         r = decode(cfg, rx)
-        ok = r and r["payload"] == payload and r["blocks_ok"] == r["blocks_total"]
+        ok = (r and r["payload"] == payload
+              and r["blocks_ok"] == r["blocks_total"]
+              and all(r["block_valid"])
+              and ordered_verified_blocks(r, payload) == g.n_blocks)
         print(f"  bpb={bpb} rate={rate}: blocks {r['blocks_ok']}/{r['blocks_total']} "
               f"payload_match={r['payload']==payload} -> {'OK' if ok else 'FAIL'}")

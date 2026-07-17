@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Cyrinx — data over sound, measured</title>
-<meta name="description" content="An acoustic modem for consumer hardware: 36.6 kbps of byte-verified data from a laptop speaker to a phone microphone, over the air. Open measurements, open dead ends, open source.">
+<meta name="description" content="Cyrinx 2.0 measured 65.875 kbps of byte-verified goodput from a MacBook speaker to a Pixel 7a microphone in the same schedule class as the prior 36.571 kbps benchmark.">
 <link rel="canonical" href="https://cyrinx.org/">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
@@ -14,14 +14,10 @@
 <meta property="og:url" content="https://cyrinx.org/">
 <meta property="og:site_name" content="Cyrinx">
 <meta property="og:title" content="Cyrinx — data over sound, measured">
-<meta property="og:description" content="36.6 kbps of byte-verified data from a laptop speaker to a phone microphone, over the air. An acoustic modem for consumer hardware, with its measurements — and its dead ends — published.">
-<meta property="og:image" content="https://cyrinx.org/assets/og-card.png">
-<meta property="og:image:width" content="1200">
-<meta property="og:image:height" content="630">
-<meta name="twitter:card" content="summary_large_image">
+<meta property="og:description" content="65.875 kbps of byte-verified MacBook-to-Pixel goodput in the accepted schedule class; 69.652 kbps in a separately labeled zero-gap research class.">
+<meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="Cyrinx — data over sound, measured">
-<meta name="twitter:description" content="36.6 kbps of byte-verified data from a laptop speaker to a phone microphone, over the air.">
-<meta name="twitter:image" content="https://cyrinx.org/assets/og-card.png">
+<meta name="twitter:description" content="65.875 kbps of byte-verified MacBook-to-Pixel goodput in the accepted schedule class; 69.652 kbps in a separate zero-gap research class.">
 
 <script type="application/ld+json">
 {
@@ -32,7 +28,7 @@
       "@id": "https://cyrinx.org/#website",
       "url": "https://cyrinx.org/",
       "name": "Cyrinx",
-      "description": "An acoustic modem for consumer hardware, measured over the air."
+      "description": "An acoustic modem for consumer hardware, measured over the air at 65.875 kbps in the accepted Pixel schedule class."
     },
     {
       "@type": "ScholarlyArticle",
@@ -45,9 +41,21 @@
       "isPartOf": { "@id": "https://cyrinx.org/#website" }
     },
     {
+      "@type": "ScholarlyArticle",
+      "@id": "https://cyrinx.org/#paper-cyrinx2",
+      "headline": "Cyrinx 2.0: Measured 65.9 kb/s Schedule-Comparable Acoustic Goodput on a MacBook Pro–Pixel 7a Near-Field Link",
+      "author": { "@type": "Person", "name": "David E. Weekly" },
+      "datePublished": "2026-07-17",
+      "url": "https://cyrinx.org/cyrinx-2-goodput.pdf",
+      "encodingFormat": "application/pdf",
+      "about": "A Pixel-specific acoustic-goodput follow-on covering pilot-local reliability, payload-independent microphone diversity, rejected profiles, and measured resilience costs.",
+      "isPartOf": { "@id": "https://cyrinx.org/#website" }
+    },
+    {
       "@type": "SoftwareSourceCode",
       "@id": "https://cyrinx.org/#code",
       "name": "cyrinx",
+      "softwareVersion": "2.0.0",
       "codeRepository": "https://github.com/dweekly/cyrinx",
       "programmingLanguage": ["C", "Swift", "Python", "Kotlin"],
       "license": "https://www.apache.org/licenses/LICENSE-2.0",
@@ -65,7 +73,7 @@
     <a href="#results">Results</a>
     <a href="#how">How it works</a>
     <a href="#degradation">Robustness</a>
-    <a href="/cyrinx-acoustic-link.pdf">Paper<span class="mono-note"> · PDF</span></a>
+    <a href="#paper">Papers<span class="mono-note"> · PDF</span></a>
   </nav>
 </header>
 
@@ -77,32 +85,37 @@
   <p class="thesis">
     Cyrinx is a research modem that moves real data through the air as sound —
     from an ordinary laptop speaker to an ordinary phone microphone. No radio,
-    no pairing, no network. Measured, byte-verified goodput:
-    <strong>36.6&nbsp;kbps</strong> MacBook&nbsp;→&nbsp;Pixel&nbsp;7a, and
-    <strong>39.3&nbsp;kbps</strong> decoded by the shipped C library itself.
+    no pairing, no network. Cyrinx&nbsp;2.0 measured
+    <strong>65.875&nbsp;kbps</strong> MacBook&nbsp;→&nbsp;Pixel&nbsp;7a while
+    preserving the accepted benchmark's 0.25&nbsp;s inter-frame gaps, versus
+    36.571&nbsp;kbps before (about 1.80×). A separately labeled zero-gap
+    research class reached <strong>69.652&nbsp;kbps</strong> (1.9045×, not
+    almost 3×).
   </p>
 
   <figure class="instrument" id="instrument">
     <div class="instrument-head">
-      <span class="inst-title">One transmitted frame</span>
-      <span class="inst-params">48 kHz · OFDM, NFFT 2048 · 1.1–23 kHz · 16-QAM r¾ · K=7 Viterbi · CRC-32/block</span>
+      <span class="inst-title">Control-profile geometry illustration</span>
+      <span class="inst-params">48 kHz · OFDM, NFFT 2048 · CP 768 · 1.1–23 kHz · random QPSK carriers</span>
     </div>
     <div class="spectro-wrap">
       <canvas id="spectrogram" role="img"
-        aria-label="Spectrogram of one Cyrinx frame: a rising chirp for synchronization, a guard gap, two channel-estimation symbols, then dense OFDM data symbols spanning 1.1 to 23 kilohertz."></canvas>
+        aria-label="Spectrogram of a Cyrinx geometry illustration: a rising chirp, a guard gap, then ten random-QPSK OFDM symbols spanning 1.1 to 23 kilohertz."></canvas>
       <div class="anatomy" aria-hidden="true">
         <span class="anat" id="anat-chirp">chirp<small>sync</small></span>
         <span class="anat" id="anat-guard">guard</span>
-        <span class="anat" id="anat-sync">sync ×2<small>channel est.</small></span>
-        <span class="anat" id="anat-data">OFDM payload<small>pilot comb every 8th bin</small></span>
+        <span class="anat" id="anat-sync">OFDM ×2<small>sync-sized</small></span>
+        <span class="anat" id="anat-data">OFDM ×8<small>random QPSK carriers</small></span>
       </div>
     </div>
     <figcaption class="instrument-foot">
       <button id="listen" type="button" aria-pressed="false">
         <span class="glyph" aria-hidden="true">▶</span> Listen · 0.7 s
       </button>
-      <span class="foot-note">This is the actual frame structure, synthesized in your browser.
-      It sounds like a chirp and a breath of static — that static is the data.</span>
+      <span class="foot-note">This deterministic browser illustration preserves the earlier control
+      profile's timing and band geometry, but it is not an encoded frame: sync, pilots, payload mapping,
+      FEC, and CRC are omitted. It lets you hear the chirp and static-like OFDM energy. Cyrinx 2.0
+      shortens the cyclic prefix and uses denser, route-qualified modulation.</span>
     </figcaption>
   </figure>
 </section>
@@ -110,12 +123,29 @@
 <section class="sec" id="results">
   <h2><span class="secmark">§1</span> Measured results</h2>
   <p>
-    Every number below is <strong>ordered byte-verified goodput</strong>: a block
-    counts only if its CRC-32 passes <em>and</em> its bytes match the transmitted
-    payload at the same position — and the clock runs across everything
-    (preambles, pilots, FEC, CRCs, gaps). Bench: MacBook&nbsp;Pro&nbsp;M4
-    transmitting and receiving in ordinary rooms, phone resting near the palm rest.
+    The Cyrinx&nbsp;2.0 rows use <strong>strict ordered byte-verified goodput</strong>:
+    a block counts only if its CRC-32 passes <em>and</em> its bytes match the
+    transmitted payload at the same scheduled position. Historical rows retain
+    their cited byte-verification method. For the accepted Pixel run, 375/375
+    decoded CRC-valid records passed expected-set membership; the verifier
+    retained neither record uniqueness nor strict stream position. The
+    Cyrinx&nbsp;2.0 values are scheduled goodput:
+    their denominator runs from the first chirp through the final frame data,
+    including preambles, pilots, FEC, CRCs, and declared gaps, but excluding the
+    16,000-sample stream-end pad. Including that pad makes the zero-gap mean
+    68.636&nbsp;kbps. Historical rows retain their cited measurement methodology.
   </p>
+  <div class="register">
+    <h3>Two schedule classes, reported separately</h3>
+    <p>
+      The comparable flagship retains the accepted benchmark's 12,000-sample
+      (0.25&nbsp;s at 48&nbsp;kHz) gap between frames. Its 65.875&nbsp;kbps mean can
+      therefore be compared directly with the earlier 36.571&nbsp;kbps result.
+      The 69.652&nbsp;kbps mean removes that gap and belongs to a separate
+      research class; it is evidence about continuous scheduling, not a
+      like-for-like replacement for the accepted benchmark.
+    </p>
+  </div>
   <div class="table-scroll">
   <table>
     <caption class="visually-hidden">Measured over-the-air goodput by device pair and direction</caption>
@@ -123,20 +153,47 @@
       <tr><th scope="col">Peer</th><th scope="col">Direction</th><th scope="col">Goodput</th><th scope="col">Decoded by</th></tr>
     </thead>
     <tbody>
-      <tr><td>Pixel 7a</td><td>Mac → Pixel</td><td class="num">36.6 kbps</td><td>on-device (Kotlin port)</td></tr>
+      <tr><td>Pixel 7a</td><td>Mac → Pixel, accepted benchmark</td><td class="num">36.571 kbps</td><td>on-device legacy Kotlin decoder</td></tr>
+      <tr class="hot"><td>Pixel 7a</td><td>Mac → Pixel, Cyrinx 2.0 <strong>same schedule class</strong></td><td class="num">65.875 kbps</td><td>frozen canonical C host decoder from Pixel stereo capture; CP96/p16/64-QAM r⅔, 4,215/4,280 blocks, 8/8 paired wins</td></tr>
+      <tr><td>Pixel 7a</td><td>Mac → Pixel, <strong>zero-gap research class</strong></td><td class="num">69.652 kbps</td><td>frozen canonical C host decoder from Pixel stereo capture; CP96/p64/64-QAM r⅔, 96 symbols, range 65.731–72.641 kbps, 6,129/6,760 blocks, 8/8 paired wins</td></tr>
       <tr><td>Pixel 7a</td><td>Pixel → Mac</td><td class="num">27.3 kbps</td><td>reference decoder</td></tr>
-      <tr class="hot"><td>Pixel 7a</td><td>Mac → Pixel</td><td class="num">39.3 kbps</td><td><strong>the shipped C library</strong>, 16-QAM r¾, 375/375 blocks</td></tr>
+      <tr><td>Pixel 7a</td><td>Mac → Pixel, earlier library-native aggregate</td><td class="num">38.400 kbps</td><td><strong>the shipped C library</strong>, 16-QAM r¾; contemporaneous console output reported 375/375 across five independent one-frame trials, but no matching machine-readable run record was retained; old 39.3 kbps label counted CRC and fill</td></tr>
       <tr><td>iPhone 17 Pro Max</td><td>Mac → iPhone</td><td class="num">36.57 kbps</td><td>on-device (Swift port)</td></tr>
       <tr><td>iPhone 17 Pro Max</td><td>iPhone → Mac</td><td class="num">16.87 kbps</td><td>reference decoder <span class="dim">(iPhone speaker is band-limited)</span></td></tr>
-      <tr><td>Moto G 2026 <span class="dim">budget</span></td><td>Mac → Moto</td><td class="num">48.0 kbps</td><td>the shipped C library, clean contact cell — <strong>identical to the Pixel there</strong></td></tr>
-      <tr><td>Moto G 2026 <span class="dim">budget</span></td><td>Moto → Mac</td><td class="num">22.5 kbps</td><td>reference decoder, 16-QAM r¾ after band-fitting to the measured 14 kHz speaker cliff — <strong>beats the iPhone uplink</strong> <span class="dim">(stock profile got 0; see paper)</span></td></tr>
+      <tr><td>Moto G 2026 <span class="dim">budget</span></td><td>Mac → Moto</td><td class="num">46.915 kbps</td><td>post-sounding ordered PHY payload rate through the shipped C library, clean contact cell — <strong>identical to the Pixel there</strong>; preceding sounding/probe time excluded</td></tr>
+      <tr><td>Moto G 2026 <span class="dim">budget</span></td><td>Moto → Mac</td><td class="num">19.212 kbps steady-state<br><span class="dim">16.637 kbps cold-start</span></td><td>reference decoder, 16-QAM r¾ after band-fitting to the measured 14 kHz speaker cliff; 197/230 ordered blocks over the five-frame active schedule. The cold-start number also counts the device-required 3.0 s emitted settle signal and 0.25 s silence. <span class="dim">The old 22.5 kbps label omitted the partial first frame and its airtime.</span></td></tr>
     </tbody>
   </table>
   </div>
   <p class="aside">
-    For scale: the fastest dial-up modems reached 56 kbps over a copper phone
-    line. This is more than half of that, through open air, on hardware that was
-    never designed for it.
+    Historical evidence contracts are not silently upgraded. In particular,
+    36.571 and 27.307&nbsp;kbps used expected-set membership without retained
+    uniqueness or slot attribution; 38.400&nbsp;kbps is a payload normalization of
+    a contemporaneous five-trial console aggregate. The Moto 19.212&nbsp;kbps
+    value uses the same first-chirp-to-last-data convention as the older
+    active-span rows, while 16.637&nbsp;kbps exposes its device-specific cold-start
+    cost.
+  </p>
+  <p class="aside">
+    The comparable Cyrinx 2.0 campaign won all eight order-balanced pairs
+    (exact sign test p&nbsp;=&nbsp;1/256), but its 98.481% block recovery was below the
+    conservative baseline's 99.967%, so it failed the predeclared strict
+    reliability gate. The zero-gap campaign also won 8/8 pairs and reached
+    1.9045× the old 36.571&nbsp;kbps result, but recovered only 90.666% of blocks
+    and failed the same kind of gate. These are measured throughput advances
+    with quantified resilience costs, not an almost-threefold robustness claim.
+  </p>
+  <p class="aside">
+    Scope matters: the new results are near-field measurements on one Pixel 7a,
+    one MacBook, and one placement: Pixel face-up on 0.5-inch soft cloth above
+    the left function-key area, bottom mic near the built-in left speaker, Mac
+    output 50%, waveform peak 0.18, and A/C cycling. SPL was not instrumented.
+    Android performed tokenized stereo capture;
+    it did <em>not</em> decode the new profiles on-device. A frozen build of the
+    portable C receiver decoded them on the host, including two-microphone MRC,
+    automatic receiver selection, and payload-independent pilot-local reliability
+    weighting. An integrated ultrasonic mode and a lower-rate, pleasant-audible
+    mode remain future work.
   </p>
 </section>
 
@@ -162,8 +219,8 @@
       <li><b>Chirp sync.</b> A 2→16 kHz sweep; a matched filter finds it to within a sample or two.</li>
       <li><b>Channel estimation.</b> Two known full-band symbols measure the room's response per subcarrier — including the echoes.</li>
       <li><b>OFDM + cyclic prefix.</b> 2048-point FFT frames with a guard copy so echoes land harmlessly inside the prefix.</li>
-      <li><b>Pilot tracking.</b> Every 8th subcarrier carries a known tone; per-symbol phase and timing drift are fitted and removed (the two devices' sample clocks disagree by ~25 ppm — ignore that and the constellation spins).</li>
-      <li><b>Soft decisions.</b> Each 16-QAM point becomes log-likelihood ratios weighted by that subcarrier's measured SNR — a noisy lane whispers instead of lying.</li>
+      <li><b>Pilot tracking.</b> A profile-specific comb of known subcarriers tracks per-symbol phase and timing drift (the two devices' sample clocks disagree by ~25 ppm — ignore that and the constellation spins).</li>
+      <li><b>Soft decisions.</b> Each QAM point becomes log-likelihood ratios weighted by pilot-local error as well as global channel SNR — a locally noisy lane whispers instead of lying.</li>
       <li><b>FEC + verification.</b> A K=7 convolutional code with soft Viterbi decoding repairs the survivors; CRC-32 per 256-byte block accepts nothing on faith.</li>
     </ol>
   </div>
@@ -171,11 +228,14 @@
   <div class="register">
     <h3>Why not just crank up the constellation?</h3>
     <p>
-      Because the transducers lie. The raw channel measures ~52 dB SNR, but the
-      speaker-air-microphone chain has an <em>effective</em> error floor around
-      EVM 0.15 (~15 dB SINR) that no amount of volume fixes. 16-QAM rides
-      comfortably above it; 64-QAM drowns — measured 0 of 339 blocks at EVM 0.173.
-      Drag the slider to see the difference on the constellation.
+      Because a higher-order constellation trades noise margin for bits. An
+      early 64-QAM profile recovered 0 of 339 blocks at EVM 0.173, but that was
+      a failure of that profile and receiver — not proof that these transducers
+      can never carry 64-QAM. The route-qualified Cyrinx 2.0 profile combined
+      stronger r⅔ coding, pilot-local reliability weighting, and two-microphone
+      reception to produce the measurements above. Its lower block recovery is
+      also why 64-QAM is not yet the universal default. This 16-QAM illustration
+      shows cluster overlap; EVM alone is not a decoder verdict.
     </p>
     <figure class="constellation-panel">
       <canvas id="constellation" role="img"
@@ -186,7 +246,7 @@
           list="evm-marks" aria-describedby="evm-verdict">
         <datalist id="evm-marks">
           <option value="0.105" label="measured, clean cell"></option>
-          <option value="0.173" label="measured, 64-QAM failure"></option>
+          <option value="0.173" label="historical failed profile"></option>
         </datalist>
         <p id="evm-verdict" class="verdict" aria-live="polite"></p>
       </div>
@@ -197,32 +257,46 @@
 <section class="sec" id="degradation">
   <h2><span class="secmark">§3</span> It degrades. It doesn't die.</h2>
   <p>
-    Acoustic channels are moody: move the phone six inches and a clean 48 kbps
-    cell becomes a reverberant mess. A naive receiver simply collapses. Cyrinx
-    is built to lose <em>gracefully</em> — measured across placements on the
-    same bench:
+    Acoustic channels are moody: move the phone six inches and a clean cell can
+    become a reverberant mess. The Cyrinx 2.0 throughput profiles above have not
+    yet passed the strict reliability gate, so the conservative fallback ladder
+    remains part of the system. It was measured across placements on the same
+    bench. The coherent values below are post-sounding PHY payload rates; they
+    exclude the preceding sounding/probe transaction and amortize that cost only
+    over a longer session. Including emitted sounding/probe samples gives about
+    32.852&nbsp;kbps clean and 8.95&nbsp;kbps reverberant, before host/ADB wall time:
   </p>
   <ul class="ladder" role="list">
-    <li style="--w:99%"><span class="rung-label">clean placement</span><span class="rung-bar"></span><span class="rung-val">48 kbps</span></li>
-    <li style="--w:79%"><span class="rung-label">reverberant <small>carried entirely by two-microphone combining</small></span><span class="rung-bar"></span><span class="rung-val">11.6 kbps</span></li>
-    <li style="--w:69%"><span class="rung-label">shadowed <small>rescued by mic selection + adaptive cyclic prefix</small></span><span class="rung-bar"></span><span class="rung-val">~5 kbps</span></li>
+    <li style="--w:99%"><span class="rung-label">clean placement</span><span class="rung-bar"></span><span class="rung-val">46.915 kbps</span></li>
+    <li style="--w:79%"><span class="rung-label">reverberant <small>carried entirely by two-microphone combining</small></span><span class="rung-bar"></span><span class="rung-val">11.366 kbps</span></li>
     <li style="--w:12%"><span class="rung-label">nearly hopeless <small>non-coherent multitone floor, Reed–Solomon-coded</small></span><span class="rung-bar"></span><span class="rung-val">138 bps</span></li>
   </ul>
+  <p class="aside">
+    A separate earlier one-frame MRC diagnostic measured 5.154&nbsp;kbps:
+    it recovered 8/11
+    CRC-valid blocks where either mic alone recovered 0/11. That artifact did
+    not retain a byte oracle, so it is a CRC-valid PHY payload rate rather than
+    strict ordered goodput, and it was not a rung exercised by the closed
+    adaptive loop. The 11.366&nbsp;kbps row above has the stronger byte-identical
+    evidence.
+  </p>
   <p>
     The rescue that matters most: <strong>maximal-ratio combining</strong> across
     the receiving phone's two microphones. The mics sit at opposite ends of the
     device, so the room's dead spots differ between them; combining per
     subcarrier fills each mic's nulls with the other's signal. At the worst coherent placement measured,
     <em>neither</em> microphone could decode a single block alone — combined,
-    the closed adaptive loop carried <strong>11.6&nbsp;kbps with all 75 of 75
+    the selected link phase of the closed adaptive loop carried a
+    <strong>11.366&nbsp;kbps post-sounding PHY payload rate with all 75 of 75
     blocks recovered by MRC</strong>, through the same portable C library that
     ships, pinned by cross-implementation test vectors.
   </p>
   <p>
     And when even that fails, a non-coherent multitone floor mode — energy
     detection with symbols longer than the echo tail, Reed–Solomon-coded with
-    two-microphone energy combining — keeps a measured 138&nbsp;bps flowing
-    (twice the earlier repetition-coded floor) where phase-coherent modems get
+    two-microphone energy combining — keeps a measured 138&nbsp;bps active-frame
+    rate flowing (131.282&nbsp;bps including its unconditional 0.1&nbsp;s tail pad;
+    twice the earlier repetition-coded floor) where phase-coherent modems get
     nothing at all. Slow is a mode. Silence is a failure.
   </p>
 </section>
@@ -247,22 +321,30 @@
     <a href="https://github.com/dweekly/cyrinx/blob/main/docs/NEGATIVE_FINDINGS.md">negative
     findings</a> so dead ends stay dead, and a receiver architecture whose
     graceful-degradation claims were demonstrated placement by placement — then
-    ported into a portable C core that reproduces the headline number itself.
+    implemented in a canonical portable C receiver that reproduces the headline
+    result from retained Pixel stereo captures. Swift binds that core; Python is
+    the research oracle and measurement referee; the Android Kotlin bulk decoder
+    remains a legacy control implementation rather than a second source of truth.
   </p>
 </section>
 
 <section class="sec" id="paper">
   <h2><span class="secmark">§5</span> Read the paper, run the code</h2>
   <div class="cta-row">
+    <a class="cta" href="/cyrinx-2-goodput.pdf">
+      <span class="cta-kind">Cyrinx 2.0 follow-on · PDF · 11 pages</span>
+      <span class="cta-title">Measured 65.9 kbps schedule-comparable MacBook-to-Pixel acoustic goodput</span>
+      <span class="cta-sub">Pilot-local reliability, payload-independent microphone diversity, measured setbacks, and explicit claim boundaries</span>
+    </a>
     <a class="cta" href="/cyrinx-acoustic-link.pdf">
-      <span class="cta-kind">Whitepaper · PDF · 27 pages</span>
+      <span class="cta-kind">Cyrinx 1.0 paper · PDF · 28 pages</span>
       <span class="cta-title">A measured 36.6/27.3 kbps bidirectional acoustic data link between a laptop and a phone</span>
       <span class="cta-sub">Building, breaking, and verifying a wideband OFDM acoustic modem on commodity hardware</span>
     </a>
-    <a class="cta" href="https://github.com/dweekly/cyrinx">
-      <span class="cta-kind">Source · Apache-2.0</span>
-      <span class="cta-title">github.com/dweekly/cyrinx</span>
-      <span class="cta-sub">Portable C core · Swift binding · Python reference · golden vectors</span>
+    <a class="cta" href="https://github.com/dweekly/cyrinx/releases/tag/v2.0.0">
+      <span class="cta-kind">Release · v2.0.0 · Apache-2.0</span>
+      <span class="cta-title">Cyrinx v2.0.0 source release</span>
+      <span class="cta-sub">Canonical portable C decoder · Swift binding · Python research oracle · papers · golden vectors</span>
     </a>
   </div>
 </section>

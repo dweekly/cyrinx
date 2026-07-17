@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""Reliability campaign for the Mac <-> iPhone 17 Pro Max link.
+"""Legacy reliability campaign for the Mac <-> iPhone 17 Pro Max link.
 
 Mirrors campaign.py (the Pixel version) but drives the iPhone HIL app. Repeats
 the headline 16-QAM r3/4 profile N times across varied volume settings, with
-ORDERED-stream verification, and emits a unified per-run metrics record so the
+unique-payload attribution plus within-frame position verification, and emits a
+unified per-run metrics record so the
 paper can report a goodput distribution and a Wilson CI on block-failure rate
 instead of a single 5-frame demo.
+
+This legacy verifier does not bind attributed frames to chronological scheduled
+slots. Historical JSON fields containing ``ordered`` remain for compatibility;
+use goodput_campaign.py for the strict Cyrinx 2.0 referee contract.
 
   m2i: Mac left speaker -> iPhone, decoded ON the iPhone (BulkDemod.swift).
   i2m: iPhone speaker -> Mac, decoded on the Mac (modem.py), band 0.6-11 kHz.
@@ -57,7 +62,7 @@ def build_tx(cfg):
 
 
 def verify_mac_side(cfg, rx, payloads):
-    """Ordered verification on the Mac (i2m)."""
+    """Unique-payload, within-frame position verification on the Mac."""
     mf = np.abs(np.correlate(rx, cfg.chirp_wave, mode="valid"))
     thr = mf.max() * 0.4
     m = mf.copy()
@@ -89,7 +94,9 @@ def verify_mac_side(cfg, rx, payloads):
         frames.append({"start": s0, "ok": True, "frame_id": best_pi,
                        "blocks_ok": res["blocks_ok"], "verified_ordered": best_n,
                        "evm": round(res["evm_rms"], 4)})
-    span = ((max(decoded) + cfg.frame_samples - min(decoded)) / SR) if decoded else None
+    # Boundary failures remain in the denominator; goodput covers every
+    # declared frame slot rather than only successfully decoded endpoints.
+    span = N_FRAMES * cfg.frame_samples / SR + (N_FRAMES - 1) * GAP_S
     return verified, crc_ok, span, frames
 
 
@@ -107,7 +114,7 @@ def run_once(direction, vols, tag):
                               n_sym=N_SYM, n_payloads=N_FRAMES, seed_base=SEED_BASE)
         verified = int(d.get("verified_ordered_blocks", d.get("verified", 0)))
         crc_ok = int(d.get("crc_ok_blocks", d.get("blocks_ok", 0)))
-        span = float(d.get("span_s", 0)) or None
+        span = N_FRAMES * cfg.frame_samples / SR + (N_FRAMES - 1) * GAP_S
         frames = d.get("frames", [])
         rx_peak = float(d.get("rx_peak", 0))
     else:
@@ -124,6 +131,7 @@ def run_once(direction, vols, tag):
         "mac_out_vol": mac_out, "mac_in_vol": mac_in, "band": BANDS[direction],
         "rx_peak": round(rx_peak, 4), "frames": frames,
         "crc_ok_blocks": crc_ok, "verified_ordered_blocks": verified,
+        "verification_contract": "unique-best-payload-within-frame-position; not-scheduled-slot",
         "total_blocks": N_FRAMES * cfg.n_blocks, "wall_s": round(wall_s, 1),
     }
     if span:

@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
-"""Reliability campaign: repeated audible-band runs, both directions, with
-ordered-stream verification and a unified per-run metrics record.
+"""Legacy reliability campaign: repeated audible-band runs, both directions,
+with content-attributed within-frame verification and a unified metrics record.
 
 Each run: 5 frames of 16-QAM r3/4 (the headline profile). Verification is
-ORDERED: a decoded frame is attributed to the transmitted frame whose payload
-matches the most CRC-ok blocks; a block counts as verified only if its bytes
-equal that payload's bytes at the same block position.
+position-exact within the best-matching unique payload: a decoded frame is
+attributed to the transmitted frame whose payload matches the most CRC-ok
+blocks, then duplicate payload attributions are suppressed. This is not strict
+chronological scheduled-slot binding. Historical JSON field names containing
+``ordered`` are retained for schema compatibility; use goodput_campaign.py for
+the strict Cyrinx 2.0 referee contract.
 
 Two goodput accountings are reported:
   goodput_span  — verified bits / (first chirp .. last data sample)   [paper]
-  goodput_gross — verified bits / (span + trailing pad)               [strict]
+  goodput_gross — verified bits / (span + trailing pad)               [incl pad]
 
 Usage: campaign.py <n_runs_per_direction> [tag]
 Appends one JSON line per run to data/campaign.jsonl.
@@ -45,7 +48,7 @@ def make_cfg(direction):
 
 
 def ordered_verify(res, payloads, n_blocks):
-    """Attribute frame, then count position-exact byte matches."""
+    """Best-content-attribute a frame, then count within-frame matches."""
     best_pi, best_n = None, -1
     for pi, pl in enumerate(payloads):
         n = sum(1 for (j, okb, data) in res["blocks"]
@@ -125,15 +128,16 @@ def run_once(direction, volumes, tag):
         "frames": frames,
         "crc_ok_blocks": crc_ok,
         "verified_ordered_blocks": verified,
+        "verification_contract": "unique-best-payload-within-frame-position; not-scheduled-slot",
         "total_blocks": N_FRAMES * cfg.n_blocks,
         "wall_s": round(wall_s, 1),
     }
-    if decoded:
-        span = (max(decoded) + cfg.frame_samples - min(decoded)) / SR
-        gross = span + PAD_S
-        rec["span_s"] = round(span, 3)
-        rec["goodput_span_bps"] = round(verified * M.CRC_BLOCK * 8 / span)
-        rec["goodput_gross_bps"] = round(verified * M.CRC_BLOCK * 8 / gross)
+    # Score the complete declared schedule even when a boundary frame fails.
+    span = N_FRAMES * cfg.frame_samples / SR + (N_FRAMES - 1) * GAP_S
+    gross = span + PAD_S
+    rec["span_s"] = round(span, 3)
+    rec["goodput_span_bps"] = round(verified * M.CRC_BLOCK * 8 / span)
+    rec["goodput_gross_bps"] = round(verified * M.CRC_BLOCK * 8 / gross)
     with open(os.path.join(H.DATA, "campaign.jsonl"), "a") as fh:
         fh.write(json.dumps(rec) + "\n")
     return rec

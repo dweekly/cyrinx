@@ -4,8 +4,8 @@ import XCTest
 @testable import Cyrinx
 
 final class CyrinxTests: XCTestCase {
-    func testVersionIsNonEmpty() {
-        XCTAssertFalse(Cyrinx.version.isEmpty)
+    func testVersionMatchesRelease() {
+        XCTAssertEqual(Cyrinx.version, "2.0.0")
     }
 
     func testStatusHelpersExposeNamesAndDescriptions() {

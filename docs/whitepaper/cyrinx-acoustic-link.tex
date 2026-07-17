@@ -1,8 +1,9 @@
 % Cyrinx acoustic data-link whitepaper.
 % Build: pdflatex cyrinx-acoustic-link.tex (run twice for cross-references).
-% All numbers in this document are taken verbatim from the in-repo research
-% records: docs/ACOUSTIC_BULK_PHY.md, docs/PRD_VS_AS_BUILT.md,
-% scratch/hw20k/NOTES.md, and walkthrough.md (all fresh as of 2026-06-09).
+% All numbers in this document are taken from the in-repo research records.
+% The primary paper snapshot was later extended with a Moto G supplement and
+% historical-accounting corrections through 2026-07-17. The separate Cyrinx
+% 2.0 Pixel campaign from that date is not yet integrated into this paper.
 \documentclass[11pt]{article}
 
 \usepackage[letterpaper,margin=1in]{geometry}
@@ -17,6 +18,13 @@
 \usepackage{caption}
 \usepackage{url}
 \usepackage[hidelinks]{hyperref}
+
+\hypersetup{
+  pdftitle={Cyrinx: A Measured 36.6/27.3 kbps Bidirectional Acoustic Data Link},
+  pdfauthor={David E. Weekly},
+  pdfsubject={Measured bidirectional acoustic data transmission on commodity hardware},
+  pdfkeywords={acoustic modem, OFDM, goodput, commodity hardware, Cyrinx}
+}
 
 \urlstyle{same}
 \captionsetup{font=small,labelfont=bf}
@@ -34,7 +42,7 @@ in commit trailers) and argues the project doubles as a capabilities
 benchmark. All reported results are from over-the-air measurements on
 physical hardware recorded in the project's lab notebook.}}
 
-\date{July 8, 2026}
+\date{July 17, 2026}
 
 \begin{document}
 
@@ -57,9 +65,9 @@ overconfident log-likelihood ratios from corrupted symbols. We document the
 discriminating experiments that isolated each defect, including the negative
 results that exonerated ``obvious'' suspects.
 
-Goodput is counted conservatively: a payload block counts only if it is
-CRC32-valid \emph{and} byte-identical to the transmitted \texttt{DetRng}
-payload at its correct ordered position, and the denominator is the active
+Goodput counts only payload blocks that are CRC32-valid \emph{and}
+byte-identical to the transmitted deterministic \texttt{DetRng} payload, and
+the denominator is the active
 message span (first chirp sample to last data sample; including the trailing
 silence lowers the figure marginally), charging for all preambles,
 channel-estimation symbols, pilots, FEC redundancy, CRCs, and inter-frame
@@ -81,14 +89,16 @@ verification---not new modulation theory. The modem has since been ported
 from the research harness into a portable-C reference library (transmit,
 receive, and a two-microphone maximal-ratio-combining receive path),
 validated bit-exact against committed golden vectors with an Apple vDSP
-backend gated by the same vectors; the library's own codec decodes over the
-air byte-verified, at the palm-rest geometry reproducing the headline
-natively (16-QAM rate 3/4, 39.3\,kbps, exceeding the harness figure), and it
+backend gated by the same vectors; the library's own codec decoded over the
+air in a historical five-trial console aggregate (16-QAM rate 3/4,
+38.400\,kbps after normalizing to user payload, exceeding the harness figure).
+No matching machine-readable run record was retained. The library also
 ships with an EVM-probe MCS sounder and channel-metric repositioning
 guidance. We frame the result accordingly: a well-instrumented empirical
 case study of how much commodity hardware delivers after real-channel
-debugging---validated on two device pairs (a Pixel 7a and an iPhone 17 Pro
-Max, each against the same MacBook Pro) at contact range, with
+debugging---with the primary controlled benchmark on a Pixel 7a and
+supplemental contact-range measurements on an iPhone 17 Pro Max and budget
+Moto G, each against the same MacBook Pro, plus
 same-hardware baselines against deployed tools---not a broadly general or
 new-modulation acoustic-modem result.
 \end{abstract}
@@ -124,7 +134,8 @@ development-methodology comparison of Section~\ref{sec:benchmark}. Every
 number reported here is from an over-the-air capture on physical hardware,
 and we state explicitly when a figure is an estimate rather than a
 measurement. We are deliberate about scope: what follows is an empirical
-case study of two specific device pairs in one geometry, not a general
+case study of three specific phone--laptop pairs on one bench, with one primary
+controlled geometry and supplemental cells, not a general
 acoustic-modem result. Figure~\ref{fig:spectro} shows the transmitted frame
 this paper is about; a reader new to acoustic OFDM can take the whole
 transmit structure from that one picture.
@@ -511,8 +522,8 @@ matched-filter synchronization, least-squares channel estimation, three-pass
 pilot phase/CPE tracking, max-log soft-output demapping, and the soft-decision
 Viterbi decoder. The FFT sits behind a small plan interface
 (\texttt{cyrinx\_fft}) with two interchangeable backends: a vendored KISS FFT
-(BSD-3, compiled in double precision) as the portable correctness reference that
-also ships to Android via JNI, and---on Apple, under a compile flag---a
+(BSD-3, compiled in double precision) as the portable correctness reference
+intended for Android through a still-pending JNI binding, and---on Apple, under a compile flag---a
 vDSP/Accelerate double-precision DFT. A thin Swift binding (\texttt{BulkPHY})
 exposes \texttt{encode}/\texttt{decode} with no DSP of its own.
 
@@ -651,8 +662,8 @@ reminder.
 \subsection{Stepped modulation results}
 
 With all four defects fixed, modulation and code rate were stepped upward on
-real over-the-air captures (offline decode; 5-frame runs; goodput includes all
-overhead and 0.25\,s inter-frame gaps). Table~\ref{tab:steps} shows clean
+real over-the-air captures (offline decode; three-frame runs; goodput includes
+all overhead and 0.25\,s inter-frame gaps). Table~\ref{tab:steps} shows clean
 decodes at every step; both directions cross the 20\,kbps target at 16-QAM
 rate 3/4.
 
@@ -678,13 +689,16 @@ A$\rightarrow$M & 16-QAM r3/4 & 168/168 & 0.11 & \textbf{27.53\,kbps} \\
 
 \subsection{Final verified measurement}
 
-The definitive run (\texttt{scratch/hw20k/final\_measurement.py}) transmits
-5 frames per direction at 16-QAM rate 3/4 and counts goodput as payload bytes
-that are both CRC32-valid \emph{and} pass \emph{ordered} verification: each
-CRC-valid 256-byte block must be byte-identical to the transmitted
-\texttt{DetRng} payload at its correct ordered position within the attributed
-frame, not merely a member of the expected block set. Goodput is those verified
-bytes divided by the span from the first frame's chirp to the
+The definitive historical run (\texttt{scratch/hw20k/final\_measurement.py}) transmits
+5 frames per direction at 16-QAM rate 3/4 and counts CRC32-valid payload bytes
+that match the deterministic expected-block set. The accepted downlink logged
+375/375 and the uplink 280/280 decoded CRC-valid records passing that membership
+test. The verifier retained neither decoded-record uniqueness nor each block's
+stream-slot position, so these remain accepted historical expected-set metrics,
+not strict ordered goodput. Strict ordered attribution was added later to the
+repository's Cyrinx 2.0 campaign referee. Goodput is the accepted decoded-byte
+count divided by the span from the first
+frame's chirp to the
 last frame's final data sample --- preambles, sync symbols, pilots, FEC
 redundancy, CRCs, and inter-frame gaps all count against the number. Each
 direction spans 21.0\,s of airtime.
@@ -701,24 +715,26 @@ airtime).
 
 \begin{table}[t]
 \centering
-\caption{Final byte-verified over-the-air goodput (2026-06-09). The
+\caption{Final historical expected-set-byte-verified over-the-air metric
+(2026-06-09). The
 Mac$\rightarrow$Pixel capture was demodulated and verified on the Pixel
 itself; it never left the phone.}
 \label{tab:final}
-\begin{tabular}{llcc}
+\begin{tabular}{@{}llcc@{}}
 \toprule
-Direction & Decoder & Blocks verified & Goodput \\
+Direction (band) & Decoder & Records passing & Goodput \\
 \midrule
-Mac$\rightarrow$Pixel 7a (1.1--23\,kHz) & on the Pixel (\texttt{BulkDemod.kt}) &
+Mac$\rightarrow$Pixel (1.1--23\,kHz) & Pixel (\texttt{BulkDemod.kt}) &
   375/375 (96{,}000\,B) & \textbf{36{,}571\,bps} \\
-Pixel 7a$\rightarrow$Mac (0.6--17\,kHz) & on the Mac (\texttt{modem.py}) &
+Pixel$\rightarrow$Mac (0.6--17\,kHz) & Mac (\texttt{modem.py}) &
   280/280 (71{,}680\,B) & \textbf{27{,}307\,bps} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Both directions exceed the 20\,kbps goal with zero block errors
-(Table~\ref{tab:final}). The on-device Kotlin decoder runs in about 170\,ms
+Both accepted historical direction metrics exceed the 20\,kbps goal
+(Table~\ref{tab:final}); their 375/375 and 280/280 counters must not be read as
+proof of unique scheduled-slot recovery. The on-device Kotlin decoder runs in about 170\,ms
 per 4\,s frame on the Pixel 7a --- roughly 20$\times$ real time --- in pure
 Kotlin with a double-precision radix-2 FFT --- before any use of the
 NEON-vectorized DSP libraries available on this hardware \cite{neon,kfr} ---
@@ -731,8 +747,8 @@ comfortable on this class of phone.
 To address the single-device-pair limitation, we repeated the campaign on a
 second mobile device---an iPhone 17 Pro Max (\texttt{iPhone18,2})---against the
 same MacBook Pro, same geometry (phone on a cloth on the palm rest), same modem
-(NFFT 2048, CP 768, 48\,kHz, 16-QAM rate 3/4), with the same ordered
-verification, run as a reliability campaign of 8 runs per direction at 5
+(NFFT 2048, CP 768, 48\,kHz, 16-QAM rate 3/4), with within-frame positional
+verification after unique payload attribution, run as a reliability campaign of 8 runs per direction at 5
 frames/run (Table~\ref{tab:iphone}). The iOS device is driven over USB with
 \texttt{xcrun devicectl} (launch with an environment-variable command, then a
 container file pull); the harness details are in \texttt{docs/IOS\_HIL.md}.
@@ -740,8 +756,10 @@ container file pull); the harness details are in \texttt{docs/IOS\_HIL.md}.
 \begin{table}[t]
 \centering
 \caption{Second-pair reliability campaign, iPhone 17 Pro Max against the same
-MacBook Pro, 16-QAM rate 3/4, ordered-verified (measured, 2026-06-10). 8 runs
-per direction, 5 frames/run. Block-failure CIs are Wilson 95\%.}
+MacBook Pro, 16-QAM rate 3/4, within-frame position verified after payload
+attribution (measured, 2026-06-10). The historical verifier did not additionally
+bind attributed frames to scheduled-stream slots. 8 runs per direction,
+5 frames/run. Block-failure CIs are Wilson 95\%.}
 \label{tab:iphone}
 \begin{tabular}{lcc}
 \toprule
@@ -779,7 +797,8 @@ downlink (Mac$\rightarrow$phone) is robust and rate-matched; the uplink
 publication of the first draft we added a deliberately non-premium device
 (driven over Wi-Fi \texttt{adb}; single runs, not a reliability campaign,
 and stated as such). At the clean contact placement the downlink ran
-\textbf{16-QAM r3/4 at 48.0\,kbps, 225/225 blocks, probe EVM 0.096 ---
+\textbf{16-QAM r3/4 at a 46.915\,kbps post-sounding ordered PHY payload rate,
+225/225 blocks, probe EVM 0.096 ---
 identical to the Pixel at the same placement}: the headline rate is not a
 premium-transducer artifact. The shadowed desk placement held the RS-coded
 floor at 46--92\,bps (3/6 frames across two runs; lossier than the Pixel's
@@ -796,14 +815,27 @@ r1/2. A swept-sine response then located the real limit: this speaker
 falls off a cliff at 14\,kHz ($-$40\,dB by 14--17\,kHz), so the Pixel
 profile was spending 3\,kHz of band on a dead radiator. Re-fitting the
 band to the measurement (0.6--14\,kHz) recovered \textbf{14.6\,kbps at
-16-QAM r1/2 (150/150 blocks)} and \textbf{22.5\,kbps at r3/4} (184
-blocks; the first frame fails at r3/4's thinner EVM margin)---the budget
-phone's band-fitted uplink \emph{exceeds the iPhone's 16.9\,kbps}. The
+16-QAM r1/2 (150/150 blocks)} and \textbf{19.212\,kbps steady-state at r3/4}
+(197/230 ordered blocks; the first frame is partial at r3/4's thinner EVM
+margin). The active-message figure is slightly above the selected iPhone
+16.9\,kbps figure, but it begins at the first chirp. The Moto required a
+3.0\,s emitted low-level speaker-settle signal plus 0.25\,s silence before that
+chirp; counting this device-specific cold start yields \textbf{16.637\,kbps}
+(16.412\,kbps including the stream-end pad), so it does not beat the iPhone in
+a cold-start comparison. An
+earlier 22.5\,kbps label both discarded the partial frame's 13 valid blocks
+and divided by only the four complete frames' span; the corrected rate scores
+all blocks over the full 21\,s active schedule denominator. The
 same lesson as the iPhone (Section~\ref{sec:iphone}), sharpened: the
 mobile speaker bounds the uplink, the bound is per-model, and measuring
-it buys back most of the loss (reproduction:
-\texttt{scratch/hw20k/uplink\_qpsk.py},
-\texttt{data/freqresp/pixel2mac\_motog\_palmrest.json}).
+it buys back most of the loss. The correction ledger records the frozen decoder
+commit and source hash, raw-capture hash, chirp starts, per-frame counts, and
+both denominators:
+\texttt{scratch/hw20k/evidence/historical-metric-corrections-2026-07-17/}
+\texttt{results-ledger.json}. The hashed raw capture remains a local ignored
+artifact and is not distributed; \texttt{uplink\_qpsk.py} documents the related
+QPSK warm-up discovery but is not a reproduction script for this band-fitted
+16-QAM result.
 
 \subsection{Same-hardware baselines}
 \label{sec:baselines}
@@ -878,13 +910,20 @@ a ctypes loader binds the compiled \texttt{libcyrinxbulk} dylib, the Mac
 \emph{C-encodes} a frame and plays it, the Pixel records, and the same C codec
 \emph{decodes the live capture}.
 
-At the palm-rest geometry the library decoded, byte-verified on both ends, QPSK
-rate 1/2 at 13.1\,kbps, 16-QAM rate 1/2 at 26.2\,kbps, and \textbf{16-QAM rate
-3/4 at 39.3\,kbps (375/375 blocks, EVM 0.157)}---\emph{exceeding} the 36.6\,kbps
-Python-harness headline on the same hardware. The library-native result is
-therefore not a partial reproduction but the strongest form of the
-``measurement made reusable'' claim: the shippable codec, decoding live audio,
-beats the research harness.
+At the palm-rest geometry contemporaneous console output reported five
+independent one-frame trials totaling 375/375 records for 16-QAM rate 3/4.
+Conditional on that aggregate, the profile carried \textbf{38.400\,kbps of
+user payload}---\emph{exceeding} the 36.6\,kbps Python-harness headline on the
+same hardware. No matching machine-readable run record or raw capture was
+retained; in particular, the tracked 150/150 env-sweep row with EVM 0.187 is a
+different run. Earlier logs and drafts labeled the QPSK/16-QAM profiles
+13.1/26.2/39.3\,kbps because the harness
+divided coded information bits---including CRC and random frame fill---by frame
+duration. The normalized figures above count only verified 256-byte payload
+blocks; five times 19{,}200 payload bytes over five times 4\,s is 38.400\,kbps.
+This historical aggregate is evidence that the shippable codec decoded live
+audio, but its missing machine record is a reproducibility limitation rather
+than evidence to silently fill from a different run.
 
 \textbf{The ceiling at this geometry is 16-QAM rate 3/4, and it is set by
 effective SINR, not by raw channel SNR.} 64-QAM rate 3/4 decoded 0/339 blocks at
@@ -894,9 +933,10 @@ error floor after equalization---residual phase noise, channel-estimation error,
 and PAPR-driven loudspeaker nonlinearity on the random-data waveform---which
 64-QAM's denser constellation cannot tolerate and 16-QAM can. This bounds the
 per-bin bit-loading headroom (Section~\ref{sec:future}) by effective SINR rather
-than by the much larger raw SNR. We also note that received \emph{peak} amplitude
-is a poor coupling indicator: this cell read a peak of only 0.087 yet delivered
-39.3\,kbps; effective SINR / EVM, not peak, predicts the achievable rate.
+than by the much larger raw SNR. A distinct tracked 150/150 env-sweep run at the
+same profile recorded a received peak of only 0.087 and EVM 0.187. It supports
+the narrower observation that peak amplitude is a poor coupling indicator; it
+does not supply the missing record for the 375/375 console aggregate.
 
 \subsection{Capacity-formula projection versus measured goodput}
 
@@ -974,17 +1014,21 @@ We state these honestly as scope statements, so the numbers are not over-read.
         then decodes offline. Decode runs at roughly 20$\times$ real time, so a
         streaming port is plausible, but a live streaming receiver is not yet
         implemented.
-  \item \textbf{Ordered verification is implemented} (Section~\ref{sec:eval}):
-        each CRC-valid block must be byte-identical to the transmitted payload
-        at its correct ordered position, not merely a member of the expected
-        set, so the goodput figures reflect ordered byte-exact delivery.
+  \item \textbf{Historical verification granularity.} The headline verifier
+        required CRC-valid bytes from the expected deterministic block set;
+        375/375 decoded records passed that test, but the verifier retained
+        neither uniqueness nor stream-slot position.
+        The repository's later Cyrinx 2.0 referee does enforce strict ordered
+        attribution; this historical result is not silently upgraded to that
+        stronger contract.
 \end{enumerate}
 
 \textbf{Limitations of the result as it stands.} These are scope statements,
 not failures; we state them plainly so the result is not over-read. The
 measured bulk PHY: (i) is now ported into the portable-C library with a Swift
-binding and reproduces the headline natively over the air through that path
-(39.3\,kbps, Sections~\ref{sec:library},~\ref{sec:libota}), but it is \emph{not}
+binding and has a historical native-library OTA console aggregate corresponding
+to 38.400\,kbps of user payload, without a matching retained machine record
+(Sections~\ref{sec:library},~\ref{sec:libota}), but it is \emph{not}
 yet wired into the project's streaming transport/MAC API; (ii) is \emph{not}
 real-time streaming --- it is a batch design that records, then decodes
 offline, though the on-device decoder runs at roughly 20$\times$ real time and
@@ -993,10 +1037,10 @@ demonstrates a closed sound-then-link loop at the bench
 (Sections~\ref{sec:adaptive},~\ref{sec:robust}), but that loop is not wired
 into the streaming transport/MAC API; (iv) is \emph{not} secured by the
 project's existing X25519/CTR/HMAC envelope --- the PHY measurement carries
-raw test payloads; and (v) is validated in exactly \emph{one} physical
-geometry (a phone face-up on a MacBook Pro palm rest), on two device pairs
-(Pixel 7a and iPhone 17 Pro Max, each against the same Mac), under one ambient
-condition. The link is half-duplex and has no link layer.
+raw test payloads; and (v) has a primary controlled campaign in exactly
+\emph{one} contact placement on the Pixel/Mac pair, plus less controlled
+supplemental iPhone, Moto, and adverse-placement probes on the same bench under
+one room's ambient conditions. The link is half-duplex and has no link layer.
 The numbers should be read as ``what these hardware pairs can do at contact
 range,'' not as a general-environment claim. A product link would also have to
 confront the security properties of short-range audio channels, which have a
@@ -1147,18 +1191,29 @@ decoding where neither mic alone could.
 
 \textbf{An adaptive cyclic prefix.} The original 32\,ms CP cap bounded overhead,
 but at the high SNR of these channels, covering the delay spread is a bargain.
-Sizing the CP to the measured spread (up to 96\,ms) rescues reverberant spots into
-coherent OFDM---a position the old sounder routed to the 68\,bps floor instead
-carries 10.9\,kbps of QPSK---and, run the other way, shrinks the CP to 5\,ms on a
-clean 0.4\,ms-spread channel, cutting overhead and lifting goodput to 48\,kbps,
+Sizing the CP to the measured spread (up to 96\,ms) rescues reverberant spots
+into coherent OFDM. Historical prose reported 10.9\,kbps of coded information
+at one such position, which normalizes to 10.281\,kbps of QPSK payload; no
+matching machine-readable run record was retained. Run the other way, it shrinks the CP
+to 5\,ms on a
+clean 0.4\,ms-spread channel, cutting overhead and lifting the selected link
+frame's PHY payload rate to 46.915\,kbps,
 above the headline figure.
 
 \textbf{Graceful degradation, demonstrated.} With the corrected sounder driving
 microphone selection, the adaptive CP, and the floor, a closed sound-then-link loop
 linked across deliberately diverse orientations on the one device pair:
-$\sim$48\,kbps face-down at a clean contact spot, $\sim$11\,kbps at a reverberant
-overhang, and 5\,kbps down to 68\,bps at a shadowed on-edge placement below the
-laptop---never zero, and flagging repositioning when even the floor is marginal.
+$\sim$46.9\,kbps post-sounding PHY payload rate face-down at a clean contact
+spot, $\sim$11.4\,kbps post-sounding PHY payload rate at a reverberant overhang,
+and a 138\,bps active-frame RS-coded floor at shadowed placements---never zero,
+and flagging repositioning when even the floor is marginal. The coherent rates
+divide verified payload only by the selected link frames; they exclude the
+preceding sounding/probe transaction. Counting emitted samples for the current
+geometry gives approximately 32.9 and 9.0\,kbps respectively, before host/ADB
+wall-clock delays. A separate earlier one-frame MRC diagnostic measured
+5.154\,kbps by recovering 8/11 CRC blocks where either mic recovered 0/11, but
+did not retain a byte oracle. It is a CRC-valid PHY payload-rate observation,
+not strict byte-verified goodput or a rung exercised by that closed loop.
 The recurring lesson is that the reverberant ``dead'' spots were largely artifacts
 of a single (often the wrong) microphone and a too-short CP. The two microphones
 supply real spatial diversity, which points directly at the 2$\times$2-MIMO
@@ -1181,6 +1236,8 @@ laptop raised on a stand so the desk plane sits in the up-firing speakers'
 shadow) delivered the doubled floor---\textbf{138\,bps, 9/9 frames} at two
 shadowed placements with probe EVM 1.1--1.6---but only after exposing, and
 forcing fixes for, three defects invisible to the digital channel model.
+The 138\,bps figure uses active-frame airtime; including the unconditional
+0.1\,s tail pad yields 131.282\,bps gross.
 First, the RS floor's first over-the-air contact decoded \emph{zero} frames:
 real reverberation yields low tone-energy confidence on many \emph{correct}
 decisions, and those false erasures overloaded codewords (2 errors + 1
@@ -1196,13 +1253,16 @@ EVM probe \emph{cannot see MRC potential}. At the reverberant overhang, both
 microphones probed undecodable (EVM 0.76/1.33) while the two-microphone MRC
 probe read 0.25--0.32---so the loop was conceding to the 138\,bps floor at a
 cell where MRC sustains coherent OFDM. With the probe now decoded through the
-library MRC path as well, and one probe retry at twice the delay-spread-sized
-CP before conceding (heavy-tailed reverberation carries energy well past the
-$-15$\,dB spread), the live loop at that cell chose QPSK r1/2 via MRC and
-carried \textbf{11.6\,kbps with 0/75 blocks decodable on either single
+library MRC path as well, plus an available probe retry at twice the
+delay-spread-sized CP before conceding (heavy-tailed reverberation carries
+energy well past the $-15$\,dB spread), the live loop at that cell chose QPSK
+r1/2 via MRC without invoking the retry and the selected link phase
+carried a \textbf{11.366\,kbps post-sounding PHY payload rate with 0/75 blocks decodable on either single
 microphone and 75/75 recovered by MRC}---the diversity claim of this section
 demonstrated end-to-end in the closed adaptive loop, through the shipping
-library code, at $84\times$ the floor rate it previously accepted. The
+library code. The preceding sounding/probe transaction is excluded from that
+rate; normalizing by emitted samples gives approximately 9.0\,kbps before
+host/ADB wall-clock delays. The
 methodological lesson mirrors Section~\ref{sec:adaptive}'s: digital-only
 calibration systematically misses how real acoustic fields fail, and each
 over-the-air pass on new code has paid for itself.
@@ -1270,7 +1330,8 @@ modulation --- requires.
 \begin{table}[t]
 \centering
 \caption{Single-tone STFT phase-jitter (detrended phase standard deviation),
-iPhone 17 Pro Max speaker, 8 reps per condition: median [min--max], rad
+iPhone 17 Pro Max speaker, 7--8 retained valid repetitions per condition:
+median [min--max], rad
 (measured, 2026-06-10). Below $\sim$18\,kHz the speaker is phase-coherent;
 above it the phase is scrambled regardless of drive amplitude. The Pixel 7a
 showed the same pattern.}
@@ -1424,8 +1485,7 @@ on-device Kotlin verification; iPhone port & --- &
 Jun 10--12 (33 commits, 3 days) & Claude Opus 4.8 (trailers) &
 Portable-C port pinned by golden vectors; EVM-probe sounder; adaptive CP;
 mic selection; MFSK floor; two-mic MRC validation; measurement campaign &
---- & \textbf{39.3\,kbps} library-native; 48\,kbps\,$\to$\,68\,bps graceful
-degradation \\
+--- & \textbf{38.400\,kbps} payload-normalized console aggregate; 68\,bps floor \\
 \addlinespace
 Jul 1--2 (2 days) & Claude Fable 5 (trailers) &
 MRC and an RS-coded floor ported into the C library (golden-pinned);
@@ -1435,8 +1495,8 @@ stated as such & (OTA: next row) \\
 Jul 6--8 (3 days) & Claude Fable 5 (trailers) &
 Over-the-air re-validation of the diversity stack; three defects invisible
 to digital calibration found and fixed (floor erasure policy, floor stereo
-combining, MRC-aware sounding + CP escalation) & --- &
-\textbf{138\,bps} RS floor (9/9 frames); \textbf{11.6\,kbps} with 75/75
+combining, MRC-aware sounding + CP-retry fallback) & --- &
+\textbf{138\,bps} RS floor (9/9 frames); \textbf{11.366\,kbps} with 75/75
 blocks MRC-carried where neither microphone decoded alone \\
 \bottomrule
 \end{tabular}
@@ -1552,8 +1612,10 @@ model developers---can run them.
         the highest-leverage single fix.
   \item Verification discipline matters: a deterministic cross-language PRBS
         lets the receiving phone prove goodput on-device, and a conservative
-        goodput definition (ordered, byte-verified payload over the active
-        message span) keeps the result honest. The 80$\times$ gap between an
+        goodput definition (byte-verified payload over the active message span)
+        keeps the result honest. The historical headline verifier checked
+        expected-set membership; later campaign tooling adds strict stream-slot
+        attribution. The 80$\times$ gap between an
         earlier capacity-formula projection and its measured goodput is the
         cautionary baseline.
   \item Consumer audio platforms are an active part of the channel: Android
@@ -1562,9 +1624,10 @@ model developers---can run them.
   \item A measurement can be made reusable without losing its rigor: the full
         codec ported into portable C, pinned by a committed golden-vector
         contract under a tiered exact/float tolerance (with an Apple vDSP
-        backend gated by the same vectors), decodes over the air byte-verified
-        through the library itself at 39.3\,kbps---\emph{exceeding} the harness
-        headline on the same hardware. On top sit two decision surfaces---an
+        backend gated by the same vectors), has a historical five-trial native
+        OTA console aggregate corresponding to 38.400\,kbps of user payload---
+        \emph{exceeding} the harness headline on the same hardware, while the
+        missing matching machine record remains explicit. On top sit two decision surfaces---an
         SNR/delay-spread MCS sounder that never refuses to connect, and a
         channel-metric repositioning guide---that turn the project's
         measured-channel-first philosophy into APIs an application can call.
@@ -1575,13 +1638,15 @@ model developers---can run them.
         across geometries; with decode-based microphone selection, an adaptive
         cyclic prefix, two-mic maximal-ratio combining, and a non-coherent
         multitone-FSK floor, a closed loop linked everywhere it was tried---
-        48\,kbps at a clean spot, through an 11.6\,kbps rescue carried
-        entirely by microphone diversity, down to a 138\,bps RS-coded floor,
+        46.915\,kbps post-sounding PHY payload rate at a clean spot, through an
+        11.366\,kbps post-sounding rescue carried entirely by microphone
+        diversity, down to a 138\,bps RS-coded active-frame floor,
         never zero---where a naive single-mic, short-CP receiver collapsed to
         silence (Section~\ref{sec:robust}).
   \item The largest remaining gap is empirical breadth, not algorithmic depth.
-        Every result is one contact-range geometry in a quiet room; a
-        distance/orientation/surface sweep and noisier ambient conditions would
+        The primary controlled benchmark is one contact placement in one room;
+        supplemental device and adverse-placement probes remain on that bench.
+        A distance/orientation/surface sweep and noisier ambient conditions would
         say more about where this link generalizes than any further modulation
         or coding work, and is the priority next step.
   \item The project doubles as a hard-to-game benchmark for AI coding
@@ -1828,14 +1893,16 @@ Internal design document; contrasted with the as-built system in
 \bibitem{ultrasonicband}
 ``Ultrasonic-Band (Inaudible) Bulk PHY --- Measured Results,''
 \texttt{docs/ULTRASONIC\_BAND.md} of the Cyrinx repository, June 2026.
-Fresh as of 2026-06-09.
+Research snapshot originally frozen 2026-06-09; later scope corrections are
+recorded in the current repository document.
 
 \bibitem{repo}
 Cyrinx repository research records: \texttt{docs/ACOUSTIC\_BULK\_PHY.md}
 (research writeup), \texttt{scratch/hw20k/NOTES.md} (lab notebook),
 \texttt{scratch/hw20k/} (modem, harness, and diagnostic scripts), and
 \texttt{Apps/HIL/android/.../BulkDemod.kt} (on-device Kotlin decoder).
-All fresh as of 2026-06-09.
+Primary snapshot through 2026-07-08, with the Moto G supplement and historical
+accounting corrections recorded through 2026-07-17.
 
 \end{thebibliography}
 

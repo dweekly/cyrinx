@@ -103,14 +103,19 @@ Both directions exceed the 20 kbps target.
 
 ## FINAL verified result (2026-06-09, final_measurement.py)
 
-5 frames per direction, 16QAM r3/4, goodput = CRC32-valid AND byte-verified
-payload / span from first chirp to last data sample (all overhead included):
+5 frames per direction, 16QAM r3/4. The historical verifier counted decoded
+CRC32-valid records whose bytes belonged to the expected deterministic set,
+divided by the first-chirp-to-last-data span (all PHY overhead included):
 
 - **Mac -> Android: 36,571 bps** — 375/375 blocks (96,000 bytes), demodulated
   ON THE PIXEL by BulkDemod.kt (Kotlin port, 170 ms per 4 s frame), payload
   verified on-device against the transmitter's splitmix64 PRBS.
 - **Android -> Mac: 27,307 bps** — 280/280 blocks (71,680 bytes), demodulated
   on the Mac (modem.py) from its own mic capture.
+
+The verifier retained neither decoded-record uniqueness nor strict scheduled
+slot attribution. These are accepted historical expected-set metrics, not the
+strict ordered contract used by the later Cyrinx 2.0 referee.
 
 The Kotlin decoder was first validated bit-exact against the Python decoder
 on an identical capture file (225/225 blocks, matching EVM).
@@ -198,7 +203,7 @@ saved captures):
   measured 68 bps repetition floor. (One harness timeout mid-session was the
   Pixel rebooting for an OS update — benign; relaunch the HIL app and rerun.)
 
-## MRC-aware sounding + CP escalation (2026-07-08)
+## MRC-aware sounding + CP-retry fallback (2026-07-08)
 
 At `overhang_kbwell` (phone face-down, port edge over the key well) the live
 loop bailed to the 138 bps floor while `mrc_validate.py` at the same placement
@@ -217,8 +222,9 @@ ran 16-QAM r1/2 **22/22 via MRC where BOTH single mics decoded 0 blocks**
   `sound_channel_evm` now retries the probe once at 2× CP (capped at
   CP_LONG_CAP_MS) before conceding to the floor.
 
-Live result at the cell: **138 bps floor → 11.6 kbps QPSK r1/2, 0/75 blocks
-single-mic, 75/75 MRC-rescued (84×)** — the paper's "MRC rescues cells where
+Live result at the cell: **138 bps floor → 11.366 kbps post-sounding QPSK r1/2
+PHY payload rate, 0/75 blocks
+single-mic, 75/75 MRC-rescued (82×)** — the paper's "MRC rescues cells where
 neither mic decodes alone" claim, demonstrated end-to-end in the live
 adaptive loop, library-native. JSONL rows gain `probe_evm_mrc` / `via_mrc`.
 
@@ -271,7 +277,9 @@ dead — charged fine, never enumerated on the bus, on a cable+port the Pixel
 passed; wireless debugging pair/connect worked immediately). Clean cell
 (`facedown_port_fnkey`), Mac M4:
 
-- **Downlink Mac→Moto: 48.0 kbps, 225/225 blocks, 16-QAM r3/4, probe EVM
+- **Downlink Mac→Moto: 46.915 kbps post-sounding ordered PHY payload rate,
+  225/225 blocks, 16-QAM
+  r3/4, probe EVM
   0.096 — identical to the Pixel at the same cell**, first try, zero MRC.
   The headline rate is not premium-phone-specific.
 - **Uplink Moto→Mac: 8,777 bps, 90/90 blocks at QPSK r1/2** (Pixel: 27.3
@@ -296,10 +304,15 @@ passed; wireless debugging pair/connect worked immediately). Clean cell
 - **Band-fitting recovered the uplink** (freqresp sweep `motog_palmrest`):
   the Moto speaker cliffs at 14 kHz (−40 dB by 14–17 kHz), so the Pixel's
   0.6–17 kHz profile wasted 3 kHz. Fitted 0.6–14 kHz: **14.6 kbps 16-QAM
-  r1/2 (150/150)** and **22.5 kbps r3/4** (184 blocks; frame 1 fails at the
-  thinner margin) — the budget uplink now beats the iPhone (16.9k), 82% of
-  the Pixel. Ladder: 0 (stock) → 8.8k (Dolby off + settle + gain) → 14.6k
-  (band-fit r1/2) → 22.5k (r3/4). Captures:
+  r1/2 (150/150)** and **19.212 kbps steady-state r3/4** (197/230 ordered
+  blocks; frame 1 is partial at the thinner margin). The required 3.0 s emitted
+  speaker-settle signal plus 0.25 s silence lowers r3/4 cold-start goodput to
+  **16.637 kbps** (16.412 kbps including the tail), below the selected iPhone
+  result. The old 22.5 kbps label discarded the
+  partial frame's 13 valid blocks and omitted that frame from its denominator.
+  Ladder: 0 (stock) → 8.8k (Dolby off + settle + gain) → 14.6k (band-fit
+  r1/2) → 19.212k steady-state / 16.637k cold-start (r3/4). The correction
+  ledger pins the old decoder and capture hashes. Captures:
   `data/motog_a2m_16qam{,_r34}_bandfit.npy`. Downlink freqresp capture
   clipped (rx_peak 1.0) — magnitudes above 8 kHz suspect, SNR fine;
   re-sweep at lower amp if the downlink curve is ever needed precisely.

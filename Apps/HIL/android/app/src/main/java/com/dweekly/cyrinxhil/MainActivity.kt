@@ -8,6 +8,7 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
+import android.media.MicrophoneInfo
 import android.os.Vibrator
 import android.os.VibrationEffect
 import android.os.Build
@@ -16,6 +17,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.WindowManager
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.Spinner
@@ -93,6 +95,7 @@ class MainActivity : ComponentActivity() {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
         }
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(R.layout.activity_main)
 
         roleSpinner = findViewById(R.id.roleSpinner)
@@ -273,13 +276,6 @@ class MainActivity : ComponentActivity() {
 
         stopRawBackend()
         stopSession()
-
-        // Programmatic acoustic gain staging calibration to safe linear region (45% sweet-spot)
-        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-        val targetIndex = (maxVolume * 0.80f).toInt()
-        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetIndex, 0)
-        appendLog("[AcousticCalibration] Android Stream volume auto-calibrated to: $targetIndex / $maxVolume")
 
         val config = buildSessionConfig(role)
 
@@ -561,6 +557,7 @@ class MainActivity : ComponentActivity() {
             }
             "rec_pcm" -> recPcmFile(intent)
             "play_pcm" -> playPcmFile(intent)
+            "playrec_pcm" -> playRecPcmFile(intent)
             "bulk_decode" -> runBulkDecode(intent)
             else -> appendLog("unknown automation cmd=$cmd")
         }
@@ -619,6 +616,146 @@ class MainActivity : ComponentActivity() {
     }
 
 
+    private fun describeCaptureRoute(record: AudioRecord): String {
+        val format = record.format
+        val device = record.routedDevice
+        val deviceDescription = if (device == null) {
+            "none"
+        } else {
+            val rates = device.sampleRates.takeIf { it.isNotEmpty() }?.joinToString(",") ?: "unspecified"
+            val counts = device.channelCounts.takeIf { it.isNotEmpty() }?.joinToString(",") ?: "unspecified"
+            val masks = device.channelMasks.takeIf { it.isNotEmpty() }
+                ?.joinToString(",") { "0x${it.toString(16)}" } ?: "unspecified"
+            val indexMasks = device.channelIndexMasks.takeIf { it.isNotEmpty() }
+                ?.joinToString(",") { "0x${it.toString(16)}" } ?: "unspecified"
+            "type=${device.type} id=${device.id} address=${device.address} " +
+                "product=${device.productName} rates=$rates counts=$counts " +
+                "masks=$masks indexMasks=$indexMasks"
+        }
+        return "session=${record.audioSessionId} source=${record.audioSource} " +
+            "rate=${format.sampleRate} channels=${format.channelCount} encoding=${format.encoding} " +
+            "mask=0x${format.channelMask.toString(16)} indexMask=0x${format.channelIndexMask.toString(16)} " +
+            "bufferFrames=${record.bufferSizeInFrames} device=[$deviceDescription]"
+    }
+
+    private fun describeChannelMapping(mapping: Int): String = when (mapping) {
+        MicrophoneInfo.CHANNEL_MAPPING_DIRECT -> "direct"
+        MicrophoneInfo.CHANNEL_MAPPING_PROCESSED -> "processed"
+        else -> "unknown-$mapping"
+    }
+
+    private fun captureSource(sourceName: String): Int = when (sourceName) {
+        "mic" -> MediaRecorder.AudioSource.MIC
+        "voice_recognition" -> MediaRecorder.AudioSource.VOICE_RECOGNITION
+        "camcorder" -> MediaRecorder.AudioSource.CAMCORDER
+        else -> MediaRecorder.AudioSource.UNPROCESSED
+    }
+
+    private data class ActiveMicrophoneSnapshot(
+        val microphones: List<MicrophoneInfo>,
+        val ready: Boolean,
+        val waitedMs: Long,
+    )
+
+    private fun hasDistinctDirectChannelMappings(
+        microphones: List<MicrophoneInfo>,
+        channels: Int,
+    ): Boolean {
+        if (channels <= 0) return false
+        val ownersByChannel = Array(channels) { linkedSetOf<Int>() }
+        microphones.forEach { microphone ->
+            microphone.channelMapping.forEach { mapping ->
+                val channel = mapping.first
+                if (
+                    channel in 0 until channels &&
+                    mapping.second == MicrophoneInfo.CHANNEL_MAPPING_DIRECT
+                ) {
+                    ownersByChannel[channel].add(microphone.id)
+                }
+            }
+        }
+        if (ownersByChannel.any { it.isEmpty() }) return false
+        return channels < 2 || ownersByChannel[0].any { it !in ownersByChannel[1] }
+    }
+
+    private fun awaitActiveMicrophones(
+        record: AudioRecord,
+        channels: Int,
+        requireDistinctDirectMappings: Boolean,
+        timeoutMs: Long = 400,
+    ): ActiveMicrophoneSnapshot {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            return ActiveMicrophoneSnapshot(emptyList(), false, 0)
+        }
+        val startedMs = android.os.SystemClock.elapsedRealtime()
+        var microphones = record.activeMicrophones
+        fun isReady(): Boolean = if (requireDistinctDirectMappings) {
+            hasDistinctDirectChannelMappings(microphones, channels)
+        } else {
+            microphones.isNotEmpty()
+        }
+        while (!isReady() && android.os.SystemClock.elapsedRealtime() - startedMs < timeoutMs) {
+            Thread.sleep(20)
+            microphones = record.activeMicrophones
+        }
+        val waitedMs = android.os.SystemClock.elapsedRealtime() - startedMs
+        return ActiveMicrophoneSnapshot(microphones, isReady(), waitedMs)
+    }
+
+    private fun logActiveMicrophones(
+        record: AudioRecord,
+        command: String,
+        requestId: String,
+        phase: String,
+        snapshot: List<MicrophoneInfo>? = null,
+    ) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            appendLog(
+                "$command microphones request=$requestId phase=$phase " +
+                    "unavailable api=${Build.VERSION.SDK_INT}",
+            )
+            return
+        }
+        try {
+            val microphones = snapshot ?: record.activeMicrophones
+            appendLog(
+                "$command microphones request=$requestId phase=$phase count=${microphones.size}",
+            )
+            microphones.forEachIndexed { listIndex, microphone ->
+                val mapping = microphone.channelMapping.joinToString(",") {
+                    "${it.first}:${describeChannelMapping(it.second)}"
+                }.ifEmpty { "none" }
+                val position = microphone.position
+                val orientation = microphone.orientation
+                val response = microphone.frequencyResponse
+                val responseSummary = if (response.isEmpty()) {
+                    "none"
+                } else {
+                    "points=${response.size} first=${response.first().first}:${response.first().second} " +
+                        "last=${response.last().first}:${response.last().second}"
+                }
+                appendLog(
+                    "$command microphone request=$requestId phase=$phase " +
+                        "listIndex=$listIndex id=${microphone.id} " +
+                        "description=${microphone.description} address=${microphone.address} " +
+                        "type=${microphone.type} location=${microphone.location} " +
+                        "group=${microphone.group} groupIndex=${microphone.indexInTheGroup} " +
+                        "directionality=${microphone.directionality} mapping=$mapping " +
+                        "position=${position.x},${position.y},${position.z} " +
+                        "orientation=${orientation.x},${orientation.y},${orientation.z} " +
+                        "sensitivity=${microphone.sensitivity} " +
+                        "spl=${microphone.minSpl}...${microphone.maxSpl} " +
+                        "response=[$responseSummary]",
+                )
+            }
+        } catch (t: Throwable) {
+            appendLog(
+                "$command microphones request=$requestId phase=$phase " +
+                    "failed=${t.javaClass.simpleName}:${t.message}",
+            )
+        }
+    }
+
     // Raw PCM16LE mic capture to the app's internal files dir (pull via `adb exec-out run-as ... cat`).
     // Used by the Mac-side channel measurement / modem iteration harness, which does all DSP offline.
     private fun recPcmFile(intent: android.content.Intent) {
@@ -627,21 +764,17 @@ class MainActivity : ComponentActivity() {
         val channels = intent.getIntExtra("channels", 2).coerceIn(1, 2)
         val sourceName = intent.getStringExtra("source")?.trim()?.lowercase(Locale.US) ?: "unprocessed"
         val outName = intent.getStringExtra("out_name")?.takeIf { it.isNotBlank() } ?: "cap.pcm"
+        val requestId = intent.getStringExtra("request_id")?.takeIf { it.isNotBlank() } ?: outName
         ioExecutor.execute {
             var record: AudioRecord? = null
             try {
                 if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) !=
                     PackageManager.PERMISSION_GRANTED
                 ) {
-                    appendLog("rec_pcm failed: RECORD_AUDIO not granted")
+                    appendLog("rec_pcm failed: request=$requestId RECORD_AUDIO not granted")
                     return@execute
                 }
-                val source = when (sourceName) {
-                    "mic" -> MediaRecorder.AudioSource.MIC
-                    "voice_recognition" -> MediaRecorder.AudioSource.VOICE_RECOGNITION
-                    "camcorder" -> MediaRecorder.AudioSource.CAMCORDER
-                    else -> MediaRecorder.AudioSource.UNPROCESSED
-                }
+                val source = captureSource(sourceName)
                 val chMask = if (channels == 2) AudioFormat.CHANNEL_IN_STEREO else AudioFormat.CHANNEL_IN_MONO
                 val minBuf = AudioRecord.getMinBufferSize(sampleRate, chMask, AudioFormat.ENCODING_PCM_16BIT)
                 record = AudioRecord(
@@ -652,16 +785,16 @@ class MainActivity : ComponentActivity() {
                     maxOf(minBuf * 4, sampleRate * channels),
                 )
                 if (record.state != AudioRecord.STATE_INITIALIZED) {
-                    appendLog("rec_pcm failed: AudioRecord init failed src=$sourceName rate=$sampleRate ch=$channels")
+                    appendLog(
+                        "rec_pcm failed: request=$requestId AudioRecord init failed " +
+                            "src=$sourceName rate=$sampleRate ch=$channels",
+                    )
                     return@execute
                 }
                 val actualRate = record.sampleRate
                 val actualCh = record.channelCount
                 val totalFrames = (durationSec * actualRate).toInt()
                 val out = File(filesDir, outName)
-                appendLog(
-                    "rec_pcm begin: src=$sourceName rate=$actualRate ch=$actualCh frames=$totalFrames -> ${out.absolutePath}",
-                )
                 android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO)
                 val buf = ShortArray(4096 * actualCh)
                 val bb = ByteBuffer.allocate(buf.size * 2).order(ByteOrder.LITTLE_ENDIAN)
@@ -669,12 +802,41 @@ class MainActivity : ComponentActivity() {
                 var clipped = 0
                 var sumSq = 0.0
                 record.startRecording()
+                if (record.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+                    throw IllegalStateException("AudioRecord did not enter RECORDSTATE_RECORDING")
+                }
+                val requiresDistinctDirectMappings =
+                    source == MediaRecorder.AudioSource.UNPROCESSED && actualCh == 2
+                val startMicrophones = awaitActiveMicrophones(
+                    record,
+                    actualCh,
+                    requiresDistinctDirectMappings,
+                )
+                appendLog(
+                    "rec_pcm microphone_stabilization request=$requestId phase=start " +
+                        "requiredDistinctDirect=$requiresDistinctDirectMappings " +
+                        "ready=${startMicrophones.ready} waitedMs=${startMicrophones.waitedMs}",
+                )
+                appendLog(
+                    "rec_pcm route request=$requestId phase=start ${describeCaptureRoute(record)}",
+                )
+                logActiveMicrophones(
+                    record,
+                    "rec_pcm",
+                    requestId,
+                    "start",
+                    startMicrophones.microphones,
+                )
+                appendLog(
+                    "rec_pcm begin: request=$requestId src=$sourceName rate=$actualRate " +
+                        "ch=$actualCh frames=$totalFrames -> ${out.absolutePath}",
+                )
                 java.io.BufferedOutputStream(java.io.FileOutputStream(out), 1 shl 20).use { fos ->
                     while (framesRead < totalFrames) {
                         val want = minOf(buf.size, (totalFrames - framesRead) * actualCh)
                         val n = record.read(buf, 0, want)
                         if (n <= 0) {
-                            appendLog("rec_pcm read error n=$n")
+                            appendLog("rec_pcm read_error: request=$requestId n=$n")
                             break
                         }
                         bb.clear()
@@ -689,25 +851,311 @@ class MainActivity : ComponentActivity() {
                         framesRead += n / actualCh
                     }
                 }
+                appendLog(
+                    "rec_pcm route request=$requestId phase=end ${describeCaptureRoute(record)}",
+                )
+                logActiveMicrophones(record, "rec_pcm", requestId, "end")
                 record.stop()
                 val rms = kotlin.math.sqrt(sumSq / maxOf(1, framesRead * actualCh))
                 appendLog(
-                    "rec_pcm done: frames=$framesRead rms=${"%.6f".format(rms)} clipped=$clipped bytes=${out.length()}",
+                    "rec_pcm done: request=$requestId out=$outName frames=$framesRead " +
+                        "rms=${"%.6f".format(rms)} clipped=$clipped bytes=${out.length()}",
                 )
             } catch (t: Throwable) {
-                appendLog("rec_pcm failed: ${t.message}")
+                appendLog(
+                    "rec_pcm failed: request=$requestId ${t.javaClass.simpleName}: ${t.message}",
+                )
             } finally {
                 record?.release()
             }
         }
     }
 
-    // Plays a raw PCM16LE file (pushed via adb to /data/local/tmp) out the speaker at max media volume.
+    // Full-duplex raw PCM for same-device speaker-to-microphone characterization.
+    // The transmit file must contain its own sync markers; host and audio clocks are not aligned.
+    private fun playRecPcmFile(intent: android.content.Intent) {
+        val txPath = intent.getStringExtra("path")?.takeIf { it.isNotBlank() }
+            ?: "/data/local/tmp/tx.pcm"
+        val outName = intent.getStringExtra("out_name")?.takeIf { it.isNotBlank() }
+            ?: "playrec-cap.pcm"
+        val sampleRate = intent.getIntExtra("sample_rate_hz", 48_000)
+        val inputChannels = intent.getIntExtra("input_channels", 2).coerceIn(1, 2)
+        val outputChannels = intent.getIntExtra("output_channels", 2).coerceIn(1, 2)
+        val preRollMs = intent.getIntExtra("pre_roll_ms", 500).coerceIn(100, 10_000)
+        val postRollMs = intent.getIntExtra("post_roll_ms", 750).coerceIn(100, 10_000)
+        val sourceName = intent.getStringExtra("source")?.trim()?.lowercase(Locale.US)
+            ?: "unprocessed"
+        val requestId = intent.getStringExtra("request_id")?.takeIf { it.isNotBlank() }
+            ?: outName
+        ioExecutor.execute {
+            var record: AudioRecord? = null
+            var track: AudioTrack? = null
+            var captureThread: Thread? = null
+            try {
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) !=
+                    PackageManager.PERMISSION_GRANTED
+                ) {
+                    appendLog("playrec_pcm failed: request=$requestId RECORD_AUDIO not granted")
+                    return@execute
+                }
+                val txData = File(txPath).readBytes()
+                val txBytesPerFrame = outputChannels * 2
+                if (txData.isEmpty() || txData.size % txBytesPerFrame != 0) {
+                    appendLog(
+                        "playrec_pcm failed: request=$requestId transmit bytes=${txData.size} " +
+                            "are not aligned to " +
+                            "$outputChannels-channel PCM16 frames",
+                    )
+                    return@execute
+                }
+                val txFrames = txData.size / txBytesPerFrame
+                val inputMask = if (inputChannels == 2) {
+                    AudioFormat.CHANNEL_IN_STEREO
+                } else {
+                    AudioFormat.CHANNEL_IN_MONO
+                }
+                val outputMask = if (outputChannels == 2) {
+                    AudioFormat.CHANNEL_OUT_STEREO
+                } else {
+                    AudioFormat.CHANNEL_OUT_MONO
+                }
+                val inputMinBytes = AudioRecord.getMinBufferSize(
+                    sampleRate,
+                    inputMask,
+                    AudioFormat.ENCODING_PCM_16BIT,
+                )
+                val outputMinBytes = AudioTrack.getMinBufferSize(
+                    sampleRate,
+                    outputMask,
+                    AudioFormat.ENCODING_PCM_16BIT,
+                )
+                if (inputMinBytes <= 0 || outputMinBytes <= 0) {
+                    appendLog(
+                        "playrec_pcm failed: request=$requestId unsupported buffers " +
+                            "in=$inputMinBytes out=$outputMinBytes",
+                    )
+                    return@execute
+                }
+                val recorder = AudioRecord(
+                    captureSource(sourceName),
+                    sampleRate,
+                    inputMask,
+                    AudioFormat.ENCODING_PCM_16BIT,
+                    maxOf(inputMinBytes * 4, sampleRate * inputChannels),
+                )
+                record = recorder
+                val player = AudioTrack(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build(),
+                    AudioFormat.Builder()
+                        .setSampleRate(sampleRate)
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .setChannelMask(outputMask)
+                        .build(),
+                    maxOf(outputMinBytes, txData.size),
+                    AudioTrack.MODE_STATIC,
+                    AudioManager.AUDIO_SESSION_ID_GENERATE,
+                )
+                track = player
+                if (recorder.state != AudioRecord.STATE_INITIALIZED ||
+                    player.state != AudioTrack.STATE_INITIALIZED
+                ) {
+                    appendLog(
+                        "playrec_pcm failed: request=$requestId init " +
+                            "record=${recorder.state} track=${player.state}",
+                    )
+                    return@execute
+                }
+                val written = player.write(txData, 0, txData.size)
+                if (written != txData.size) {
+                    appendLog(
+                        "playrec_pcm failed: request=$requestId static write=$written " +
+                            "expected=${txData.size}",
+                    )
+                    return@execute
+                }
+                val actualRate = recorder.sampleRate
+                val actualInputChannels = recorder.channelCount
+                val captureFrames =
+                    ((preRollMs + postRollMs) * actualRate / 1_000L).toInt() + txFrames
+                val out = File(filesDir, outName)
+                val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                val mediaVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                val mediaVolumeMax = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                appendLog(
+                    "playrec_pcm begin: request=$requestId src=$sourceName rate=$actualRate " +
+                        "inCh=$actualInputChannels " +
+                        "outCh=$outputChannels txFrames=$txFrames captureFrames=$captureFrames " +
+                        "preMs=$preRollMs postMs=$postRollMs volume=$mediaVolume/$mediaVolumeMax " +
+                        "-> ${out.absolutePath}",
+                )
+
+                val captureError = java.util.concurrent.atomic.AtomicReference<Throwable?>(null)
+                var framesRead = 0
+                var clipped = 0
+                var sumSq = 0.0
+                var equalStereoFrames = 0
+                val worker = Thread({
+                    try {
+                        android.os.Process.setThreadPriority(
+                            android.os.Process.THREAD_PRIORITY_URGENT_AUDIO,
+                        )
+                        val buffer = ShortArray(4_096 * actualInputChannels)
+                        val bytes = ByteBuffer.allocate(buffer.size * 2).order(ByteOrder.LITTLE_ENDIAN)
+                        java.io.BufferedOutputStream(
+                            java.io.FileOutputStream(out),
+                            1 shl 20,
+                        ).use { stream ->
+                            while (framesRead < captureFrames) {
+                                val wanted = minOf(
+                                    buffer.size,
+                                    (captureFrames - framesRead) * actualInputChannels,
+                                )
+                                val count = recorder.read(
+                                    buffer,
+                                    0,
+                                    wanted,
+                                    AudioRecord.READ_BLOCKING,
+                                )
+                                if (count <= 0) {
+                                    throw IllegalStateException("AudioRecord.read returned $count")
+                                }
+                                bytes.clear()
+                                for (index in 0 until count) {
+                                    val sample = buffer[index]
+                                    bytes.putShort(sample)
+                                    val normalized = sample / 32768.0
+                                    sumSq += normalized * normalized
+                                    if (sample >= 32766 || sample <= -32767) clipped += 1
+                                }
+                                if (actualInputChannels == 2) {
+                                    for (index in 0 until count / 2) {
+                                        if (buffer[index * 2] == buffer[index * 2 + 1]) {
+                                            equalStereoFrames += 1
+                                        }
+                                    }
+                                }
+                                stream.write(bytes.array(), 0, count * 2)
+                                framesRead += count / actualInputChannels
+                            }
+                        }
+                    } catch (t: Throwable) {
+                        captureError.set(t)
+                    }
+                }, "cyrinx-playrec-capture")
+                captureThread = worker
+
+                recorder.startRecording()
+                if (recorder.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+                    throw IllegalStateException("AudioRecord did not enter RECORDSTATE_RECORDING")
+                }
+                val recordStartNanos = android.os.SystemClock.elapsedRealtimeNanos()
+                worker.start()
+                appendLog(
+                    "playrec_pcm route request=$requestId phase=start " +
+                        describeCaptureRoute(recorder),
+                )
+                logActiveMicrophones(recorder, "playrec_pcm", requestId, "start")
+                Thread.sleep(preRollMs.toLong())
+                val playCallNanos = android.os.SystemClock.elapsedRealtimeNanos()
+                player.play()
+                val playbackDeadline = android.os.SystemClock.elapsedRealtime() +
+                    (txFrames * 1_000L / sampleRate) + 5_000L
+                while (player.playbackHeadPosition.toLong() < txFrames &&
+                    android.os.SystemClock.elapsedRealtime() < playbackDeadline
+                ) {
+                    Thread.sleep(5)
+                }
+                if (player.playbackHeadPosition.toLong() < txFrames) {
+                    throw IllegalStateException(
+                        "playback timeout head=${player.playbackHeadPosition} expected=$txFrames",
+                    )
+                }
+                val trackTimestamp = android.media.AudioTimestamp()
+                val hasTrackTimestamp = player.getTimestamp(trackTimestamp)
+                player.stop()
+                worker.join(postRollMs.toLong() + 5_000L)
+                if (worker.isAlive) {
+                    recorder.stop()
+                    worker.join(1_000)
+                    throw IllegalStateException("capture thread did not finish")
+                }
+                captureError.get()?.let { throw it }
+
+                appendLog(
+                    "playrec_pcm route request=$requestId phase=end ${describeCaptureRoute(recorder)}",
+                )
+                logActiveMicrophones(recorder, "playrec_pcm", requestId, "end")
+                val recordTimestamp = android.media.AudioTimestamp()
+                val recordTimestampStatus = recorder.getTimestamp(
+                    recordTimestamp,
+                    android.media.AudioTimestamp.TIMEBASE_MONOTONIC,
+                )
+                recorder.stop()
+                val rms = kotlin.math.sqrt(
+                    sumSq / maxOf(1, framesRead * actualInputChannels),
+                )
+                val equalFraction = if (actualInputChannels == 2 && framesRead > 0) {
+                    equalStereoFrames.toDouble() / framesRead
+                } else {
+                    Double.NaN
+                }
+                appendLog(
+                    "playrec_pcm timing request=$requestId recordStartNs=$recordStartNanos " +
+                        "playCallNs=$playCallNanos " +
+                        "recordTsStatus=$recordTimestampStatus " +
+                        "recordFrame=${recordTimestamp.framePosition} " +
+                        "recordTsNs=${recordTimestamp.nanoTime} trackTs=$hasTrackTimestamp " +
+                        "trackFrame=${trackTimestamp.framePosition} trackTsNs=${trackTimestamp.nanoTime}",
+                )
+                appendLog(
+                    "playrec_pcm done: request=$requestId out=$outName frames=$framesRead " +
+                        "rms=${"%.6f".format(rms)} " +
+                        "clipped=$clipped equalStereoFraction=$equalFraction bytes=${out.length()}",
+                )
+            } catch (t: Throwable) {
+                appendLog(
+                    "playrec_pcm failed: request=$requestId ${t.javaClass.simpleName}: ${t.message}",
+                )
+            } finally {
+                try {
+                    track?.stop()
+                } catch (_: Throwable) {
+                }
+                try {
+                    record?.stop()
+                } catch (_: Throwable) {
+                }
+                val worker = captureThread
+                if (worker != null && worker.isAlive && worker !== Thread.currentThread()) {
+                    try {
+                        worker.join(2_000)
+                    } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                    }
+                }
+                if (worker?.isAlive == true) {
+                    appendLog(
+                        "playrec_pcm cleanup_failed: request=$requestId capture thread alive",
+                    )
+                } else {
+                    record?.release()
+                }
+                track?.release()
+            }
+        }
+    }
+
+    // Plays raw PCM16LE pushed through adb. Volume changes require an explicit max_volume request.
     private fun playPcmFile(intent: android.content.Intent) {
         val path = intent.getStringExtra("path")?.takeIf { it.isNotBlank() } ?: "/data/local/tmp/tx.pcm"
         val sampleRate = intent.getIntExtra("sample_rate_hz", 48_000)
         val channels = intent.getIntExtra("channels", 1).coerceIn(1, 2)
-        val maxVolume = intent.getIntExtra("max_volume", 1)
+        val maxVolume = intent.getIntExtra("max_volume", 0)
+        val requestId = intent.getStringExtra("request_id")?.takeIf { it.isNotBlank() }
+            ?: "unspecified"
         ioExecutor.execute {
             try {
                 val data = File(path).readBytes()
@@ -715,12 +1163,15 @@ class MainActivity : ComponentActivity() {
                     val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
                     val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
                     am.setStreamVolume(AudioManager.STREAM_MUSIC, max, 0)
-                    appendLog("play_pcm media volume set to $max/$max")
+                    appendLog("play_pcm volume request=$requestId set=$max/$max")
                 }
                 val chMask = if (channels == 2) AudioFormat.CHANNEL_OUT_STEREO else AudioFormat.CHANNEL_OUT_MONO
                 val bytesPerFrame = 2 * channels
                 val frames = data.size / bytesPerFrame
-                appendLog("play_pcm begin: $path bytes=${data.size} frames=$frames rate=$sampleRate ch=$channels")
+                appendLog(
+                    "play_pcm begin: request=$requestId path=$path bytes=${data.size} " +
+                        "frames=$frames rate=$sampleRate ch=$channels",
+                )
                 val minBuf = AudioTrack.getMinBufferSize(sampleRate, chMask, AudioFormat.ENCODING_PCM_16BIT)
                 val track = AudioTrack(
                     AudioAttributes.Builder()
@@ -741,7 +1192,7 @@ class MainActivity : ComponentActivity() {
                 while (off < data.size) {
                     val n = track.write(data, off, minOf(1 shl 16, data.size - off))
                     if (n <= 0) {
-                        appendLog("play_pcm write error n=$n")
+                        appendLog("play_pcm write_error: request=$requestId n=$n")
                         break
                     }
                     off += n
@@ -751,49 +1202,90 @@ class MainActivity : ComponentActivity() {
                 Thread.sleep(drainMs)
                 track.stop()
                 track.release()
-                appendLog("play_pcm done: wrote=$off bytes")
+                appendLog("play_pcm done: request=$requestId wrote=$off bytes")
             } catch (t: Throwable) {
-                appendLog("play_pcm failed: ${t.message}")
+                appendLog(
+                    "play_pcm failed: request=$requestId ${t.javaClass.simpleName}: ${t.message}",
+                )
             }
         }
     }
 
-    // On-device demodulation of a wideband bulk-PHY capture (see BulkDemod.kt).
-    // Verifies decoded payload bytes against the transmitter's DetRng PRBS and
-    // logs goodput, so the phone proves reception without help from the Mac.
+    // Legacy on-device demodulation of a wideband bulk-PHY capture (see BulkDemod.kt).
+    // The phone verifies decoded payload bytes against the transmitter's DetRng
+    // PRBS. A headline score additionally requires a payload-independent schedule
+    // origin supplied by the harness; without one, only diagnostic counts are logged.
     private fun runBulkDecode(intent: android.content.Intent) {
         val path = intent.getStringExtra("path")?.takeIf { it.isNotBlank() }
             ?: File(filesDir, "cap.pcm").absolutePath
+        val requestId = intent.getStringExtra("request_id")?.takeIf { it.isNotBlank() }
+            ?: "unspecified"
         val channels = intent.getIntExtra("channels", 2)
         val fLo = intent.getFloatExtra("f_lo", 1100f).toDouble()
         val fHi = intent.getFloatExtra("f_hi", 23000f).toDouble()
         val nSym = intent.getIntExtra("n_sym", 64)
         val nPayloads = intent.getIntExtra("n_payloads", 3)
         val seedBase = intent.getIntExtra("payload_seed_base", 1000).toLong()
+        val gapSamples = intent.getIntExtra("gap_samples", BulkDemod.SRATE / 4).coerceAtLeast(0)
+        val trailingPadSamples =
+            intent.getIntExtra("trailing_pad_samples", BulkDemod.SRATE / 3).coerceAtLeast(0)
+        val scheduleOriginSample =
+            intent.getIntExtra("schedule_origin_sample", -1).takeIf { it >= 0 }
+        val slotToleranceSamples =
+            intent.getIntExtra("slot_tolerance_samples", BulkDemod.SRATE / 100).coerceAtLeast(0)
         ioExecutor.execute {
             try {
                 val t0 = System.currentTimeMillis()
+                val cfg = BulkDemod.Cfg(fLo, fHi, nSym)
                 val results = BulkDemod.decodeCapture(
                     path, channels, fLo, fHi, nSym, nPayloads, seedBase,
-                ) { appendLog(it) }
-                val okFrames = results.filter { it.ok && it.blocksOk > 0 }
-                val verified = okFrames.sumOf { it.verified }
-                if (okFrames.isNotEmpty()) {
-                    val frameSamples = BulkDemod.Cfg(fLo, fHi, nSym).frameSamples
-                    val first = okFrames.minOf { it.start }
-                    val last = okFrames.maxOf { it.start }
-                    val spanS = (last + frameSamples - first).toDouble() / BulkDemod.SRATE
-                    val gp = verified * BulkDemod.CRC_BLOCK * 8 / spanS
+                    scheduleOriginSample, gapSamples, slotToleranceSamples,
+                ) { appendLog("bulk_decode request=$requestId $it") }
+                val verified = results.sumOf { it.verified }
+                val metrics = BulkMeasurement.score(
+                    verifiedBlocks = verified,
+                    blocksPerFrame = cfg.nBlocks,
+                    frameCount = nPayloads,
+                    frameSamples = cfg.frameSamples,
+                    gapSamples = gapSamples,
+                    trailingPadSamples = trailingPadSamples,
+                    sampleRate = BulkDemod.SRATE,
+                )
+                val attributedFrames = results.mapNotNull { it.attributedFrame }.distinct().size
+                val diagnosticVerified = results.sumOf { it.diagnosticVerified }
+                val diagnosticFrames =
+                    results.mapNotNull { it.diagnosticAttributedFrame }.distinct().size
+                val spanS = metrics.scheduledSpanSamples.toDouble() / BulkDemod.SRATE
+                val grossSpanS = metrics.grossSpanSamples.toDouble() / BulkDemod.SRATE
+                if (scheduleOriginSample == null) {
                     appendLog(
-                        "bulk_decode TOTAL: verified=$verified blocks " +
-                            "(${verified * BulkDemod.CRC_BLOCK} bytes) span=${"%.2f".format(spanS)}s " +
-                            "goodput=${"%.0f".format(gp)} bps wall_ms=${System.currentTimeMillis() - t0}",
+                        "bulk_decode TOTAL: request=$requestId headline_valid=false " +
+                            "verified=0/${metrics.totalBlocks} blocks " +
+                            "frames=0/$nPayloads span=${"%.2f".format(spanS)}s goodput=REFUSED " +
+                            "gross_span=${"%.2f".format(grossSpanS)}s gross_goodput=REFUSED " +
+                            "diagnostic_verified=$diagnosticVerified/${metrics.totalBlocks} " +
+                            "diagnostic_frames=$diagnosticFrames/$nPayloads " +
+                            "reason=missing_schedule_origin_sample " +
+                            "wall_ms=${System.currentTimeMillis() - t0}",
                     )
                 } else {
-                    appendLog("bulk_decode TOTAL: no frames decoded")
+                    appendLog(
+                        "bulk_decode TOTAL: request=$requestId headline_valid=true " +
+                            "verified=$verified/${metrics.totalBlocks} blocks " +
+                            "(${verified * BulkDemod.CRC_BLOCK} bytes) " +
+                            "frames=$attributedFrames/$nPayloads span=${"%.2f".format(spanS)}s " +
+                            "goodput=${"%.0f".format(metrics.scheduledGoodputBps)} bps " +
+                            "gross_span=${"%.2f".format(grossSpanS)}s " +
+                            "gross_goodput=${"%.0f".format(metrics.grossGoodputBps)} bps " +
+                            "diagnostic_verified=$diagnosticVerified/${metrics.totalBlocks} " +
+                            "origin_sample=$scheduleOriginSample tolerance_samples=$slotToleranceSamples " +
+                            "wall_ms=${System.currentTimeMillis() - t0}",
+                    )
                 }
             } catch (t: Throwable) {
-                appendLog("bulk_decode failed: ${t.message}")
+                appendLog(
+                    "bulk_decode failed: request=$requestId ${t.javaClass.simpleName}: ${t.message}",
+                )
             }
         }
     }

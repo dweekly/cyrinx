@@ -2,19 +2,23 @@
 # Shared version pin for swift-format, sourced by scripts/format.sh and
 # scripts/format-check.sh.
 #
-# Why pin: issue #25 — the format gate silently drifted to ~900 violations
-# because the version used to write the code diverged from the version
-# available locally. `swift-format`'s rule set has changed across releases
-# (Homebrew `swift-format` 602.0.0 vs. the Xcode-bundled toolchain binary,
-# which self-reports as "6.3.0" for the same Xcode 26 / Swift 6.3.2 release —
+# Why keep an exact tool version: issue #25 — the format gate silently drifted
+# to ~900 violations because the version used to write the code diverged from
+# the version available locally. `swift-format`'s rule set can change across
+# releases (Homebrew `swift-format` 603.0.0 vs. the Xcode-bundled toolchain binary,
+# which can self-report a different version for the same Xcode toolchain —
 # `xcrun --find swift-format` resolves a *different* binary than the one on
 # PATH via Homebrew). Pinning to one canonical version keeps `swift-format
 # lint` reproducible across contributors' machines and (eventually) CI.
 #
-# Verified clean at 0 violations against .swift-format on 2026-07-06 with:
-#   $ brew info swift-format   # 602.0.0 installed, 603.0.0 available upstream
-#   $ swift-format --version   # 602.0.0
-readonly CYRINX_SWIFT_FORMAT_VERSION="602.0.0"
+# The pin is deliberately advanced after formatting the tree and running the
+# strict Sources/Tests gate; it is not a compatibility dependency on an older
+# formatter.
+#
+# Verified clean at 0 violations against .swift-format on 2026-07-17 with:
+#   $ brew info swift-format   # 603.0.0 installed
+#   $ swift-format --version   # 603.0.0
+readonly CYRINX_SWIFT_FORMAT_VERSION="603.0.0"
 
 check_swift_format_version() {
   if ! command -v swift-format >/dev/null 2>&1; then

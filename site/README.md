@@ -2,10 +2,11 @@
 
 Static site for the Cyrinx acoustic-modem research project (ROADMAP Track C).
 No build step, no framework, no third-party requests: plain HTML/CSS/JS with
-self-hosted IBM Plex woff2 subsets. The hero synthesizes an actual bulk-PHY
-frame (chirp → guard → sync → OFDM, real geometry: 48 kHz, NFFT 2048, CP 768,
-bins 47–981) in the browser, renders its spectrogram, and can play it via
-WebAudio (user gesture only).
+self-hosted IBM Plex woff2 subsets. The hero synthesizes a short deterministic
+geometry illustration patterned after the original control profile (chirp →
+guard → ten random-QPSK OFDM symbols; 48 kHz, NFFT 2048, CP 768, bins 47–981),
+renders its spectrogram, and can play it via WebAudio (user gesture only). It
+does not implement the modem's sync, pilots, payload mapping, FEC, or CRC.
 
 ## Local preview
 
@@ -30,11 +31,17 @@ or connect the repo in the Cloudflare dashboard with build output directory
 - `assets/og-card.png` + `assets/apple-touch-icon.png`:
   `.venv/bin/python3 scripts/gen-site-assets.py` (renders a real frame
   spectrogram via `scratch/hw20k/modem.py`; needs matplotlib in the venv).
-- `cyrinx-acoustic-link.pdf` is a copy of `docs/whitepaper/`'s compiled PDF —
-  re-copy when the paper changes.
+  The checked-in card was regenerated and visually inspected with the 65.875
+  kbps schedule-comparable Cyrinx 2.0 copy. Social-image metadata remains
+  intentionally absent unless a deployment change explicitly enables it.
+- `cyrinx-acoustic-link.pdf` is the 28-page Cyrinx 1.0 paper and
+  `cyrinx-2-goodput.pdf` is the separate 11-page Cyrinx 2.0 follow-on. Both are
+  copies of compiled PDFs under `docs/whitepaper/`; re-copy either when its
+  source changes.
 - Fonts: latin woff2 subsets of IBM Plex (OFL), fetched from Google Fonts.
 
-## Note until Phase 5
+## Publication status
 
-The GitHub links on the page 404 for the public until the repo is flipped
-public (PUBLICATION.md Phase 5). Deploy after (or with) the flip.
+The repository, v2.0.0 release, and Cyrinx 2.0 site are public. Future changes
+in `site/` do not update the live site until an authenticated Cloudflare
+deployment is run.

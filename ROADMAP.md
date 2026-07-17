@@ -1,47 +1,84 @@
 # Cyrinx Roadmap
 
-Fresh as of 2026-07-01. The single forward-looking plan, stack-ranked. What has
+Fresh as of 2026-07-17. The single forward-looking plan, stack-ranked. What has
 already been built and measured is in [CHANGELOG.md](CHANGELOG.md); the current
 validated state is summarized in [README.md](README.md). Deeper context per
 track: [docs/PUBLICATION.md](docs/PUBLICATION.md) (publication effort),
 [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) (measurement campaign),
-[docs/A1_AUTO_MRC.md](docs/A1_AUTO_MRC.md) (next task's execution plan).
+[docs/A1_AUTO_MRC.md](docs/A1_AUTO_MRC.md) (diversity execution record).
+
+## Cyrinx 2.0 measured state
+
+The portable C receiver now contains the two-microphone MRC path, the automatic
+receiver selector, and payload-independent pilot-local LLR reliability
+weighting. The 2026-07-17 Pixel 7a campaign exercised that receiver over the
+air rather than only through synthetic or retained-capture tests.
+
+The **comparable flagship class** retains the 12,000-sample inter-frame gap used
+by the accepted benchmark. It measured **65.875457875 kbps mean goodput** on the
+Mac-to-Pixel bench: 4,215/4,280 decoded blocks (98.4813%), all eight paired runs
+won, and the exact sign-test result was p = 1/256. This is about 1.80x the
+36.571 kbps result, not an almost-threefold claim. It also failed the strict
+reliability gate against the 99.9667% baseline, so the result is a throughput
+advance with a measured resilience cost, not a blanket replacement for the
+baseline. Replaying those fresh captures through the frozen current and legacy
+receivers isolates the receiver-side contribution: 4,215 versus 3,868 decoded
+blocks, all eight runs improved, and no run regressed.
+
+A separately labeled **zero-gap measurement class** reached a higher mean:
+pilot spacing 64 and 96 OFDM symbols measured **69.651849660 kbps** (range
+65.731–72.641; reported gross rate 68.636220472 kbps), with 6,129/6,760 blocks
+(90.6657%). It won all eight pairs (p = 1/256), all 16 planned runs completed,
+and it failed the strict reliability gate against the 4,509/4,520-block
+(99.7566%) baseline. The value is 1.9045x, or 90.45% above, 36.571 kbps; it is
+not directly comparable to the gap-preserving flagship. Separate zero-gap
+campaigns also bounded the observed trade space: spacing 16 gave 69.110 kbps at
+97.009%, spacing 32 gave 68.960 kbps at 93.311%, and the 128-symbol campaign
+gave 66.102 kbps at 89.093%. These sessions do not isolate pilot spacing or
+frame length causally; a randomized factorial remains future work.
 
 ## The gap that matters most
 
-~~The robustness/diversity wins live in the Python reference, NOT in the
-shippable C library.~~ **Mostly closed as of 2026-07-02:** two-mic MRC ships in
-the C codec (`cyrinx_bulk_demodulate2`, golden-pinned; A2), CP/NFFT are
-caller-selectable, and the adaptive loop's escalation path is library-native
-(A1). What remains bench-layer Python: the EVM-probe sounder, the
-mic-selection policy, and the MFSK floor modem. What remains unproven: **all
-of the new C diversity paths over the air** (every OTA number so far predates
-them) — A1 step 4 / the floor re-measurement are the referees.
+The old C-diversity gap is closed for this Pixel 7a near-field route: two-mic
+MRC, automatic receiver selection, and pilot-local reliability weighting are
+implemented in the canonical C codec and have prospective OTA evidence. The
+remaining gap is **robust generalization**: the faster profiles lose blocks
+relative to the conservative baseline, and one device, geometry, distance, and
+room-noise condition do not establish a general operating policy. Python
+remains the research oracle and independent measurement referee; Swift is a
+thin C binding, while the Android Kotlin DSP remains a legacy implementation
+to retire rather than a co-equal source of truth.
 
 ## Track A — Finish the robust library (first)
 
-- **A1. Auto-MRC + mic selection in the live adaptive loop — steps 1–3 + 5
-  DONE (2026-07-01); only step 4 (OTA re-validation) remains.** The
+- **A1. Auto-MRC + mic selection in the live adaptive loop — DONE for the
+  Pixel near-field route (2026-07-08); cross-device OTA breadth remains.** The
   cross-compat spike (`scratch/hw20k/xcompat_validate.py`) proved clib frames
   decode through the Python reference RX (mono + MRC, full MCS/CP grid);
   `adaptive.py` now escalates clib-first → two-mic MRC with per-rep provenance,
   covered by `adaptive.py selftest`. Full plan: [docs/A1_AUTO_MRC.md](docs/A1_AUTO_MRC.md).
-  Step 4 needs a bench: the Pixel 7a reproduces the published cells;
-  alternatively the iPhone can transmit (MRC is Mac-side) — see A5.
-- **A2. Port diversity into the C codec — DONE (2026-07-02), OTA pending.**
+  The 2026-07-08 live-loop campaign completed the Pixel OTA step (46.915 kbps clean
+  and 75/75 blocks MRC-rescued in the reverberant cell). The 2026-07-17
+  campaign separately validated the new pilot-only selector and local LLR
+  receiver. An iPhone and additional-Mac replication still belong in A5.
+- **A2. Port diversity and reliability into the C codec — DONE, including
+  Pixel OTA evidence (2026-07-17).**
   `cyrinx_bulk_demodulate2` (per-subcarrier two-mic MRC, ports the validated
   modem.py math; EVM parity to 4 decimals on identical captures across the
   MCS/CP grid), Swift `BulkPHY.decode(_:combining:)`, and a committed golden
   MRC rescue fixture (`qam16_r34_mrc`: notched mic0 fails alone, MRC decodes
-  byte-exact; pinned on both KISS and vDSP FFT backends). CP/NFFT were already
-  caller-selectable (verified at 4096/3072). The adaptive loop's escalation now
-  uses the library MRC end-to-end.
-- **A3. MFSK floor: Reed–Solomon over GF(16) — digital DONE (2026-07-01);
-  OTA re-measurement pending.** RS(15,11) + detector-confidence erasures
+  byte-exact; pinned on both KISS and vDSP FFT backends). The C receiver also
+  owns automatic selection and pilot-local LLR weighting, with edge and
+  non-finite behavior contract-tested. CP/NFFT were already caller-selectable
+  (verified at 4096/3072). The adaptive loop's escalation uses the library MRC
+  end-to-end.
+- **A3. MFSK floor: Reed–Solomon over GF(16) — DONE, including OTA
+  re-validation (2026-07-08).** RS(15,11) + detector-confidence erasures
   replaced 3× repetition (`rs16.py`, `mfsk.py`): ×2.06 rate at the same symbol
   duration (32 B frames: 68 → 138 bps) and measurably *more* robust at the
-  low-SNR edge (rep3 5/20 vs RS 18/20 at −3 dB, 40 ms reverb). Floor OTA
-  number needs re-measuring on a bench.
+  low-SNR edge (rep3 5/20 vs RS 18/20 at −3 dB, 40 ms reverb). After trying
+  errors-only decoding before consuming the erasure budget, the live shadowed
+  cells recovered 9/9 frames at 138 bps across the retained runs.
 - **A3b. Floor rate scaling (new — the floor is still slow by design, but not
   this slow).** Two bench-validatable levers on top of A3: (i) *adaptive
   symbol duration* — T_SYM is fixed at 120 ms, sized for the worst measured
@@ -52,9 +89,12 @@ them) — A1 step 4 / the floor re-measurement are the referees.
   measured edge margin) is plausible. Combined: a ~0.5 kbps floor without
   giving up the non-coherent/ISI-immune property. *Bench required to validate
   the margins.*
-- **A4. Widen the EVM→MCS calibration** with more cells, especially a sub-0.1
-  EVM cell to justify a 64-QAM tier (needs EVM ≲ 0.08; best measured 33% success
-  at 0.097). *Bench.*
+- **A4. Convert the 64-QAM throughput win into a reliability-qualified policy.**
+  The 2026-07-17 campaign establishes that 64-QAM can raise measured near-field
+  goodput, but both headline campaigns failed the strict block-success gate.
+  Expand the calibration across noise cycles, levels, offsets, and held-
+  out devices; choose pilot spacing and frame length against a declared
+  goodput-versus-resilience objective rather than EVM alone. *Bench.*
 - **A5. Cross-hardware generality sweep (new).** Every published number was
   measured on one Mac (M4 MacBook Pro). Re-run gain staging + sounder + adaptive
   loop + MRC rescue on the M1 Max (different speaker layout and mic array) with
@@ -66,6 +106,13 @@ them) — A1 step 4 / the floor re-measurement are the referees.
   Per-bin bit loading shaped to the measured iPhone speaker roll-off (usable
   coherent band ≈11 kHz). The weakest headline number and the clearest
   measurable win on iPhone-only hardware.
+- **A7. Maximize throughput at a fixed 3 ft separation (later campaign).**
+  Keep this separate from the near-field Cyrinx 2.0 claim. Re-characterize
+  output level, both speaker→mic paths, delay spread, route/source behavior,
+  and room tone at a measured 3 ft; then run a held-out, order-balanced MCS/CP
+  campaign with the same all-slots goodput denominator. Report both the best
+  route-specific result and robustness across face-up/face-down and modest
+  lateral offsets. Near-field settings and levels do not transfer by default.
 
 ## Track B — 2×2 MIMO cooperative sounding (the frontier)
 
@@ -80,32 +127,41 @@ spatial multiplexing (~2×) + transmit precoding. Reverberation becomes an asset
 - B3. Spatial multiplexing: 2 streams, ZF/MMSE separation; measure the gain.
 - B4. Transmit precoding / null-steering: weight the speakers to fill RX nulls.
 
-## Track C — The website (BUILT 2026-07-02; deploy user-gated)
+## Track C — The website (Cyrinx 2.0 update deployed)
 
 [cyrinx.org](https://cyrinx.org) (registered; Cloudflare Pages). **Built** in
 `site/`: static single page (no framework, no build step, no third-party
-requests; self-hosted IBM Plex). Hero synthesizes an actual bulk-PHY frame in
-the browser (chirp → guard → sync → OFDM at the real geometry), renders its
-spectrogram live, and plays it via WebAudio on click; interactive EVM
-constellation (the 64-QAM ceiling finding); graceful-degradation ladder;
-measured-results table; prior-art section; whitepaper PDF. Full
+requests; self-hosted IBM Plex). The hero synthesizes a deterministic
+control-profile geometry illustration (chirp → guard → random-QPSK OFDM),
+renders its spectrogram live, and plays it via WebAudio on click; it is not an
+encoded payload frame. The page also provides an interactive EVM
+constellation illustrating the historical failed 64-QAM profile;
+graceful-degradation ladder;
+measured-results table; prior-art section; both whitepaper PDFs. Full
 OpenGraph/JSON-LD/favicon/sitemap/robots/_headers; desktop + mobile rendering
-and console validated via the Chrome DevTools MCP. **Remaining (user):**
-`wrangler pages deploy site --project-name cyrinx` (auth on cyrinx.org);
-GitHub links 404 publicly until the Phase 5 repo flip. See `site/README.md`.
+and console were validated for the original site. The repository and v2.0.0
+release are public. The Cyrinx 2.0 site and separate 11-page follow-on paper
+are deployed. Static asset, metadata, MIME, header, and byte-identity checks
+were repeated without launching a local browser. See `site/README.md`.
 
 ## Track D — Publication finalization (user-gated)
 
+- The 2026-07-17 implementation and measurements are documented in the
+  separate 11-page Cyrinx 2.0 follow-on, preserving the gap-class, reliability,
+  host-decode, and artifact-availability caveats. The revised website is live.
 - arXiv submission (cs.NI / eess.SP) — needs the user (account + endorsement).
-  The 22 pp whitepaper is complete and can go largely as-is.
-- Cloudflare Pages deploy auth — needs the user (wrangler on cyrinx.org).
-- Phase 5 public-repo flip (already Apache-2.0) — clear the swift-format
-  violations (issue #25) first.
+  Decide whether to submit the 28-page system paper, the focused follow-on, or
+  both as related reports; neither has been submitted.
 
 ## Tech debt / hygiene
-
-- **Issue #25:** ~900 pre-existing swift-format violations — pre-public blocker.
-- Golden vectors don't yet cover the sounder / MFSK floor / MRC configs.
+- **Converge the bulk PHY on the C core.** The Android and iOS HIL receivers
+  still duplicate modem DSP and have already drifted in pilot weighting,
+  edge-bin noise smoothing, Viterbi tie handling, supported MCS profiles, and
+  headline attribution. Add a coarse-grained capture/decode C API, use it from
+  Swift and Android JNI, keep Python as a frozen research oracle plus an
+  independent measurement referee, and run the same Cyrinx 1.x/2.0/guarded-MRC
+  fixtures through every binding before retiring the mobile DSP forks.
+- Golden vectors do not yet cover the sounder or MFSK floor.
 - `scratch/hw20k/NOTES.md`: keep the per-script index current as spikes land.
 - Unit coverage: keep `adaptive.py` / `sounder.py` / `mfsk.py` / `freqresp.py`
   / `env_sweep.py` selftests and `xcompat_validate.py` green.
@@ -134,7 +190,7 @@ assessment of which are worth *our* bench time and why.
   + negative findings as a corpus costs little extra and is the cheapest way
   for the project to matter to people without an audio bench. Do them
   together; a matrix without the corpus wastes the labor.
-- **Generalized multi-mic diversity.** The measured 84× rescue came from
+- **Generalized multi-mic diversity.** The measured 82× rescue came from
   exactly this class of work, on the *first* mic pair we tried; iPhone
   stereo capture is already scoped (PUBLICATION 1.5) and laptop arrays are
   unexplored. Highest measured-ROI-per-effort on the list. Per-band
@@ -171,9 +227,10 @@ assessment of which are worth *our* bench time and why.
 **Demand-driven — wait for a forcing use case:**
 
 - **Ultrasonic asymmetric protocol.** Physics already measured: fast
-  inaudible downlink is real (~9 kbps), the return path must be non-coherent
-  and slow. Assembling that into a protocol is straightforward *once
-  something needs inaudibility*; until then it's a solution seeking a user.
+  inaudible downlink is real (~9 kbps), while the return path must be
+  non-coherent and slow. This is partial feasibility evidence, not an
+  integrated Cyrinx mode; protocol integration, capability negotiation, and
+  end-to-end robustness remain future work.
 - **Motion-robust mode.** Before reaching for OTFS-style delay–Doppler
   machinery, measure whether motion actually matters at contact range — the
   use case is a phone *resting* on a laptop, and casual motion mostly breaks
@@ -231,10 +288,10 @@ Recorded verbatim in git history (`ROADMAP.md` prior to 2026-07-01). Status:
 | Fast-acquisition superframe | open |
 | Per-bin adaptive bit loading | partial (bench harness; not in C codec) |
 | Adaptive coding rate; defer LDPC | ongoing policy |
-| Pilot-driven reliability weighting | partial (EVM-probe sounder) |
+| Pilot-driven reliability weighting | **done in C RX** (local LLR; Pixel OTA); sounder policy separate |
 | Dynamic CP from measured PDP | **done** (adaptive layer, 2026-06-12) |
 | Block-level ARQ / incremental parity | open |
-| Two-mic MRC | **done** (validated OTA 2026-06-12); C port open (A2) |
+| Two-mic MRC | **done in canonical C RX and Pixel OTA exercised** (A2, 2026-07-17) |
 | True 2×2 MIMO | open (Track B) |
 | Continuous environment sensing | partial (room-tone check in sounder) |
 | Asymmetric link profiles | partial (measured asymmetric bands; negotiation open) |

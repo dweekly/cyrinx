@@ -1,0 +1,269 @@
+{
+  "schema": "cyrinx.historical-metric-corrections.v1",
+  "recorded_date": "2026-07-17",
+  "artifact_policy": "Historical raw captures remain ignored local bench artifacts. This ledger records exact identities, denominators, and known verifier limitations; it does not imply that undistributed raw audio is reproducible from the repository alone.",
+  "corrections": [
+    {
+      "id": "pixel7a-accepted-downlink-verifier-scope",
+      "direction": "MacBook Pro M4 to Pixel 7a",
+      "accepted_historical_goodput_bps": 36571.42857142857,
+      "decoded_crc_valid_records": 375,
+      "scheduled_record_count": 375,
+      "historical_verifier": "expected-set byte membership",
+      "verifier_source_identity": {
+        "git_commit": "2b126b9b09cb40e03bfbbbb6eb6ffb642f885196",
+        "android_bulk_demod_path": "Apps/HIL/android/app/src/main/java/com/dweekly/cyrinxhil/BulkDemod.kt",
+        "android_bulk_demod_sha256": "b0b94e9f98cb5ea9149300ab372bbb0aaad66860fdbd2c3b104531338897cfb9",
+        "final_measurement_path": "scratch/hw20k/final_measurement.py",
+        "final_measurement_sha256": "e934e2acb9f22f95af32b603b6537e009a2e4fd7dfd5f10caa553b21614b0460"
+      },
+      "not_retained_by_verifier": [
+        "decoded-record uniqueness",
+        "strict stream order",
+        "scheduled slot attribution"
+      ],
+      "claim_boundary": "375/375 decoded CRC-valid records passed expected-set membership. This does not prove that every unique scheduled block was recovered, so the accepted number is not retroactively described as strict ordered goodput."
+    },
+    {
+      "id": "pixel7a-accepted-uplink-verifier-scope",
+      "direction": "Pixel 7a to MacBook Pro M4",
+      "accepted_historical_goodput_bps": 27306.666666666668,
+      "decoded_crc_valid_records": 280,
+      "scheduled_record_count": 280,
+      "historical_verifier": "expected-set byte membership",
+      "verifier_source_identity": {
+        "git_commit": "2b126b9b09cb40e03bfbbbb6eb6ffb642f885196",
+        "modem_path": "scratch/hw20k/modem.py",
+        "modem_sha256": "f4be0307d5caf1cd5ffcba58c2c06ac49863e9793f5df9b46bacbd92dbd1bc8e",
+        "final_measurement_path": "scratch/hw20k/final_measurement.py",
+        "final_measurement_sha256": "e934e2acb9f22f95af32b603b6537e009a2e4fd7dfd5f10caa553b21614b0460"
+      },
+      "not_retained_by_verifier": [
+        "decoded-record uniqueness",
+        "strict stream order",
+        "scheduled slot attribution"
+      ],
+      "claim_boundary": "280/280 decoded CRC-valid records passed expected-set membership. This does not prove that every unique scheduled block was recovered, so the accepted uplink number is not retroactively described as strict ordered goodput."
+    },
+    {
+      "id": "pixel7a-library-native-payload-normalization",
+      "direction": "MacBook Pro M4 to Pixel 7a",
+      "historical_console_aggregate": {
+        "independent_one_frame_trials": 5,
+        "decoded_crc_valid_records": 375,
+        "scheduled_record_count": 375,
+        "payload_bytes_per_trial": 19200,
+        "active_seconds_per_trial": 4.0
+      },
+      "narrative_source_identity": {
+        "git_commit": "8c26b8c735e8095c88f5b6989cec18a8ce3fb0ce",
+        "path": "docs/EXPERIMENTS.md",
+        "sha256": "698c59f9e44056314175e02a02267353860e85ebeadc2fc91e6ca7e29c786632"
+      },
+      "normalized_user_payload_goodput_bps": 38400.0,
+      "formerly_reported_coded_information_rate_bps": 39262.5,
+      "normalization_formula": "5 * 19200 payload bytes * 8 / (5 * 4 seconds)",
+      "evidence_limitation": "The 375/375 aggregate survives only in contemporaneous console-derived notes; no matching machine-readable run record or raw capture was retained. A tracked env_sweep record with 150/150 and EVM 0.187 is a different run and is not evidence for the 375/375 aggregate."
+    },
+    {
+      "id": "motog2026-downlink-cp96-r56-unarchived",
+      "direction": "MacBook Pro M4 to Moto G 2026",
+      "evidence_status": "locally attested historical narrative; the ignored manifest and raw bundle are missing, and the old worktree no longer has Git metadata",
+      "recovered_narrative": {
+        "source_directory": "/private/tmp/cyrinx-goodput-research",
+        "former_worktree_head_reported_by_git_worktree_list": "b0adb2fa8e4e9ce13dbce79810a25b4e50f266b1",
+        "files": [
+          {
+            "path": "docs/GOODPUT_RESEARCH_PLAN.md",
+            "sha256": "d2695be13cb589e809167b238ebbea80460ba12ed973acb534b5a2e82142374c"
+          },
+          {
+            "path": "README.md",
+            "sha256": "68bcbc66fb65fbbdfda737edbb476b7aec07d9eecff8ceb4d72c8efb9ef88c0f"
+          },
+          {
+            "path": "docs/publication-journal.md",
+            "sha256": "4e093ce6af5701833022be6d7649b6ea01aaf0351b3f89107529dd0b7399a5ff"
+          }
+        ]
+      },
+      "missing_manifest": {
+        "repository_relative_path": "artifacts/bench/2026-07-09-moto-goodput-eightpair-64qam-r56-cp96-p16-amp013-balanced-v1.manifest.json",
+        "sha256": "d29480a4ea4812e10df461652829b4676b5bdfd1e3e62ae165b2d51bb20f6509",
+        "status": "absent; exact plan and decoder hashes cannot be recovered from retained narrative"
+      },
+      "physical_cell": {
+        "geometry": "Moto G 2026 face down on 0.5-inch cloth, USB-C port over the left function-key area facing the hinge; charging over USB-C with wireless ADB",
+        "capture": "48 kHz Android UNPROCESSED stereo PCM16; predeclared mic0; only one active physical Moto microphone observed",
+        "playback": "MacBook built-in left output channel only; checked volume 8 percent; waveform peak 0.13",
+        "environment": "A/C reported on; HVAC state and SPL uninstrumented"
+      },
+      "candidate": {
+        "config": {
+          "sample_rate_hz": 48000,
+          "low_frequency_hz": 1100,
+          "high_frequency_hz": 23000,
+          "fft_size": 2048,
+          "cyclic_prefix_samples": 96,
+          "pilot_every": 16,
+          "bits_per_bin": 6,
+          "code_rate": "5/6",
+          "data_symbols_per_frame": 64,
+          "frames_per_run": 5,
+          "inter_frame_gap_samples": 12000,
+          "stream_end_pad_samples": 16000,
+          "seed": 20260710
+        },
+        "geometry": {
+          "occupied_bins": 935,
+          "pilot_bins": 59,
+          "data_bins": 876,
+          "bits_per_symbol": 5256,
+          "blocks_per_frame": 134,
+          "payload_bytes_per_frame": 34304,
+          "frame_samples": 147648,
+          "scheduled_span_samples": 786240,
+          "scheduled_span_seconds": 16.38,
+          "gross_span_samples": 802240,
+          "gross_span_seconds": 16.713333333333335
+        },
+        "verified_blocks_per_run": [
+          670,
+          669,
+          670,
+          670,
+          670,
+          670,
+          669,
+          668
+        ],
+        "verified_blocks": 5356,
+        "scheduled_blocks": 5360,
+        "block_success_rate": 0.9992537313432835,
+        "minimum_scheduled_goodput_bps": 83520.39072039073,
+        "maximum_scheduled_goodput_bps": 83770.45177045178,
+        "mean_scheduled_goodput_bps": 83707.93650793651,
+        "minimum_gross_goodput_bps": 81854.64698843239,
+        "maximum_gross_goodput_bps": 82099.72078181092,
+        "mean_gross_goodput_bps": 82038.45233346628,
+        "evm_range": [
+          0.0461,
+          0.0763
+        ],
+        "capture_peak_range": [
+          0.5686,
+          0.5756
+        ]
+      },
+      "paired_control": {
+        "config": "CP768/p8/16-QAM/r3/4",
+        "verified_blocks_per_run": [
+          375,
+          375,
+          375,
+          375,
+          375,
+          375,
+          375,
+          375
+        ],
+        "scheduled_goodput_bps": 36571.42857142857,
+        "gross_goodput_bps": 36000.0
+      },
+      "inference": {
+        "balanced_pairs": 8,
+        "candidate_first_pairs": 4,
+        "candidate_second_pairs": 4,
+        "candidate_pair_wins": 8,
+        "exact_one_sided_sign_test_p": 0.00390625,
+        "candidate_worst_to_control_ratio": 2.283760683760684,
+        "baseline_equivalent_block_success_gate_passed": false,
+        "order_confounding": "All four lost blocks occurred across three candidate-second runs; all four candidate-first runs recovered 670/670."
+      },
+      "claim_boundary": "The recovered narrative supports an evidence-limited historical one-cell result, not a durable public benchmark. The missing manifest/raw bundle prevents independent replay, source/binary attestation, or recovery of the exact plan and decoder hashes."
+    },
+    {
+      "id": "motog2026-uplink-bandfit-r34",
+      "direction": "Moto G 2026 to MacBook Pro M4",
+      "physical_profile": {
+        "sample_rate_hz": 48000,
+        "low_frequency_hz": 600,
+        "high_frequency_hz": 14000,
+        "fft_size": 2048,
+        "cyclic_prefix_samples": 768,
+        "pilot_every": 8,
+        "bits_per_bin": 4,
+        "code_rate": "3/4",
+        "data_symbols_per_frame": 64,
+        "frames": 5,
+        "frame_samples": 192000,
+        "inter_frame_gap_samples": 12000,
+        "blocks_per_frame": 46,
+        "block_payload_bytes": 256
+      },
+      "frozen_decoder": {
+        "git_commit": "bc56e17e353af131950f7d555c51c2983bbd27e6",
+        "modem_py_sha256": "aa7437b4602d751de6ea800ae59de1f555d9db7af23df83e945ceff6f5d24749"
+      },
+      "raw_capture": {
+        "repository_relative_path": "scratch/hw20k/data/motog_a2m_16qam_r34_bandfit.npy",
+        "sha256": "82edb9632ac715f0feff2b6c103c583efb1eb2446e1ad0733be0ad427a9229cb",
+        "distribution_status": "ignored local artifact; hash retained, bytes not distributed"
+      },
+      "detected_chirp_start_samples": [
+        357296,
+        561295,
+        765294,
+        969293,
+        1173292
+      ],
+      "verified_blocks_per_scheduled_frame": [
+        13,
+        46,
+        46,
+        46,
+        46
+      ],
+      "verified_blocks": 197,
+      "scheduled_blocks": 230,
+      "accounting": {
+        "steady_state_active_span_seconds": 21.0,
+        "steady_state_active_span_goodput_bps": 19212.190476190477,
+        "capture_clock_span_seconds": 20.999916666666667,
+        "capture_clock_goodput_bps": 19212.266715344106,
+        "required_emitted_speaker_settle_seconds": 3.0,
+        "required_post_settle_silence_seconds": 0.25,
+        "cold_start_span_seconds": 24.25,
+        "cold_start_goodput_bps": 16637.360824742267,
+        "stream_end_pad_seconds": 0.3333333333333333,
+        "cold_start_gross_span_seconds": 24.583333333333332,
+        "cold_start_gross_goodput_bps": 16411.769491525425
+      },
+      "former_claim": {
+        "reported_goodput_bps": 22497.5,
+        "defects": [
+          "compressed valid-block payload indexing discarded the partial first frame",
+          "the denominator began at the first fully decoded frame and omitted the partial frame airtime",
+          "the required emitted speaker-settle sequence was not disclosed in the comparison"
+        ]
+      },
+      "post_hoc_current_decoder_replay": {
+        "status": "same-capture diagnostic; not substituted for the frozen historical selected metric",
+        "modem_py_sha256": "6882ea6f1fc47d4d22be75e1669ba591b377f1c58e62a18b2e25732e26b146e1",
+        "verified_blocks_per_scheduled_frame": [
+          46,
+          46,
+          46,
+          46,
+          46
+        ],
+        "verified_blocks": 230,
+        "scheduled_blocks": 230,
+        "steady_state_active_span_goodput_bps": 22430.47619047619,
+        "cold_start_goodput_bps": 19424.329896907216,
+        "cold_start_gross_goodput_bps": 19160.949152542373
+      },
+      "claim_boundary": "19.212 kbps is a steady-state first-chirp-to-last-data metric. A cold start includes the device-required 3.0-second emitted settle signal and 0.25-second silence, yielding 16.637 kbps before the stream-end pad."
+    }
+  ]
+}

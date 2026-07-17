@@ -76,11 +76,11 @@ def prediction_verdict(predicted, achieved):
     return "conservative" if pi < ai else "optimistic"
 
 
-def goodput_bps(info_bits_per_frame, verified_frac, span_s):
-    """Verified goodput over the active message span."""
+def goodput_bps(payload_bits_per_frame, verified_frac, span_s):
+    """Verified user-payload goodput over the active message span."""
     if span_s <= 0:
         return 0.0
-    return info_bits_per_frame * verified_frac / span_s
+    return payload_bits_per_frame * verified_frac / span_s
 
 
 # ------------------------------ bench driver ------------------------------
@@ -142,11 +142,14 @@ def _run_cell(device, direction, cell, reps):
             wave = clib.encode(cfg, payload)
             cap = np.asarray(send(wave), dtype=np.float32)
             d = clib.decode(cfg, cap)
+            # Every emitted repetition contributes its full scheduled block
+            # count. A sync/decode failure is zero verified blocks, not a slot
+            # that disappears from the denominator.
+            total += g.n_blocks
             if d is not None:
                 # ordered byte-exact verification at block granularity
-                ok_blocks = d["blocks_ok"] if d["payload"] == payload else 0
+                ok_blocks = clib.ordered_verified_blocks(d, payload)
                 verified += ok_blocks
-                total += d["blocks_total"]
                 evms.append(d["evm"])
         span_s = (len(wave) / cfg.sr)
         frac = verified / total if total else 0.0
@@ -154,8 +157,8 @@ def _run_cell(device, direction, cell, reps):
             "verified": verified, "total": total,
             "verified_frac": round(frac, 4),
             "evm_med": round(float(np.median(evms)), 4) if evms else None,
-            "info_bits_per_frame": g.info_bits,
-            "goodput_bps": round(goodput_bps(g.info_bits, frac, span_s), 1),
+            "payload_bits_per_frame": g.payload_bytes * 8,
+            "goodput_bps": round(goodput_bps(g.payload_bytes * 8, frac, span_s), 1),
         }
         print(f"        {tier:7s} {('%d-QAM' % (1 << bpb)):7s} r{rate}: "
               f"{verified}/{total} blocks ({frac*100:.0f}%), "
@@ -223,6 +226,13 @@ def _selftest():
     # goodput
     g = goodput_bps(19200 * 8, 1.0, 4.0)
     ok &= abs(g - 38400.0) < 1.0; print(f"  goodput_bps -> {g:.1f} (expect 38400.0)")
+
+    # A no-sync repetition remains in the fixed schedule denominator.
+    scheduled = 3 * 75
+    recovered = 75 + 0 + 60
+    frac = recovered / scheduled
+    ok &= scheduled == 225 and abs(frac - 0.6) < 1e-12
+    print(f"  fixed schedule with no-sync slot -> {recovered}/{scheduled} (expect 135/225)")
 
     print("  SELFTEST", "PASS" if ok else "FAIL")
     return 0 if ok else 1

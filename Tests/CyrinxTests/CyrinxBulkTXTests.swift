@@ -242,6 +242,10 @@ final class CyrinxBulkTXTests: XCTestCase {
                 XCTAssertEqual(n, Int(geo.payload_bytes), "\(c.name): demod2 return")
                 XCTAssertEqual(Int(ok), Int(total), "\(c.name): MRC blocks \(ok)/\(total)")
                 XCTAssertEqual(payload, expPayload, "\(c.name): MRC decoded payload")
+
+                assertAutomaticDiversityV1(
+                    &bc, primary: rx0, secondary: rx1, expectedPayload: expPayload,
+                    caseName: c.name)
             }
         }
         XCTAssertGreaterThan(covered, 0, "no MRC golden case found")
@@ -296,4 +300,42 @@ final class CyrinxBulkTXTests: XCTestCase {
     private func bytes(_ c: GoldenVectors.Case, _ stage: String) throws -> [UInt8] {
         GoldenVectors.bytes(try GoldenVectors.rawData(c.name, try artifactObj(c, stage)))
     }
+}
+
+private func assertAutomaticDiversityV1(
+    _ configuration: inout cyrinx_bulk_config,
+    primary: [Float],
+    secondary: [Float],
+    expectedPayload: [UInt8],
+    caseName: String
+) {
+    var payload = [UInt8](repeating: 0, count: expectedPayload.count)
+    var blocksOK: Int32 = 0
+    var blockCount: Int32 = 0
+    var evm = 0.0
+    var diagnostics = cyrinx_bulk_diversity_diagnostics()
+    let decodedBytes = primary.withUnsafeBufferPointer { primaryBuffer in
+        secondary.withUnsafeBufferPointer { secondaryBuffer in
+            cyrinx_bulk_demodulate2_auto_v1(
+                &configuration, primaryBuffer.baseAddress, primaryBuffer.count,
+                secondaryBuffer.baseAddress, secondaryBuffer.count, &payload, payload.count,
+                &blocksOK, &blockCount, &evm, &diagnostics)
+        }
+    }
+    XCTAssertEqual(decodedBytes, expectedPayload.count, "\(caseName): auto-v1 return")
+    XCTAssertEqual(
+        diagnostics.selected_receiver, CYRINX_BULK_DIVERSITY_MRC,
+        "\(caseName): auto-v1 receiver")
+    XCTAssertEqual(
+        diagnostics.selection_reason, CYRINX_BULK_AUTO_REASON_MRC_IMPROVED,
+        "\(caseName): auto-v1 reason")
+    XCTAssertEqual(diagnostics.scores_valid, 1, "\(caseName): auto-v1 scores")
+    XCTAssertLessThan(
+        diagnostics.observed_mrc_to_primary_pilot_rms_ratio,
+        diagnostics.maximum_mrc_to_primary_pilot_rms_ratio,
+        "\(caseName): auto-v1 ratio")
+    XCTAssertEqual(
+        Int(blocksOK), Int(blockCount),
+        "\(caseName): auto-v1 blocks \(blocksOK)/\(blockCount)")
+    XCTAssertEqual(payload, expectedPayload, "\(caseName): auto-v1 decoded payload")
 }

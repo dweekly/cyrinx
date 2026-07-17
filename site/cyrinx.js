@@ -1,8 +1,9 @@
-/* Cyrinx site instrument: synthesizes an actual cyrinx bulk-PHY frame
- * (chirp 2->16 kHz, guard, 2 sync symbols, OFDM payload symbols; 48 kHz,
- * NFFT 2048, CP 768, bins 47..981 = 1.1-23 kHz) and renders its spectrogram
- * on canvas. The "listen" button plays the very same samples via WebAudio.
- * No libraries; deterministic (seeded PRNG). */
+/* Cyrinx site instrument: synthesizes a short deterministic geometry
+ * illustration patterned after the original control profile (chirp 2->16 kHz,
+ * guard, then 10 random-QPSK OFDM symbols; 48 kHz, NFFT 2048, CP 768, bins
+ * 47..981 = 1.1-23 kHz). It does not implement the modem's sync sequence,
+ * pilot comb, payload mapping, FEC, or CRC. The "listen" button plays the same
+ * samples rendered on the canvas. No libraries; deterministic seeded PRNG. */
 'use strict';
 
 /* ---------- deterministic PRNG (mulberry32) ---------- */
@@ -46,7 +47,7 @@ function fft(re, im) {
   }
 }
 
-/* ---------- frame synthesis (mirrors modem.py geometry) ---------- */
+/* ---------- geometry-illustration synthesis ---------- */
 const SR = 48000, NFFT = 2048, CP = 768, SYM = NFFT + CP;
 const CHIRP_LEN = 4096, GUARD = 2048;
 const BIN_LO = 47, BIN_HI = 981; // 1.1-23 kHz at 23.4375 Hz/bin
@@ -344,10 +345,19 @@ function setupConstellation() {
     }
     out.textContent = evm.toFixed(3);
     let msg, cls;
-    if (evm < 0.08) { msg = 'clean enough for 64-QAM — a regime these transducers never delivered'; cls = 'ok'; }
-    else if (evm <= 0.13) { msg = 'the measured sweet spot: 16-QAM r¾ decodes → 39–48 kbps'; cls = 'ok'; }
-    else if (evm <= 0.16) { msg = '16-QAM getting marginal; the sounder steps down a tier'; cls = ''; }
-    else { msg = 'measured at EVM 0.173: 64-QAM decoded 0 of 339 blocks'; cls = 'bad'; }
+    if (evm < 0.08) {
+      msg = 'low simulated EVM: wide decision margin; the complete profile still determines success';
+      cls = 'ok';
+    } else if (evm <= 0.13) {
+      msg = 'clean 16-QAM control regime: measured at 38.4–46.9 payload kbps';
+      cls = 'ok';
+    } else if (evm <= 0.16) {
+      msg = 'clusters are spreading: pilot-local confidence and FEC margin matter';
+      cls = '';
+    } else {
+      msg = 'an early 64-QAM profile failed at EVM 0.173; route-qualified Cyrinx 2.0 later succeeded';
+      cls = '';
+    }
     verdict.textContent = msg;
     verdict.className = 'verdict ' + cls;
   }
