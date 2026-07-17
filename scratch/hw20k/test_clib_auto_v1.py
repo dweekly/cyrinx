@@ -119,6 +119,38 @@ class AutomaticDiversityV1Tests(unittest.TestCase):
         explicit = isolated.BulkCodec(clib.loaded_library_path())
         self.assertEqual(explicit.library_path, clib.loaded_library_path())
 
+    def test_loaded_binary_reports_receiver_contract_v1(self):
+        contract = clib.receiver_contract_v1()
+
+        self.assertEqual(
+            contract,
+            {
+                "struct_size": 72,
+                "binding_struct_size": 72,
+                "abi_version": 1,
+                "semantics_version": 1,
+                "reliability_estimator": 1,
+                "local_pilot_window": 11,
+                "edge_mode": 1,
+                "global_weight_numerator": 25,
+                "local_weight_numerator": 75,
+                "weight_denominator": 100,
+                "final_comb_mode": 1,
+                "reserved": [0, 0, 0, 0],
+                "snr_floor": 0.1,
+                "nonfinite_residual_ceiling": 1e9,
+            },
+        )
+
+    def test_local_reliability_behavioral_challenge_covers_mono_and_mrc(self):
+        import goodput_campaign as campaign
+
+        result = campaign._local_llr_behavioral_challenge(np, clib)
+
+        self.assertEqual(result["mono_verified_blocks"], 14)
+        self.assertEqual(result["mrc_verified_blocks"], 14)
+        self.assertEqual(result["total_blocks"], 14)
+
 
 if __name__ == "__main__":
     unittest.main()

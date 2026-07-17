@@ -25,6 +25,11 @@ CODEC_PATH_ENV = "CYRINX_BULK_CODEC_PATH"
 AUTO_V1_DIAGNOSTICS_ABI_VERSION = 1
 AUTO_V1_POLICY_VERSION = 1
 AUTO_V1_MAX_MRC_TO_PRIMARY_PILOT_RMS_RATIO = 0.95
+RECEIVER_CONTRACT_ABI_VERSION = 1
+RECEIVER_SEMANTICS_VERSION = 1
+RECEIVER_ESTIMATOR_KNOWN_PILOT_LOCAL_LINEAR_BOXCAR_V1 = 1
+RECEIVER_EDGE_REPLICATE = 1
+RECEIVER_FINAL_COMB_EXTEND_LAST = 1
 
 
 class Cfg(ctypes.Structure):
@@ -60,6 +65,24 @@ class DiversityDiagnostics(ctypes.Structure):
     ]
 
 
+class ReceiverContractV1(ctypes.Structure):
+    _fields_ = [
+        ("struct_size", ctypes.c_uint32),
+        ("abi_version", ctypes.c_uint32),
+        ("semantics_version", ctypes.c_uint32),
+        ("reliability_estimator", ctypes.c_uint32),
+        ("local_pilot_window", ctypes.c_uint32),
+        ("edge_mode", ctypes.c_uint32),
+        ("global_weight_numerator", ctypes.c_uint32),
+        ("local_weight_numerator", ctypes.c_uint32),
+        ("weight_denominator", ctypes.c_uint32),
+        ("final_comb_mode", ctypes.c_uint32),
+        ("reserved", ctypes.c_uint32 * 4),
+        ("snr_floor", ctypes.c_double),
+        ("nonfinite_residual_ceiling", ctypes.c_double),
+    ]
+
+
 def _configure_library(library):
     library.cyrinx_bulk_compute_geometry.argtypes = [ctypes.POINTER(Cfg), ctypes.POINTER(Geo)]
     library.cyrinx_bulk_compute_geometry.restype = ctypes.c_int
@@ -86,6 +109,8 @@ def _configure_library(library):
     demodulate2_auto_v1 = getattr(library, "cyrinx_bulk_demodulate2_auto_v1", None)
     demodulate2_auto_v1_with_block_validity = getattr(
         library, "cyrinx_bulk_demodulate2_auto_v1_with_block_validity", None)
+    get_receiver_contract_v1 = getattr(
+        library, "cyrinx_bulk_get_receiver_contract_v1", None)
     has_block_validity_api = (
         demodulate_with_block_validity is not None
         and demodulate2_with_block_validity is not None
@@ -127,11 +152,18 @@ def _configure_library(library):
             ctypes.c_size_t, ctypes.POINTER(DiversityDiagnostics),
         ]
         demodulate2_auto_v1_with_block_validity.restype = ctypes.c_long
+    if get_receiver_contract_v1 is not None:
+        get_receiver_contract_v1.argtypes = [
+            ctypes.POINTER(ReceiverContractV1),
+            ctypes.c_size_t,
+        ]
+        get_receiver_contract_v1.restype = ctypes.c_int
     return (
         demodulate_with_block_validity,
         demodulate2_with_block_validity,
         demodulate2_auto_v1,
         demodulate2_auto_v1_with_block_validity,
+        get_receiver_contract_v1,
     )
 
 
@@ -154,8 +186,39 @@ class BulkCodec:
         self._demodulate2_with_block_validity = functions[1]
         self._demodulate2_auto_v1 = functions[2]
         self._demodulate2_auto_v1_with_block_validity = functions[3]
+        self._get_receiver_contract_v1 = functions[4]
         self.has_block_validity_api = all(function is not None for function in functions[:2])
-        self.has_auto_v1_api = all(function is not None for function in functions[2:])
+        self.has_auto_v1_api = all(function is not None for function in functions[2:4])
+        self.has_receiver_contract_v1 = self._get_receiver_contract_v1 is not None
+
+    def receiver_contract_v1(self):
+        if not self.has_receiver_contract_v1:
+            raise RuntimeError(
+                f"{self.library_path} lacks the receiver-contract-v1 symbol; "
+                "rebuild it from the current Sources/CCyrinx sources"
+            )
+        contract = ReceiverContractV1()
+        result = self._get_receiver_contract_v1(
+            ctypes.byref(contract), ctypes.sizeof(contract)
+        )
+        if result != 0:
+            raise RuntimeError("receiver-contract-v1 query failed")
+        return {
+            "struct_size": contract.struct_size,
+            "binding_struct_size": ctypes.sizeof(contract),
+            "abi_version": contract.abi_version,
+            "semantics_version": contract.semantics_version,
+            "reliability_estimator": contract.reliability_estimator,
+            "local_pilot_window": contract.local_pilot_window,
+            "edge_mode": contract.edge_mode,
+            "global_weight_numerator": contract.global_weight_numerator,
+            "local_weight_numerator": contract.local_weight_numerator,
+            "weight_denominator": contract.weight_denominator,
+            "final_comb_mode": contract.final_comb_mode,
+            "reserved": list(contract.reserved),
+            "snr_floor": contract.snr_floor,
+            "nonfinite_residual_ceiling": contract.nonfinite_residual_ceiling,
+        }
 
     def geometry(self, cfg):
         g = Geo()
@@ -358,6 +421,8 @@ _HAS_BLOCK_VALIDITY_API = None
 _DEMODULATE2_AUTO_V1 = None
 _DEMODULATE2_AUTO_V1_WITH_BLOCK_VALIDITY = None
 _HAS_AUTO_V1_API = None
+_GET_RECEIVER_CONTRACT_V1 = None
+_HAS_RECEIVER_CONTRACT_V1 = None
 
 
 def _default_codec():
@@ -370,6 +435,8 @@ def _default_codec():
     global _DEMODULATE2_AUTO_V1
     global _DEMODULATE2_AUTO_V1_WITH_BLOCK_VALIDITY
     global _HAS_AUTO_V1_API
+    global _GET_RECEIVER_CONTRACT_V1
+    global _HAS_RECEIVER_CONTRACT_V1
     if _DEFAULT_CODEC is None:
         with _DEFAULT_CODEC_LOCK:
             if _DEFAULT_CODEC is None:
@@ -383,6 +450,8 @@ def _default_codec():
                 _DEMODULATE2_AUTO_V1_WITH_BLOCK_VALIDITY = (
                     codec._demodulate2_auto_v1_with_block_validity)
                 _HAS_AUTO_V1_API = codec.has_auto_v1_api
+                _GET_RECEIVER_CONTRACT_V1 = codec._get_receiver_contract_v1
+                _HAS_RECEIVER_CONTRACT_V1 = codec.has_receiver_contract_v1
     return _DEFAULT_CODEC
 
 
@@ -433,6 +502,11 @@ def decode2_auto_v1(cfg, rx, rx2):
 def loaded_library_path():
     """Return the resolved binary backing the module-level physical codec."""
     return _default_codec().library_path
+
+
+def receiver_contract_v1():
+    """Return the receiver semantics reported by the loaded C binary."""
+    return _default_codec().receiver_contract_v1()
 
 
 def modem_cfg_from_clib(cfg):

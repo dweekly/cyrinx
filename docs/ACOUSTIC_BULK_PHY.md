@@ -59,7 +59,7 @@ plus an exponential sine sweep and a long pure tone. Artifacts:
 - Delay spread (ESS, −30 dB): ~21.7 ms M→A, ~10.8 ms A→M. Most energy is in
   the first few ms; CP 768 (16 ms) plus per-symbol tracking suffices.
 
-## 3. Modem design (what shipped)
+## 3. Original modem design and current receiver update
 
 48 kHz PCM16. NFFT 2048 (23.4 Hz bins), CP 768 → 17.05 symbols/s.
 Per frame: 4096-sample chirp (2→16 kHz) for detection/coarse sync, 2048
@@ -74,8 +74,13 @@ variance from their difference), then 64 data symbols.
   wasn't needed to hit the target).
 - FEC: K=7 (171,133) convolutional, punctured to rate 3/4, soft max-log
   LLRs, frame-wide random interleaver, zero-terminated, Viterbi decode.
-- **Per-symbol LLR weighting: noise variance = sync-derived per-bin estimate
-  + that symbol's pilot EVM²** — see §4 defect 4; this is load-bearing.
+- The 2026-06 receiver used **one global pilot-EVM² term per symbol** in every
+  data-bin LLR. The current Cyrinx 2.0 C receiver retains that burst-erasure
+  signal but adds payload-independent local-frequency weighting: corrected
+  known-pilot residual powers are endpoint-replicated over an 11-pilot boxcar
+  and linearly interpolated to data bins. Its demapper uses `sync_noise + 0.25 ×
+  global_pilot_EVM² + 0.75 × local_pilot_EVM²`. Payload-bearing data symbols,
+  decoded values, and CRC results do not enter this estimate.
 - CRC32 per 256-byte payload block for goodput accounting.
 - Window placement biased 24 samples early so multipath pre-cursors stay
   inside the CP.

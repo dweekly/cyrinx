@@ -46,6 +46,65 @@ final class CyrinxBulkPHYTests: XCTestCase {
         roundTrip(.init(bitsPerBin: 6, rate: "3/4", symbolCount: 8))
     }
 
+    /// A deterministic 88-bin interferer corrupts one 11-pilot-wide region.
+    /// The former global-only pilot-EVM weighting recovered 2/14 blocks from
+    /// this exact waveform. Local known-pilot reliability makes those bad-bin
+    /// LLRs honest enough for the unchanged interleaver/FEC to recover 14/14.
+    func testLocalPilotReliabilityRecoversFrequencySelectiveInterference() {
+        let configuration = BulkPHY.Configuration(
+            pilotEvery: 8, bitsPerBin: 6, rate: "3/4", symbolCount: 8,
+            cyclicPrefix: 96, amplitude: 0.18)
+        let phy = BulkPHY(configuration: configuration)
+        guard let geometry = phy.geometry() else { return XCTFail("geometry nil") }
+        XCTAssertEqual(geometry.blockCount, 14)
+        let payload = Data((0..<geometry.payloadBytes).map { UInt8(($0 * 31 + 7) & 0xFF) })
+        guard var wave = phy.encode(payload) else { return XCTFail("encode nil") }
+
+        addSelectiveFrequencyInterference(
+            to: &wave, configuration: configuration, firstUsedPosition: 40 * 8,
+            usedPositionCount: 11 * 8, frequencyAmplitude: 2.573_705_196_380_615_2 * 0.5)
+        var capture = [Float](repeating: 0, count: 3000)
+        capture.append(contentsOf: wave)
+        capture.append(contentsOf: [Float](repeating: 0, count: 2000))
+
+        guard let mono = phy.decode(capture) else { return XCTFail("mono decode nil") }
+        XCTAssertTrue(mono.isComplete, "blocks \(mono.blocksOK)/\(mono.blockCount)")
+        XCTAssertEqual(mono.payload, payload)
+        XCTAssertEqual(mono.evmRMS, 0.131_515_879_046_995_33, accuracy: 1e-6)
+
+        guard let mrc = phy.decode(capture, combining: capture) else {
+            return XCTFail("MRC decode nil")
+        }
+        XCTAssertTrue(mrc.isComplete, "MRC blocks \(mrc.blocksOK)/\(mrc.blockCount)")
+        XCTAssertEqual(mrc.payload, payload)
+    }
+
+    /// Scaling every data-symbol pilot by the same factor creates uniform
+    /// post-correction pilot residual power. The endpoint-replicated boxcar and
+    /// interpolation must therefore remain uniform, making the 25:75 blend
+    /// algebraically equal to the legacy global EVM term. The frozen legacy
+    /// decoder and this decoder both recover 14/14 with EVM 0.402005 on the
+    /// resulting waveform.
+    func testUniformPilotResidualRemainsTolerant() {
+        let configuration = BulkPHY.Configuration(
+            pilotEvery: 8, bitsPerBin: 6, rate: "3/4", symbolCount: 8,
+            cyclicPrefix: 96, amplitude: 0.18)
+        let phy = BulkPHY(configuration: configuration)
+        guard let geometry = phy.geometry() else { return XCTFail("geometry nil") }
+        let payload = Data((0..<geometry.payloadBytes).map { UInt8(($0 * 31 + 7) & 0xFF) })
+        guard var wave = phy.encode(payload) else { return XCTFail("encode nil") }
+
+        scaleEveryDataPilot(to: &wave, configuration: configuration, additionalScale: 0.4)
+        var capture = [Float](repeating: 0, count: 3000)
+        capture.append(contentsOf: wave)
+        capture.append(contentsOf: [Float](repeating: 0, count: 2000))
+
+        guard let decoded = phy.decode(capture) else { return XCTFail("decode nil") }
+        XCTAssertTrue(decoded.isComplete, "blocks \(decoded.blocksOK)/\(decoded.blockCount)")
+        XCTAssertEqual(decoded.payload, payload)
+        XCTAssertEqual(decoded.evmRMS, 0.402_005_042_837_308_87, accuracy: 1e-6)
+    }
+
     func testCyrinx2FastPresetPinsMeasuredGeometry() {
         let configuration = BulkPHY.Configuration.makeCyrinx2Fast(amplitude: 0.13)
         let geometry = BulkPHY(configuration: configuration).geometry()
@@ -399,6 +458,124 @@ private func addCyclicDataSubcarrier(
             let angle =
                 2 * Double.pi * Double(bin) * Double(fftIndex) / Double(configuration.fftSize)
             samples[symbolStart + offset] += Float(amplitude * cos(angle))
+        }
+    }
+}
+
+/// Adds deterministic complex frequency-domain noise to a contiguous used-bin
+/// region in every data symbol. The inverse real-DFT contribution is evaluated
+/// directly so the test remains independent of Accelerate and platform FFTs.
+private func addSelectiveFrequencyInterference(
+    to samples: inout [Float],
+    configuration: BulkPHY.Configuration,
+    firstUsedPosition: Int,
+    usedPositionCount: Int,
+    frequencyAmplitude: Double
+) {
+    let symbolSamples = configuration.fftSize + configuration.cyclicPrefix
+    let dataStart = 4096 + 2048 + 2 * symbolSamples
+    let binLow = Int(
+        ceil(
+            configuration.lowFrequencyHz * Double(configuration.fftSize)
+                / Double(configuration.sampleRate)))
+    var state: UInt32 = 0xC0FF_EE11
+    for symbolIndex in 0..<configuration.symbolCount {
+        var coefficients: [(bin: Int, real: Double, imaginary: Double)] = []
+        coefficients.reserveCapacity(usedPositionCount)
+        for usedPosition in firstUsedPosition..<(firstUsedPosition + usedPositionCount) {
+            state = 1_664_525 &* state &+ 1_013_904_223
+            let real = 2 * Double(state >> 8) / Double(0x00FF_FFFF) - 1
+            state = 1_664_525 &* state &+ 1_013_904_223
+            let imaginary = 2 * Double(state >> 8) / Double(0x00FF_FFFF) - 1
+            coefficients.append(
+                (
+                    binLow + usedPosition, frequencyAmplitude * real,
+                    frequencyAmplitude * imaginary
+                ))
+        }
+        let symbolStart = dataStart + symbolIndex * symbolSamples
+        var delta = [Double](repeating: 0, count: configuration.fftSize)
+        for coefficient in coefficients {
+            for fftIndex in 0..<configuration.fftSize {
+                let angle =
+                    2 * Double.pi * Double(coefficient.bin) * Double(fftIndex)
+                    / Double(configuration.fftSize)
+                delta[fftIndex] +=
+                    2
+                    * (coefficient.real * cos(angle) - coefficient.imaginary * sin(angle))
+                    / Double(configuration.fftSize)
+            }
+        }
+        for fftIndex in 0..<configuration.fftSize {
+            let index = symbolStart + configuration.cyclicPrefix + fftIndex
+            samples[index] += Float(delta[fftIndex])
+        }
+        for prefixIndex in 0..<configuration.cyclicPrefix {
+            samples[symbolStart + prefixIndex] =
+                samples[
+                    symbolStart + configuration.cyclicPrefix + configuration.fftSize
+                        - configuration.cyclicPrefix + prefixIndex]
+        }
+    }
+}
+
+/// Scales each pilot coefficient in every data symbol by `1 + additionalScale`.
+/// Direct DFTs recover the transmitted pilot coefficients without duplicating
+/// the modem's pilot RNG in the test.
+private func scaleEveryDataPilot(
+    to samples: inout [Float],
+    configuration: BulkPHY.Configuration,
+    additionalScale: Double
+) {
+    let symbolSamples = configuration.fftSize + configuration.cyclicPrefix
+    let dataStart = 4096 + 2048 + 2 * symbolSamples
+    let binLow = Int(
+        ceil(
+            configuration.lowFrequencyHz * Double(configuration.fftSize)
+                / Double(configuration.sampleRate)))
+    let binHigh = Int(
+        floor(
+            configuration.highFrequencyHz * Double(configuration.fftSize)
+                / Double(configuration.sampleRate)))
+    let usedBins = binHigh - binLow + 1
+    for symbolIndex in 0..<configuration.symbolCount {
+        let symbolStart = dataStart + symbolIndex * symbolSamples
+        let bodyStart = symbolStart + configuration.cyclicPrefix
+        var additions: [(bin: Int, real: Double, imaginary: Double)] = []
+        for usedPosition in stride(from: 0, to: usedBins, by: configuration.pilotEvery) {
+            let bin = binLow + usedPosition
+            var real = 0.0
+            var imaginary = 0.0
+            for fftIndex in 0..<configuration.fftSize {
+                let angle =
+                    2 * Double.pi * Double(bin) * Double(fftIndex)
+                    / Double(configuration.fftSize)
+                let sample = Double(samples[bodyStart + fftIndex])
+                real += sample * cos(angle)
+                imaginary -= sample * sin(angle)
+            }
+            additions.append(
+                (bin, additionalScale * real, additionalScale * imaginary))
+        }
+        var delta = [Double](repeating: 0, count: configuration.fftSize)
+        for addition in additions {
+            for fftIndex in 0..<configuration.fftSize {
+                let angle =
+                    2 * Double.pi * Double(addition.bin) * Double(fftIndex)
+                    / Double(configuration.fftSize)
+                delta[fftIndex] +=
+                    2 * (addition.real * cos(angle) - addition.imaginary * sin(angle))
+                    / Double(configuration.fftSize)
+            }
+        }
+        for fftIndex in 0..<configuration.fftSize {
+            samples[bodyStart + fftIndex] += Float(delta[fftIndex])
+        }
+        for prefixIndex in 0..<configuration.cyclicPrefix {
+            samples[symbolStart + prefixIndex] =
+                samples[
+                    bodyStart + configuration.fftSize - configuration.cyclicPrefix
+                        + prefixIndex]
         }
     }
 }

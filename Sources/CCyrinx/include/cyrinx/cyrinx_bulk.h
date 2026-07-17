@@ -92,6 +92,63 @@ typedef struct {
     int frame_samples;
 } cyrinx_bulk_geometry;
 
+/* ---------------- Receiver implementation contract ----------------
+ * This fixed-layout query lets campaign tooling verify the receiver semantics
+ * implemented by the loaded C binary instead of trusting independently
+ * recorded source metadata. It is a same-process native ABI, not a serialized
+ * or cross-endian wire format. The enum values and field order are stable ABI.
+ * Reserved fields are zero and must be ignored by readers. */
+#define CYRINX_BULK_RECEIVER_CONTRACT_ABI_VERSION 1
+#define CYRINX_BULK_RECEIVER_SEMANTICS_VERSION 1
+
+#define CYRINX_BULK_RECEIVER_ESTIMATOR_KNOWN_PILOT_LOCAL_LINEAR_BOXCAR_V1 1
+#define CYRINX_BULK_RECEIVER_EDGE_REPLICATE 1
+#define CYRINX_BULK_RECEIVER_FINAL_COMB_EXTEND_LAST 1
+
+#define CYRINX_BULK_RECEIVER_LOCAL_PILOT_WINDOW_V1 11
+#define CYRINX_BULK_RECEIVER_GLOBAL_WEIGHT_NUMERATOR_V1 25
+#define CYRINX_BULK_RECEIVER_LOCAL_WEIGHT_NUMERATOR_V1 75
+#define CYRINX_BULK_RECEIVER_WEIGHT_DENOMINATOR_V1 100
+#define CYRINX_BULK_RECEIVER_SNR_FLOOR_V1 0.1
+#define CYRINX_BULK_RECEIVER_NONFINITE_RESIDUAL_CEILING_V1 1e9
+
+typedef struct {
+    uint32_t struct_size;
+    uint32_t abi_version;
+    uint32_t semantics_version;
+    uint32_t reliability_estimator;
+    uint32_t local_pilot_window;
+    uint32_t edge_mode;
+    uint32_t global_weight_numerator;
+    uint32_t local_weight_numerator;
+    uint32_t weight_denominator;
+    uint32_t final_comb_mode;
+    uint32_t reserved[4];
+    double snr_floor;
+    double nonfinite_residual_ceiling;
+} cyrinx_bulk_receiver_contract_v1;
+
+/* Query the receiver contract implemented by this binary. `out_size` must be
+ * exactly sizeof(cyrinx_bulk_receiver_contract_v1). On any error, including a
+ * NULL output or size mismatch, returns -1 without modifying output. */
+int cyrinx_bulk_get_receiver_contract_v1(cyrinx_bulk_receiver_contract_v1 *out, size_t out_size);
+
+/* Diagnostic surface for the production known-pilot reliability helpers.
+ * Inputs must contain `n_pilots >= 1` finite, nonnegative residual powers;
+ * `pilot_every` must be positive. Each requested used-bin position must be
+ * nonnegative. `smoothed_out` must have at least n_pilots elements. When
+ * `used_position_count` is nonzero, both `used_positions` and
+ * `interpolated_out` are required and interpolation_cap must be sufficient;
+ * when it is zero, those pointers must be NULL and interpolation_cap zero.
+ * The function returns -1 without modifying either output on invalid input or
+ * resource failure. On success it returns 0, writes the endpoint-replicated
+ * boxcar to smoothed_out, and writes linearly interpolated values (with the
+ * final-pilot estimate extended across a partial final comb) in request order. */
+int cyrinx_bulk_receiver_reliability_diagnostic_v1(const double *pilot_evm2, int n_pilots, int pilot_every,
+                                                   const int *used_positions, size_t used_position_count,
+                                                   double *smoothed_out, size_t smoothed_cap,
+                                                   double *interpolated_out, size_t interpolation_cap);
+
 /* Compute geometry from config. The selected band must exclude the
  * self-conjugate DC and Nyquist bins, contain at least two pilots and one data
  * bin, and carry at least one CRC block. All derived values must fit their
@@ -144,7 +201,12 @@ long cyrinx_bulk_demodulate_with_block_validity(const cyrinx_bulk_config *cfg, c
  * symbols are combined per subcarrier:
  *   Z = sum_m(conj(H_m) Y_m / nv_m) / sum_m(|H_m|^2 / nv_m)
  * and the per-bin effective SNR feeding the soft LLRs is the sum across mics,
- * so a null or high-noise branch is downweighted. A non-NULL second capture
+ * so a null or high-noise branch is downweighted. After per-symbol pilot phase
+ * correction, both mono and MRC demappers also estimate frequency-selective
+ * reliability from known-pilot residual power: an 11-pilot centered moving
+ * average is interpolated to data bins and blended 75:25 with the global pilot
+ * EVM term. Payload-bearing data-symbol values, decoded bytes, and CRCs do not
+ * enter this estimate. A non-NULL second capture
  * must hold at least geometry.frame_samples. `rx2 == NULL, rx2_len == 0`
  * preserves the mono fallback and is bit-identical to cyrinx_bulk_demodulate;
  * any other pointer/length mismatch is rejected. */

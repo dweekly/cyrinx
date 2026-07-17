@@ -27,6 +27,34 @@
 #define CYRINX_PILOT_SNR_WEIGHT_FLOOR 0.1
 #define CYRINX_PILOT_SNR_WEIGHT_PERCENTILE 0.90
 
+/* Turn the known-pilot residuals into a frequency-selective LLR reliability
+ * estimate. The window and blend were frozen on one development capture before
+ * replaying the held-out set; neither payload-bearing data-symbol bins nor
+ * decoded results contribute. Public integer constants are the single source
+ * of truth for both production arithmetic and the binary contract query. */
+#define CYRINX_GLOBAL_PILOT_EVM_WEIGHT                                                                       \
+    ((double)CYRINX_BULK_RECEIVER_GLOBAL_WEIGHT_NUMERATOR_V1 /                                               \
+     (double)CYRINX_BULK_RECEIVER_WEIGHT_DENOMINATOR_V1)
+#define CYRINX_LOCAL_PILOT_EVM_WEIGHT                                                                        \
+    ((double)CYRINX_BULK_RECEIVER_LOCAL_WEIGHT_NUMERATOR_V1 /                                                \
+     (double)CYRINX_BULK_RECEIVER_WEIGHT_DENOMINATOR_V1)
+
+_Static_assert(sizeof(cyrinx_bulk_receiver_contract_v1) == 72,
+               "receiver contract v1 must retain its fixed 72-byte layout");
+_Static_assert(offsetof(cyrinx_bulk_receiver_contract_v1, snr_floor) == 56,
+               "receiver contract v1 floating-point fields moved");
+_Static_assert(offsetof(cyrinx_bulk_receiver_contract_v1, nonfinite_residual_ceiling) == 64,
+               "receiver contract v1 residual field moved");
+_Static_assert(CYRINX_BULK_RECEIVER_LOCAL_PILOT_WINDOW_V1 > 0 &&
+                   (CYRINX_BULK_RECEIVER_LOCAL_PILOT_WINDOW_V1 % 2) == 1,
+               "receiver local-pilot window must be positive and odd");
+_Static_assert(CYRINX_BULK_RECEIVER_WEIGHT_DENOMINATOR_V1 > 0,
+               "receiver reliability blend denominator must be positive");
+_Static_assert(CYRINX_BULK_RECEIVER_GLOBAL_WEIGHT_NUMERATOR_V1 +
+                       CYRINX_BULK_RECEIVER_LOCAL_WEIGHT_NUMERATOR_V1 ==
+                   CYRINX_BULK_RECEIVER_WEIGHT_DENOMINATOR_V1,
+               "receiver reliability blend weights must sum to the denominator");
+
 static int cyrinx_compare_double(const void *a, const void *b) {
     double x = *(const double *)a;
     double y = *(const double *)b;
@@ -75,10 +103,13 @@ static void cyrinx_fit_pilot_phase(double *ewr, double *ewi, const double *weigh
                                    double *slope_out, double *cpe_out) {
     for (int i = 0; i < n; ++i) {
         double magnitude = hypot(ewr[i], ewi[i]);
-        if (magnitude > 1e-12) {
+        if (isfinite(ewr[i]) && isfinite(ewi[i]) && isfinite(magnitude) && magnitude > 1e-12) {
             ewr[i] /= magnitude;
             ewi[i] /= magnitude;
         } else {
+            /* Nonfinite or null observations carry no phase evidence. In
+             * particular, never evaluate infinity/infinity while projecting
+             * onto the unit circle. */
             ewr[i] = 0.0;
             ewi[i] = 0.0;
         }
@@ -89,7 +120,9 @@ static void cyrinx_fit_pilot_phase(double *ewr, double *ewi, const double *weigh
         for (int i = 1; i < n; ++i) {
             /* A phase difference is only as reliable as its weaker endpoint.
              * Independent phase variances add, giving the harmonic SNR. */
-            double pair_weight = weights[i] * weights[i - 1] / fmax(weights[i] + weights[i - 1], 1e-12);
+            double left_weight = isfinite(weights[i - 1]) && weights[i - 1] > 0.0 ? weights[i - 1] : 0.0;
+            double right_weight = isfinite(weights[i]) && weights[i] > 0.0 ? weights[i] : 0.0;
+            double pair_weight = left_weight * right_weight / fmax(left_weight + right_weight, 1e-12);
             double dr = ewr[i] * ewr[i - 1] + ewi[i] * ewi[i - 1];
             double di = ewi[i] * ewr[i - 1] - ewr[i] * ewi[i - 1];
             sr += pair_weight * dr;
@@ -108,11 +141,111 @@ static void cyrinx_fit_pilot_phase(double *ewr, double *ewi, const double *weigh
     }
     double sr = 0.0, si = 0.0;
     for (int i = 0; i < n; ++i) {
-        sr += weights[i] * ewr[i];
-        si += weights[i] * ewi[i];
+        double weight = isfinite(weights[i]) && weights[i] > 0.0 ? weights[i] : 0.0;
+        sr += weight * ewr[i];
+        si += weight * ewi[i];
     }
     *slope_out = slope_total;
     *cpe_out = atan2(si, sr);
+}
+
+/* Smooth residual power over nearby known pilots only. Replicate the endpoint
+ * pilot at the band edges (numpy.pad(mode="edge") followed by an 11-tap
+ * boxcar in the frozen replay prototype), so every output has the same window
+ * mass and a frequency-uniform residual remains uniform. */
+static void cyrinx_smooth_pilot_evm2(const double *pilot_evm2, int n, double *smoothed_evm2) {
+    const int radius = CYRINX_BULK_RECEIVER_LOCAL_PILOT_WINDOW_V1 / 2;
+    for (int i = 0; i < n; ++i) {
+        double sum = 0.0;
+        for (int offset = -radius; offset <= radius; ++offset) {
+            int64_t candidate = (int64_t)i + (int64_t)offset;
+            if (candidate < 0)
+                candidate = 0;
+            else if (candidate >= n)
+                candidate = n - 1;
+            sum += pilot_evm2[(int)candidate];
+        }
+        smoothed_evm2[i] = sum / (double)CYRINX_BULK_RECEIVER_LOCAL_PILOT_WINDOW_V1;
+    }
+}
+
+/* Linearly interpolate the smoothed pilot reliability onto a used-bin
+ * position. The last comb interval can end without a right-hand pilot; extend
+ * the final estimate over that short edge interval. */
+static double cyrinx_interpolate_pilot_evm2(const double *smoothed_evm2, int n_pilots, int pilot_every,
+                                            int used_position) {
+    int left = used_position / pilot_every;
+    if (left >= n_pilots - 1)
+        return smoothed_evm2[n_pilots - 1];
+    double fraction = (double)(used_position - left * pilot_every) / (double)pilot_every;
+    return smoothed_evm2[left] * (1.0 - fraction) + smoothed_evm2[left + 1] * fraction;
+}
+
+int cyrinx_bulk_get_receiver_contract_v1(cyrinx_bulk_receiver_contract_v1 *out, size_t out_size) {
+    if (out == NULL || out_size != sizeof(*out))
+        return -1;
+
+    cyrinx_bulk_receiver_contract_v1 contract;
+    memset(&contract, 0, sizeof(contract));
+    contract.struct_size = (uint32_t)sizeof(contract);
+    contract.abi_version = CYRINX_BULK_RECEIVER_CONTRACT_ABI_VERSION;
+    contract.semantics_version = CYRINX_BULK_RECEIVER_SEMANTICS_VERSION;
+    contract.reliability_estimator = CYRINX_BULK_RECEIVER_ESTIMATOR_KNOWN_PILOT_LOCAL_LINEAR_BOXCAR_V1;
+    contract.local_pilot_window = CYRINX_BULK_RECEIVER_LOCAL_PILOT_WINDOW_V1;
+    contract.edge_mode = CYRINX_BULK_RECEIVER_EDGE_REPLICATE;
+    contract.global_weight_numerator = CYRINX_BULK_RECEIVER_GLOBAL_WEIGHT_NUMERATOR_V1;
+    contract.local_weight_numerator = CYRINX_BULK_RECEIVER_LOCAL_WEIGHT_NUMERATOR_V1;
+    contract.weight_denominator = CYRINX_BULK_RECEIVER_WEIGHT_DENOMINATOR_V1;
+    contract.final_comb_mode = CYRINX_BULK_RECEIVER_FINAL_COMB_EXTEND_LAST;
+    contract.snr_floor = CYRINX_BULK_RECEIVER_SNR_FLOOR_V1;
+    contract.nonfinite_residual_ceiling = CYRINX_BULK_RECEIVER_NONFINITE_RESIDUAL_CEILING_V1;
+    *out = contract;
+    return 0;
+}
+
+int cyrinx_bulk_receiver_reliability_diagnostic_v1(const double *pilot_evm2, int n_pilots, int pilot_every,
+                                                   const int *used_positions, size_t used_position_count,
+                                                   double *smoothed_out, size_t smoothed_cap,
+                                                   double *interpolated_out, size_t interpolation_cap) {
+    if (pilot_evm2 == NULL || n_pilots < 1 || pilot_every <= 0 || smoothed_out == NULL ||
+        smoothed_cap < (size_t)n_pilots || (size_t)n_pilots > SIZE_MAX / sizeof(double) ||
+        (used_position_count == 0 &&
+         (used_positions != NULL || interpolated_out != NULL || interpolation_cap != 0)) ||
+        (used_position_count != 0 &&
+         (used_positions == NULL || interpolated_out == NULL || interpolation_cap < used_position_count)) ||
+        used_position_count > SIZE_MAX / sizeof(double)) {
+        return -1;
+    }
+    for (int i = 0; i < n_pilots; ++i) {
+        if (!isfinite(pilot_evm2[i]) || pilot_evm2[i] < 0.0)
+            return -1;
+    }
+    for (size_t i = 0; i < used_position_count; ++i) {
+        if (used_positions[i] < 0)
+            return -1;
+    }
+
+    double *temporary_smoothed = (double *)malloc((size_t)n_pilots * sizeof(double));
+    double *temporary_interpolated = NULL;
+    if (used_position_count != 0)
+        temporary_interpolated = (double *)malloc(used_position_count * sizeof(double));
+    if (temporary_smoothed == NULL || (used_position_count != 0 && temporary_interpolated == NULL)) {
+        free(temporary_smoothed);
+        free(temporary_interpolated);
+        return -1;
+    }
+
+    cyrinx_smooth_pilot_evm2(pilot_evm2, n_pilots, temporary_smoothed);
+    for (size_t i = 0; i < used_position_count; ++i) {
+        temporary_interpolated[i] =
+            cyrinx_interpolate_pilot_evm2(temporary_smoothed, n_pilots, pilot_every, used_positions[i]);
+    }
+    memcpy(smoothed_out, temporary_smoothed, (size_t)n_pilots * sizeof(double));
+    if (used_position_count != 0)
+        memcpy(interpolated_out, temporary_interpolated, used_position_count * sizeof(double));
+    free(temporary_smoothed);
+    free(temporary_interpolated);
+    return 0;
 }
 
 void cyrinx_detrng_init(cyrinx_detrng *r, uint64_t seed) {
@@ -697,9 +830,17 @@ long cyrinx_bulk_modulate(const cyrinx_bulk_config *cfg, const uint8_t *payload,
 /* Max-log QAM LLRs (log P0/P1) for one symbol with noise var n0. Writes nbits
  * values. modem.py:qam_llr. */
 static void cyrinx_qam_llr(double zre, double zim, int nbits, double n0, double *out) {
+    /* Erasures are safer than allowing a nonfinite observation or variance to
+     * inject NaNs (or accidental high confidence) into Viterbi path metrics. */
+    if (!isfinite(zre) || !isfinite(zim) || !isfinite(n0)) {
+        for (int i = 0; i < nbits; ++i)
+            out[i] = 0.0;
+        return;
+    }
     double inv = 1.0 / (n0 > 1e-9 ? n0 : 1e-9);
     if (nbits == 1) {
-        out[0] = 4.0 * zre * inv; /* BPSK */
+        double llr = 4.0 * zre * inv; /* BPSK */
+        out[0] = isfinite(llr) ? llr : 0.0;
         return;
     }
     int na = nbits / 2;
@@ -722,7 +863,8 @@ static void cyrinx_qam_llr(double zre, double zim, int nbits, double n0, double 
                         d0 = d2;
                 }
             }
-            out[axis * na + bit] = (d1 - d0) * inv;
+            double llr = (d1 - d0) * inv;
+            out[axis * na + bit] = isfinite(llr) ? llr : 0.0;
         }
     }
 }
@@ -1232,6 +1374,13 @@ static long cyrinx_bulk_demod_impl(const cyrinx_bulk_config *cfg, const float *r
     double *Zr = (double *)malloc((size_t)n_used * sizeof(double));
     double *Zi = (double *)malloc((size_t)n_used * sizeof(double));
     double *den = (double *)malloc((size_t)n_used * sizeof(double));
+    double *ewr = (double *)malloc((size_t)g.n_pilots * sizeof(double));
+    double *ewi = (double *)malloc((size_t)g.n_pilots * sizeof(double));
+    double *pilot_evm2 = (double *)malloc((size_t)g.n_pilots * sizeof(double));
+    double *smoothed_pilot_evm2 = (double *)malloc((size_t)g.n_pilots * sizeof(double));
+    if (llr_stream == NULL || Zr == NULL || Zi == NULL || den == NULL || ewr == NULL || ewi == NULL ||
+        pilot_evm2 == NULL || smoothed_pilot_evm2 == NULL)
+        goto demap_resource_failure;
     double evm_acc = 0.0;
     int lpos = 0;
     for (int s = 0; s < cfg->n_sym; ++s) {
@@ -1276,8 +1425,6 @@ static long cyrinx_bulk_demod_impl(const cyrinx_bulk_config *cfg, const float *r
          * as strong pilots. Fit unit phasors with sync-only SNR weights, so no
          * data-symbol magnitude or decoded value leaks into reliability. */
         int np = g.n_pilots;
-        double *ewr = (double *)malloc((size_t)np * sizeof(double));
-        double *ewi = (double *)malloc((size_t)np * sizeof(double));
         for (int m = 0; m < np; ++m) {
             int k = m * cfg->pilot_every; /* pilot used-position */
             /* e = Z[pil] * conj(pilot) */
@@ -1294,25 +1441,36 @@ static long cyrinx_bulk_demod_impl(const cyrinx_bulk_config *cfg, const float *r
             Zr[k] = nr;
             Zi[k] = ni;
         }
-        free(ewr);
-        free(ewi);
-        /* EVM^2 on pilots after correction */
+        /* Pilot EVM^2 after correction. Its global mean preserves the existing
+         * per-symbol burst/dropout weighting. The local estimate adds only
+         * known-pilot frequency structure and is therefore payload-independent. */
         double evm2 = 0.0;
         for (int m = 0; m < np; ++m) {
             int k = m * cfg->pilot_every;
             double pr = Zr[k] * pil_re[m] + Zi[k] * pil_im[m];
             double pi = Zi[k] * pil_re[m] - Zr[k] * pil_im[m];
             double er = pr - 1.0;
-            evm2 += er * er + pi * pi;
+            double residual = er * er + pi * pi;
+            /* A nonfinite observation must not produce spuriously confident
+             * LLRs. Saturation is preferable to decoding with NaN/zero noise. */
+            if (!isfinite(residual) || residual < 0.0 ||
+                residual > CYRINX_BULK_RECEIVER_NONFINITE_RESIDUAL_CEILING_V1)
+                residual = CYRINX_BULK_RECEIVER_NONFINITE_RESIDUAL_CEILING_V1;
+            pilot_evm2[m] = residual;
+            evm2 += residual;
         }
         evm2 /= np;
         evm_acc += sqrt(evm2);
+        cyrinx_smooth_pilot_evm2(pilot_evm2, np, smoothed_pilot_evm2);
         /* demap data bins (positions k with k % pilot_every != 0) */
         for (int k = 0; k < n_used; ++k) {
             if (k % cfg->pilot_every == 0)
                 continue;
-            double s_ = snr[k] > 0.1 ? snr[k] : 0.1;
-            double n0 = 1.0 / s_ + evm2;
+            double s_ =
+                snr[k] > CYRINX_BULK_RECEIVER_SNR_FLOOR_V1 ? snr[k] : CYRINX_BULK_RECEIVER_SNR_FLOOR_V1;
+            double local_evm2 = cyrinx_interpolate_pilot_evm2(smoothed_pilot_evm2, np, cfg->pilot_every, k);
+            double n0 =
+                1.0 / s_ + CYRINX_GLOBAL_PILOT_EVM_WEIGHT * evm2 + CYRINX_LOCAL_PILOT_EVM_WEIGHT * local_evm2;
             cyrinx_qam_llr(Zr[k], Zi[k], cfg->bits_per_bin, n0, llr_stream + lpos);
             lpos += cfg->bits_per_bin;
         }
@@ -1407,6 +1565,10 @@ static long cyrinx_bulk_demod_impl(const cyrinx_bulk_config *cfg, const float *r
     free(Zr);
     free(Zi);
     free(den);
+    free(ewr);
+    free(ewi);
+    free(pilot_evm2);
+    free(smoothed_pilot_evm2);
     free(perm);
     free(llr);
     free(llr_full);
@@ -1415,6 +1577,15 @@ static long cyrinx_bulk_demod_impl(const cyrinx_bulk_config *cfg, const float *r
     free(info);
     return g.payload_bytes;
 
+demap_resource_failure:
+    free(llr_stream);
+    free(Zr);
+    free(Zi);
+    free(den);
+    free(ewr);
+    free(ewi);
+    free(pilot_evm2);
+    free(smoothed_pilot_evm2);
 pilot_weight_resource_failure:
     if (auto_v1 && diagnostics != NULL) {
         cyrinx_init_diversity_diagnostics(diagnostics);

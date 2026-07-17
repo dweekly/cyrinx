@@ -129,7 +129,8 @@ assertions at the tiered tolerance above.
       deterministic stages; float-tolerant on the OFDM samples vs golden TX.
 - [ ] **1.3 C RX path** in `CCyrinx`, ported against `BulkDemod.swift`/`.kt`:
       chirp sync, LS channel est, iterative pilot phase-slope + CPE tracking,
-      per-bin noise var, max-log LLR, per-symbol EVM² weighting, deinterleave,
+      per-bin noise var, max-log LLR, and payload-independent known-pilot EVM²
+      weighting both per symbol and across local frequency, then deinterleave,
       soft Viterbi, CRC32 ordered-stream verify. Byte-exact decode of golden
       captures + the three reference oracles agree.
 - [ ] **1.4 C adaptive sounder + MCS ladder:** Schroeder EDC delay spread,
