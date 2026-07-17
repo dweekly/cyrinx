@@ -1,10 +1,14 @@
 # A1 — Auto-MRC + decode-based mic selection in the live adaptive loop
 
-Fresh as of 2026-07-01. Execution plan for **Track A1** of
-[../ROADMAP.md](../ROADMAP.md). **Status: steps 1–3 + 5 executed 2026-07-01**
-(spike passed across the full grid — the cross-compat hypothesis below is now
-proven; escalation wired into `adaptive.py` with selftest). **Step 4 (OTA
-re-validation) remains** — needs a bench. Companion to
+Fresh as of 2026-07-17. Executed plan for **Track A1** of
+[../ROADMAP.md](../ROADMAP.md). **Status: complete.** Steps 1–3 and 5 executed
+2026-07-01; the OTA step completed 2026-07-08 with a 46.915 kbps post-sounding
+ordered PHY payload rate in the clean cell and 75/75 blocks MRC-rescued at an
+11.366 kbps post-sounding PHY payload rate in the
+reverberant cell. The plan
+below is retained as a pre-execution record. C now also owns MRC and the newer
+pilot-only automatic selector; this file describes the earlier live-loop
+decode-escalation milestone. Companion to
 [PUBLICATION.md](PUBLICATION.md) and [EXPERIMENTS.md](EXPERIMENTS.md).
 
 ## Context
@@ -19,7 +23,7 @@ see `scratch/hw20k/mrc_validate.py:9-12`). A1 wires that into the loop's coheren
 decode so the adaptive link actually exhibits the graceful degradation the paper
 claims. It is the bounded step before A2 (porting diversity into the C codec).
 
-**Current state (verified by reading the code):**
+**Pre-execution state (superseded):**
 - `adaptive.py:66-68` captures stereo but discards one mic (`st[:, mic]`) and
   decodes via `clib.decode` (single-channel C API — no `rx2` exists in C).
 - `modem.demodulate_frame(cfg, rx, rx2=...)` (`modem.py:416-502`) has the full
@@ -84,13 +88,15 @@ case with mic0 nulled so single-mic fails), stub `send`, assert the escalation
 logic picks the right path and decodes. Closes the "add the auto-MRC path to unit
 coverage" hygiene item from ../ROADMAP.md.
 
-### Step 4 — OTA re-validation across the orientation set *(needs bench)*
-Requires Pixel 7a on USB (`adb`) and physical placement — **user at the bench**.
+### Step 4 — OTA re-validation across the orientation set *(completed 2026-07-08)*
+Required Pixel 7a on USB (`adb`) and physical placement with the user at the bench.
 Gain staging per the README bench quick-start (Mac out 100, in 22, phone media
 max — M4-specific; re-derive on any other Mac).
 - `python scratch/hw20k/harness.py smoke` first.
 - `adaptive.py <label>` at the known cells: clean (`port_fnkey`-style, expect
-  clib-only, ~39-48 kbps, MRC never invoked), reverberant keyboard-well (expect
+  clib-only, historical 38.4 kbps aggregate to 46.9 kbps post-sounding ordered
+  PHY payload rate, MRC never invoked),
+  reverberant keyboard-well (expect
   long-CP + occasional rescue), shadowed `edge_below_laptop` (expect MRC to
   rescue blocks where single-mic fails).
 - Append results to `data/adaptive_demo.jsonl`; summarize in

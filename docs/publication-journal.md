@@ -244,8 +244,9 @@ pure logic, no audio. The capture→metrics half reuses the RX channel estimatio
 
 ### `[1.6]` Apple vDSP/Accelerate FFT backend — built and validated
 `cyrinx_fft.c` now has two backends behind one interface, selected at compile
-time: the vendored **KISS FFT** (portable default, the CI-tested reference that
-also ships to Android via JNI) and, under `-DCYRINX_FFT_ACCELERATE` on Apple, a
+time: the vendored **KISS FFT** (portable default and CI-tested reference;
+Android JNI remains a target rather than a shipped binding) and, under
+`-DCYRINX_FFT_ACCELERATE` on Apple, a
 **vDSP/Accelerate** double-precision DFT. The vDSP path uses the full complex DFT
 (`vDSP_DFT_zop_*D`) rather than the packed real FFT — simpler and unambiguous (no
 zrip pack/scale/sign pitfalls), still Accelerate-vectorized; the real input gets
@@ -357,9 +358,12 @@ merged), folded the whole story into the paper (21 → 22 pp):
 - New §Robustness (`sec:robust`): the non-coherent MFSK floor (4/4 frames, 68 bps
   where OFDM gave 0); microphone diversity chosen by decode not loudness (the
   louder mic is often the worse one); two-mic MRC (8/11 QPSK where both mics alone
-  gave 0, EVM 1.4→0.69); adaptive CP (rescues reverberant to 10.9 kbps, shrinks to
-  5 ms on clean channels → 48 kbps); and the demonstrated graceful degradation
-  across orientations (48 kbps → 68 bps, never zero).
+  gave 0, EVM 1.4→0.69); adaptive CP (historical prose reported a 10.9 kbps
+  coded-information rate, payload-normalized to 10.281 kbps, but no matching
+  machine record is retained; it shrinks to
+  5 ms on clean channels → 46.915 kbps post-sounding ordered PHY payload rate);
+  and the demonstrated graceful degradation across orientations (46.915 kbps →
+  68 bps, never zero).
 - MRC future-work bullet → "now measured, not estimated" (cross-ref sec:robust).
 - Summary: added the graceful-degradation finding (most "dead" spots were receiver
   artifacts, not channel limits).

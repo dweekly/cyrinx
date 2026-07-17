@@ -27,8 +27,23 @@ AMBER = "#E8890C"
 
 
 def frame_wave():
-    cfg = M.Config(nfft=2048, cp=768, rate="3/4", n_sym=8,
-                   bits_per_bin={b: 4 for b in M.Config(nfft=2048, cp=768).data_idx})
+    base = M.Config(
+        nfft=2048,
+        cp=96,
+        pilot_every=16,
+        rate="2/3",
+        n_sym=64,
+        amp=0.18,
+    )
+    cfg = M.Config(
+        nfft=2048,
+        cp=96,
+        pilot_every=16,
+        rate="2/3",
+        n_sym=64,
+        amp=0.18,
+        bits_per_bin={b: 6 for b in base.data_idx},
+    )
     payload = M.DetRng(0xCAFE).bytes(cfg.payload_bytes)
     return M.modulate_frame(cfg, payload), cfg
 
@@ -53,9 +68,9 @@ def og_card():
              fontfamily="monospace", fontweight="bold", va="top")
     fig.text(0.045, 0.79, "Data over sound, measured.", color=PAPER,
              fontsize=44, fontweight="bold", va="top")
-    fig.text(0.045, 0.645, "36.6 kbps laptop → phone, byte-verified, over the air.",
+    fig.text(0.045, 0.645, "65.875 kbps MacBook → Pixel 7a, byte-verified scheduled goodput.",
              color="#C9C4D4", fontsize=22, va="top")
-    fig.text(0.955, 0.575, "one transmitted frame ↓", color="#8b86a0",
+    fig.text(0.955, 0.575, "Cyrinx 2.0 comparable-class frame ↓", color="#8b86a0",
              fontsize=13, fontfamily="monospace", ha="right", va="top")
     os.makedirs(OUT, exist_ok=True)
     fig.savefig(os.path.join(OUT, "og-card.png"), dpi=100, facecolor=PANEL)

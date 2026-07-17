@@ -1,6 +1,8 @@
 # Ultrasonic-Band (Inaudible) Bulk PHY — Measured Results
 
-Fresh as of 2026-06-09. Status: complete. Branch `ultrasonic-band`, PR #1.
+Fresh as of 2026-07-17. Status: the physical-band investigation is complete
+(original branch `ultrasonic-band`, PR #1); an integrated Cyrinx ultrasonic
+mode is **not** complete.
 
 Question: can the bulk-PHY methodology of
 [ACOUSTIC_BULK_PHY.md](ACOUSTIC_BULK_PHY.md) run entirely in the inaudible
@@ -14,11 +16,10 @@ band (>= ~18.5 kHz), and how much goodput does each direction sustain?
 | **Mac → Pixel 7a** | 18.5–23.9 kHz, 96 kHz | **~9 kbps verified** (16-QAM r3/4, 39/39 blocks, EVM ~0.11) |
 | **Pixel 7a → Mac** | 18.5–21 kHz | **does not close** — Pixel micro-speaker is phase-incoherent above ~18 kHz |
 
-The inaudible-band link is strongly asymmetric, exactly as the physical
-review predicted. Mac→Pixel works because the MacBook tweeter is
-phase-coherent to 24 kHz. Pixel→Mac fails because the Pixel 7a speaker,
-while it radiates ultrasonic *power*, cannot reproduce it with the phase
-coherence that OFDM/QAM (or any phase modulation) requires.
+The inaudible-band link is strongly asymmetric. Mac→Pixel works because the
+tested MacBook output route remained phase-coherent to 24 kHz. Pixel→Mac fails
+because the Pixel 7a speaker, while it radiates ultrasonic *power*, did not
+reproduce the phase coherence required by the tested coherent OFDM/QAM link.
 
 ## The decisive measurement: Pixel speaker phase coherence vs frequency
 
@@ -60,7 +61,7 @@ surveys overstate capacity for phase-modulated waveforms on this transducer.
   coherent ultrasonic bandwidth than this Pixel offers, or dropping below
   18.5 kHz (audible).
 
-## Techniques added in this effort (kept in modem.py / harness)
+## Techniques evaluated in the research harness
 
 - 96 kHz capture/playback verified on both devices (Pixel `AudioRecord`/
   `AudioTrack` UNPROCESSED @96k; Mac sounddevice @96k).
@@ -70,11 +71,13 @@ surveys overstate capacity for phase-modulated waveforms on this transducer.
   isolated, the chirp matched filter is not swamped by audible room noise
   (chirp correlation quality rose 0.17 → 0.54). The OFDM demod is already
   bin-selective; only coarse sync needed this.
-- **Decision-directed per-bin channel tracking** (`track_alpha`): blends the
-  pilot+data residual into the channel estimate each symbol, since the
-  acoustic channel ages within ~10 symbols (measured: residual EVM degrades
-  from 38 dB at 1-symbol lag to 23 dB at 16-symbol lag). Improved m2a
-  ultrasonic EVM 0.20 → 0.11.
+- **Decision-directed per-bin channel tracking** (`track_alpha`) in the
+  historical Python ultrasonic experiment blended pilot+data decisions into
+  the channel estimate each symbol, since residual EVM degraded from 38 dB at
+  one-symbol lag to 23 dB at 16-symbol lag. That experiment improved Mac→Pixel
+  ultrasonic EVM from 0.20 to 0.11. It is not the current C receiver contract:
+  a lower `alpha = 0.05` is only a research candidate, can propagate incorrect
+  high-order-QAM decisions, and has not been prospectively qualified.
 - Single-tone phase-coherence and Schroeder energy-decay diagnostics
   (`ultra_characterize.py` and inline scripts).
 
@@ -83,6 +86,21 @@ surveys overstate capacity for phase-modulated waveforms on this transducer.
 Room-tone capture confirmed the ultrasonic band is near-silent: in-band
 (18.5–21 kHz) RMS ~5e-8 on the Pixel mic and ~4e-8 on the Mac mic. a2m's
 failure is therefore not ambient noise; it is the transmit transducer.
+
+## Integration and adjacent-mode status
+
+The result above demonstrates a one-way research profile, not a selectable
+public mode. C is the canonical library modem implementation; Swift should
+remain a thin binding, Kotlin is a legacy HIL implementation, and Python is the
+research/oracle layer. An integrated ultrasonic mode still needs a C waveform
+profile, route/capability negotiation, per-device speaker/microphone
+characterization, and a non-coherent phone uplink fallback. These requirements
+must be validated on more than the Pixel 7a/MacBook pair.
+
+A separate “pleasant audible” mode—using some audible bandwidth without the
+usual screeching/static percept—has not been implemented or listening-tested.
+Its expected lower rate is still a hypothesis, not part of the ultrasonic
+measurement.
 
 ## Conclusion
 

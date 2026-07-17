@@ -1,28 +1,27 @@
 # cyrinx
 
-**Data over sound, measured** — [cyrinx.org](https://cyrinx.org) · [whitepaper (PDF, 27 pp)](docs/whitepaper/cyrinx-acoustic-link.pdf) · [v1.0.0 release](https://github.com/dweekly/cyrinx/releases/tag/v1.0.0)
+**Data over sound, measured** — [cyrinx.org](https://cyrinx.org) · [whitepaper (PDF, 28 pp)](docs/whitepaper/cyrinx-acoustic-link.pdf) · [v1.0.0 release](https://github.com/dweekly/cyrinx/releases/tag/v1.0.0)
 
 `cyrinx` is a **research prototype** exploring data-over-sound for close-range
-desktop-to-phone links (1-2 ft). It contains two largely separate strands:
+desktop-to-phone links. It contains two largely separate strands:
 
 1. An adaptive ultrasonic transport stack (Swift/C + Kotlin) targeting the
    18.5-23.5 kHz band — the original protocol design (gears, ARQ, crypto
    envelope). Functional but slow as measured (<0.3 kbps OTA).
-2. A **measured wideband bulk PHY** (audible band): verified over-the-air
-   goodput of 36.6 / 27.3 kbps between a MacBook Pro (M4) and a Pixel 7a,
-   since **ported into the portable C core** (`CCyrinx`, `cyrinx_bulk`) with a
-   Swift binding (`BulkPHY`), validated bit-exact / float-tolerant against
-   committed golden vectors, and re-measured **library-native at 39.3 kbps OTA**
-   (the shipped C codec, not the Python reference — see the results table
-   below). A robustness/diversity layer gives graceful degradation across
-   placements — measured 48 kbps down to a bps-scale floor, never zero.
-   **Two-mic maximal-ratio combining now ships in the C codec**
-   (`cyrinx_bulk_demodulate2`, golden-vector-pinned, Swift
-   `BulkPHY.decode(_:combining:)`), and CP/NFFT are caller-selectable; the
-   EVM-probe sounder, mic-selection policy, and the RS-coded MFSK floor remain
-   in the Python bench layer ([ROADMAP.md](ROADMAP.md)). Still pending:
-   transport-API integration and the optional X25519 envelope. An inaudible
-   ultrasonic-band variant was investigated (docs/ULTRASONIC_BAND.md).
+2. A **measured wideband bulk PHY** (audible band): Cyrinx 2.0 reaches
+   **65.875 kbps** from a MacBook Pro to a Pixel 7a in the accepted five-frame,
+   250 ms-gap measurement class, versus the 36.571 kbps result it was designed
+   to beat. A separate zero-gap research class reaches **69.652 kbps mean**.
+   The canonical receiver is portable C (`CCyrinx`, `cyrinx_bulk`) with a thin
+   Swift binding (`BulkPHY`); committed tests pin two-mic maximal-ratio
+   combining, held-out-pilot automatic mic selection, and frequency-local
+   known-pilot LLR weighting. The new fast profiles trade resilience for
+   throughput and do **not** match the conservative baseline's block-success
+   rate. The EVM-probe sounder and RS-coded MFSK floor remain research tools in
+   the Python bench layer ([ROADMAP.md](ROADMAP.md)). Transport-API integration,
+   Android JNI, and the optional X25519 envelope remain pending. An ultrasonic
+   downlink was investigated, but an integrated ultrasonic mode has not shipped
+   ([docs/ULTRASONIC_BAND.md](docs/ULTRASONIC_BAND.md)).
 
 On originality: the communications techniques used (OFDM, cyclic prefixes,
 pilot tracking, QAM, convolutional/Viterbi FEC, CRC block verification) are
@@ -39,7 +38,9 @@ This repository currently provides:
   the `cyrinx_fft` plan interface, soft Viterbi, **two-mic MRC demodulation**
   `cyrinx_bulk_demodulate2`) with a Swift binding (`BulkPHY`), validated
   against committed golden vectors — including a two-channel rescue fixture
-  where mic0 alone fails and MRC decodes byte-exact
+  where mic0 alone fails and MRC decodes byte-exact, a versioned receiver
+  contract, pilot-local reliability weighting, and payload-independent
+  automatic diversity selection
 - A native Swift wrapper (`Cyrinx`)
 - Frame codec with bit-packed headers, CRC16/CRC32C, fragmentation/reassembly
 - Half-duplex ping-pong MAC with ACK and selective retransmission policy hooks
@@ -60,26 +61,77 @@ This repository currently provides:
 
 ## Measured results (validated over the air)
 
-All numbers are **ordered byte-verified goodput**: each counted block is
-CRC-valid *and* byte-identical to the transmitted payload at the same ordered
-position, divided by total airtime (preambles, pilots, FEC, CRCs, and
-inter-frame gaps all count against it). Transmitting Mac in every row: MacBook
-Pro M4, palm-rest-class geometry.
+The Cyrinx 2.0 rows use **strict ordered byte-verified goodput**: a counted block
+is CRC-valid *and* byte-identical to the transmitted payload at the same
+scheduled position. Preambles, pilots, FEC, CRCs, and declared inter-frame gaps
+are in the denominator. Historical rows retain their original byte-verification
+method. In the accepted Pixel run, 375/375 decoded CRC-valid records passed
+expected-set membership; the verifier retained neither record uniqueness nor
+strict stream position. Every row uses the same M4 MacBook Pro.
 
-| Peer | Direction | Goodput | Decoded by |
-|---|---|---|---|
-| Pixel 7a | Mac → Pixel | **36.6 kbps** | on-device, `BulkDemod.kt` |
-| Pixel 7a | Pixel → Mac | **27.3 kbps** | `modem.py` reference |
-| Pixel 7a | Mac → Pixel, **library-native** | **39.3 kbps** | the shipped C codec (`libcyrinxbulk`), 16-QAM r¾, 375/375 blocks |
-| iPhone 17 Pro Max | Mac → iPhone | **36.57 kbps** | on-device, `BulkDemod.swift` |
-| iPhone 17 Pro Max | iPhone → Mac | **16.87 kbps** | `modem.py` (iPhone speaker is band-limited to ≈11 kHz usable) |
+| Peer / profile | Direction | Schedule class | Scheduled goodput | Verified blocks | Decoded by |
+|---|---|---|---:|---:|---|
+| Pixel 7a, accepted 1.x result | Mac → Pixel | 48 kHz, five frames, four 250 ms gaps | **36.571 kbps** | 375/375 expected-set checks | on-device `BulkDemod.kt` |
+| Pixel 7a, Cyrinx 2.0 p16/sym64 | Mac → Pixel | same 48 kHz / five-frame / 250 ms-gap class | **65.875 kbps** (65.266–66.641) | 4,215/4,280 (98.481%) | frozen C host decoder, Pixel stereo capture |
+| Pixel 7a, Cyrinx 2.0 p64/sym96 | Mac → Pixel | separate 48 kHz / five-frame / zero-gap class | **69.652 kbps** (65.731–72.641) | 6,129/6,760 (90.666%) | frozen C host decoder, Pixel stereo capture |
+| Pixel 7a, library-native control | Mac → Pixel | five independent one-frame trials | **38.400 kbps** | 375/375 console aggregate | shipped C codec, 16-QAM r3/4 |
+| Pixel 7a | Pixel → Mac | historical | **27.3 kbps** | 280/280 expected-set checks | `modem.py` reference |
+| iPhone 17 Pro Max | Mac → iPhone | historical | **36.57 kbps** | — | on-device `BulkDemod.swift` |
+| iPhone 17 Pro Max | iPhone → Mac | historical | **16.87 kbps** | — | `modem.py`; speaker usable to about 11 kHz |
+
+Both prospective Cyrinx 2.0 campaigns completed all 16 planned runs, won all
+eight paired comparisons (exact one-sided sign test, `p = 1/256`), and retained
+every failure. Both also failed the predeclared resilience gate: the comparable
+p16 candidate's 98.481% block success was below its paired baseline's 99.967%,
+and the zero-gap p64 confirmatory candidate's 90.666% was below 99.757%. The 69.652
+kbps result is **1.9045×** the accepted 36.571 kbps number—not “almost
+tripled”—and its zero-gap schedule must not be presented as the same measurement
+class. Its gross mean including the stream-end pad was 68.636 kbps.
+
+The historical library-native result was previously labeled 39.3 kbps by
+dividing 157,050 coded information bits (including CRC and fill) by a 4 s
+frame. Contemporaneous console output reported 375/375 across five independent
+one-frame trials; no matching machine-readable run record or raw capture was
+retained. Conditional on that aggregate, five times 19,200 payload bytes over
+five times 4 s is 38.400 kbps. The accounting and evidence limitations are
+recorded in the
+[historical correction ledger](scratch/hw20k/evidence/historical-metric-corrections-2026-07-17/results-ledger.json).
+
+### What changed in Cyrinx 2.0
+
+The throughput increase is a bundle of PHY, receiver, and scheduling changes;
+only the receiver weighting has a same-capture isolated comparison.
+
+| Change | Purpose and evidence |
+|---|---|
+| CP 96 instead of the conservative CP 240 paired control (CP 768 historically) | Reduces guard overhead; CP 48 was screened and rejected as unstable. |
+| 64-QAM with rate-2/3 FEC | Carries more bits while retaining more redundancy than the failed Pixel rate-3/4 and rate-5/6 profiles. |
+| Pilot spacing 16 for the comparable result; 64 for the zero-gap confirmatory result | Trades pilot observations for data carriers. Pilot-32 measured 68.960 kbps, below the observed pilot-16 and pilot-64 means; success also fell as pilots became sparser. |
+| Frequency-local known-pilot LLR weighting in C | On the same fresh captures, improved 3,868/4,280 legacy blocks to 4,215/4,280; all eight runs improved and none regressed. |
+| Held-out-pilot mic0/MRC selection | Uses both Pixel microphones without payload, decoded-bit, or CRC leakage. The zero-gap confirmatory campaign selected MRC in 26/40 candidate frames and mic0 in 14/40. |
+| Qualified Pixel route at Mac volume 50%, waveform peak 0.18 | An enabling SNR condition, not an algorithmic throughput contribution or an SPL safety rating. |
+| 96-symbol frames and zero inter-frame gap | Amortize framing and scheduler idle time, but define a different measurement class. A separate 128-symbol test reached only 66.102 kbps at 89.093% block success, with chronological degradation consistent with channel drift; it was not a randomized length/gap ablation. |
+
+The exact Pixel cell was face-up on 0.5-inch soft cloth above the MacBook left
+function-key area, with the bottom microphone near the built-in left speaker,
+48 kHz stereo `UNPROCESSED` capture, and the A/C enabled but cycling and
+uninstrumented. SPL was not instrumented. These are route-specific bench
+results, not general device guarantees. Exact denominators and content hashes
+are retained in the tracked
+[Cyrinx 2.0 Pixel evidence ledger](scratch/hw20k/evidence/pixel7a-cyrinx2-2026-07-17/results-ledger.json).
 
 With the robustness/diversity layer engaged, the link degrades gracefully
-across placements — OTA re-validated 2026-07-08: **48 kbps** (clean) →
-**11.6 kbps** (reverberant — 0/75 blocks decodable on either mic alone,
+across placements — OTA re-validated 2026-07-08: **46.915 kbps** post-sounding
+PHY payload rate (clean) → **11.366 kbps** post-sounding PHY payload rate
+(reverberant — 0/75 blocks decodable on either mic alone,
 75/75 recovered by two-mic MRC through the shipped C library) → **138 bps**
-(shadowed; the RS-coded MFSK floor, ×2 the earlier repetition floor) — never
-zero. Milestone history: [CHANGELOG.md](CHANGELOG.md).
+(shadowed; the RS-coded MFSK active-frame floor, 131.282 bps including its
+unconditional 0.1 s tail pad, ×2 the earlier repetition floor) — never zero.
+The coherent figures exclude the preceding sounding/probe transaction; its
+cost must be amortized over a session and was not included in those rates.
+Normalizing by emitted samples for the recorded geometry gives approximately
+32.852 kbps clean and 8.95 kbps reverberant, still excluding host/ADB wall time.
+Milestone history: [CHANGELOG.md](CHANGELOG.md).
 
 Writeups: [docs/ACOUSTIC_BULK_PHY.md](docs/ACOUSTIC_BULK_PHY.md) (channel
 measurements, modem design, the four physical-layer defects, diagnostic
@@ -92,12 +144,16 @@ way); [docs/PRD_VS_AS_BUILT.md](docs/PRD_VS_AS_BUILT.md) (original PRD vs what
 was built and why they diverged). The lab notebook and reproducible harness
 live in [scratch/hw20k/](scratch/hw20k/NOTES.md).
 
-Everything above is consolidated in an academic-workshop-style whitepaper —
+The pre-Cyrinx-2.0 evidence is consolidated in an academic-workshop-style
+whitepaper; the 2026-07-17 receiver and Pixel campaign remain pending paper
+integration —
 [docs/whitepaper/cyrinx-acoustic-link.tex](docs/whitepaper/cyrinx-acoustic-link.tex)
 (compiled PDF:
 [docs/whitepaper/cyrinx-acoustic-link.pdf](docs/whitepaper/cyrinx-acoustic-link.pdf),
-27 pp; fresh as of 2026-07-08) — including related work, the effective-SINR/EVM
-ceiling on higher-order QAM, the measured channel-response and frame-anatomy
+28 pp; pre-Cyrinx-2.0 primary study with a Moto supplement and accounting
+errata through 2026-07-17) — including related work, the historical failed
+64-QAM profile's effective-SINR/EVM limit, the measured channel-response and
+frame-anatomy
 figures, the graceful-degradation section, and a development-provenance
 section documenting which AI agent built each era (from commit trailers) and
 framing the project as a hard-to-game agent capabilities benchmark.
@@ -126,16 +182,19 @@ assert(decoded.isComplete && decoded.payload == payload)
 digitally. Real links need audio I/O and the level/geometry guidance in the
 bench quick-start below.) Python drives the C core via `ctypes`
 (`scratch/hw20k/clib.py`). The Android HIL receiver is currently a separate,
-older Kotlin DSP implementation rather than JNI; it does not support the
-Cyrinx 2.0 fast profile. Converging Android and the iOS HIL receiver on the C
-core is tracked as technical debt in [ROADMAP.md](ROADMAP.md).
+older Kotlin DSP implementation rather than JNI; it supports neither the Moto
+CP240/p8/16-QAM/r3/4 nor the Pixel CP96/64-QAM/r2/3 Cyrinx 2.0 profiles. New
+Pixel measurements capture stereo on Android and decode with the frozen C
+library on the host. Converging
+Android and the iOS HIL receiver on the C core is tracked as technical debt in
+[ROADMAP.md](ROADMAP.md).
 
 ## Implemented Protocol Model
 
 - `G1 Discovery`: ZC preamble + sync/CFO control path
 - `G2 Robust`: D-CSS fallback mode
-- `G3 Turbo`: OFDM mode (`QPSK`, `16QAM`, `64QAM experimental`)
-- OFDM constants:
+- `G3 Turbo`: legacy transport OFDM mode (`QPSK`, `16QAM`, `64QAM experimental`)
+- Legacy transport-PHY constants (distinct from the NFFT-2048 bulk PHY above):
   - FFT size: `1024`
   - Subcarrier spacing: `46.875 Hz`
   - Active carriers: `106`
@@ -191,7 +250,7 @@ For HIL diagnostics, `CyrinxSession.playLocalAudibleBeacon()` emits a role-disti
 ## Build and Test
 
 ```bash
-swift test                    # portable KISS-FFT default (ships to Android too)
+swift test                    # portable KISS-FFT default (Android-capable; JNI pending)
 ./scripts/test-accelerate.sh  # validate the Apple vDSP/Accelerate FFT backend
 ```
 
@@ -248,11 +307,21 @@ swift run cyrinx-sim-bench --profile quiet --out artifacts/bench/sim-quiet.json
   loopback of the shipped C codec).
 - **Smoke test (emits audio):** `.venv/bin/python3 scratch/hw20k/harness.py smoke`.
 - **Adaptive loop (emits audio):** `.venv/bin/python3 scratch/hw20k/adaptive.py <label>`.
-- **M4 bench settings:** Mac output 100 %, Mac input ~22/100 (clips above),
-  phone media volume max. Good geometry: phone face-down on a soft cloth over
-  the function-key area, charge port toward the Mac speakers (39–48 kbps).
+- **Historical 1.x M4 settings:** Mac output 100%, Mac input ~22/100 (clips
+  above), phone media volume max. A historical good geometry placed the phone
+  face-down on soft cloth over the function-key area, charge port toward the
+  Mac speakers (historical 38.4 kbps console aggregate to 46.915 kbps
+  post-sounding ordered PHY payload rate, depending on the profile and evidence
+  contract).
+- **Pixel Cyrinx 2.0 evidence envelope:** MacBook built-in left speaker only,
+  output 50%, waveform peak 0.18, Pixel face-up on 0.5-inch soft cloth above
+  the left function-key area, bottom mic near the speaker, and 48 kHz stereo
+  `UNPROCESSED` capture. These are retained route qualifications, not universal
+  defaults or an acoustic-exposure rating. Re-derive them after any device,
+  pose, route, room, or level change.
+
   Overhanging the mic into the keyboard well is reverberant (the MRC-carried
-  ~11.6 kbps cell); the desk plane below a laptop stand is shadowed — the
+  11.366 kbps cell); the desk plane below a laptop stand is shadowed — the
   speakers fire upward — and degrades to the 138 bps floor.
 
 ## Roadmap & documentation map

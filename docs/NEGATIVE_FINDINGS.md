@@ -1,6 +1,6 @@
 # Negative Findings — Things That Did Not Work (and Why)
 
-Fresh as of 2026-06-10. A durable record of dead ends, disproved hypotheses,
+Fresh as of 2026-07-17. A durable record of dead ends, disproved hypotheses,
 and hard-won "don't do that" results from the acoustic-link work, so they are
 never rediscovered the expensive way. Each entry: what was tried, what was
 measured, and the takeaway. Positive results live in
@@ -33,10 +33,14 @@ loopback; numbers are quoted as measured.
    (BPSK 11.2 dB, QPSK 11.3, 16-QAM 11.6, 64-QAM 10.9), so PAPR does not
    explain the BPSK failure. See entry 12.
 
-4. **64-QAM uniform does not close on these channels.** Needs ~26 dB SINR;
-   the measured palm-rest/ultrasonic channels sit at ~22 dB, giving EVM ~0.12
-   (SINR ~19 dB) — below 64-QAM's requirement. 16-QAM r3/4 is the practical
-   ceiling for the clean near-field channel.
+4. **The original conclusion “uniform 64-QAM does not close” was too broad;
+   high-rate 64-QAM is what failed.** In the June profile, 64-QAM r3/4 decoded
+   0/339 blocks at EVM 0.173. Cyrinx 2.0 later closed uniform 64-QAM by using
+   CP96, fewer pilots, rate 2/3, and pilot-local LLR weighting. That does not
+   exonerate aggressive coding: the prospective accepted-class result recovered
+   4,215/4,280 blocks (98.4813%), below its 99.9667% baseline, while r3/4 and
+   r5/6 screens were substantially worse. The takeaway is to quote the complete
+   modulation/coding/pilot/CP profile, not a constellation-only “ceiling.”
 
 5. **Stream-end fade kills the final OFDM symbol.** The macOS output chain
    tapers the last ~10 ms when a stream stops; with a frame-wide interleaver,
@@ -47,8 +51,13 @@ loopback; numbers are quoted as measured.
 6. **Overconfident LLRs from one corrupted symbol poison Viterbi.** A single
    bad symbol in 16 (≈1.7% raw BER, trivially correctable in principle)
    dropped decoding to 0–1 of 6 blocks, because its wrong LLRs carried full
-   confidence through the interleaver. Fix: weight each symbol's LLRs by its
-   own pilot EVM² (soft erasure). This also gives burst-noise immunity.
+   confidence through the interleaver. The 2026-06 fix used one global pilot
+   EVM² value per symbol. Cyrinx 2.0 retains that burst-erasure signal and adds
+   known-pilot-only local-frequency residual weighting. On the same fresh
+   captures, local weighting recovered 4,215 blocks versus 3,868 for the frozen
+   global-only decoder (+347; all eight candidate runs improved, none
+   regressed). Payload, decoded bits, and CRC outcomes must remain outside this
+   reliability estimate.
 
 ## Spatial / transducer geometry
 
@@ -70,9 +79,10 @@ loopback; numbers are quoted as measured.
    ~11–19 rad (iPhone) / ~10–31 rad (Pixel) at 19.5–22 kHz, across 8 reps.
    They radiate ultrasonic *power* (a stationary multitone PSD reads 27.8 dB
    "SNR") but the phase is scrambled, so coherent OFDM/QAM yields EVM ~1.0
-   (SINR ~0 dB). Power-per-bin ≠ phase coherence. An inaudible uplink needs
-   non-coherent (MFSK/OOK) modulation. This is a general consumer-micro-speaker
-   limit, not a single-device quirk.
+   (SINR ~0 dB). Power-per-bin ≠ phase coherence. An inaudible uplink on these
+   routes needs non-coherent (MFSK/OOK) modulation. The failure reproduced on
+   both tested phone models; two models do not establish a universal
+   consumer-micro-speaker limit.
 
 10. **96 kHz sampling does not rescue the ultrasonic uplink — it's the
     transducer.** a2m (phone→Mac) in 18.5–21 kHz fails at 48 kHz too, so the
@@ -150,11 +160,59 @@ loopback; numbers are quoted as measured.
     fictitious "0 dB sync consistency" reading that misdirected the
     investigation for a round. Diagnostics must take the same `Config` object.
 
-20. **Both microphones are captured but only mic 0 is decoded.** Android
-    captures stereo (UNPROCESSED) but the decoder reads channel 0; iOS records
-    mono. No diversity combining was in use until MRC was added
-    (`demodulate_frame(rx, rx2=...)`, digitally validated, OTA pending a stereo
-    receiver — issue #7). Left spatial-diversity goodput on the table.
+20. **“Both microphones are captured but only mic0 is decoded” is now a
+    historical limitation, not current Pixel behavior.** Android captures the
+    two direct Pixel microphones with 48 kHz stereo `UNPROCESSED`, and the C
+    receiver can select mic0 or MRC using held-out known pilots. Selection on
+    payload, decoded data, ordinary data-bin EVM, or CRC would leak outcome
+    information and invalidate the benchmark. iOS stereo capture and broader
+    device-policy validation remain incomplete.
+
+21. **CP48 is below the retained reliability-qualified CP floor for this Pixel
+    route, even though it can occasionally look fast.** Two opposite-order
+    one-pair screens produced 93/107 blocks
+    (63.277 kbps) and 64/107 (43.546 kbps), while both paired CP240 baselines
+    recovered 75/75. That order sensitivity is precisely why the faster single
+    observation was not promoted. CP96 is the retained Cyrinx 2.0 choice.
+
+22. **Weakening FEC above rate 2/3 did not buy usable goodput in the tested
+    Pixel screens.** A 64-QAM r3/4 screen recovered 87/121 blocks (57.925 kbps)
+    against a 75/75
+    baseline. The 64-QAM r5/6 screens recovered only 24/134 at volume 50 and
+    21/134 at volume 60 (15.979 and 13.982 kbps). More drive did not rescue the
+    weaker code. A rate near 0.70, between 2/3 and 3/4, is a future hypothesis,
+    not a measured result.
+
+23. **Extending the lower band edge to 600 Hz failed its predeclared screen and
+    provided no evidence of added capacity.** The candidate recovered 60/110
+    blocks and delivered 39.948 kbps, versus 77/77 for its paired conservative
+    baseline. There was no simultaneous same-MCS 1.1 kHz control or reverse-
+    order run because the branch stopped at its declared gate, so this does not
+    isolate the lower edge causally. It is sufficient evidence not to promote
+    the 600 Hz branch.
+
+24. **The tested longer-frame and sparser-pilot campaigns did not produce a
+    monotonic amortization win.** In separate zero-gap campaigns, pilot spacing
+    16 at 64 symbols measured 69.110 kbps and 97.009% block success; spacing 32
+    measured 68.960 kbps and 93.311%; spacing 64 with 96 symbols measured
+    69.652 kbps and 90.666%. A 128-symbol, spacing-16 campaign measured
+    66.102 kbps and 89.093%.
+    Across separate sessions/configurations, that observed mean was only
+    ~0.34% above the fresh 64-symbol, 250 ms-gap result; it is not a causal
+    estimate of either length or gap. The candidate's paired advantage decayed
+    from ~24.6 kbps in the first pair to 6.1–8.7 kbps in the final two. The
+    baseline remained near 48.9 kbps. The failure is consistent with
+    time-varying channel error that high-order QAM exposes, not fixed
+    transaction overhead. A randomized length/gap factorial remains required.
+
+25. **A naïve fixed-comb pilot tracker is not a complete channel-drift fix.**
+    Re-observing the same pilot frequencies each symbol leaves the channel
+    between them interpolated, so frequency-local changes can remain invisible.
+    Making hard 64-QAM decisions part of the update can also propagate an early
+    error. Decision-directed tracking at `alpha = 0.05` is therefore research
+    only; it has not earned a prospective headline. The controlled next test is
+    a denser or frequency-staggered known-pilot lattice, optionally paired with
+    a code rate near 0.70.
 
 ## Measurement-integrity reminders (process, not physics)
 
@@ -167,6 +225,10 @@ loopback; numbers are quoted as measured.
 - **Trailing silence is excluded from the goodput "span".** Honest for long
   streams (amortizes) but inflates short 5-frame runs vs a gross accounting;
   report both.
+- **Inter-frame gaps define a measurement class.** The accepted 36.571 kbps and
+  Cyrinx 2.0 65.875 kbps results both use four 12,000-sample gaps. A zero-gap
+  result is useful but must be labeled separately; it is a scheduling change,
+  not an algorithmic throughput gain.
 - **A "22 kbps capacity calculation" is not a measurement.** The predecessor
   stack claimed ~22 kbps from an arithmetic formula while actually measuring
   ~0.27 kbps OTA. Always quote measured, byte-verified goodput.

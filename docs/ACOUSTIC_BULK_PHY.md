@@ -1,27 +1,103 @@
 <!-- Negative results / dead ends: docs/NEGATIVE_FINDINGS.md -->
-# Wideband Acoustic Bulk PHY: Measured 36.6 / 27.3 kbps Mac ↔ Pixel 7a
+# Cyrinx 2.0 Wideband Acoustic Bulk PHY: Measured 65.9 kbps Mac → Pixel 7a
 
-Fresh as of 2026-06-09. Status: goal (≥20 kbps measured goodput each
-direction) achieved and verified on hardware. Working code:
-`scratch/hw20k/` (Python harness + modem), `Apps/HIL/android/.../BulkDemod.kt`
-(on-device decoder). Lab notebook: [scratch/hw20k/NOTES.md](../scratch/hw20k/NOTES.md).
+Fresh as of 2026-07-17. Status: the original ≥20 kbps goal remains verified in
+both directions, and Cyrinx 2.0 raises the measured Mac→Pixel result in the
+accepted five-frame/250 ms-gap schedule class from 36.571 to 65.875 kbps. The
+bulk PHY research harness is under `scratch/hw20k/`; the library modem source
+of truth is now the C implementation under `Sources/CCyrinx`.
 
 ## 1. Result
+
+### Cyrinx 2.0 downlink result (2026-07-17)
+
+The prospective test used a Pixel 7a face-up on 0.5-inch soft cloth above the
+MacBook left function key, with its bottom microphone near the MacBook's
+built-in left speaker. The A/C was enabled but thermostat-cycling and
+uninstrumented. The qualified drive envelope was Mac output volume 50%, digital
+waveform peak 0.18, 48 kHz stereo `UNPROCESSED` capture, and left-speaker-only
+transmit. SPL was not instrumented, so these settings are device-specific, not
+an acoustic-exposure rating.
+
+| Schedule class and profile | Blocks verified | Mean span goodput | Run range | Paired baseline |
+|---|---:|---:|---:|---:|
+| Accepted class: 5 frames, four 12,000-sample gaps; CP96, pilots/16, 64-QAM r2/3, 64 symbols | 4,215/4,280 (98.4813%) | **65.875457875 kbps** | 65.266–66.641 kbps | 44.199424 kbps |
+| Separate zero-gap class: 5 frames; CP96, pilots/64, 64-QAM r2/3, 96 symbols | 6,129/6,760 (90.6657%) | **69.651849660 kbps** | 65.731–72.641 kbps | 48.102681 kbps |
+
+The accepted-class candidate beat its paired baseline in all eight balanced-
+order pairs (exact one-sided sign test, `p = 1/256`). All 16 planned runs
+completed. It did **not** pass the predeclared reliability gate: its 98.4813%
+block success was below the baseline's 2,999/3,000 (99.9667%). The 65.875 kbps
+number is therefore the accepted same-class throughput result, not a claim of
+equal or better resilience.
+
+The zero-gap campaign also won 8/8 pairs (`p = 1/256`) and completed all 16
+planned runs. Its mean gross goodput, whose denominator adds the declared pads
+(zero leading and 16,000-sample trailing) to the scheduled span, was
+68.636220472 kbps.
+It is a different schedule/accounting class and also failed the reliability
+gate: the baseline recovered 4,509/4,520 blocks (99.7566%). This eight-pair
+confirmatory mean is 1.9045× the 36.571 kbps website benchmark, not “almost
+tripled”; individual runs and earlier development screens reached higher means.
+
+An isolated receiver comparison replayed the same fresh accepted-class captures
+through two frozen decoders. Pilot-local LLR weighting recovered 4,215 blocks,
+versus 3,868 for the legacy global-only weighting: +347 blocks, with every one
+of the eight candidate runs improved and none regressed. This isolates a
+receiver-algorithm gain from acoustic-run variation; the remaining profile
+gain also includes the waveform and scheduling changes below.
+
+The main throughput mechanisms are:
+
+- CP reduced to 96 samples after route-specific characterization;
+- comb-pilot spacing widened from 8 to 16 for the accepted result;
+- 64-QAM with rate-2/3 convolutional coding, selected because rate 3/4 and
+  rate 5/6 failed the Pixel screens;
+- known-pilot-only, local-frequency LLR reliability weighting;
+- held-out-pilot-only selection between mic0 and two-microphone MRC, without
+  consulting payload, decoded bits, CRC, or ordinary data-bin EVM; and
+- the qualified volume-50/peak-0.18 route described above.
+
+The 96-symbol frame and removal of the inter-frame gap are amortization and
+accounting changes, not receiver improvements. They are reported separately
+from the accepted schedule class.
+
+For reproducibility, the accepted-class campaign seed was `20260770`; its plan
+SHA-256 was `fe295a7835061ccb55f9ffe277c455c97b3487decb6e9da38b01af61c32e05ef`,
+execution-manifest SHA-256 was
+`3d46bf7eccf669a6d29ca6593662c6c423710c24062aebe6c9ec16ddf7646ec6`, and
+frozen decoder SHA-256 was
+`bd7e52acaf1d9c7a1994d5a350af8baf2ea2fef03f47ed3a0f59fd8513c0327c`.
+The same-capture decoder-comparison report SHA-256 was
+`57522f6b3cafb5e925a2bfbb1ea70e5448999a17052aa3201a6f4f91367009bc`.
+For the zero-gap campaign (seed `20260800`), the corresponding plan, local
+execution manifest, and decoder hashes were
+`8e5f1062dcccc42bbfac866a8659bf8d1884dd54bb054a9f42d944a1919e966b`,
+`9846a33717c18e457169578217dbbdabe740eaa26c09965cb24ce128c9d1e462`, and
+`c6e4e5adc0865a379dc036c549cef4cd91528152ffffa66ee2fdf9be47580956`.
+The manifests and captures are retained local benchmark artifacts ignored by
+Git, not published repository files; the hashes bind the exact local evidence
+when it is transferred or archived.
+
+### Original bidirectional benchmark (2026-06-09)
 
 Physical setup: Pixel 7a face-up on the MacBook Pro palm rest on a soft
 cloth; both devices at maximum volume; normal office ambient.
 
-| Direction | Decoder | Blocks verified | Goodput |
+| Direction | Decoder | Decoded records passing historical check | Goodput |
 |---|---|---|---|
 | Mac → Pixel 7a (1.1–23 kHz) | **on the Pixel** (BulkDemod.kt) | 375/375 (96,000 B) | **36,571 bps** |
 | Pixel 7a → Mac (0.6–17 kHz) | on the Mac (modem.py) | 280/280 (71,680 B) | **27,307 bps** |
 
-Goodput definition (deliberately conservative): payload bytes that are both
-CRC32-valid and byte-identical to the transmitted PRBS, divided by the span
+Historical metric definition: decoded payload records that are CRC32-valid and
+members of the deterministic transmitted-PRBS set, divided by the span
 from the first frame's chirp to the last frame's final data sample — so
 preambles, channel-estimation symbols, pilots, FEC redundancy, CRCs, and
 inter-frame gaps all count against the number. 5 frames per direction
-(21.0 s span each). Reproduce with:
+(21.0 s span each). The verifier did not retain decoded-record uniqueness,
+strict stream order, or scheduled slot attribution; 375/375 and 280/280 must
+therefore not be read as proof that every unique scheduled block was recovered.
+The later Cyrinx 2.0 referee enforces that stronger contract. Re-run with:
 
 ```
 .venv/bin/python3 scratch/hw20k/final_measurement.py
@@ -47,8 +123,10 @@ plus an exponential sine sweep and a long pure tone. Artifacts:
 | 18–21 | 36.1 dB | 10.0 dB |
 | 21–24 | 40.7 dB | 4.6 dB |
 
-- Shannon capacity (8-bit cap): ≈184 kbps M→A, ≈155 kbps A→M. The achieved
-  link uses ~20–24% of capacity; substantial headroom remains.
+- Shannon capacity (8-bit cap): ≈184 kbps M→A, ≈155 kbps A→M. The original
+  June links used ~20–24% of those estimates; the 65.875 kbps downlink is about
+  36% of the historical downlink estimate. These are diagnostic upper bounds,
+  not achievable-goodput predictions.
 - The Mac→Pixel channel is essentially **flat to 23 kHz** in this near-field
   geometry. An earlier walkthrough claim of "−32.5 dB roll-off at 16 kHz"
   does not reproduce; design decisions based on it were wrong.
@@ -59,10 +137,11 @@ plus an exponential sine sweep and a long pure tone. Artifacts:
 - Delay spread (ESS, −30 dB): ~21.7 ms M→A, ~10.8 ms A→M. Most energy is in
   the first few ms; CP 768 (16 ms) plus per-symbol tracking suffices.
 
-## 3. Original modem design and current receiver update
+## 3. Original modem design and Cyrinx 2.0 receiver update
 
-48 kHz PCM16. NFFT 2048 (23.4 Hz bins), CP 768 → 17.05 symbols/s.
-Per frame: 4096-sample chirp (2→16 kHz) for detection/coarse sync, 2048
+The original 2026-06 profile used 48 kHz PCM16, NFFT 2048 (23.4 Hz bins),
+and CP768 → 17.05 symbols/s. Per frame: 4096-sample chirp (2→16 kHz) for
+detection/coarse sync, 2048
 samples of guard (lets the chirp's reverb tail decay before channel
 estimation), 2 known QPSK sync symbols (LS channel estimate + per-bin noise
 variance from their difference), then 64 data symbols.
@@ -70,10 +149,11 @@ variance from their difference), then 64 data symbols.
 - Comb pilots every 8th used bin, random QPSK. Per symbol: iterative
   (3-pass) fit of pilot phase ramp → timing slope + common phase error,
   applied to all bins. This absorbs the −24.6 ppm clock skew.
-- Uniform 16-QAM on data bins (per-bin adaptive loading is implemented but
-  wasn't needed to hit the target).
-- FEC: K=7 (171,133) convolutional, punctured to rate 3/4, soft max-log
-  LLRs, frame-wide random interleaver, zero-terminated, Viterbi decode.
+- The original profile used uniform 16-QAM and rate 3/4. Cyrinx 2.0's measured
+  Pixel downlink uses uniform 64-QAM and rate 2/3; the stronger code was
+  necessary at this constellation density.
+- FEC remains K=7 (171,133) convolutional coding with soft max-log LLRs,
+  frame-wide random interleaving, zero termination, and Viterbi decode.
 - The 2026-06 receiver used **one global pilot-EVM² term per symbol** in every
   data-bin LLR. The current Cyrinx 2.0 C receiver retains that burst-erasure
   signal but adds payload-independent local-frequency weighting: corrected
@@ -86,8 +166,8 @@ variance from their difference), then 64 data symbols.
   inside the CP.
 - All deterministic streams (pilots, sync symbols, interleaver permutation,
   PRBS payload/padding) derive from a shared splitmix64 generator
-  (`DetRng`), implemented identically in Python and Kotlin, so the phone
-  regenerates the expected payload locally and verifies bytes on-device.
+  (`DetRng`). The retained Python oracle and legacy Kotlin decoder implement
+  the same streams for cross-checking; C is the canonical modem implementation.
 
 Direction-specific transmit profiles, both required by measurement (§4):
 Mac→Pixel uses the **left speaker only**; both directions append ≥0.3 s of
@@ -170,13 +250,14 @@ were exonerated by them, which is worth as much as the positives.
 
 ## 7. Status, originality, and limitations
 
-This is a measured experiment, not a product. Known deficiencies: the bulk
-PHY is not integrated into the public Swift/C transport API; receive is
-batch-decoded (no real-time streaming RX yet, though decode runs 20x real
-time); MCS selection is open-loop per session (no closed-loop rate
-adaptation); the X25519/CTR/HMAC envelope from the older stack is not wired
-into the bulk PHY; and results are validated in exactly one geometry
-(Pixel 7a on a MacBook Pro palm rest) on one device pair.
+This is a measured experiment, not a product. The C PHY is the canonical
+implementation; Swift should remain a thin public binding, Kotlin is a legacy
+HIL implementation that can drift, and Python is the research/oracle layer,
+not another shipping modem. Known deficiencies remain: receive is batch-
+decoded; closed-loop rate adaptation is not integrated; the older security
+envelope is not wired into this bulk PHY; and the Cyrinx 2.0 headline is one
+near-field geometry on one device pair. Robust maximum throughput at a 3 ft
+(0.91 m) separation remains explicit roadmap work.
 
 On originality: OFDM, cyclic prefixes, comb pilots, QAM, punctured
 convolutional codes with Viterbi decoding, CRC block verification, and
@@ -190,14 +271,21 @@ goodput on commodity hardware with all overhead counted, the discriminating-
 experiment methodology of §5, and the platform/physical defect catalog of
 §4/§6.
 
-## 8. Where to go next (untapped headroom)
+## 8. Where to go next
 
-- Per-bin adaptive bit loading (`adapt` profile in `ota_test.py`): the SNR
-  is 35–45 dB mid-band; 64/256-QAM there should roughly double throughput.
-- Maximal-ratio combining of the Pixel's two mics (mic0+mic1).
-- True 2×2 MIMO (Mac stereo speakers × Pixel stereo mics) for spatial
-  multiplexing Mac→Pixel.
-- Real-time streaming RX (current Kotlin decoder is batch over a capture,
-  but runs 20× real time, so a ring-buffer port is straightforward).
+- Recover reliability before raising the headline: test a code rate near 0.70
+  and a denser or frequency-staggered pilot lattice against channel drift.
+  A decision-directed tracker with `alpha = 0.05` is research-only until it
+  survives prospective tests without error propagation.
+- Maximize robust throughput at 3 ft, with calibration and MCS selection bound
+  to each device's speaker/microphone route.
+- Evaluate true 2×2 MIMO (Mac stereo speakers × Pixel stereo mics) for spatial
+  multiplexing; blind duplicate-speaker drive remains invalid.
+- Real-time streaming RX (the legacy Kotlin HIL decoder is batch over a capture,
+  but runs 20× real time, so measured CPU headroom exists; streaming sync and
+  buffer integration remain engineering work).
 - Link-layer integration: rate adaptation from receiver-fed-back per-bin
   SNR, ARQ for the residual block errors at higher MCS.
+- The ultrasonic channel investigation is complete, but an integrated
+  ultrasonic mode is not. A deliberately pleasant, low-rate audible mode has
+  not yet been measured.

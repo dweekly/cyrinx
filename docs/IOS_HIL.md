@@ -18,16 +18,20 @@ left palm rest (same geometry as the Pixel 7a runs); both devices at maximum
 volume; normal office ambient. 48 kHz PCM16, NFFT 2048, CP 768, 16-QAM rate
 3/4, 5 frames per direction (21.0 s span each).
 
-| Direction | Band | Decoder | Blocks verified | Goodput |
+| Direction | Band | Decoder | Frame-attributed blocks verified | Goodput |
 |---|---|---|---|---|
 | Mac → iPhone | 1.1–23 kHz | **on the iPhone** (BulkDemod.swift) | 375/375 (96,000 B) | **36.57 kbps** |
 | iPhone → Mac | 0.6–11 kHz | on the Mac (modem.py) | 173/175 (44,288 B) | **16.87 kbps** |
 
-Goodput is ordered-verified: each counted block is CRC32-valid **and**
-byte-identical to the transmitted DetRng PRBS at the **same ordered position**
-(block j of the attributed frame == payload position j), divided by the span
+Goodput uses frame-attributed position verification: each counted block is
+CRC32-valid **and** byte-identical to the transmitted DetRng PRBS at the same
+position within the uniquely attributed frame (block j == payload position j),
+divided by the span
 from the first frame's chirp to the last frame's final data sample. Preambles,
 sync symbols, pilots, FEC, CRCs, and inter-frame gaps all count against it.
+The historical campaign did not additionally bind that attributed frame to a
+scheduled-stream slot, so it is not silently relabeled as the later Cyrinx 2.0
+strict scheduled-slot contract.
 
 The Mac→iPhone number matches the Pixel 7a (36.571 kbps) almost exactly — the
 iPhone mic + Mac left speaker in this geometry behave equivalently. The
@@ -105,9 +109,10 @@ depuncture, K=7 (171,133) Viterbi traceback, and CRC32 all match. Reproduce:
 (The validator links `BulkDemod.swift` directly — it is pure Foundation, no
 UIKit/AVFoundation — so the exact source the app ships is what gets checked.)
 
-Note: the Swift port uses **ordered** verification (block j == payload position
-j of the attributed frame), tightening the looser set-membership check in the
-original Kotlin port, per the verification language in the task.
+Note: the Swift port uses **within-frame positional** verification (block j ==
+payload position j of the attributed frame), tightening the looser
+set-membership check in the original Kotlin port. It still does not establish
+the later referee's scheduled-stream slot identity.
 
 ## 4. iPhone speaker is the binding constraint (audible roll-off + ultrasonic incoherence)
 
