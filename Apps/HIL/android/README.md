@@ -7,6 +7,12 @@ This is an Android HIL companion app for `cyrinx` with:
 - Duplex audio backend (`AudioRecord` + `AudioTrack`)
 - ADB-automatable controls for fully scripted test runs
 
+The portable C implementation is the canonical wideband bulk-PHY decoder.
+Android currently uses the C decoder on the host after tokenized PCM capture;
+it does not yet bind that decoder through JNI. `BulkDemod.kt` is retained as a
+legacy on-device control decoder for its one fixed profile, not as a co-equal
+source of PHY behavior.
+
 ## Build + Install
 
 ```bash
@@ -137,9 +143,29 @@ The sample origin above is illustrative, not a reusable calibration. The primary
 always all scheduled frame slots plus all four gaps; missed endpoint frames cannot shorten it.
 `gross_goodput` additionally includes `trailing_pad_samples`.
 
-`bulk_decode` is the fixed CP768/p8/16-QAM/r3/4 Kotlin control decoder. It did
-not decode the Cyrinx 2.0 CP96/p16/64-QAM/r5/6 campaign; that campaign captured
-on Android and used the portable C decoder on the host.
+`bulk_decode` is the fixed CP768/p8/16-QAM/r3/4 Kotlin control decoder. It does
+not implement CP96, pilot spacing 16 or 64, 64-QAM, r2/3, pilot-local LLR
+reliability, automatic microphone selection, or two-microphone MRC. Use it to
+reproduce the legacy control profile only.
+
+"Cyrinx 2.0" names the canonical C receiver and fast-profile generation, not
+only the earlier Moto r5/6 profile. On the Pixel 7a, the CP96/p16/64-QAM/r2/3
+profile measured 65.875 kbps while retaining the accepted benchmark's
+12,000-sample (0.25 s) inter-frame gap, versus 36.571 kbps for the accepted
+benchmark. It recovered 4,215/4,280 blocks and won all eight order-balanced
+pairs, but failed the predeclared strict reliability gate against the more
+conservative baseline.
+
+A separately labeled CP96/p64/64-QAM/r2/3, 96-symbol zero-gap research class
+reached 69.652 kbps mean (65.731–72.641 kbps across runs), 1.9045x the
+36.571 kbps result. It recovered 6,129/6,760 blocks (90.666%), won 8/8 pairs,
+and also failed the strict reliability gate. Do not compare that number
+directly with the gap-preserving flagship or describe it as almost tripled.
+
+For both new measurements, the Android app captured two-channel Pixel audio;
+a frozen build of the portable C library decoded the capture on the host. The
+Kotlin decoder did not produce either result on-device. Integrated ultrasonic
+operation and a lower-rate, pleasant-audible mode remain future work.
 
 ## macOS Peer CLI
 

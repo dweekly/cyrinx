@@ -3,11 +3,11 @@ import Foundation
 
 /// Swift binding for the portable-C wideband bulk PHY (`cyrinx_bulk`).
 ///
-/// The default configuration preserves the Cyrinx 1.x control geometry. Use
-/// ``Configuration/makeCyrinx2Fast(amplitude:clipSigma:)`` to opt into the
-/// measured Cyrinx 2.0 fast geometry after staging a route-specific level. The
-/// DSP lives in C and is validated against the golden vectors; no DSP lives in
-/// this wrapper. Android's Kotlin demodulator is a separate implementation.
+/// The default configuration preserves the Cyrinx 1.x control geometry. Use a
+/// route-specific Cyrinx 2.0 factory only after staging and validating that
+/// physical route. The DSP lives in C and is validated against the golden
+/// vectors; no DSP lives in this wrapper. Android's Kotlin demodulator is a
+/// separate legacy implementation.
 ///
 /// See docs/PUBLICATION.md (Phase 1) and docs/ACOUSTIC_BULK_PHY.md.
 public struct BulkPHY: Sendable {
@@ -59,30 +59,167 @@ public struct BulkPHY: Sendable {
             self.chirpF1 = chirpF1
         }
 
-        /// Creates the Cyrinx 2.0 fast SISO configuration at a caller-staged level.
+        /// Creates the Moto G 2026 near-field high-goodput profile.
         ///
-        /// The preset uses CP 96, pilots every 16 bins, 64-QAM, rate-5/6
+        /// The preset uses CP 240, pilots every 8 bins, 16-QAM, rate-3/4
         /// convolutional coding, and 64 data symbols over 1.1–23 kHz at 48 kHz.
-        /// Its measured 83.708 kbit/s mean applies only to the documented
-        /// Mac-to-Moto cell; this factory does not establish that a new route can
-        /// sustain the profile or that the supplied level is acoustically safe.
+        /// Its measured 46.915 kbit/s one-frame payload rate applies only to the
+        /// documented clean-contact Mac-to-Moto cell. The retained result was
+        /// 225/225 blocks over three independent frames; it was not a prospective
+        /// reliability campaign. This factory does not establish that a new route
+        /// can sustain the profile or that the supplied level is acoustically safe.
         ///
         /// - Parameters:
         ///   - amplitude: The route-specific digital amplitude selected after
         ///     clipping and distortion checks.
         ///   - clipSigma: The post-waveform peak-clipping threshold.
-        /// - Returns: The measured Cyrinx 2.0 fast-profile configuration.
+        /// - Returns: The measured Moto G 2026 near-field profile configuration.
+        public static func makeMotoG2026NearFieldHighGoodputProfile(
+            amplitude: Double,
+            clipSigma: Double = 3.3
+        ) -> Self {
+            Self(
+                lowFrequencyHz: 1100.0,
+                highFrequencyHz: 23000.0,
+                pilotEvery: 8,
+                bitsPerBin: 4,
+                rate: "3/4",
+                symbolCount: 64,
+                fftSize: 2048,
+                cyclicPrefix: 240,
+                sampleRate: 48000,
+                amplitude: amplitude,
+                clipSigma: clipSigma,
+                chirpF0: 2000.0,
+                chirpF1: 16000.0
+            )
+        }
+
+        /// Creates the schedule-comparable Pixel 7a near-field flagship profile.
+        ///
+        /// The preset uses CP 96, pilots every 16 bins, 64-QAM, rate-2/3
+        /// convolutional coding, and 64 data symbols over 1.1–23 kHz at 48 kHz.
+        /// Its measured 65.875 kbit/s eight-pair mean applies only to the
+        /// documented Mac-to-Pixel bench cell with four 12,000-sample gaps
+        /// between five frames. That campaign recovered 4,215/4,280 blocks
+        /// (98.481%) and failed its baseline-equivalent reliability gate.
+        /// Reproducing the receiver policy requires two sample-aligned microphone
+        /// channels and `decode(_:automaticallyCombining:)`; this configuration
+        /// alone does not enable diversity. Pass Pixel capture channel 0 as the
+        /// primary `samples` argument and channel 1 as `second`; the primary
+        /// channel drives synchronization and the mono fallback. Inter-frame
+        /// scheduling is outside the PHY configuration, so callers must separately
+        /// reproduce the measured gap schedule. This factory does not establish
+        /// that a new route can sustain the profile or that the supplied level is
+        /// acoustically safe.
+        ///
+        /// - Parameters:
+        ///   - amplitude: The route-specific digital amplitude selected after
+        ///     clipping and distortion checks.
+        ///   - clipSigma: The post-waveform peak-clipping threshold.
+        /// - Returns: The measured Pixel 7a schedule-comparable configuration.
+        public static func makePixel7aNearFieldFlagshipProfile(
+            amplitude: Double,
+            clipSigma: Double = 3.3
+        ) -> Self {
+            Self(
+                lowFrequencyHz: 1100.0,
+                highFrequencyHz: 23000.0,
+                pilotEvery: 16,
+                bitsPerBin: 6,
+                rate: "2/3",
+                symbolCount: 64,
+                fftSize: 2048,
+                cyclicPrefix: 96,
+                sampleRate: 48000,
+                amplitude: amplitude,
+                clipSigma: clipSigma,
+                chirpF0: 2000.0,
+                chirpF1: 16000.0
+            )
+        }
+
+        /// Creates the peak-goodput Pixel 7a near-field research profile.
+        ///
+        /// The preset uses CP 96, pilots every 64 bins, 64-QAM, rate-2/3
+        /// convolutional coding, and 96 data symbols over 1.1–23 kHz at 48 kHz.
+        /// Its measured 69.652 kbit/s eight-pair confirmatory mean applies only
+        /// to the documented Mac-to-Pixel zero-gap bench cell. That campaign
+        /// recovered 6,129/6,760 blocks (90.666%), failed its baseline-equivalent
+        /// reliability gate, and selected two-microphone MRC for 26/40 candidate
+        /// frames. Reproducing the receiver policy therefore requires two
+        /// sample-aligned microphone channels and
+        /// `decode(_:automaticallyCombining:)`; this configuration alone does
+        /// not enable diversity. Pass Pixel capture channel 0 as the primary
+        /// `samples` argument and channel 1 as `second`; the primary channel
+        /// drives synchronization and the mono fallback. Inter-frame scheduling
+        /// is also outside this PHY configuration, so callers must separately
+        /// select the zero-gap burst schedule used by that measurement. This
+        /// factory does not establish that a new route can sustain the profile or
+        /// that the supplied level is acoustically safe.
+        ///
+        /// - Parameters:
+        ///   - amplitude: The route-specific digital amplitude selected after
+        ///     clipping and distortion checks.
+        ///   - clipSigma: The post-waveform peak-clipping threshold.
+        /// - Returns: The measured Pixel 7a peak-goodput research configuration.
+        public static func makePixel7aNearFieldPeakGoodputProfile(
+            amplitude: Double,
+            clipSigma: Double = 3.3
+        ) -> Self {
+            Self(
+                lowFrequencyHz: 1100.0,
+                highFrequencyHz: 23000.0,
+                pilotEvery: 64,
+                bitsPerBin: 6,
+                rate: "2/3",
+                symbolCount: 96,
+                fftSize: 2048,
+                cyclicPrefix: 96,
+                sampleRate: 48000,
+                amplitude: amplitude,
+                clipSigma: clipSigma,
+                chirpF0: 2000.0,
+                chirpF1: 16000.0
+            )
+        }
+
+        /// Creates an earlier experimental Cyrinx 2.0 candidate.
+        ///
+        /// A recovered, unversioned bench narrative reports 83.708 kbit/s for
+        /// this CP96/p16/64-QAM/r5/6 geometry, but its ignored manifest and raw
+        /// bundle are missing. The result also failed its baseline-equivalent
+        /// block-success gate. This constructor remains available only to avoid
+        /// a silent source-compatible behavior change. Do not treat it as a
+        /// durable measured device profile.
+        ///
+        /// - Parameters:
+        ///   - amplitude: The route-specific digital amplitude selected after
+        ///     clipping and distortion checks.
+        ///   - clipSigma: The post-waveform peak-clipping threshold.
+        /// - Returns: The unsupported experimental profile configuration.
+        @available(
+            *, deprecated,
+            message: "Evidence-limited historical candidate; use a retained route-specific profile."
+        )
         public static func makeCyrinx2Fast(
             amplitude: Double,
             clipSigma: Double = 3.3
         ) -> Self {
             Self(
+                lowFrequencyHz: 1100.0,
+                highFrequencyHz: 23000.0,
                 pilotEvery: 16,
                 bitsPerBin: 6,
                 rate: "5/6",
+                symbolCount: 64,
+                fftSize: 2048,
                 cyclicPrefix: 96,
+                sampleRate: 48000,
                 amplitude: amplitude,
-                clipSigma: clipSigma
+                clipSigma: clipSigma,
+                chirpF0: 2000.0,
+                chirpF1: 16000.0
             )
         }
     }

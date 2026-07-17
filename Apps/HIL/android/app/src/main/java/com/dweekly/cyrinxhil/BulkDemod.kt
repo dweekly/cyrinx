@@ -15,20 +15,23 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * On-device demodulator for the wideband bulk OFDM PHY.
+ * Legacy on-device control demodulator for the wideband bulk OFDM PHY.
  *
- * Faithful port of the receive path of scratch/hw20k/modem.py (the Python
- * prototype validated over the air). Decodes a PCM16LE capture from this
- * device's own microphone and verifies payload bytes against the DetRng
- * (splitmix64) PRBS the Mac transmitter uses, so the phone autonomously
- * proves end-to-end goodput without shipping samples off-device.
+ * This older Kotlin port decodes a PCM16LE capture from this device's own
+ * microphone and verifies payload bytes against the DetRng (splitmix64) PRBS
+ * used by the Mac transmitter. It provides on-device evidence for its fixed
+ * control profile without shipping samples off-device, but it is not the
+ * canonical Cyrinx 2.0 receiver.
  *
- * Fixed Cyrinx 1.x control profile: 48 kHz, NFFT 2048, CP 768, comb pilots every 8th used bin,
- * uniform 16-QAM, convolutional K=7 (171,133) punctured to 3/4, frame-wide
- * interleaving, CRC32 per 256-byte payload block. The Cyrinx 2.0
- * CP96/p16/64-QAM/r5/6 campaign used Android for tokenized capture and the C
- * library on the host for decoding; this Kotlin decoder does not implement
- * that fast profile.
+ * Fixed Cyrinx 1.x control profile: 48 kHz, NFFT 2048, CP 768, comb pilots
+ * every 8th used bin, uniform 16-QAM, convolutional K=7 (171,133) punctured
+ * to 3/4, frame-wide interleaving, CRC32 per 256-byte payload block. It does
+ * not implement CP96, pilot spacing 16 or 64, 64-QAM, rate 2/3, pilot-local
+ * LLR reliability,
+ * automatic microphone selection, or two-microphone MRC. Cyrinx 2.0 Pixel
+ * campaigns use Android for tokenized stereo capture and a frozen build of the
+ * canonical C library on the host for decoding; they are not on-device Kotlin
+ * decode results.
  */
 object BulkDemod {
     const val SRATE = 48000

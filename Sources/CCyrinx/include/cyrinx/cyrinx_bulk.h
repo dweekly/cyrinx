@@ -2,10 +2,17 @@
  *
  * This is the canonical portable C implementation used by the strict Cyrinx
  * 2.0 host decoder. It supports both the stable CP768/p8/16-QAM/r3/4 control
- * geometry and the explicitly configured CP96/p16/64-QAM/r5/6 fast geometry.
- * The measured fast result is route-specific; callers must characterize and
- * stage each physical route before selecting it. Android BulkDemod.kt is a
- * separate Kotlin implementation, not a JNI binding to this library.
+ * geometry and explicitly configured low-CP, sparse-pilot, 64-QAM profiles.
+ * Measured profiles are route-specific: the retained Moto G 2026 clean-cell
+ * result used 16-QAM rate 3/4 with CP 240. The Pixel 7a Cyrinx 2.0 campaigns
+ * used CP 96 and 64-QAM rate 2/3: pilots/16 with 64 symbols for the
+ * schedule-comparable flagship and pilots/64 with 96 symbols for the separate
+ * zero-gap peak-goodput profile. An earlier
+ * CP96/rate-5/6 Moto result survives only in an unversioned local narrative;
+ * its manifest and raw bundle are missing, so it is not durable evidence.
+ * Callers must characterize and stage each physical route before selecting a
+ * profile. Android BulkDemod.kt is a separate legacy Kotlin implementation,
+ * not a JNI binding to this library.
  *
  * Integer stages are bit-exact and FFT stages float-tolerant against the golden
  * vectors in Tests/Fixtures/golden (see scratch/hw20k/golden_vectors.py).
@@ -165,9 +172,10 @@ int cyrinx_bulk_compute_geometry(const cyrinx_bulk_config *cfg, cyrinx_bulk_geom
 long cyrinx_bulk_modulate(const cyrinx_bulk_config *cfg, const uint8_t *payload, size_t payload_len,
                           float *wave_out, size_t wave_cap, double *data_freq_out);
 
-/* Demodulate one captured frame (single microphone; the golden cases use
- * track_alpha=0 so per-bin decision-directed tracking is disabled). `rx` is the
- * float capture. On success writes geometry.payload_bytes to `out_payload`,
+/* Demodulate one captured frame from one microphone. The C receiver does not
+ * perform decision-directed channel tracking; the corresponding Python golden
+ * comparisons use track_alpha=0. `rx` is the float capture. On success writes
+ * geometry.payload_bytes to `out_payload`,
  * sets *blocks_ok / *blocks_total (CRC-valid blocks) and *evm_rms (optional,
  * may be NULL), and returns payload_bytes. `rx` and `out_payload` must be
  * non-NULL, and rx_len must hold at least geometry.frame_samples. Invalid

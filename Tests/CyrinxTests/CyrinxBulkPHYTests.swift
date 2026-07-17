@@ -8,7 +8,11 @@ import XCTest
 /// CRC block valid. The DSP correctness is pinned by the golden vectors
 /// (CyrinxBulkTXTests); this proves the ergonomic Swift surface is wired up.
 final class CyrinxBulkPHYTests: XCTestCase {
-    private func roundTrip(_ config: BulkPHY.Configuration, line: UInt = #line) {
+    private func roundTrip(
+        _ config: BulkPHY.Configuration,
+        verifyAutomaticDiversity: Bool = false,
+        line: UInt = #line
+    ) {
         let phy = BulkPHY(configuration: config)
         guard let geo = phy.geometry() else {
             return XCTFail("geometry nil", line: line)
@@ -32,6 +36,19 @@ final class CyrinxBulkPHYTests: XCTestCase {
         XCTAssertTrue(
             decoded.isComplete, "blocks \(decoded.blocksOK)/\(decoded.blockCount)", line: line)
         XCTAssertEqual(decoded.payload, payload, "payload round trip", line: line)
+
+        if verifyAutomaticDiversity {
+            guard let automatic = phy.decode(rx, automaticallyCombining: rx),
+                let diagnostics = automatic.automaticDiversity
+            else {
+                return XCTFail("automatic diversity decode nil", line: line)
+            }
+            XCTAssertTrue(automatic.isComplete, line: line)
+            XCTAssertEqual(automatic.payload, payload, line: line)
+            XCTAssertEqual(diagnostics.selectedReceiver, .primary, line: line)
+            XCTAssertEqual(diagnostics.reason, .primaryMarginNotMet, line: line)
+            XCTAssertTrue(diagnostics.hasValidScores, line: line)
+        }
     }
 
     func testRoundTripQPSK() {
@@ -103,29 +120,6 @@ final class CyrinxBulkPHYTests: XCTestCase {
         XCTAssertTrue(decoded.isComplete, "blocks \(decoded.blocksOK)/\(decoded.blockCount)")
         XCTAssertEqual(decoded.payload, payload)
         XCTAssertEqual(decoded.evmRMS, 0.402_005_042_837_308_87, accuracy: 1e-6)
-    }
-
-    func testCyrinx2FastPresetPinsMeasuredGeometry() {
-        let configuration = BulkPHY.Configuration.makeCyrinx2Fast(amplitude: 0.13)
-        let geometry = BulkPHY(configuration: configuration).geometry()
-
-        XCTAssertEqual(configuration.pilotEvery, 16)
-        XCTAssertEqual(configuration.bitsPerBin, 6)
-        XCTAssertEqual(configuration.rate, "5/6")
-        XCTAssertEqual(configuration.cyclicPrefix, 96)
-        XCTAssertEqual(configuration.amplitude, 0.13)
-        XCTAssertEqual(geometry?.payloadBytes, 34_304)
-        XCTAssertEqual(geometry?.blockCount, 134)
-        XCTAssertEqual(geometry?.frameSamples, 147_648)
-        XCTAssertEqual(geometry?.bitsPerSymbol, 5_256)
-        XCTAssertEqual(geometry?.usedBins, 935)
-    }
-
-    func testCyrinx2FastPresetRoundTripsFullFrame() {
-        let configuration = BulkPHY.Configuration.makeCyrinx2Fast(amplitude: 0.13)
-
-        XCTAssertEqual(configuration.symbolCount, 64)
-        roundTrip(configuration)
     }
 
     /// A wrong-length payload is rejected rather than silently truncated.

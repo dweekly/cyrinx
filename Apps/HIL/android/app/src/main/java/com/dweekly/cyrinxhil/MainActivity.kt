@@ -1211,9 +1211,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // On-device demodulation of a wideband bulk-PHY capture (see BulkDemod.kt).
-    // Verifies decoded payload bytes against the transmitter's DetRng PRBS and
-    // logs goodput, so the phone proves reception without help from the Mac.
+    // Legacy on-device demodulation of a wideband bulk-PHY capture (see BulkDemod.kt).
+    // The phone verifies decoded payload bytes against the transmitter's DetRng
+    // PRBS. A headline score additionally requires a payload-independent schedule
+    // origin supplied by the harness; without one, only diagnostic counts are logged.
     private fun runBulkDecode(intent: android.content.Intent) {
         val path = intent.getStringExtra("path")?.takeIf { it.isNotBlank() }
             ?: File(filesDir, "cap.pcm").absolutePath
