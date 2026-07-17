@@ -137,21 +137,22 @@ renders its spectrogram live, and plays it via WebAudio on click; it is not an
 encoded payload frame. The page also provides an interactive EVM
 constellation illustrating the historical failed 64-QAM profile;
 graceful-degradation ladder;
-measured-results table; prior-art section; whitepaper PDF. Full
+measured-results table; prior-art section; both whitepaper PDFs. Full
 OpenGraph/JSON-LD/favicon/sitemap/robots/_headers; desktop + mobile rendering
 and console were validated for the original site. The repository and v1.0.0
-release are public. The Cyrinx 2.0 source update still needs visual QA and an
-authenticated deployment; editing `site/` does not change the live site. See
-`site/README.md`.
+release are public. The Cyrinx 2.0 site source and separate 11-page follow-on
+paper are staged; the site update still needs visual QA and an authenticated
+deployment. Editing `site/` does not change the live site. See `site/README.md`.
 
 ## Track D — Publication finalization (user-gated)
 
-- Fold the 2026-07-17 Cyrinx 2.0 implementation and measurements into the
-  whitepaper, preserving the gap-class and reliability caveats. The revised
-  website is staged locally but not deployed. **The paper does not yet include
-  these Pixel results.**
+- The 2026-07-17 implementation and measurements are documented in the
+  separate 11-page Cyrinx 2.0 follow-on, preserving the gap-class, reliability,
+  host-decode, and artifact-availability caveats. The revised website is staged
+  locally but not deployed.
 - arXiv submission (cs.NI / eess.SP) — needs the user (account + endorsement).
-  The existing 28 pp whitepaper predates the Cyrinx 2.0 Pixel evidence update.
+  Decide whether to submit the 28-page system paper, the focused follow-on, or
+  both as related reports; neither has been submitted.
 - Deploy the Cyrinx 2.0 site update after visual review and authenticated
   Cloudflare access.
 

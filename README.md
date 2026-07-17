@@ -1,6 +1,9 @@
 # cyrinx
 
-**Data over sound, measured** — [cyrinx.org](https://cyrinx.org) · [whitepaper (PDF, 28 pp)](docs/whitepaper/cyrinx-acoustic-link.pdf) · [v1.0.0 release](https://github.com/dweekly/cyrinx/releases/tag/v1.0.0)
+**Data over sound, measured** — [cyrinx.org](https://cyrinx.org) ·
+[Cyrinx 2.0 follow-on (PDF, 11 pp)](docs/whitepaper/cyrinx-2-goodput.pdf) ·
+[Cyrinx 1.0 paper (PDF, 28 pp)](docs/whitepaper/cyrinx-acoustic-link.pdf) ·
+[v1.0.0 release](https://github.com/dweekly/cyrinx/releases/tag/v1.0.0)
 
 `cyrinx` is a **research prototype** exploring data-over-sound for close-range
 desktop-to-phone links. It contains two largely separate strands:
@@ -144,19 +147,16 @@ way); [docs/PRD_VS_AS_BUILT.md](docs/PRD_VS_AS_BUILT.md) (original PRD vs what
 was built and why they diverged). The lab notebook and reproducible harness
 live in [scratch/hw20k/](scratch/hw20k/NOTES.md).
 
-The pre-Cyrinx-2.0 evidence is consolidated in an academic-workshop-style
-whitepaper; the 2026-07-17 receiver and Pixel campaign remain pending paper
-integration —
-[docs/whitepaper/cyrinx-acoustic-link.tex](docs/whitepaper/cyrinx-acoustic-link.tex)
-(compiled PDF:
-[docs/whitepaper/cyrinx-acoustic-link.pdf](docs/whitepaper/cyrinx-acoustic-link.pdf),
-28 pp; pre-Cyrinx-2.0 primary study with a Moto supplement and accounting
-errata through 2026-07-17) — including related work, the historical failed
-64-QAM profile's effective-SINR/EVM limit, the measured channel-response and
-frame-anatomy
-figures, the graceful-degradation section, and a development-provenance
-section documenting which AI agent built each era (from commit trailers) and
-framing the project as a hard-to-game agent capabilities benchmark.
+The publication record is split deliberately. The
+[Cyrinx 1.0 source](docs/whitepaper/cyrinx-acoustic-link.tex) and
+[28-page PDF](docs/whitepaper/cyrinx-acoustic-link.pdf) remain the
+pre-Cyrinx-2.0 system study, with the Moto supplement and accounting errata
+through 2026-07-17. The separate
+[Cyrinx 2.0 source](docs/whitepaper/cyrinx-2-goodput.tex) and
+[11-page follow-on PDF](docs/whitepaper/cyrinx-2-goodput.pdf) document the
+65.875 kbps schedule-comparable Pixel result, the isolated receiver replay,
+the zero-gap frontier, route qualification, negative experiments, ultrasonic
+and pleasant-audible status, evidence availability, and claim boundaries.
 
 ## Using the library (SwiftPM)
 

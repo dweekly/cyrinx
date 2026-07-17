@@ -34,8 +34,10 @@ or connect the repo in the Cloudflare dashboard with build output directory
   The checked-in card was regenerated and visually inspected with the 65.875
   kbps schedule-comparable Cyrinx 2.0 copy. Social-image metadata remains
   intentionally absent unless a deployment change explicitly enables it.
-- `cyrinx-acoustic-link.pdf` is a copy of `docs/whitepaper/`'s compiled PDF —
-  re-copy when the paper changes.
+- `cyrinx-acoustic-link.pdf` is the 28-page Cyrinx 1.0 paper and
+  `cyrinx-2-goodput.pdf` is the separate 11-page Cyrinx 2.0 follow-on. Both are
+  copies of compiled PDFs under `docs/whitepaper/`; re-copy either when its
+  source changes.
 - Fonts: latin woff2 subsets of IBM Plex (OFL), fetched from Google Fonts.
 
 ## Publication status

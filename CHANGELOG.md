@@ -13,6 +13,12 @@ commands or content hashes.
   formatter version because formatter output is not stable across releases; the
   pin is advanced deliberately rather than retaining 602.0.0 as a compatibility
   dependency.
+- **The separate Cyrinx 2.0 follow-on whitepaper is published in-tree.** The
+  11-page source/PDF records the 65.875 kbps same-schedule flagship, failed
+  reliability gate, +347-block same-capture receiver replay, separately classed
+  69.652 kbps zero-gap result, rejected branches, calibration limitations,
+  ultrasonic asymmetry, implementation drift, and evidence-availability gap.
+  The 28-page Cyrinx 1.0 paper remains a separate historical record.
 - **Cyrinx 2.0 reached 65.875 kbps in the accepted Pixel schedule class.**
   The prospective Mac-to-Pixel campaign used five 64-symbol frames with four
   250 ms gaps, CP 96, pilot spacing 16, 64-QAM rate 2/3, 48 kHz stereo

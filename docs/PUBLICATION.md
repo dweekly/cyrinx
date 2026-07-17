@@ -2,8 +2,8 @@
 
 Fresh as of 2026-07-17. This document retains the sequenced, multi-PR plan that
 took Cyrinx from a private prototype to a public Apache-2.0 v1.0.0 release. The
-remaining publication work is to integrate Cyrinx 2.0 evidence into the paper,
-publish the updated companion website, and prepare an arXiv submission.
+remaining publication work is to archive the raw Cyrinx 2.0 evidence, publish
+the updated companion website, and prepare an arXiv submission.
 
 Decisions locked (2026-06-10):
 
@@ -41,9 +41,10 @@ Python is retained as a research oracle and independent measurement referee.
 **Automatable, remaining:** 1.4 adaptive sounder + MCS ladder + MFSK floor
 (feeds 1.4b real metrics); full Android JNI migration and retirement of the
 Kotlin HIL `BulkDemod` fork; 1.8 transport integration; 1.9 optional crypto +
-tradeoff doc; Phase 2 (#4 BPSK, #6 spread-spectrum, #5 research); and the
-Cyrinx 2.0 paper/site update. The paper has **not** been rebuilt with the
-2026-07-17 results.
+tradeoff doc; Phase 2 (#4 BPSK, #6 spread-spectrum, #5 research); a stable raw
+evidence archive; and deployment of the Cyrinx 2.0 site update. A separate
+11-page Cyrinx 2.0 follow-on source/PDF now documents the 2026-07-17 results;
+the 28-page Cyrinx 1.0 paper remains the historical system report.
 
 **1.10 library-native OTA — DEMONSTRATED and extended:** the 2026-06-10
 12.8 kbps QPSK r1/2 demonstration first established the C codec OTA path
@@ -63,7 +64,7 @@ final paper update (Phase 3). Durable "don't do that" results still graduate to
 
 ---
 
-## Cyrinx 2.0 evidence to incorporate (paper rebuild pending)
+## Cyrinx 2.0 evidence incorporated in the follow-on paper
 
 The publication-facing flagship remains the schedule-comparable class. With a
 12,000-sample inter-frame gap, the prospective 2026-07-17 Pixel 7a campaign
@@ -109,7 +110,11 @@ Reproducibility bindings for the zero-gap confirmatory result:
 Both measurements are near-field, route-specific Mac-to-Pixel results. A fixed
 3 ft campaign remains future work and must re-characterize levels, routes,
 delay spread, and room noise rather than inheriting the near-field profile.
-The whitepaper and generated PDF have not yet been rebuilt with this section.
+These results are incorporated in
+`whitepaper/cyrinx-2-goodput.tex` and its generated 11-page PDF. The remaining
+reproducibility gap is archival: compact ledgers and hashes are tracked, while
+full manifests, raw captures, frozen binaries, and replay reports remain
+ignored local artifacts.
 
 ## Critical-path insight
 
@@ -266,19 +271,20 @@ assertions at the tiered tolerance above.
 
 ## Phase 3 — Whitepaper update + arXiv (issue #8)
 
-- [ ] **3.1** Fold in post-3df0d1b findings: geometry sweep (contact 36.6 vs
+- [x] **3.1** Fold in post-3df0d1b findings: geometry sweep (contact 36.6 vs
       reverberant-desk 0 kbps + the 35.8 ms delay-spread mechanism),
       contact-vs-cloth (chassis contact worse: 10.5 vs 22 dB SNR), adaptive
       sounder/ladder/MFSK-floor graceful degradation (36.5 → 14.7–16.7 → 0.27
       kbps), per-bin loading +10% (16.15 vs 14.74 kbps), two-mic MRC, and a
       reference to `NEGATIVE_FINDINGS.md`.
-- [ ] **3.2** Add the Cyrinx 2.0 comparable flagship, zero-gap campaign, receiver
+- [x] **3.2** Add the Cyrinx 2.0 comparable flagship, zero-gap campaign, receiver
       replay ablation, negative frame-length result, exact denominators, strict
       reliability-gate failures, and artifact hashes recorded above. Regenerate
-      and inspect the paper; editing this plan does not complete that work.
-- [ ] **3.3** Add the **library-parity result** from PR 1.7 (the headline is
+      and inspect the paper. Completed in the separate 11-page follow-on so the
+      1.0 paper remains an intact historical record.
+- [x] **3.3** Add the **library-parity result** from PR 1.7 (the headline is
       now delivered by the published library, not only the Python harness).
-- [ ] **3.4** Threats-to-validity + reproducibility blocks final; soften any
+- [x] **3.4** Threats-to-validity + reproducibility blocks final; soften any
       remaining over-broad claims (contact-range prototype framing).
 - [ ] **3.5** arXiv prep: abstract, cs.NI/eess.SP category, author/affiliation
       (Primatech Paper Co LLC), endorsement check, license (CC BY 4.0 on
