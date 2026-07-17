@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Inaudible-band (>=18.5 kHz) OTA modem trials at 96 kHz.
+"""Legacy near-ultrasonic-band (>=18.5 kHz) OTA modem diagnostics at 96 kHz.
 
 Usage: ultra_test.py {m2a|a2m} {qam16-34|qam64-34|qam64-56|adapt} [amp] [cp] [n_sym]
 
 `adapt` bit-loads each bin from the per-bin SNR saved by the previous run of
 the same direction (data/ultra_snr_<dir>.json), thresholds in LOAD_THRESH.
-Also reports the digital audible-band leakage of the TX waveform (power below
-16 kHz relative to in-band power) — the honest "can you hear it" metric for
-the transmitted signal itself.
+Decoded frames are attributed to a unique best-matching payload at the same
+within-frame block position, but not to chronological scheduled slots. Reported
+rates therefore remain diagnostic rather than flagship evidence. The script
+also reports digital audible-band leakage of the TX waveform (power below
+16 kHz relative to in-band power).
 """
 import json
 import os
@@ -93,11 +95,6 @@ def run(direction, profile, amp=0.9, cp=512, n_sym=96, n_frames=3, gap_s=0.25):
         rx = H.android_to_mac(tx, sr=SR)
         rx_list = [("macmic", rx.astype(float))]
 
-    exp_blocks = set()
-    for pl in payloads:
-        for j in range(cfg.n_blocks):
-            exp_blocks.add(pl[j * M.CRC_BLOCK:(j + 1) * M.CRC_BLOCK])
-
     for name, rx in rx_list:
         rxf = M.bandpass(rx, 17500.0, min(BANDS[direction][1] + 800, 47000), SR)
         mf = np.abs(np.correlate(rxf, cfg.chirp_wave, mode="valid"))
@@ -113,30 +110,44 @@ def run(direction, profile, amp=0.9, cp=512, n_sym=96, n_frames=3, gap_s=0.25):
         starts.sort()
         verified = 0
         snr_acc = []
-        decoded = []
+        seen_payloads = set()
         for s0 in starts:
             res = M.demodulate_frame(cfg, rx, start_hint=s0)
             if res.get("ok"):
-                v = sum(1 for g in range(len(res["payload"]) // M.CRC_BLOCK)
-                        if res["payload"][g * M.CRC_BLOCK:(g + 1) * M.CRC_BLOCK] in exp_blocks)
+                v, payload_index = max(
+                    (sum(1 for block_index, valid, data in res["blocks"]
+                         if valid
+                         and data
+                         == payload[block_index * M.CRC_BLOCK:(block_index + 1) * M.CRC_BLOCK]),
+                     payload_index)
+                    for payload_index, payload in enumerate(payloads))
+                if payload_index in seen_payloads:
+                    v = 0
+                else:
+                    seen_payloads.add(payload_index)
                 verified += v
-                decoded.append(s0)
                 snr_acc.append(res["snr_bin_db"])
                 print(f"  [{name}] frame@{s0/SR:.2f}s: blocks {res['blocks_ok']}/"
                       f"{res['blocks_total']} verified={v} evm={res['evm_rms']:.3f}")
             else:
                 print(f"  [{name}] frame@{s0/SR:.2f}s: FAILED {res.get('err')}")
-        if decoded:
-            span = (max(decoded) + cfg.frame_samples - min(decoded)) / SR
-            gp = verified * M.CRC_BLOCK * 8 / span
-            print(f"  [{name}] TOTAL verified={verified} blocks span={span:.2f}s "
-                  f"GOODPUT={gp/1000:.2f} kbps  peak={np.abs(rx).max():.3f}")
-            if snr_acc:
-                snr_mean = np.mean(np.stack(snr_acc), axis=0)
-                with open(os.path.join(DATA, f"ultra_snr_{direction}.json"), "w") as fh:
-                    json.dump({"snr_bin_db": {int(b): float(s) for b, s in
-                                              zip(cfg.used, snr_mean)}}, fh)
-            return gp
+        active_span = n_frames * cfg.frame_samples / SR + (n_frames - 1) * gap_s
+        emitted_span = n_frames * cfg.frame_samples / SR + n_frames * gap_s + 1 / 3
+        gp = verified * M.CRC_BLOCK * 8 / active_span
+        gross_gp = verified * M.CRC_BLOCK * 8 / emitted_span
+        print(
+            f"  [{name}] TOTAL verified={verified} blocks "
+            f"active_span={active_span:.2f}s "
+            f"legacy_content_attributed_payload_rate={gp/1000:.2f} kbps "
+            f"emitted_span={emitted_span:.2f}s gross_rate={gross_gp/1000:.2f} kbps "
+            f"peak={np.abs(rx).max():.3f}"
+        )
+        if snr_acc:
+            snr_mean = np.mean(np.stack(snr_acc), axis=0)
+            with open(os.path.join(DATA, f"ultra_snr_{direction}.json"), "w") as fh:
+                json.dump({"snr_bin_db": {int(b): float(s) for b, s in
+                                          zip(cfg.used, snr_mean)}}, fh)
+        return gp
     return 0.0
 
 

@@ -54,15 +54,17 @@ def run(cell, reps=3):
             payload = bytes((i * 31 + 7) & 0xFF for i in range(g.payload_bytes))
             wave = clib.encode(cfg, payload)
             d = clib.decode(cfg, np.asarray(send(wave), dtype=np.float32))
+            # Retain every emitted repetition in the schedule denominator;
+            # a no-sync result contributes zero verified blocks.
+            tot += g.n_blocks
             if d:
-                ver += d["blocks_ok"] if d["payload"] == payload else 0
-                tot += d["blocks_total"]
+                ver += clib.ordered_verified_blocks(d, payload)
                 evs.append(d["evm"])
         span = len(wave) / cfg.sr
         frac = ver / tot if tot else 0.0
         per[tier] = {"verified": ver, "total": tot, "verified_frac": round(frac, 3),
                      "evm_med": round(float(np.median(evs)), 3) if evs else None,
-                     "goodput_kbps": round(g.info_bits * frac / span / 1000, 1)}
+                     "goodput_kbps": round(g.payload_bytes * 8 * frac / span / 1000, 1)}
         print(f"  {tier:6s} {1<<bpb:2d}-QAM r{rate}: {ver:3d}/{tot:3d} "
               f"({frac*100:3.0f}%) EVM={per[tier]['evm_med']} "
               f"-> {per[tier]['goodput_kbps']} kbps")

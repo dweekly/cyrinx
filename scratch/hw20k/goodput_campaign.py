@@ -3309,6 +3309,7 @@ def run_selftests() -> None:
         synthetic_manifest["results"].append(
             {
                 "status": "complete",
+                "run_id": run["run_id"],
                 "profile_id": profile.profile_id,
                 "pair_index": run["pair_index"],
                 "within_pair_order": run["within_pair_order"],

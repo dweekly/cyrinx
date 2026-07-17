@@ -34,10 +34,12 @@ def run_once(cfg, tag, run_i):
     if r is None:
         return {"ok": 0, "total": g.n_blocks, "match": False, "gp_kbps": 0.0, "evm": 9.99}
     span = g.frame_samples / SR
-    verified = r["blocks_ok"]  # whole-block CRC-valid count
-    match = r["payload"] == payload
+    if r["blocks_total"] != g.n_blocks:
+        raise RuntimeError("decoder block total does not match scheduled geometry")
+    verified = clib.ordered_verified_blocks(r, payload)
+    match = verified == g.n_blocks
     gp = verified * CRC_BLOCK * 8 / span / 1000.0
-    return {"ok": verified, "total": r["blocks_total"], "match": match,
+    return {"ok": verified, "total": g.n_blocks, "match": match,
             "gp_kbps": gp, "evm": r["evm"], "peak": float(np.abs(rx).max())}
 
 

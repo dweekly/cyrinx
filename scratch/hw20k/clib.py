@@ -410,6 +410,32 @@ def _decode_result(n, out, ok, total, evm, block_valid, diversity=None):
     return result
 
 
+def ordered_verified_blocks(decoded, expected_payload, block_bytes=256):
+    """Count CRC-valid blocks that match the expected payload position."""
+    if decoded is None:
+        return 0
+    if block_bytes <= 0 or len(expected_payload) % block_bytes:
+        raise ValueError("expected payload must contain whole positive-sized blocks")
+    expected_blocks = len(expected_payload) // block_bytes
+    payload = decoded["payload"]
+    block_valid = decoded.get("block_valid")
+    if block_valid is None:
+        # Aggregate-only legacy decoders cannot safely score a partial frame.
+        full_frame_valid = (
+            decoded.get("blocks_ok") == expected_blocks
+            and decoded.get("blocks_total") == expected_blocks
+        )
+        return expected_blocks if full_frame_valid and payload == expected_payload else 0
+    if len(block_valid) != expected_blocks or len(payload) < len(expected_payload):
+        raise ValueError("decoder block map does not match expected payload geometry")
+    return sum(
+        1 for index, valid in enumerate(block_valid)
+        if valid
+        and payload[index * block_bytes:(index + 1) * block_bytes]
+        == expected_payload[index * block_bytes:(index + 1) * block_bytes]
+    )
+
+
 _DEFAULT_CODEC_PATH = os.environ.get(
     CODEC_PATH_ENV, os.path.join(_HERE, "libcyrinxbulk.dylib"))
 _DEFAULT_CODEC = None
@@ -546,6 +572,7 @@ if __name__ == "__main__":
         r = decode(cfg, rx)
         ok = (r and r["payload"] == payload
               and r["blocks_ok"] == r["blocks_total"]
-              and all(r["block_valid"]))
+              and all(r["block_valid"])
+              and ordered_verified_blocks(r, payload) == g.n_blocks)
         print(f"  bpb={bpb} rate={rate}: blocks {r['blocks_ok']}/{r['blocks_total']} "
               f"payload_match={r['payload']==payload} -> {'OK' if ok else 'FAIL'}")

@@ -197,8 +197,9 @@ def sound_channel(send_fn, sr=48000, nfft=2048, cp=768, f_lo=1100.0, f_hi=23000.
 # clocked devices rotates the channel between symbols and is counted as noise),
 # and detrending the phase over-corrects because identical low-PAPR pilots never
 # excite the channel-estimation error and PAPR-driven loudspeaker nonlinearity
-# that random data incurs. Measured at the palm-rest cell: it reported 10.5 dB ->
-# "QPSK" while the channel carried 16-QAM r3/4 (EVM 0.157).
+# that random data incurs. A historical console-derived palm-rest observation
+# reported 10.5 dB -> "QPSK" while 16-QAM r3/4 decoded at EVM 0.157. No matching
+# machine-readable run record or raw capture was retained for that observation.
 #
 # The fix: probe with a DATA-REPRESENTATIVE frame (a known random-QAM frame, the
 # real codec, the sized CP) and read its EVM through the actual receiver. EVM is
@@ -206,8 +207,8 @@ def sound_channel(send_fn, sr=48000, nfft=2048, cp=768, f_lo=1100.0, f_hi=23000.
 # tier; pick the densest constellation whose EVM threshold it clears. Delay
 # spread beyond the CP cap still routes to the non-coherent floor.
 #
-# EVM->MCS thresholds, calibrated from over-the-air measurements (2026-06-11/12):
-#   EVM 0.157 -> 16-QAM r3/4 decoded (39.3 kbps); EVM ~0.10-0.17 -> 64-QAM only
+# EVM->MCS thresholds, calibrated from over-the-air observations (2026-06-11/12):
+#   historical EVM 0.157 -> 16-QAM r3/4 decoded; EVM ~0.10-0.17 -> 64-QAM only
 #   partial (33% at EVM 0.097, 0% at 0.17), so its clean threshold is < ~0.08 and
 #   it stays omitted (even partial 64-QAM lost to clean 16-QAM r3/4);
 #   EVM ~0.25 -> 16-QAM r1/2 decoded but r3/4 failed; EVM ~0.27 -> QPSK r1/2;
@@ -362,7 +363,7 @@ def _selftest():
     """Offline regression net for the EVM->MCS selection, anchored on the
     over-the-air calibration points (no hardware)."""
     cases = [
-        (0.157, 3.0, "fast"),     # 16-QAM r3/4 decoded (39.3 kbps)
+        (0.157, 3.0, "fast"),     # historical 16-QAM r3/4 observation
         (0.17, 3.0, "fast"),      # 64-QAM failed; 16-QAM r3/4 is the right call
         (0.252, 3.0, "medium"),   # 16-QAM r1/2 decoded, r3/4 failed
         (0.40, 3.0, "qpsk"),      # QPSK r1/2 regime

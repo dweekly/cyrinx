@@ -13,6 +13,25 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import clib
 
 
+class OrderedVerificationTests(unittest.TestCase):
+    def test_legacy_aggregate_requires_a_complete_matching_frame(self):
+        expected = bytes(range(256)) * 2
+
+        complete = {
+            "payload": expected,
+            "blocks_ok": 2,
+            "blocks_total": 2,
+            "block_valid": None,
+        }
+        self.assertEqual(clib.ordered_verified_blocks(complete, expected), 2)
+
+        partial = dict(complete, blocks_ok=1)
+        self.assertEqual(clib.ordered_verified_blocks(partial, expected), 0)
+
+        wrong_geometry = dict(complete, blocks_total=3)
+        self.assertEqual(clib.ordered_verified_blocks(wrong_geometry, expected), 0)
+
+
 class AutomaticDiversityV1Tests(unittest.TestCase):
     def setUp(self):
         self.config = clib.make_cfg(

@@ -28,6 +28,13 @@ DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 MFSK_PAYLOAD = 32
 
 
+def coherent_payload_goodput_bps(geometry, verified, total, span_s):
+    """Return verified user-payload bits per active frame second."""
+    if total <= 0 or not 0 <= verified <= total or span_s <= 0:
+        raise ValueError("invalid goodput inputs")
+    return geometry.payload_bytes * 8 * (verified / total) / span_s
+
+
 def coherent_decode_rep(cfg, st, mic, pl):
     """One rep's coherent decode: library clib decode on the selected mic
     first; if that is imperfect, escalate to the LIBRARY two-mic MRC
@@ -36,13 +43,17 @@ def coherent_decode_rep(cfg, st, mic, pl):
     and keep the better result. The whole path is library-native. Returns
     per-rep provenance so the JSONL shows exactly what single-mic delivered
     vs what MRC rescued."""
+    total = clib.geometry(cfg).n_blocks
     mono = st[:, mic] if st.ndim > 1 else st
     d = clib.decode(cfg, np.ascontiguousarray(mono, dtype=np.float32))
-    total = d["blocks_total"] if d else clib.geometry(cfg).n_blocks
+    if d is not None and d["blocks_total"] != total:
+        raise RuntimeError("decoder block total does not match scheduled geometry")
     clib_ok = _ordered_verified(d, pl)
     ver, path, rescued = clib_ok, "clib", 0
     if clib_ok < total and st.ndim > 1 and st.shape[1] >= 2:
         r = clib.decode2(cfg, st[:, 0], st[:, 1])
+        if r is not None and r["blocks_total"] != total:
+            raise RuntimeError("MRC decoder block total does not match scheduled geometry")
         mrc_ok = _ordered_verified(r, pl)
         if mrc_ok > clib_ok:
             ver, path, rescued = mrc_ok, "clib_mrc", mrc_ok - clib_ok
@@ -55,11 +66,7 @@ def _ordered_verified(d, pl, blk=256):
     goodput definition the measured results use. (Byte-compare against the
     known transmitted payload per CRC block, capped by the decoder's CRC
     count; the old `payload == pl` shortcut gave partial decodes 0 credit.)"""
-    if not d:
-        return 0
-    matches = sum(1 for i in range(len(pl) // blk)
-                  if d["payload"][i * blk:(i + 1) * blk] == pl[i * blk:(i + 1) * blk])
-    return min(matches, d["blocks_ok"])
+    return clib.ordered_verified_blocks(d, pl, blk)
 
 
 def run(label, reps=3):
@@ -110,7 +117,10 @@ def run(label, reps=3):
             paths.append(rep["path"])
         span = len(clib.encode(cfg, pl)) / cfg.sr
         frac = ver / tot if tot else 0.0
-        gp_bps = g.info_bits * frac / span
+        # Goodput counts verified user payload only.  ``info_bits`` also
+        # includes each block's CRC plus random frame fill and therefore
+        # overstates application delivery.
+        gp_bps = coherent_payload_goodput_bps(g, ver, tot, span)
         mode = f"{rec['mcs']} r{rec['rate']}"
         print(f"  OFDM {mode}: {clib_ver}/{tot} clib + {rescued}/{tot} "
               f"MRC-rescued ({frac*100:.0f}%) -> {gp_bps/1000:.1f} kbps")
@@ -146,6 +156,20 @@ def _selftest():
     rx = np.concatenate([np.zeros(4000), wave, np.zeros(3000)])
     rms = float(np.sqrt(np.mean(wave ** 2)))
     sig = 0.1 * rms
+
+    span = len(wave) / cfg.sr
+    payload_bps = coherent_payload_goodput_bps(g, g.n_blocks, g.n_blocks, span)
+    info_bps = g.info_bits / span
+    assert payload_bps < info_bps
+    assert coherent_payload_goodput_bps(g, 1, 2, span) == payload_bps / 2
+
+    mask_payload = bytes((i * 17 + 3) & 0xFF for i in range(2 * 256))
+    partial = {"payload": mask_payload, "blocks_ok": 1, "block_valid": [False, True]}
+    assert _ordered_verified(partial, mask_payload) == 1
+    corrupted = bytearray(mask_payload)
+    corrupted[300] ^= 1
+    partial["payload"] = bytes(corrupted)
+    assert _ordered_verified(partial, mask_payload) == 0
 
     def stereo(m0, m1):
         return np.stack([m0, m1], axis=1).astype(np.float32)

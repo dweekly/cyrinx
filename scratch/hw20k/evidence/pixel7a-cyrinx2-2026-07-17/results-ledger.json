@@ -1,0 +1,232 @@
+{
+  "schema": "cyrinx.pixel7a-cyrinx2-results-ledger.v1",
+  "recorded_date": "2026-07-17",
+  "accepted_reference_scheduled_goodput_bps": 36571.42857142857,
+  "artifact_policy": "Raw manifests and captures remain ignored local bench artifacts. This tracked ledger retains exact result denominators and SHA-256 identities; it is not a substitute for the raw captures.",
+  "physical_cell": {
+    "capture": "Pixel 7a 48 kHz stereo UNPROCESSED",
+    "geometry": "Pixel 7a face-up on 0.5-inch soft cloth above the MacBook left function key; bottom microphone near the MacBook built-in left speaker",
+    "playback": "MacBook built-in left speaker only; output volume 50 percent; waveform peak 0.18",
+    "environment": "A/C enabled but thermostat-cycling and uninstrumented; SPL uninstrumented"
+  },
+  "binding_sha256": {
+    "calibration_qualification": "ec28faa1b67bfcea8a615ee4b6dd6d85f3427d79fae075e30b5b6ffd84ff165d",
+    "route_signature_canonical_json": "8da17a36acdd7a79d0f70f9fc085b99a8faf508f862387edec3b093180a827d0",
+    "route_signature_file": "da2f520fc6c08d4b35565c42a56db2ea0d7828db0a16d9064ffef4339b9b77b6",
+    "target_provenance": "5f87abe17227315ae77ea3632bdd21cbfe3364ae5875b1f7d35ca2a04a0c8251"
+  },
+  "receiver": {
+    "automatic_diversity": "pilot-select01-v1",
+    "reliability_estimator": "known-pilot-local-frequency-boxcar11-blend25-75-v1",
+    "forbidden_selection_inputs": [
+      "payload bytes",
+      "CRC results",
+      "decoded bits",
+      "Viterbi metrics",
+      "payload-bearing data bins"
+    ]
+  },
+  "campaigns": [
+    {
+      "id": "pixel7a-p16-sym64-gap12000-fresh",
+      "claim_role": "primary schedule-comparable flagship",
+      "measurement_class": "five-frame-ota-sr48000-gap12000-samples",
+      "candidate": {
+        "config": {
+          "cp_samples": 96,
+          "pilot_every": 16,
+          "bits_per_bin": 6,
+          "code_rate": "2/3",
+          "data_symbols": 64,
+          "inter_frame_gap_samples": 12000
+        },
+        "mean_scheduled_goodput_bps": 65875.45787545787,
+        "minimum_scheduled_goodput_bps": 65265.93406593405,
+        "maximum_scheduled_goodput_bps": 66641.26984126984,
+        "mean_gross_goodput_bps": 64561.627443159145,
+        "verified_blocks": 4215,
+        "total_blocks": 4280,
+        "block_success_rate": 0.9848130841121495
+      },
+      "paired_control": {
+        "mean_scheduled_goodput_bps": 44199.42429476108,
+        "verified_blocks": 2999,
+        "total_blocks": 3000,
+        "block_success_rate": 0.9996666666666667
+      },
+      "inference": {
+        "candidate_pair_wins": 8,
+        "candidate_pair_losses": 0,
+        "exact_one_sided_sign_test_p": 0.00390625,
+        "all_16_runs_complete": true,
+        "baseline_equivalent_block_success_gate_passed": false
+      },
+      "sha256": {
+        "plan": "fe295a7835061ccb55f9ffe277c455c97b3487decb6e9da38b01af61c32e05ef",
+        "completed_manifest": "3d46bf7eccf669a6d29ca6593662c6c423710c24062aebe6c9ec16ddf7646ec6",
+        "frozen_decoder": "bd7e52acaf1d9c7a1994d5a350af8baf2ea2fef03f47ed3a0f59fd8513c0327c"
+      }
+    },
+    {
+      "id": "pixel7a-p64-sym96-gap0",
+      "claim_role": "highest eight-pair confirmatory Pixel mean; separate schedule class",
+      "measurement_class": "five-frame-ota-sr48000-gap0-samples",
+      "candidate": {
+        "config": {
+          "cp_samples": 96,
+          "pilot_every": 64,
+          "bits_per_bin": 6,
+          "code_rate": "2/3",
+          "data_symbols": 96,
+          "inter_frame_gap_samples": 0
+        },
+        "mean_scheduled_goodput_bps": 69651.84965966262,
+        "minimum_scheduled_goodput_bps": 65731.16306599586,
+        "maximum_scheduled_goodput_bps": 72640.66291802308,
+        "mean_gross_goodput_bps": 68636.22047244094,
+        "verified_blocks": 6129,
+        "total_blocks": 6760,
+        "block_success_rate": 0.9066568047337278
+      },
+      "paired_control": {
+        "mean_scheduled_goodput_bps": 48102.68092790666,
+        "verified_blocks": 4509,
+        "total_blocks": 4520,
+        "block_success_rate": 0.9975663716814159
+      },
+      "inference": {
+        "candidate_pair_wins": 8,
+        "candidate_pair_losses": 0,
+        "exact_one_sided_sign_test_p": 0.00390625,
+        "all_16_runs_complete": true,
+        "baseline_equivalent_block_success_gate_passed": false,
+        "ratio_to_accepted_reference": 1.9045427641313997
+      },
+      "automatic_candidate_receiver_frames": {
+        "mic0": 14,
+        "mrc01": 26
+      },
+      "sha256": {
+        "plan": "8e5f1062dcccc42bbfac866a8659bf8d1884dd54bb054a9f42d944a1919e966b",
+        "completed_manifest": "9846a33717c18e457169578217dbbdabe740eaa26c09965cb24ce128c9d1e462",
+        "frozen_decoder": "c6e4e5adc0865a379dc036c549cef4cd91528152ffffa66ee2fdf9be47580956"
+      }
+    },
+    {
+      "id": "pixel7a-p16-sym128-gap0",
+      "claim_role": "negative amortization and channel-drift experiment",
+      "measurement_class": "five-frame-ota-sr48000-gap0-samples",
+      "candidate": {
+        "mean_scheduled_goodput_bps": 66102.17928555381,
+        "minimum_scheduled_goodput_bps": 54938.48573354303,
+        "maximum_scheduled_goodput_bps": 73504.381037969,
+        "verified_blocks": 7662,
+        "total_blocks": 8600,
+        "block_success_rate": 0.8909302325581395
+      },
+      "paired_control": {
+        "mean_scheduled_goodput_bps": 48863.16011383999,
+        "verified_blocks": 6036,
+        "total_blocks": 6040,
+        "block_success_rate": 0.9993377483443708
+      },
+      "inference": {
+        "candidate_pair_wins": 8,
+        "exact_one_sided_sign_test_p": 0.00390625,
+        "all_16_runs_complete": true,
+        "baseline_equivalent_block_success_gate_passed": false
+      },
+      "sha256": {
+        "plan": "122957926f1954e20bef3de938a4d0c7a94bb8d50b475c0622a919624d05616d",
+        "completed_manifest": "0f81dc4dce591c47e7fb1aeefeb635ac49de2ce01fbf0fd7805326446668af9e",
+        "frozen_decoder": "794f06601437e903f98fb9df742c5e6ac0d2088717a92f7d52c655c27b5e9f10"
+      }
+    },
+    {
+      "id": "pixel7a-p16-sym64-gap0",
+      "claim_role": "higher-resilience zero-gap alternative",
+      "measurement_class": "five-frame-ota-sr48000-gap0-samples",
+      "candidate": {
+        "mean_scheduled_goodput_bps": 69110.01300390117,
+        "minimum_scheduled_goodput_bps": 63650.45513654096,
+        "maximum_scheduled_goodput_bps": 70707.93237971391,
+        "verified_blocks": 4152,
+        "total_blocks": 4280,
+        "block_success_rate": 0.9700934579439252
+      },
+      "paired_control": {
+        "mean_scheduled_goodput_bps": 46336.469150885765,
+        "verified_blocks": 2963,
+        "total_blocks": 3000,
+        "block_success_rate": 0.9876666666666667
+      },
+      "inference": {
+        "candidate_pair_wins": 8,
+        "exact_one_sided_sign_test_p": 0.00390625,
+        "all_16_runs_complete": true,
+        "baseline_equivalent_block_success_gate_passed": false
+      },
+      "sha256": {
+        "plan": "409c80a6d6557a876ffbfb977562c3ef4ebc56d852b6c2819d7fb83ce61c1bab",
+        "completed_manifest": "eff8a3721bc70a459de9580a14b97dc6899c4912295311af300463314a02968b",
+        "frozen_decoder": "075e484ba9cfd59ebc8eecd5acf1d9eea78ea40ba04efdf301bbd7911124a64f"
+      }
+    },
+    {
+      "id": "pixel7a-p32-sym64-gap0",
+      "claim_role": "pilot-density midpoint experiment",
+      "measurement_class": "five-frame-ota-sr48000-gap0-samples",
+      "candidate": {
+        "mean_scheduled_goodput_bps": 68960.20806241872,
+        "minimum_scheduled_goodput_bps": 64449.41482444733,
+        "maximum_scheduled_goodput_bps": 71506.89206762028,
+        "verified_blocks": 4143,
+        "total_blocks": 4440,
+        "block_success_rate": 0.9331081081081081
+      },
+      "paired_control": {
+        "mean_scheduled_goodput_bps": 46899.450213805736,
+        "verified_blocks": 2999,
+        "total_blocks": 3000,
+        "block_success_rate": 0.9996666666666667
+      },
+      "inference": {
+        "candidate_pair_wins": 8,
+        "exact_one_sided_sign_test_p": 0.00390625,
+        "all_16_runs_complete": true,
+        "baseline_equivalent_block_success_gate_passed": false
+      },
+      "sha256": {
+        "plan": "fa8fe2a939dc4441f1b4267697ec0ffeb8d5c46e232a89d4ecfb6344d75fcf94",
+        "completed_manifest": "29602e08d5c33f07e30f15c021f42a367cd4c4ea77b86d8dac8d4c729a587d20",
+        "frozen_decoder": "1abbcaada111a4fc5e4f3e465528c38bdf6e46c43355fa835f8f1eb5c819021c"
+      }
+    }
+  ],
+  "isolated_receiver_replay": {
+    "source_campaign_id": "pixel7a-p16-sym64-gap12000-fresh",
+    "legacy_verified_blocks": 3868,
+    "current_verified_blocks": 4215,
+    "total_blocks": 4280,
+    "delta_verified_blocks": 347,
+    "improved_runs": 8,
+    "regressed_runs": 0,
+    "all_predeclared_gates_passed": true,
+    "legacy_decoder_sha256": "09f7f696df444b93c42209bd2777fd47ce4bf3854f20f14d323b750e0b077069",
+    "current_decoder_sha256": "bd7e52acaf1d9c7a1994d5a350af8baf2ea2fef03f47ed3a0f59fd8513c0327c",
+    "comparison_file_sha256": "57522f6b3cafb5e925a2bfbb1ea70e5448999a17052aa3201a6f4f91367009bc",
+    "comparison_content_sha256": "e25d099550d4e72b9686a6bf5a3c54ec6b7b75b5eb52aa761bca42994e12a50b"
+  },
+  "rejected_screen": {
+    "id": "pixel7a-p16-sym64-gap0-flo600",
+    "candidate_verified_blocks": 60,
+    "candidate_total_blocks": 110,
+    "candidate_scheduled_goodput_bps": 39947.98439531859,
+    "control_verified_blocks": 77,
+    "control_total_blocks": 77,
+    "screen_advance_threshold_blocks": 105,
+    "advanced": false,
+    "plan_sha256": "32e75bf020173691455dcbf5c37ae822373c74a19aac11b13be8a88c511ff615",
+    "completed_manifest_sha256": "443e5302d843b07525d58943d66b1a88936370dda6da190f98a927dc6fecc55a"
+  }
+}

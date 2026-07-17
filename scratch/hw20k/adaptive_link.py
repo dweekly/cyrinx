@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
-"""Adaptive sound-then-link: sound the channel, build the recommended config,
-transmit + ordered-verify. The same code adapts to the measured environment.
+"""Legacy adaptive sound-then-link diagnostic: sound the channel, build the
+recommended config, then transmit and content-attribute decoded frames.
+
+Verification is position-exact within a uniquely best-matching payload, not
+chronological scheduled-slot binding. Reported goodput covers the selected link
+phase and excludes the preceding sounding transaction. Use goodput_campaign.py
+for the strict Cyrinx 2.0 referee contract.
 
 Usage: adaptive_link.py <position_label>
 Sounds Mac->iPhone, prints the verdict, and (unless 'reposition') links with the
@@ -28,7 +33,7 @@ def send_m2i(wave, name="adapt.pcm"):
 
 
 def link_with(rec, n_frames=5):
-    """Build a Config from the recommendation and run an ordered-verified link."""
+    """Run a content-attributed link at the recommended configuration."""
     base = M.Config(F_LO, F_HI, nfft=rec["nfft"], cp=rec["cp"], sr=SR)
     # Use the sounder's measured per-bin loading (calibrated, no 1-bit bins),
     # restricted to this Config's data bins. Beats uniform in challenged
@@ -36,7 +41,7 @@ def link_with(rec, n_frames=5):
     bpb = {b: rec["bits_per_bin"].get(b, 0) for b in base.data_idx}
     if not any(bpb.values()):
         bpb = {b: rec["bits_uniform"] for b in base.data_idx}
-    cfg = M.Config(F_LO, F_HI, rate="1/2", n_sym=64, amp=0.7,
+    cfg = M.Config(F_LO, F_HI, rate=rec["rate"], n_sym=64, amp=0.7,
                    cp=rec["cp"], nfft=rec["nfft"], sr=SR, track_alpha=0.35,
                    bits_per_bin=bpb)
     payloads = [M.DetRng(SEED_BASE + i).bytes(cfg.payload_bytes) for i in range(n_frames)]
@@ -57,15 +62,22 @@ def link_with(rec, n_frames=5):
         if m[k] < thr:
             break
         starts.append(k); m[max(0, k - cfg.frame_samples // 2): k + cfg.frame_samples // 2] = 0
-    starts.sort(); ver = 0; dec = []
+    starts.sort(); ver = 0; dec = []; seen_payloads = set()
     for s0 in starts:
         r = M.demodulate_frame(cfg, rx, start_hint=s0)
         if r.get("ok"):
-            v = sum(1 for (j, okb, d) in r["blocks"]
-                    if okb and any(d == p[j*M.CRC_BLOCK:(j+1)*M.CRC_BLOCK] for p in payloads))
+            v, payload_index = max(
+                (sum(1 for (j, okb, d) in r["blocks"]
+                     if okb and d == payload[j * M.CRC_BLOCK:(j + 1) * M.CRC_BLOCK]),
+                 payload_index)
+                for payload_index, payload in enumerate(payloads))
+            if payload_index in seen_payloads:
+                v = 0
+            else:
+                seen_payloads.add(payload_index)
             ver += v; dec.append(s0)
-    span = ((max(dec) + cfg.frame_samples - min(dec)) / SR) if dec else None
-    gp = (ver * M.CRC_BLOCK * 8 / span / 1000) if span else 0.0
+    span = n_frames * cfg.frame_samples / SR + (n_frames - 1) * 0.25
+    gp = ver * M.CRC_BLOCK * 8 / span / 1000
     return ver, n_frames * cfg.n_blocks, round(gp, 2)
 
 
@@ -90,8 +102,18 @@ def main(label):
               f"non-coherent MT-FSK is the floor (~267 bps measured, vs 0 for OFDM).")
     else:
         ver, tot, gp = link_with(rec)
-        out["link"] = {"verified": ver, "total": tot, "goodput_kbps": gp, "tier": rec["tier"]}
-        print(f"[{label}] LINK ({rec['tier']}): {ver}/{tot} blocks, {gp} kbps")
+        out["link"] = {
+            "verified": ver,
+            "total": tot,
+            "goodput_kbps": gp,
+            "tier": rec["tier"],
+            "verification_contract": "unique-best-payload-within-frame-position; not-scheduled-slot",
+            "rate_scope": "selected-link-phase; preceding-sounding-excluded",
+        }
+        print(
+            f"[{label}] LINK ({rec['tier']}): {ver}/{tot} blocks, "
+            f"{gp} kbps post-sounding PHY payload rate"
+        )
     with open(os.path.join(H.DATA, "adaptive.jsonl"), "a") as fh:
         fh.write(json.dumps(out) + "\n")
 

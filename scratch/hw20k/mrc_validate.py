@@ -42,14 +42,19 @@ def run(label):
             r = M.demodulate_frame(
                 cfg, np.asarray(st[:, a], float),
                 rx2=(np.asarray(st[:, b], float) if b is not None else None))
-            return r.get("blocks_ok", 0), r.get("evm_rms", r.get("evm", 9.9))
+            verified = sum(
+                1 for j, ok, data in r.get("blocks", [])
+                if ok and data == pl[j * M.CRC_BLOCK:(j + 1) * M.CRC_BLOCK]
+            )
+            return verified, r.get("blocks_ok", 0), r.get("evm_rms", r.get("evm", 9.9))
 
-        o0, e0 = dec(0)
-        o1, e1 = dec(1)
-        om, em = dec(0, 1)
+        o0, c0, e0 = dec(0)
+        o1, c1, e1 = dec(1)
+        om, cm, em = dec(0, 1)
         nb = cfg.n_blocks
-        print(f"  {name} ({nb} blk): mic0 {o0}/{nb} EVM{e0:.2f} | "
-              f"mic1 {o1}/{nb} EVM{e1:.2f} | MRC {om}/{nb} EVM{em:.2f}")
+        print(f"  {name} ({nb} blk): mic0 {o0}/{nb} ordered (CRC {c0}) EVM{e0:.2f} | "
+              f"mic1 {o1}/{nb} ordered (CRC {c1}) EVM{e1:.2f} | "
+              f"MRC {om}/{nb} ordered (CRC {cm}) EVM{em:.2f}")
 
 
 if __name__ == "__main__":
