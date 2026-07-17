@@ -11,10 +11,12 @@ desktop-to-phone links. It contains two largely separate strands:
 1. An adaptive ultrasonic transport stack (Swift/C + Kotlin) targeting the
    18.5-23.5 kHz band — the original protocol design (gears, ARQ, crypto
    envelope). Functional but slow as measured (<0.3 kbps OTA).
-2. A **measured wideband bulk PHY** (audible band): Cyrinx 2.0 reaches
-   **65.875 kbps** from a MacBook Pro to a Pixel 7a in the accepted five-frame,
-   250 ms-gap measurement class, versus the 36.571 kbps result it was designed
-   to beat. A separate zero-gap research class reaches **69.652 kbps mean**.
+2. A **measured wideband bulk PHY** (audible band): in a close-range MacBook
+   Pro-to-Pixel 7a test, Cyrinx 2.0 delivered **65.875 kbps of verified
+   payload**, 80.1% above the previous 36.571 kbps result. Both measurements
+   used five transmissions with the same 250 ms pauses, so they are directly
+   comparable. A more aggressive no-pause experiment reached **69.652 kbps**,
+   but recovered fewer transmitted blocks (90.666% versus 98.481%).
    The canonical receiver is portable C (`CCyrinx`, `cyrinx_bulk`) with a thin
    Swift binding (`BulkPHY`); committed tests pin two-mic maximal-ratio
    combining, held-out-pilot automatic mic selection, and frequency-local
@@ -86,10 +88,11 @@ Both prospective Cyrinx 2.0 campaigns completed all 16 planned runs, won all
 eight paired comparisons (exact one-sided sign test, `p = 1/256`), and retained
 every failure. Both also failed the predeclared resilience gate: the comparable
 p16 candidate's 98.481% block success was below its paired baseline's 99.967%,
-and the zero-gap p64 confirmatory candidate's 90.666% was below 99.757%. The 69.652
-kbps result is **1.9045×** the accepted 36.571 kbps number—not “almost
-tripled”—and its zero-gap schedule must not be presented as the same measurement
-class. Its gross mean including the stream-end pad was 68.636 kbps.
+and the zero-gap p64 confirmatory candidate's 90.666% was below 99.757%. The
+69.652 kbps result used different timing from the accepted 36.571 kbps
+benchmark and must not be presented as a direct replacement for the
+like-for-like 65.875 kbps result. Its gross mean including the stream-end pad
+was 68.636 kbps.
 
 The historical library-native result was previously labeled 39.3 kbps by
 dividing 157,050 coded information bits (including CRC and fill) by a 4 s
