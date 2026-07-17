@@ -31,7 +31,7 @@ swift test            # Swift + C unit tests
   note in the relevant `docs/` file with a "fresh as of" date.
 - Don't hardcode undocumented constants — cite the source (datasheet, SDK
   header, or measurement) in a comment.
-- **swift-format is pinned to `602.0.0`** (see `scripts/swift-format-version.sh`,
+- **swift-format is pinned to `603.0.0`** (see `scripts/swift-format-version.sh`,
   which `format.sh`/`format-check.sh` source and enforce). Install it with
   `brew install swift-format`. If your local version drifts, the gate fails
   loudly instead of silently reformatting to different rules — that drift is

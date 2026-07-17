@@ -8,6 +8,11 @@ commands or content hashes.
 
 ## 2026-07-17 — Cyrinx 2.0 Pixel receiver and goodput campaign
 
+- **Swift Format advanced to 603.0.0.** The strict `Sources`/`Tests` formatter
+  pass remains clean under the current release. The repository keeps an exact
+  formatter version because formatter output is not stable across releases; the
+  pin is advanced deliberately rather than retaining 602.0.0 as a compatibility
+  dependency.
 - **Cyrinx 2.0 reached 65.875 kbps in the accepted Pixel schedule class.**
   The prospective Mac-to-Pixel campaign used five 64-symbol frames with four
   250 ms gaps, CP 96, pilot spacing 16, 64-QAM rate 2/3, 48 kHz stereo
