@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Cyrinx — data over sound, measured</title>
-<meta name="description" content="Cyrinx 2.0 measured 65.875 kbps of byte-verified goodput from a MacBook speaker to a Pixel 7a microphone in the same schedule class as the prior 36.571 kbps benchmark.">
+<meta name="description" content="Cyrinx is an open-source acoustic modem that sends data through ordinary speakers and microphones. Cyrinx 2.0 measured 65.9 kbps from a MacBook Pro to a Pixel 7a.">
 <link rel="canonical" href="https://cyrinx.org/">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
@@ -14,10 +14,10 @@
 <meta property="og:url" content="https://cyrinx.org/">
 <meta property="og:site_name" content="Cyrinx">
 <meta property="og:title" content="Cyrinx — data over sound, measured">
-<meta property="og:description" content="65.875 kbps of byte-verified MacBook-to-Pixel goodput in the accepted schedule class; 69.652 kbps in a separately labeled zero-gap research class.">
+<meta property="og:description" content="An open-source acoustic modem for ordinary speakers and microphones. Cyrinx 2.0 delivered verified payload at 65.9 kbps—about 80% faster than the previous result.">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="Cyrinx — data over sound, measured">
-<meta name="twitter:description" content="65.875 kbps of byte-verified MacBook-to-Pixel goodput in the accepted schedule class; 69.652 kbps in a separate zero-gap research class.">
+<meta name="twitter:description" content="An open-source acoustic modem for ordinary speakers and microphones. Cyrinx 2.0 delivered verified payload at 65.9 kbps—about 80% faster than the previous result.">
 
 <script type="application/ld+json">
 {
@@ -28,7 +28,7 @@
       "@id": "https://cyrinx.org/#website",
       "url": "https://cyrinx.org/",
       "name": "Cyrinx",
-      "description": "An acoustic modem for consumer hardware, measured over the air at 65.875 kbps in the accepted Pixel schedule class."
+      "description": "An open-source research modem that sends data through ordinary speakers and microphones, measured at 65.9 kbps from a MacBook Pro to a Pixel 7a."
     },
     {
       "@type": "ScholarlyArticle",
@@ -83,14 +83,15 @@
   <p class="eyebrow">Acoustic data link · measured over the air</p>
   <h1>Your laptop can talk<br>to your phone.<br><em>Out loud.</em></h1>
   <p class="thesis">
-    Cyrinx is a research modem that moves real data through the air as sound —
-    from an ordinary laptop speaker to an ordinary phone microphone. No radio,
-    no pairing, no network. Cyrinx&nbsp;2.0 measured
-    <strong>65.875&nbsp;kbps</strong> MacBook&nbsp;→&nbsp;Pixel&nbsp;7a while
-    preserving the accepted benchmark's 0.25&nbsp;s inter-frame gaps, versus
-    36.571&nbsp;kbps before (about 1.80×). A separately labeled zero-gap
-    research class reached <strong>69.652&nbsp;kbps</strong> (1.9045×, not
-    almost 3×).
+    Cyrinx is an open-source research modem that sends real data through the
+    air as sound—from an ordinary laptop speaker to an ordinary phone
+    microphone. No pairing or network is needed. In a close-range MacBook
+    Pro-to-Pixel&nbsp;7a test, Cyrinx&nbsp;2.0 delivered verified payload at
+    <strong>65.9&nbsp;kilobits per second</strong>, about 80% faster than the
+    project's previous 36.6&nbsp;kbps result. Both tests included the same
+    quarter-second pauses between transmissions, making the comparison
+    like-for-like. A more aggressive no-pause experiment reached 69.7&nbsp;kbps,
+    but recovered fewer transmitted blocks.
   </p>
 
   <figure class="instrument" id="instrument">
@@ -123,27 +124,22 @@
 <section class="sec" id="results">
   <h2><span class="secmark">§1</span> Measured results</h2>
   <p>
-    The Cyrinx&nbsp;2.0 rows use <strong>strict ordered byte-verified goodput</strong>:
-    a block counts only if its CRC-32 passes <em>and</em> its bytes match the
-    transmitted payload at the same scheduled position. Historical rows retain
-    their cited byte-verification method. For the accepted Pixel run, 375/375
-    decoded CRC-valid records passed expected-set membership; the verifier
-    retained neither record uniqueness nor strict stream position. The
-    Cyrinx&nbsp;2.0 values are scheduled goodput:
-    their denominator runs from the first chirp through the final frame data,
-    including preambles, pilots, FEC, CRCs, and declared gaps, but excluding the
-    16,000-sample stream-end pad. Including that pad makes the zero-gap mean
-    68.636&nbsp;kbps. Historical rows retain their cited measurement methodology.
+    <strong>Goodput</strong> is the rate of usable payload recovered correctly,
+    not the modem's raw signaling rate. For Cyrinx&nbsp;2.0, a block counts only
+    when its CRC-32 passes and every byte matches the transmitted block in the
+    correct position. The clock also keeps running during synchronization,
+    error-correction overhead, and the declared pauses between transmissions.
+    Historical results retain their original, less strict verification methods;
+    those differences are disclosed below rather than silently normalized.
   </p>
   <div class="register">
-    <h3>Two schedule classes, reported separately</h3>
+    <h3>Why 65.9 and 69.7 kbps are different tests</h3>
     <p>
-      The comparable flagship retains the accepted benchmark's 12,000-sample
-      (0.25&nbsp;s at 48&nbsp;kHz) gap between frames. Its 65.875&nbsp;kbps mean can
-      therefore be compared directly with the earlier 36.571&nbsp;kbps result.
-      The 69.652&nbsp;kbps mean removes that gap and belongs to a separate
-      research class; it is evidence about continuous scheduling, not a
-      like-for-like replacement for the accepted benchmark.
+      The main 65.875&nbsp;kbps result keeps the same 0.25-second pause between
+      transmissions as the earlier 36.571&nbsp;kbps benchmark, so it is the
+      direct comparison. The 69.652&nbsp;kbps experiment removes those pauses.
+      It shows what continuous transmission can do, but it also recovered only
+      90.666% of blocks and is not a replacement for the like-for-like result.
     </p>
   </div>
   <div class="table-scroll">
@@ -154,8 +150,8 @@
     </thead>
     <tbody>
       <tr><td>Pixel 7a</td><td>Mac → Pixel, accepted benchmark</td><td class="num">36.571 kbps</td><td>on-device legacy Kotlin decoder</td></tr>
-      <tr class="hot"><td>Pixel 7a</td><td>Mac → Pixel, Cyrinx 2.0 <strong>same schedule class</strong></td><td class="num">65.875 kbps</td><td>frozen canonical C host decoder from Pixel stereo capture; CP96/p16/64-QAM r⅔, 4,215/4,280 blocks, 8/8 paired wins</td></tr>
-      <tr><td>Pixel 7a</td><td>Mac → Pixel, <strong>zero-gap research class</strong></td><td class="num">69.652 kbps</td><td>frozen canonical C host decoder from Pixel stereo capture; CP96/p64/64-QAM r⅔, 96 symbols, range 65.731–72.641 kbps, 6,129/6,760 blocks, 8/8 paired wins</td></tr>
+      <tr class="hot"><td>Pixel 7a</td><td>Mac → Pixel, Cyrinx 2.0 <strong>same timing as the accepted benchmark</strong></td><td class="num">65.875 kbps</td><td>frozen canonical C host decoder from Pixel stereo capture; CP96/p16/64-QAM r⅔, 4,215/4,280 blocks, 8/8 paired wins</td></tr>
+      <tr><td>Pixel 7a</td><td>Mac → Pixel, <strong>continuous transmission with no pauses</strong></td><td class="num">69.652 kbps</td><td>frozen canonical C host decoder from Pixel stereo capture; CP96/p64/64-QAM r⅔, 96 symbols, range 65.731–72.641 kbps, 6,129/6,760 blocks, 8/8 paired wins</td></tr>
       <tr><td>Pixel 7a</td><td>Pixel → Mac</td><td class="num">27.3 kbps</td><td>reference decoder</td></tr>
       <tr><td>Pixel 7a</td><td>Mac → Pixel, earlier library-native aggregate</td><td class="num">38.400 kbps</td><td><strong>the shipped C library</strong>, 16-QAM r¾; contemporaneous console output reported 375/375 across five independent one-frame trials, but no matching machine-readable run record was retained; old 39.3 kbps label counted CRC and fill</td></tr>
       <tr><td>iPhone 17 Pro Max</td><td>Mac → iPhone</td><td class="num">36.57 kbps</td><td>on-device (Swift port)</td></tr>
@@ -178,10 +174,11 @@
     The comparable Cyrinx 2.0 campaign won all eight order-balanced pairs
     (exact sign test p&nbsp;=&nbsp;1/256), but its 98.481% block recovery was below the
     conservative baseline's 99.967%, so it failed the predeclared strict
-    reliability gate. The zero-gap campaign also won 8/8 pairs and reached
-    1.9045× the old 36.571&nbsp;kbps result, but recovered only 90.666% of blocks
-    and failed the same kind of gate. These are measured throughput advances
-    with quantified resilience costs, not an almost-threefold robustness claim.
+    reliability gate. The no-pause campaign also won all eight pairs but
+    recovered only 90.666% of blocks. These experiments increased delivered
+    throughput for one near-field setup while accepting a measured loss of
+    reliability; they do not yet establish the same result across devices,
+    placements, or longer distances.
   </p>
   <p class="aside">
     Scope matters: the new results are near-field measurements on one Pixel 7a,
