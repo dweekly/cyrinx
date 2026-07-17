@@ -1,5 +1,10 @@
+#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include "include/cyrinx/cyrinx.h"
 
+#include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -128,7 +133,14 @@ static void cyrinx_sleep_ms(uint32_t ms) {
 #if defined(_WIN32)
     Sleep(ms);
 #else
-    usleep(ms * 1000u);
+    struct timespec request = {
+        .tv_sec = (time_t)(ms / 1000u),
+        .tv_nsec = (long)(ms % 1000u) * 1000000L,
+    };
+    struct timespec remaining;
+    while (nanosleep(&request, &remaining) != 0 && errno == EINTR) {
+        request = remaining;
+    }
 #endif
 }
 

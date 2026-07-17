@@ -124,8 +124,11 @@ assert(decoded.isComplete && decoded.payload == payload)
 
 (That snippet is the release smoke test — it round-trips 75/75 CRC blocks
 digitally. Real links need audio I/O and the level/geometry guidance in the
-bench quick-start below.) Android binds the same C core via JNI; Python
-drives it via `ctypes` (`scratch/hw20k/clib.py`).
+bench quick-start below.) Python drives the C core via `ctypes`
+(`scratch/hw20k/clib.py`). The Android HIL receiver is currently a separate,
+older Kotlin DSP implementation rather than JNI; it does not support the
+Cyrinx 2.0 fast profile. Converging Android and the iOS HIL receiver on the C
+core is tracked as technical debt in [ROADMAP.md](ROADMAP.md).
 
 ## Implemented Protocol Model
 
@@ -273,4 +276,3 @@ swift run cyrinx-sim-bench --profile quiet --out artifacts/bench/sim-quiet.json
 Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
 Copyright 2026 Primatech Paper Co LLC. The optional crypto envelope is
 experimental and unaudited; see [SECURITY.md](SECURITY.md).
-

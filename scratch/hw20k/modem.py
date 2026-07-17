@@ -25,6 +25,9 @@ CHIRP_F0, CHIRP_F1 = 2000.0, 16000.0
 GUARD = 2048             # silence after chirp so its reverb tail decays
                          # before the channel-estimation symbols
 CRC_BLOCK = 256          # payload bytes per CRC32 block (4-byte CRC appended)
+MRC_NV_RELATIVE_FLOOR = 1e-4  # cap per-bin branch weight ratio at 40 dB
+PILOT_SNR_WEIGHT_FLOOR = 0.1   # -10 dB, same floor as per-bin LLR weighting
+PILOT_SNR_WEIGHT_PERCENTILE = 90.0  # reject optimistic sync-noise outliers
 
 # Convolutional code K=7 (171, 133), MSB = newest bit.
 G0, G1 = 0o171, 0o133
@@ -244,6 +247,8 @@ class Config:
                                      chirp_f1 if chirp_f1 is not None else CHIRP_F1)
         self.bin_lo = int(np.ceil(f_lo / self.bin_hz))
         self.bin_hi = int(np.floor(f_hi / self.bin_hz))
+        if self.bin_lo <= 0 or self.bin_hi >= nfft // 2:
+            raise ValueError("selected band must exclude DC and Nyquist bins")
         self.used = np.arange(self.bin_lo, self.bin_hi + 1)
         self.pilot_idx = self.used[::pilot_every]
         self.data_idx = np.array(sorted(set(self.used) - set(self.pilot_idx)))
@@ -295,6 +300,64 @@ def sync_symbol_freq(cfg, which=0):
     r = DetRng(0x5EED + which)
     ph = np.array([r.mod(4) for _ in range(len(cfg.used))])
     return np.exp(1j * (np.pi / 4 + np.pi / 2 * ph))
+
+
+def pilot_phase_weights(sync_snr):
+    """Fixed pilot reliabilities derived only from the two sync symbols.
+
+    Phase-observation variance is approximately inverse-SNR, so SNR is the
+    natural circular-mean weight.  The two-symbol noise estimate can itself
+    have optimistic outliers; clipping at the predeclared 90th percentile
+    limits their leverage.  The same -10 dB floor used by per-bin LLR weighting
+    keeps a sync-estimate null numerically bounded.  No data-symbol value,
+    known pilot value, decoded bit, EVM, or payload enters these weights.
+    """
+    sync_snr = np.asarray(sync_snr, dtype=float)
+    if sync_snr.ndim != 1 or len(sync_snr) == 0:
+        raise ValueError("sync_snr must be a non-empty one-dimensional array")
+    finite = np.where(np.isfinite(sync_snr) & (sync_snr > 0.0), sync_snr, 0.0)
+    cap = max(PILOT_SNR_WEIGHT_FLOOR,
+              float(np.percentile(finite, PILOT_SNR_WEIGHT_PERCENTILE)))
+    weights = np.clip(finite, PILOT_SNR_WEIGHT_FLOOR, cap)
+    return weights / np.mean(weights)
+
+
+def fit_pilot_phase(e, pilot_bins, weights, passes=3):
+    """Fit per-symbol phase slope and CPE using fixed sync-only weights.
+
+    ``e`` supplies phase observations only: every nonzero observation is
+    projected to the unit circle before either circular mean.  Consequently,
+    data-symbol pilot amplitude cannot silently become a second reliability
+    weight.  Adjacent-pilot slope observations use the harmonic reliability of
+    their endpoints, since either weak endpoint corrupts the phase difference;
+    CPE uses the individual pilot sync weights.
+    """
+    e = np.asarray(e, dtype=complex)
+    pilot_bins = np.asarray(pilot_bins, dtype=float)
+    weights = np.asarray(weights, dtype=float)
+    if e.ndim != 1 or e.shape != pilot_bins.shape or e.shape != weights.shape:
+        raise ValueError("e, pilot_bins, and weights must be equal-length vectors")
+    if len(e) < 2 or passes < 1:
+        raise ValueError("phase fit requires at least two pilots and one pass")
+    steps = np.diff(pilot_bins)
+    if not np.all(steps == steps[0]) or steps[0] <= 0.0:
+        raise ValueError("pilot bins must have constant positive spacing")
+    if np.any(~np.isfinite(weights)) or np.any(weights <= 0.0):
+        raise ValueError("pilot weights must be finite and positive")
+
+    magnitude = np.abs(e)
+    ew = np.divide(e, magnitude, out=np.zeros_like(e), where=magnitude > 1e-12)
+    pair_weights = (weights[1:] * weights[:-1]
+                    / np.maximum(weights[1:] + weights[:-1], 1e-12))
+    slope_total = 0.0
+    relative_bins = pilot_bins - pilot_bins[0]
+    for _ in range(passes):
+        differences = ew[1:] * np.conj(ew[:-1])
+        slope = np.angle(np.sum(pair_weights * differences)) / steps[0]
+        slope_total += slope
+        ew *= np.exp(-1j * slope * relative_bins)
+    cpe = np.angle(np.sum(weights * ew))
+    return float(slope_total), float(cpe)
 
 
 def ofdm_mod_symbol(cfg, freq_vals_on_used):
@@ -469,6 +532,12 @@ def demodulate_frame(cfg, rx, start_hint=None, fine_window=400, diag=None, rx2=N
         nvk = np.convolve(np.abs(Hs[0] - Hs[1]) ** 2 / 2, np.ones(9) / 9,
                           mode="same") + 1e-12
         nv_list.append(nvk)
+    if len(nv_list) > 1:
+        # Two sync symbols can produce a spuriously tiny variance estimate.
+        # Use the noisier branch as a shared scale; leave mono arithmetic alone.
+        shared_nv = np.maximum.reduce(nv_list)
+        nv_list = [np.maximum(nv, shared_nv * MRC_NV_RELATIVE_FLOOR)
+                   for nv in nv_list]
     # Per-bin effective SNR is the sum across mics (MRC); for one mic this is
     # the previous behavior. Do NOT smooth H across bins (phase rotates fast).
     snr_bin = sum(np.abs(H) ** 2 / nv for H, nv in zip(H_list, nv_list))
@@ -477,6 +546,7 @@ def demodulate_frame(cfg, rx, start_hint=None, fine_window=400, diag=None, rx2=N
     pil_pos = np.array([used_set[b] for b in cfg.pilot_idx])
     dat_pos = np.array([used_set[b] for b in cfg.data_bins])
     pil_bin = cfg.pilot_idx.astype(float)
+    pilot_weights = pilot_phase_weights(snr_bin[pil_pos])
 
     llr_stream = np.empty(cfg.bits_per_sym * cfg.n_sym)
     pos = 0
@@ -496,22 +566,19 @@ def demodulate_frame(cfg, rx, start_hint=None, fine_window=400, diag=None, rx2=N
         if len(chans) == 1:
             Z = Ys[0] / (H_list[0] * G)
         else:
-            # MRC: Z = sum_k conj(H_k) Y_k / (sum_k |H_k|^2), then de-rotate G
-            num = sum(np.conj(H) * Y for H, Y in zip(H_list, Ys))
-            den = sum(np.abs(H) ** 2 for H in H_list) + 1e-12
+            # Inverse-noise-variance MRC, consistent with snr_bin above; then
+            # de-rotate G. A noisier microphone contributes proportionally less.
+            num = sum(np.conj(H) * Y / nv
+                      for H, Y, nv in zip(H_list, Ys, nv_list))
+            den = sum(np.abs(H) ** 2 / nv
+                      for H, nv in zip(H_list, nv_list)) + 1e-12
             Z = (num / den) / G
-        # pilot phase tracking: CPE + timing slope, fitted iteratively so a
-        # large ramp doesn't bias the angle-of-sum estimator under ISI noise
+        # Pilot phase tracking: CPE + timing slope. Weak/null pilots must not
+        # have the same leverage as well-observed pilots, and received pilot
+        # magnitude must not leak into that reliability decision. We therefore
+        # fit unit phasors with weights fixed from the sync-only SNR estimate.
         e = Z[pil_pos] * np.conj(cfg.pilots)
-        step = pil_bin[1] - pil_bin[0]
-        slope_tot, ph0 = 0.0, 0.0
-        ew = e.copy()
-        for _ in range(3):
-            d = ew[1:] * np.conj(ew[:-1])
-            slope = np.angle(np.sum(d)) / step
-            slope_tot += slope
-            ew = ew * np.exp(-1j * slope * (pil_bin - pil_bin[0]))
-        ph0 = np.angle(np.sum(ew))
+        slope_tot, ph0 = fit_pilot_phase(e, pil_bin, pilot_weights)
         corr = np.exp(-1j * (ph0 + slope_tot * (cfg.used - pil_bin[0])))
         Z = Z * corr
         # EVM on pilots after correction; also serves as this symbol's noise

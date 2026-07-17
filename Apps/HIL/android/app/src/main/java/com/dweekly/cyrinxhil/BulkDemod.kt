@@ -23,9 +23,12 @@ import kotlin.math.sqrt
  * (splitmix64) PRBS the Mac transmitter uses, so the phone autonomously
  * proves end-to-end goodput without shipping samples off-device.
  *
- * Fixed profile: 48 kHz, NFFT 2048, CP 768, comb pilots every 8th used bin,
+ * Fixed Cyrinx 1.x control profile: 48 kHz, NFFT 2048, CP 768, comb pilots every 8th used bin,
  * uniform 16-QAM, convolutional K=7 (171,133) punctured to 3/4, frame-wide
- * interleaving, CRC32 per 256-byte payload block.
+ * interleaving, CRC32 per 256-byte payload block. The Cyrinx 2.0
+ * CP96/p16/64-QAM/r5/6 campaign used Android for tokenized capture and the C
+ * library on the host for decoding; this Kotlin decoder does not implement
+ * that fast profile.
  */
 object BulkDemod {
     const val SRATE = 48000
@@ -329,12 +332,35 @@ object BulkDemod {
     }
 
     // ---------------- main entry ----------------
-    data class FrameResult(val start: Int, val ok: Boolean, val err: String?,
-                           val blocksOk: Int, val blocksTotal: Int,
-                           val verified: Int, val evm: Double, val decodeMs: Long)
+    data class FrameResult(
+        val start: Int,
+        val ok: Boolean,
+        val err: String?,
+        val blocksOk: Int,
+        val blocksTotal: Int,
+        val verified: Int,
+        val attributedFrame: Int?,
+        val verifiedBlockIndices: List<Int>,
+        val diagnosticVerified: Int,
+        val diagnosticAttributedFrame: Int?,
+        val evm: Double,
+        val decodeMs: Long,
+    )
+
+    private data class RawFrameResult(
+        val start: Int,
+        val ok: Boolean,
+        val err: String?,
+        val blocksOk: Int,
+        val blocksTotal: Int,
+        val blocks: List<ByteArray?>,
+        val evm: Double,
+        val decodeMs: Long = 0,
+    )
 
     fun decodeCapture(path: String, channels: Int, fLo: Double, fHi: Double,
                       nSym: Int, nPayloads: Int, payloadSeedBase: Long,
+                      scheduleOriginSample: Int?, gapSamples: Int, slotToleranceSamples: Int,
                       log: (String) -> Unit): List<FrameResult> {
         val cfg = Cfg(fLo, fHi, nSym)
         val bytes = File(path).readBytes()
@@ -348,26 +374,77 @@ object BulkDemod {
             "band ${fLo.toInt()}-${fHi.toInt()} nSym=$nSym blocks=${cfg.nBlocks} " +
             "payload=${cfg.payloadBytes}B dataBins=${cfg.dataPos.size}")
 
-        // expected payload blocks from all candidate frame payloads
-        val expected = HashSet<List<Byte>>()
-        for (i in 0 until nPayloads) {
-            val pl = DetRng(payloadSeedBase + i).bytes(cfg.payloadBytes)
-            for (j in 0 until cfg.nBlocks) {
-                expected.add(pl.slice(j * CRC_BLOCK until (j + 1) * CRC_BLOCK))
-            }
+        require(nPayloads > 0) { "nPayloads must be positive" }
+        val expectedPayloads = (0 until nPayloads).map { payloadIndex ->
+            DetRng(payloadSeedBase + payloadIndex).bytes(cfg.payloadBytes)
         }
 
         val starts = findAllChirps(x, cfg.frameSamples, nPayloads)
         log("bulk_decode: ${starts.size} chirp(s) found")
-        val results = ArrayList<FrameResult>()
-        for (st in starts) {
+        val rawResults = starts.map { start ->
             val t0 = System.currentTimeMillis()
-            val r = demodFrame(cfg, x, st, expected)
-            results.add(r.copy(decodeMs = System.currentTimeMillis() - t0))
-            log("bulk_decode frame@${"%.2f".format(st.toDouble() / SRATE)}s: " +
-                (if (r.ok) "blocks=${r.blocksOk}/${r.blocksTotal} verified=${r.verified} " +
-                           "evm=${"%.3f".format(r.evm)}" else "FAILED ${r.err}") +
-                " decode_ms=${results.last().decodeMs}")
+            demodFrame(cfg, x, start).copy(decodeMs = System.currentTimeMillis() - t0)
+        }
+        val candidates = rawResults.mapIndexedNotNull { candidateId, result ->
+            if (result.ok) {
+                val scheduledFrame = scheduleOriginSample?.let { origin ->
+                    BulkAttribution.scheduledFrameIndex(
+                        startSample = result.start,
+                        scheduleOriginSample = origin,
+                        frameSamples = cfg.frameSamples,
+                        gapSamples = gapSamples,
+                        frameCount = nPayloads,
+                        toleranceSamples = slotToleranceSamples,
+                    )
+                }
+                BulkAttribution.Candidate(candidateId, result.blocks, scheduledFrame)
+            } else {
+                null
+            }
+        }
+        val strictByCandidate = BulkAttribution.attributeStrict(
+            expectedPayloads,
+            candidates,
+            CRC_BLOCK,
+        ).associateBy { it.candidateId }
+        val diagnosticByCandidate = BulkAttribution.attributeByContentDiagnostic(
+            expectedPayloads,
+            candidates,
+            CRC_BLOCK,
+        ).associateBy { it.candidateId }
+        val results = rawResults.mapIndexed { candidateId, raw ->
+            val strict = strictByCandidate[candidateId]
+            val diagnostic = diagnosticByCandidate[candidateId]
+            FrameResult(
+                start = raw.start,
+                ok = raw.ok,
+                err = raw.err,
+                blocksOk = raw.blocksOk,
+                blocksTotal = raw.blocksTotal,
+                verified = strict?.verifiedBlocks ?: 0,
+                attributedFrame = strict?.expectedFrameIndex,
+                verifiedBlockIndices = strict?.verifiedBlockIndices ?: emptyList(),
+                diagnosticVerified = diagnostic?.verifiedBlocks ?: 0,
+                diagnosticAttributedFrame = diagnostic?.expectedFrameIndex,
+                evm = raw.evm,
+                decodeMs = raw.decodeMs,
+            )
+        }
+        for (result in results) {
+            val frameLabel = result.attributedFrame?.toString() ?: "none"
+            val diagnosticLabel = result.diagnosticAttributedFrame?.toString() ?: "none"
+            log(
+                "bulk_decode frame@${"%.2f".format(result.start.toDouble() / SRATE)}s: " +
+                    if (result.ok) {
+                        "blocks=${result.blocksOk}/${result.blocksTotal} " +
+                            "verified=${result.verified} scheduled_payload#$frameLabel " +
+                            "diagnostic_verified=${result.diagnosticVerified} " +
+                            "diagnostic_payload#$diagnosticLabel " +
+                            "evm=${"%.3f".format(result.evm)} decode_ms=${result.decodeMs}"
+                    } else {
+                        "FAILED ${result.err} decode_ms=${result.decodeMs}"
+                    },
+            )
         }
         return results
     }
@@ -384,8 +461,7 @@ object BulkDemod {
         return Pair(ur, ui)
     }
 
-    private fun demodFrame(cfg: Cfg, x: DoubleArray, chirpStart: Int,
-                           expected: HashSet<List<Byte>>): FrameResult {
+    private fun demodFrame(cfg: Cfg, x: DoubleArray, chirpStart: Int): RawFrameResult {
         var base = chirpStart + CHIRP_LEN + GUARD
         // fine sync via xcorr with sync symbol 0 reference
         val (s0re, s0im) = syncSymbolFreq(cfg, 0)
@@ -532,7 +608,7 @@ object BulkDemod {
             streamBytes[i] = v.toByte()
         }
         var ok = 0
-        var verified = 0
+        val blocks = MutableList<ByteArray?>(cfg.nBlocks) { null }
         val crc = CRC32()
         for (j in 0 until cfg.nBlocks) {
             val off = j * (CRC_BLOCK + 4)
@@ -545,14 +621,20 @@ object BulkDemod {
                         (streamBytes[off + CRC_BLOCK + 3].toLong() and 0xFF))
             if (v == want) {
                 ok++
-                val blk = streamBytes.slice(off until off + CRC_BLOCK)
-                if (expected.contains(blk)) verified++
+                blocks[j] = streamBytes.copyOfRange(off, off + CRC_BLOCK)
             }
         }
-        return FrameResult(chirpStart, true, null, ok, cfg.nBlocks, verified,
-                           evmAcc / cfg.nSym, 0)
+        return RawFrameResult(
+            start = chirpStart,
+            ok = true,
+            err = null,
+            blocksOk = ok,
+            blocksTotal = cfg.nBlocks,
+            blocks = blocks,
+            evm = evmAcc / cfg.nSym,
+        )
     }
 
     private fun fail(start: Int, err: String) =
-        FrameResult(start, false, err, 0, 0, 0, 0.0, 0)
+        RawFrameResult(start, false, err, 0, 0, emptyList(), 0.0)
 }

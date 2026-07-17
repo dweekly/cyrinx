@@ -5,28 +5,32 @@ import Foundation
     import CoreAudio
 #endif
 
-/// Provides native platform hooks to programmatically query and calibrate
-/// system audio transducers into optimal linear gain regions.
+/// Provides native platform hooks to query system audio gains and analyze
+/// measured transducer captures.
 public final class AcousticCalibration: Sendable {
 
-    /// Calibrates the default hardware input and output devices to their proven
-    /// sweet-spots (55% input sensitivity, 80% speaker output) to prevent
-    /// near-field ADC clipping and transducer overload.
+    /// Applies the legacy fixed macOS gain-staging values.
+    ///
+    /// This is an explicit, process-wide hardware mutation. The values are not
+    /// a device, route, or geometry calibration; callers should prefer gains
+    /// selected from measured clipping and distortion data for the active path.
     public static func optimizeHardwareVolumes() {
         #if os(macOS)
-            print("[AcousticCalibration] Performing macOS hardware gain staging calibration...")
+            print("[AcousticCalibration] Applying legacy macOS hardware gain staging...")
             do {
                 try setSystemInputVolumeScalar(0.55)
                 try setSystemOutputVolumeScalar(0.80)
-                print("[AcousticCalibration] Linear calibration completed successfully (Mic: 55%, Spk: 80%)")
+                print("[AcousticCalibration] Fixed gain staging applied (Mic: 55%, Spk: 80%)")
             } catch {
                 print(
-                    "[AcousticCalibration] Warning: Failed to apply native volume overrides: \(error.localizedDescription)"
+                    "[AcousticCalibration] Warning: Failed to apply native volume overrides: "
+                        + error.localizedDescription
                 )
             }
         #else
             print(
-                "[AcousticCalibration] Platform auto-gain calibration is not supported on this platform. Please stage gains manually."
+                "[AcousticCalibration] Platform auto-gain calibration is not supported "
+                    + "on this platform. Please stage gains manually."
             )
         #endif
     }
@@ -34,7 +38,11 @@ public final class AcousticCalibration: Sendable {
     /// Calculates the Total Harmonic Distortion (THD) of a captured audio buffer
     /// given a fundamental target frequency using Apple's Accelerate vDSP framework.
     /// Formula: THD% = sqrt(HarmonicPower / FundamentalPower) * 100
-    public static func calculateTHD(samples: [Float], sampleRate: Double, fundamentalHz: Double) -> Float {
+    public static func calculateTHD(
+        samples: [Float],
+        sampleRate: Double,
+        fundamentalHz: Double
+    ) -> Float {
         #if os(macOS) || os(iOS)
             let n = samples.count
 
@@ -44,38 +52,17 @@ public final class AcousticCalibration: Sendable {
                 return 0.0
             }
 
-            let real = samples
-            let imag = [Float](repeating: 0.0, count: n)
-
-            guard
-                let fft = try? vDSP.DiscreteFourierTransform(
-                    count: n,
-                    direction: .forward,
-                    transformType: .complexComplex,
-                    ofType: Float.self
-                )
-            else {
+            guard let transformed = transformedSamples(samples) else {
                 print(
-                    "[AcousticCalibration] THD failed: Accelerate discrete fourier transform initialization error."
+                    "[AcousticCalibration] THD failed: Accelerate discrete "
+                        + "fourier transform initialization error."
                 )
                 return 0.0
             }
 
-            var outReal = [Float](repeating: 0.0, count: n)
-            var outImag = [Float](repeating: 0.0, count: n)
-
-            fft.transform(
-                inputReal: real,
-                inputImaginary: imag,
-                outputReal: &outReal,
-                outputImaginary: &outImag
-            )
-
             // Calculate magnitudes
-            var magnitudes = [Float](repeating: 0.0, count: n / 2)
-            for i in 0..<n / 2 {
-                magnitudes[i] = sqrt(outReal[i] * outReal[i] + outImag[i] * outImag[i])
-            }
+            let magnitudes = magnitudes(
+                real: transformed.real, imaginary: transformed.imaginary, count: n / 2)
 
             // Map frequencies to bin indices
             let binWidth = sampleRate / Double(n)
@@ -83,30 +70,30 @@ public final class AcousticCalibration: Sendable {
 
             guard fundamentalBin > 0, fundamentalBin < n / 2 else {
                 print(
-                    "[AcousticCalibration] THD failed: fundamental frequency \(fundamentalHz) Hz lies out of Nyquist bounds."
+                    "[AcousticCalibration] THD failed: fundamental frequency "
+                        + "\(fundamentalHz) Hz lies out of Nyquist bounds."
                 )
                 return 0.0
             }
 
             // Find fundamental energy in a 5-bin window to handle spectral leakage
             let window = 2
-            var fundamentalPower = Float(0.0)
-            let startBin = max(0, fundamentalBin - window)
-            let endBin = min(n / 2 - 1, fundamentalBin + window)
-            for b in startBin...endBin {
-                fundamentalPower += magnitudes[b] * magnitudes[b]
-            }
+            let fundamentalPower = spectralPower(
+                magnitudes,
+                centeredAt: fundamentalBin,
+                radius: window
+            )
 
             // Find harmonic energies (2nd, 3rd, 4th harmonics)
             var harmonicPower = Float(0.0)
             for harmonic in 2...4 {
                 let harmonicBin = fundamentalBin * harmonic
                 if harmonicBin < n / 2 {
-                    let hStart = max(0, harmonicBin - window)
-                    let hEnd = min(n / 2 - 1, harmonicBin + window)
-                    for b in hStart...hEnd {
-                        harmonicPower += magnitudes[b] * magnitudes[b]
-                    }
+                    harmonicPower += spectralPower(
+                        magnitudes,
+                        centeredAt: harmonicBin,
+                        radius: window
+                    )
                 }
             }
 
@@ -119,6 +106,53 @@ public final class AcousticCalibration: Sendable {
         #else
             return 0.0
         #endif
+    }
+
+    #if os(macOS) || os(iOS)
+        private static func transformedSamples(
+            _ samples: [Float]
+        ) -> (real: [Float], imaginary: [Float])? {
+            guard
+                let transform = try? vDSP.DiscreteFourierTransform(
+                    count: samples.count,
+                    direction: .forward,
+                    transformType: .complexComplex,
+                    ofType: Float.self
+                )
+            else { return nil }
+            let inputImaginary = [Float](repeating: 0, count: samples.count)
+            var real = [Float](repeating: 0, count: samples.count)
+            var imaginary = [Float](repeating: 0, count: samples.count)
+            transform.transform(
+                inputReal: samples,
+                inputImaginary: inputImaginary,
+                outputReal: &real,
+                outputImaginary: &imaginary
+            )
+            return (real, imaginary)
+        }
+    #endif
+
+    private static func magnitudes(
+        real: [Float],
+        imaginary: [Float],
+        count: Int
+    ) -> [Float] {
+        (0..<count).map { index in
+            sqrt(real[index] * real[index] + imaginary[index] * imaginary[index])
+        }
+    }
+
+    private static func spectralPower(
+        _ magnitudes: [Float],
+        centeredAt center: Int,
+        radius: Int
+    ) -> Float {
+        let start = max(0, center - radius)
+        let end = min(magnitudes.count - 1, center + radius)
+        return (start...end).reduce(0) { power, index in
+            power + magnitudes[index] * magnitudes[index]
+        }
     }
 
     /// Sweeps across multiple loopback captures, analyzes self-THD, and programmatically
@@ -137,15 +171,18 @@ public final class AcousticCalibration: Sendable {
         for g in gains {
             if let samples = loopbackSamples[g] {
                 let thd = calculateTHD(samples: samples, sampleRate: sampleRate, fundamentalHz: fundamentalHz)
+                let formattedTHD = String(format: "%.2f", thd)
                 print(
-                    "[AcousticCalibration] Test Gain: \(g) | Local Loopback THD: \(String(format: "%.2f", thd))%"
+                    "[AcousticCalibration] Test Gain: \(g) | Local Loopback THD: "
+                        + "\(formattedTHD)%"
                 )
 
                 if thd < 5.0 {
                     optimalGain = g
                 } else {
                     print(
-                        "[AcousticCalibration] Transducer amplifier saturation detected at Gain = \(g) (THD >= 5%)"
+                        "[AcousticCalibration] Transducer amplifier saturation "
+                            + "detected at Gain = \(g) (THD >= 5%)"
                     )
                     break
                 }

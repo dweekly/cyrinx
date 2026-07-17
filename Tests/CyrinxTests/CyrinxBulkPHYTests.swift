@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 
 @testable import Cyrinx
@@ -45,6 +46,29 @@ final class CyrinxBulkPHYTests: XCTestCase {
         roundTrip(.init(bitsPerBin: 6, rate: "3/4", symbolCount: 8))
     }
 
+    func testCyrinx2FastPresetPinsMeasuredGeometry() {
+        let configuration = BulkPHY.Configuration.makeCyrinx2Fast(amplitude: 0.13)
+        let geometry = BulkPHY(configuration: configuration).geometry()
+
+        XCTAssertEqual(configuration.pilotEvery, 16)
+        XCTAssertEqual(configuration.bitsPerBin, 6)
+        XCTAssertEqual(configuration.rate, "5/6")
+        XCTAssertEqual(configuration.cyclicPrefix, 96)
+        XCTAssertEqual(configuration.amplitude, 0.13)
+        XCTAssertEqual(geometry?.payloadBytes, 34_304)
+        XCTAssertEqual(geometry?.blockCount, 134)
+        XCTAssertEqual(geometry?.frameSamples, 147_648)
+        XCTAssertEqual(geometry?.bitsPerSymbol, 5_256)
+        XCTAssertEqual(geometry?.usedBins, 935)
+    }
+
+    func testCyrinx2FastPresetRoundTripsFullFrame() {
+        let configuration = BulkPHY.Configuration.makeCyrinx2Fast(amplitude: 0.13)
+
+        XCTAssertEqual(configuration.symbolCount, 64)
+        roundTrip(configuration)
+    }
+
     /// A wrong-length payload is rejected rather than silently truncated.
     func testEncodeRejectsWrongLength() {
         let phy = BulkPHY(configuration: .init(bitsPerBin: 2, rate: "1/2", symbolCount: 8))
@@ -60,9 +84,66 @@ final class CyrinxBulkPHYTests: XCTestCase {
         var rx = [Float](repeating: 0, count: 3000)
         rx.append(contentsOf: wave)
         rx.append(contentsOf: [Float](repeating: 0, count: 2000))
+        guard let mono = phy.decode(rx) else { return XCTFail("mono decode nil") }
         guard let decoded = phy.decode(rx, combining: rx) else { return XCTFail("decode nil") }
         XCTAssertTrue(decoded.isComplete, "blocks \(decoded.blocksOK)/\(decoded.blockCount)")
         XCTAssertEqual(decoded.payload, payload)
+        XCTAssertEqual(decoded.blocksOK, mono.blocksOK)
+        XCTAssertEqual(decoded.blockCount, mono.blockCount)
+        XCTAssertEqual(decoded.payload, mono.payload)
+        XCTAssertEqual(decoded.evmRMS, mono.evmRMS, accuracy: 1e-12)
+
+        guard let automatic = phy.decode(rx, automaticallyCombining: rx),
+            let diagnostics = automatic.automaticDiversity
+        else { return XCTFail("automatic decode nil") }
+        XCTAssertEqual(diagnostics.selectedReceiver, .primary)
+        XCTAssertEqual(diagnostics.reason, .primaryMarginNotMet)
+        XCTAssertTrue(diagnostics.hasValidScores)
+        XCTAssertEqual(diagnostics.policyVersion, 1)
+        XCTAssertEqual(diagnostics.abiVersion, 1)
+        XCTAssertEqual(
+            diagnostics.maximumMRCToPrimaryPilotRMSRatio, 0.95, accuracy: 1e-12)
+        XCTAssertEqual(automatic.payload, mono.payload)
+        XCTAssertEqual(automatic.blocksOK, mono.blocksOK)
+        XCTAssertEqual(automatic.evmRMS, mono.evmRMS, accuracy: 1e-12)
+    }
+
+    /// A much noisier second microphone must not corrupt a clean first branch.
+    /// The deterministic wideband sequence spans sync and data so its variance
+    /// is measured by the two sync symbols and can be downweighted by MRC.
+    func testMRCDownweightsNoisySecondChannel() {
+        let phy = BulkPHY(
+            configuration: .init(bitsPerBin: 4, rate: "3/4", symbolCount: 8))
+        guard let geo = phy.geometry() else { return XCTFail("geometry nil") }
+        let payload = Data((0..<geo.payloadBytes).map { UInt8(($0 * 31 + 7) & 0xFF) })
+        guard let wave = phy.encode(payload) else { return XCTFail("encode nil") }
+
+        var clean = [Float](repeating: 0, count: 3000)
+        clean.append(contentsOf: wave)
+        clean.append(contentsOf: [Float](repeating: 0, count: 2000))
+
+        var noisy = clean
+        var state: UInt32 = 0xC0FF_EE11
+        for i in noisy.indices {
+            state = 1_664_525 &* state &+ 1_013_904_223
+            let unit = Float(state >> 8) / Float(0x00FF_FFFF)
+            noisy[i] += 2 * (2 * unit - 1)
+        }
+
+        guard let cleanDecoded = phy.decode(clean) else {
+            return XCTFail("clean decode nil")
+        }
+        XCTAssertTrue(cleanDecoded.isComplete)
+        if let noisyDecoded = phy.decode(noisy) {
+            XCTAssertFalse(noisyDecoded.isComplete, "noisy branch unexpectedly decoded alone")
+        }
+        guard let combined = phy.decode(clean, combining: noisy) else {
+            return XCTFail("MRC decode nil")
+        }
+        XCTAssertTrue(
+            combined.isComplete,
+            "noisy branch destroyed clean branch: \(combined.blocksOK)/\(combined.blockCount)")
+        XCTAssertEqual(combined.payload, payload)
     }
 
     /// Two-mic MRC rescue: mic0 keeps only chirp + sync (its data region is
@@ -95,5 +176,229 @@ final class CyrinxBulkPHYTests: XCTestCase {
         }
         XCTAssertTrue(mrc.isComplete, "MRC blocks \(mrc.blocksOK)/\(mrc.blockCount)")
         XCTAssertEqual(mrc.payload, payload)
+
+        guard let automatic = phy.decode(mic0, automaticallyCombining: clean),
+            let diagnostics = automatic.automaticDiversity
+        else { return XCTFail("automatic decode nil") }
+        XCTAssertEqual(diagnostics.selectedReceiver, .maximalRatioCombined)
+        XCTAssertEqual(diagnostics.reason, .mrcImproved)
+        XCTAssertTrue(diagnostics.hasValidScores)
+        XCTAssertLessThan(
+            diagnostics.observedMRCToPrimaryPilotRMSRatio,
+            diagnostics.maximumMRCToPrimaryPilotRMSRatio)
+        XCTAssertTrue(automatic.isComplete)
+        XCTAssertEqual(automatic.payload, payload)
+    }
+}
+
+final class CyrinxAutomaticDiversityTests: XCTestCase {
+    /// Data-bin corruption must not leak decoded payload or CRC evidence into
+    /// the pilot-only automatic-diversity decision.
+    func testAutomaticDiversityDiagnosticsIgnoreDataSubcarrier() {
+        let config = BulkPHY.Configuration(bitsPerBin: 6, rate: "3/4", symbolCount: 8)
+        let phy = BulkPHY(configuration: config)
+        guard let geometry = phy.geometry() else { return XCTFail("geometry nil") }
+        let payload = Data((0..<geometry.payloadBytes).map { UInt8(($0 * 31 + 7) & 0xFF) })
+        guard let wave = phy.encode(payload) else { return XCTFail("encode nil") }
+        let leadingSilence = 3000
+        var primary = [Float](repeating: 0, count: leadingSilence)
+        primary.append(contentsOf: wave)
+        primary.append(contentsOf: [Float](repeating: 0, count: 2000))
+
+        let lowBin = Int(
+            ceil(
+                config.lowFrequencyHz * Double(config.fftSize) / Double(config.sampleRate)))
+        let dataBin = lowBin + 1
+        XCTAssertNotEqual((dataBin - lowBin) % config.pilotEvery, 0)
+        let symbolSamples = config.fftSize + config.cyclicPrefix
+        let dataStart = leadingSilence + 4096 + 2048 + 2 * symbolSamples
+        var dataCorrupted = primary
+        addCyclicDataSubcarrier(
+            to: &dataCorrupted, startingAt: dataStart, configuration: config,
+            bin: dataBin, amplitude: 1.0)
+
+        guard let baseline = phy.decode(primary, automaticallyCombining: primary),
+            let baselineDiagnostics = baseline.automaticDiversity,
+            let perturbed = phy.decode(primary, automaticallyCombining: dataCorrupted),
+            let perturbedDiagnostics = perturbed.automaticDiversity,
+            let rawBaseline = phy.decode(primary, combining: primary),
+            let rawPerturbed = phy.decode(primary, combining: dataCorrupted)
+        else { return XCTFail("decode nil") }
+
+        XCTAssertTrue(
+            rawPerturbed.payload != rawBaseline.payload
+                || rawPerturbed.blocksOK != rawBaseline.blocksOK,
+            "data-subcarrier perturbation did not alter raw-MRC payload/CRC outcome")
+        XCTAssertEqual(perturbedDiagnostics.selectedReceiver, baselineDiagnostics.selectedReceiver)
+        XCTAssertEqual(perturbedDiagnostics.reason, baselineDiagnostics.reason)
+        XCTAssertEqual(perturbedDiagnostics.hasValidScores, baselineDiagnostics.hasValidScores)
+        XCTAssertEqual(
+            perturbedDiagnostics.validationObservations,
+            baselineDiagnostics.validationObservations)
+        XCTAssertEqual(
+            perturbedDiagnostics.primaryHoldoutPilotRMS,
+            baselineDiagnostics.primaryHoldoutPilotRMS,
+            accuracy: 1e-10)
+        XCTAssertEqual(
+            perturbedDiagnostics.mrcHoldoutPilotRMS,
+            baselineDiagnostics.mrcHoldoutPilotRMS,
+            accuracy: 1e-7)
+        XCTAssertEqual(
+            perturbedDiagnostics.observedMRCToPrimaryPilotRMSRatio,
+            baselineDiagnostics.observedMRCToPrimaryPilotRMSRatio,
+            accuracy: 1e-6)
+    }
+
+    /// A secondary branch whose two sync symbols look clean but whose data
+    /// region is corrupt must not override a complete primary decode.
+    func testAutomaticDiversityRejectsStaleSecondaryConfidence() {
+        let config = BulkPHY.Configuration(bitsPerBin: 2, rate: "1/2", symbolCount: 8)
+        let phy = BulkPHY(configuration: config)
+        guard let geometry = phy.geometry() else { return XCTFail("geometry nil") }
+        let payload = Data((0..<geometry.payloadBytes).map { UInt8(($0 * 31 + 7) & 0xFF) })
+        guard let wave = phy.encode(payload) else { return XCTFail("encode nil") }
+        let leadingSilence = 3000
+        var primary = [Float](repeating: 0, count: leadingSilence)
+        primary.append(contentsOf: wave)
+        primary.append(contentsOf: [Float](repeating: 0, count: 2000))
+        var stale = primary
+        let symbolSamples = config.fftSize + config.cyclicPrefix
+        let dataStart = leadingSilence + 4096 + 2048 + 2 * symbolSamples
+        let dataEnd = dataStart + config.symbolCount * symbolSamples
+        var state: UInt32 = 0xA17E_5EED
+        for index in dataStart..<dataEnd {
+            state = 1_664_525 &* state &+ 1_013_904_223
+            let unit = Float(state >> 8) / Float(0x00FF_FFFF)
+            stale[index] = 2 * unit - 1
+        }
+
+        guard let mono = phy.decode(primary) else { return XCTFail("mono decode nil") }
+        guard let rawMRC = phy.decode(primary, combining: stale) else {
+            return XCTFail("raw MRC decode nil")
+        }
+        XCTAssertTrue(mono.isComplete)
+        XCTAssertFalse(rawMRC.isComplete, "adversarial raw MRC unexpectedly completed")
+
+        guard let automatic = phy.decode(primary, automaticallyCombining: stale),
+            let diagnostics = automatic.automaticDiversity
+        else { return XCTFail("automatic decode nil") }
+        XCTAssertEqual(diagnostics.selectedReceiver, .primary)
+        XCTAssertEqual(diagnostics.reason, .primaryMarginNotMet)
+        XCTAssertTrue(diagnostics.hasValidScores)
+        XCTAssertGreaterThanOrEqual(
+            diagnostics.observedMRCToPrimaryPilotRMSRatio,
+            diagnostics.maximumMRCToPrimaryPilotRMSRatio)
+        XCTAssertEqual(automatic.payload, mono.payload)
+        XCTAssertEqual(automatic.blocksOK, mono.blocksOK)
+        XCTAssertEqual(automatic.blockCount, mono.blockCount)
+        XCTAssertEqual(automatic.evmRMS, mono.evmRMS, accuracy: 1e-12)
+    }
+
+    /// Nonfinite secondary data fails closed without contaminating primary arithmetic.
+    func testAutomaticDiversityFailsClosedForNonfiniteSecondaryData() {
+        let config = BulkPHY.Configuration(bitsPerBin: 2, rate: "1/2", symbolCount: 8)
+        let phy = BulkPHY(configuration: config)
+        guard let geometry = phy.geometry() else { return XCTFail("geometry nil") }
+        let payload = Data((0..<geometry.payloadBytes).map { UInt8(($0 * 31 + 7) & 0xFF) })
+        guard let wave = phy.encode(payload) else { return XCTFail("encode nil") }
+        let leadingSilence = 3000
+        var primary = [Float](repeating: 0, count: leadingSilence)
+        primary.append(contentsOf: wave)
+        primary.append(contentsOf: [Float](repeating: 0, count: 2000))
+        var nonfinite = primary
+        let symbolSamples = config.fftSize + config.cyclicPrefix
+        let dataStart = leadingSilence + 4096 + 2048 + 2 * symbolSamples
+        let dataEnd = dataStart + config.symbolCount * symbolSamples
+        for index in dataStart..<dataEnd { nonfinite[index] = .nan }
+
+        guard let mono = phy.decode(primary),
+            let automatic = phy.decode(primary, automaticallyCombining: nonfinite),
+            let diagnostics = automatic.automaticDiversity
+        else { return XCTFail("decode nil") }
+        XCTAssertEqual(diagnostics.selectedReceiver, .primary)
+        XCTAssertEqual(diagnostics.reason, .nonfiniteScore)
+        XCTAssertFalse(diagnostics.hasValidScores)
+        XCTAssertTrue(diagnostics.primaryHoldoutPilotRMS.isInfinite)
+        XCTAssertTrue(diagnostics.mrcHoldoutPilotRMS.isInfinite)
+        XCTAssertEqual(automatic.payload, mono.payload)
+        XCTAssertEqual(automatic.blocksOK, mono.blocksOK)
+        XCTAssertEqual(automatic.evmRMS, mono.evmRMS, accuracy: 1e-12)
+    }
+
+    /// Omitting the second channel preserves the documented mono fallback.
+    func testAutomaticDiversityReportsUnavailableSecondChannel() {
+        let config = BulkPHY.Configuration(bitsPerBin: 2, rate: "1/2", symbolCount: 8)
+        let phy = BulkPHY(configuration: config)
+        guard let geometry = phy.geometry() else { return XCTFail("geometry nil") }
+        let payload = Data((0..<geometry.payloadBytes).map { UInt8(($0 * 31 + 7) & 0xFF) })
+        guard let wave = phy.encode(payload) else { return XCTFail("encode nil") }
+        var primary = [Float](repeating: 0, count: 3000)
+        primary.append(contentsOf: wave)
+        primary.append(contentsOf: [Float](repeating: 0, count: 2000))
+
+        guard let mono = phy.decode(primary),
+            let automatic = phy.decode(primary, automaticallyCombining: []),
+            let diagnostics = automatic.automaticDiversity
+        else { return XCTFail("decode nil") }
+        XCTAssertEqual(diagnostics.selectedReceiver, .primary)
+        XCTAssertEqual(diagnostics.reason, .secondUnavailable)
+        XCTAssertFalse(diagnostics.hasValidScores)
+        XCTAssertEqual(diagnostics.validationObservations, 0)
+        XCTAssertEqual(automatic.payload, mono.payload)
+        XCTAssertEqual(automatic.blocksOK, mono.blocksOK)
+        XCTAssertEqual(automatic.evmRMS, mono.evmRMS, accuracy: 1e-12)
+    }
+
+    /// Configurations without two train and one holdout pilot fail closed.
+    func testAutomaticDiversityFailsClosedWhenPilotsAreInsufficient() {
+        let config = BulkPHY.Configuration(
+            lowFrequencyHz: 750,
+            highFrequencyHz: 7500,
+            pilotEvery: 8,
+            bitsPerBin: 2,
+            rate: "1/2",
+            symbolCount: 272,
+            fftSize: 64,
+            cyclicPrefix: 16)
+        let phy = BulkPHY(configuration: config)
+        guard let geometry = phy.geometry() else { return XCTFail("geometry nil") }
+        let payload = Data((0..<geometry.payloadBytes).map { UInt8(($0 * 31 + 7) & 0xFF) })
+        guard let wave = phy.encode(payload) else { return XCTFail("encode nil") }
+        var primary = [Float](repeating: 0, count: 3000)
+        primary.append(contentsOf: wave)
+        primary.append(contentsOf: [Float](repeating: 0, count: 2000))
+
+        guard let mono = phy.decode(primary),
+            let automatic = phy.decode(primary, automaticallyCombining: primary),
+            let diagnostics = automatic.automaticDiversity
+        else { return XCTFail("decode nil") }
+        XCTAssertTrue(mono.isComplete)
+        XCTAssertEqual(diagnostics.selectedReceiver, .primary)
+        XCTAssertEqual(diagnostics.reason, .insufficientPilots)
+        XCTAssertFalse(diagnostics.hasValidScores)
+        XCTAssertEqual(diagnostics.validationObservations, 0)
+        XCTAssertEqual(automatic.payload, mono.payload)
+        XCTAssertEqual(automatic.evmRMS, mono.evmRMS, accuracy: 1e-12)
+    }
+}
+
+/// Adds one real-valued OFDM bin to every data symbol. Indexing the sinusoid
+/// from `-cyclicPrefix` makes each prefix an exact continuation of the FFT body.
+private func addCyclicDataSubcarrier(
+    to samples: inout [Float],
+    startingAt dataStart: Int,
+    configuration: BulkPHY.Configuration,
+    bin: Int,
+    amplitude: Double
+) {
+    let symbolSamples = configuration.fftSize + configuration.cyclicPrefix
+    for symbolIndex in 0..<configuration.symbolCount {
+        let symbolStart = dataStart + symbolIndex * symbolSamples
+        for offset in 0..<symbolSamples {
+            let fftIndex = offset - configuration.cyclicPrefix
+            let angle =
+                2 * Double.pi * Double(bin) * Double(fftIndex) / Double(configuration.fftSize)
+            samples[symbolStart + offset] += Float(amplitude * cos(angle))
+        }
     }
 }

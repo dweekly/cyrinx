@@ -1,16 +1,19 @@
 import CCyrinx
 import Foundation
 
-/// Swift binding for the portable-C wideband bulk PHY (`cyrinx_bulk`), the modem
-/// that achieved the measured 36.6 / 27.3 kbps over-the-air result. The DSP is
-/// the single C implementation (validated bit-exact / float-tolerant against the
-/// golden vectors); this is a thin, ergonomic wrapper — no DSP lives here.
+/// Swift binding for the portable-C wideband bulk PHY (`cyrinx_bulk`).
+///
+/// The default configuration preserves the Cyrinx 1.x control geometry. Use
+/// ``Configuration/makeCyrinx2Fast(amplitude:clipSigma:)`` to opt into the
+/// measured Cyrinx 2.0 fast geometry after staging a route-specific level. The
+/// DSP lives in C and is validated against the golden vectors; no DSP lives in
+/// this wrapper. Android's Kotlin demodulator is a separate implementation.
 ///
 /// See docs/PUBLICATION.md (Phase 1) and docs/ACOUSTIC_BULK_PHY.md.
 public struct BulkPHY: Sendable {
     /// Uniform bit-loading configuration (every data subcarrier carries
     /// `bitsPerBin` bits). Mixed per-bin loading arrives with the adaptive
-    /// sounder. Defaults to the measured near-field 16-QAM r3/4 profile.
+    /// sounder. Defaults to the stable Cyrinx 1.x 16-QAM r3/4 control profile.
     public struct Configuration: Sendable {
         public var lowFrequencyHz: Double
         public var highFrequencyHz: Double
@@ -55,6 +58,33 @@ public struct BulkPHY: Sendable {
             self.chirpF0 = chirpF0
             self.chirpF1 = chirpF1
         }
+
+        /// Creates the Cyrinx 2.0 fast SISO configuration at a caller-staged level.
+        ///
+        /// The preset uses CP 96, pilots every 16 bins, 64-QAM, rate-5/6
+        /// convolutional coding, and 64 data symbols over 1.1–23 kHz at 48 kHz.
+        /// Its measured 83.708 kbit/s mean applies only to the documented
+        /// Mac-to-Moto cell; this factory does not establish that a new route can
+        /// sustain the profile or that the supplied level is acoustically safe.
+        ///
+        /// - Parameters:
+        ///   - amplitude: The route-specific digital amplitude selected after
+        ///     clipping and distortion checks.
+        ///   - clipSigma: The post-waveform peak-clipping threshold.
+        /// - Returns: The measured Cyrinx 2.0 fast-profile configuration.
+        public static func makeCyrinx2Fast(
+            amplitude: Double,
+            clipSigma: Double = 3.3
+        ) -> Self {
+            Self(
+                pilotEvery: 16,
+                bitsPerBin: 6,
+                rate: "5/6",
+                cyclicPrefix: 96,
+                amplitude: amplitude,
+                clipSigma: clipSigma
+            )
+        }
     }
 
     /// Derived frame geometry: how many payload bytes a frame carries and how
@@ -67,12 +97,66 @@ public struct BulkPHY: Sendable {
         public let usedBins: Int
     }
 
+    /// A receiver selected by automatic two-microphone diversity.
+    public enum DiversityReceiver: Sendable, Equatable {
+        /// The first, acquisition-driving microphone by itself.
+        case primary
+        /// Both microphones combined per subcarrier by maximal-ratio combining.
+        case maximalRatioCombined
+    }
+
+    /// The reason automatic diversity selected its receiver.
+    public enum AutomaticDiversityReason: Sendable, Equatable {
+        /// The selector did not run to a scoring decision.
+        case notEvaluated
+        /// Held-out pilots showed the required MRC improvement.
+        case mrcImproved
+        /// MRC did not clear the frozen improvement margin.
+        case primaryMarginNotMet
+        /// The configuration did not provide enough train/holdout pilots.
+        case insufficientPilots
+        /// At least one held-out score was not finite.
+        case nonfiniteScore
+        /// Temporary scoring storage could not be allocated.
+        case resourceFailure
+        /// No secondary channel was supplied, so the primary receiver was used.
+        case secondUnavailable
+    }
+
+    /// Payload-independent evidence from automatic diversity policy v1.
+    public struct AutomaticDiversityDiagnostics: Sendable {
+        /// The C diagnostics structure size written by the codec.
+        public let structureSize: Int
+        /// The diagnostics layout version written by the codec.
+        public let abiVersion: Int
+        /// The immutable policy version used for selection.
+        public let policyVersion: Int
+        /// The receiver selected before payload demapping and FEC decoding.
+        public let selectedReceiver: DiversityReceiver
+        /// Whether both held-out pilot scores were finite and nonnegative.
+        public let hasValidScores: Bool
+        /// The reason the policy selected its receiver.
+        public let reason: AutomaticDiversityReason
+        /// The number of held-out known-pilot observations in each score.
+        public let validationObservations: Int
+        /// The primary receiver's held-out pilot root-mean-square error.
+        public let primaryHoldoutPilotRMS: Double
+        /// The MRC receiver's held-out pilot root-mean-square error.
+        public let mrcHoldoutPilotRMS: Double
+        /// The measured MRC-to-primary held-out pilot RMS ratio.
+        public let observedMRCToPrimaryPilotRMSRatio: Double
+        /// The strict upper bound MRC must beat to be selected.
+        public let maximumMRCToPrimaryPilotRMSRatio: Double
+    }
+
     /// Result of decoding a captured frame.
     public struct Decoded: Sendable {
         public let payload: Data
         public let blocksOK: Int
         public let blockCount: Int
         public let evmRMS: Double
+        /// Automatic-diversity evidence, or nil for mono and unconditional MRC decoding.
+        public let automaticDiversity: AutomaticDiversityDiagnostics?
         /// True when every CRC block validated.
         public var isComplete: Bool { blocksOK == blockCount && blockCount > 0 }
     }
@@ -85,24 +169,31 @@ public struct BulkPHY: Sendable {
 
     /// Run `body` with a filled C config whose `rate` C-string stays valid for
     /// the call duration.
-    private func withCConfig<R>(_ body: (inout cyrinx_bulk_config) throws -> R) rethrows -> R {
+    private func withCConfig<R>(_ body: (inout cyrinx_bulk_config) -> R?) -> R? {
         let c = configuration
-        return try c.rate.withCString { rptr in
+        guard let pilotEvery = Int32(exactly: c.pilotEvery),
+            let bitsPerBin = Int32(exactly: c.bitsPerBin),
+            let symbolCount = Int32(exactly: c.symbolCount),
+            let fftSize = Int32(exactly: c.fftSize),
+            let cyclicPrefix = Int32(exactly: c.cyclicPrefix),
+            let sampleRate = Int32(exactly: c.sampleRate)
+        else { return nil }
+        return c.rate.withCString { rptr in
             var bc = cyrinx_bulk_config()
             bc.f_lo = c.lowFrequencyHz
             bc.f_hi = c.highFrequencyHz
-            bc.pilot_every = Int32(c.pilotEvery)
-            bc.bits_per_bin = Int32(c.bitsPerBin)
+            bc.pilot_every = pilotEvery
+            bc.bits_per_bin = bitsPerBin
             bc.rate = rptr
-            bc.n_sym = Int32(c.symbolCount)
-            bc.nfft = Int32(c.fftSize)
-            bc.cp = Int32(c.cyclicPrefix)
-            bc.sr = Int32(c.sampleRate)
+            bc.n_sym = symbolCount
+            bc.nfft = fftSize
+            bc.cp = cyclicPrefix
+            bc.sr = sampleRate
             bc.amp = c.amplitude
             bc.clip_sigma = c.clipSigma
             bc.chirp_f0 = c.chirpF0
             bc.chirp_f1 = c.chirpF1
-            return try body(&bc)
+            return body(&bc)
         }
     }
 
@@ -157,7 +248,74 @@ public struct BulkPHY: Sendable {
             }
             guard n == Int(g.payload_bytes) else { return nil }
             return Decoded(
-                payload: Data(payload), blocksOK: Int(ok), blockCount: Int(total), evmRMS: evm)
+                payload: Data(payload), blocksOK: Int(ok), blockCount: Int(total), evmRMS: evm,
+                automaticDiversity: nil)
+        }
+    }
+}
+
+extension BulkPHY {
+    /// Demodulates with automatic diversity policy v1 over two sample-aligned channels.
+    ///
+    /// The selector fits phase on even-ordinal known pilots and scores odd-ordinal
+    /// known pilots across the full frame. It selects MRC only when its held-out
+    /// RMS error is strictly below 95% of the primary receiver's error. Payload
+    /// bytes, data bins, FEC output, and CRCs do not participate in selection.
+    ///
+    /// - Parameters:
+    ///   - samples: The primary channel used for chirp and fine synchronization.
+    ///   - second: The sample-aligned secondary microphone channel.
+    /// - Returns: The selected receiver's decode and selection evidence, or nil
+    ///   when the configuration or capture is invalid.
+    public func decode(
+        _ samples: [Float],
+        automaticallyCombining second: [Float]
+    ) -> Decoded? {
+        withCConfig { bc in
+            var g = cyrinx_bulk_geometry()
+            guard cyrinx_bulk_compute_geometry(&bc, &g) == 0 else { return nil }
+            var payload = [UInt8](repeating: 0, count: Int(g.payload_bytes))
+            var ok: Int32 = 0
+            var total: Int32 = 0
+            var evm = 0.0
+            var rawDiagnostics = cyrinx_bulk_diversity_diagnostics()
+            let n = samples.withUnsafeBufferPointer { primary in
+                second.withUnsafeBufferPointer { secondary in
+                    let secondaryAddress = secondary.isEmpty ? nil : secondary.baseAddress
+                    return cyrinx_bulk_demodulate2_auto_v1(
+                        &bc, primary.baseAddress, primary.count, secondaryAddress,
+                        secondary.count, &payload, payload.count, &ok, &total, &evm,
+                        &rawDiagnostics)
+                }
+            }
+            guard n == Int(g.payload_bytes),
+                Int(rawDiagnostics.struct_size)
+                    == MemoryLayout<cyrinx_bulk_diversity_diagnostics>.size,
+                Int(rawDiagnostics.abi_version)
+                    == Int(CYRINX_BULK_DIVERSITY_DIAGNOSTICS_ABI_VERSION),
+                Int(rawDiagnostics.policy_version) == Int(CYRINX_BULK_AUTO_V1_POLICY_VERSION),
+                let selectedReceiver = Self.diversityReceiver(
+                    from: rawDiagnostics.selected_receiver),
+                let reason = Self.automaticDiversityReason(
+                    from: rawDiagnostics.selection_reason)
+            else { return nil }
+            let diagnostics = AutomaticDiversityDiagnostics(
+                structureSize: Int(rawDiagnostics.struct_size),
+                abiVersion: Int(rawDiagnostics.abi_version),
+                policyVersion: Int(rawDiagnostics.policy_version),
+                selectedReceiver: selectedReceiver,
+                hasValidScores: rawDiagnostics.scores_valid == 1,
+                reason: reason,
+                validationObservations: Int(rawDiagnostics.validation_observations),
+                primaryHoldoutPilotRMS: rawDiagnostics.primary_holdout_pilot_rms,
+                mrcHoldoutPilotRMS: rawDiagnostics.mrc_holdout_pilot_rms,
+                observedMRCToPrimaryPilotRMSRatio:
+                    rawDiagnostics.observed_mrc_to_primary_pilot_rms_ratio,
+                maximumMRCToPrimaryPilotRMSRatio:
+                    rawDiagnostics.maximum_mrc_to_primary_pilot_rms_ratio)
+            return Decoded(
+                payload: Data(payload), blocksOK: Int(ok), blockCount: Int(total), evmRMS: evm,
+                automaticDiversity: diagnostics)
         }
     }
 
@@ -177,7 +335,40 @@ public struct BulkPHY: Sendable {
             }
             guard n == Int(g.payload_bytes) else { return nil }
             return Decoded(
-                payload: Data(payload), blocksOK: Int(ok), blockCount: Int(total), evmRMS: evm)
+                payload: Data(payload), blocksOK: Int(ok), blockCount: Int(total), evmRMS: evm,
+                automaticDiversity: nil)
+        }
+    }
+
+    private static func diversityReceiver(from value: Int32) -> DiversityReceiver? {
+        switch value {
+        case CYRINX_BULK_DIVERSITY_PRIMARY:
+            return .primary
+        case CYRINX_BULK_DIVERSITY_MRC:
+            return .maximalRatioCombined
+        default:
+            return nil
+        }
+    }
+
+    private static func automaticDiversityReason(from value: Int32) -> AutomaticDiversityReason? {
+        switch value {
+        case CYRINX_BULK_AUTO_REASON_NOT_EVALUATED:
+            return .notEvaluated
+        case CYRINX_BULK_AUTO_REASON_MRC_IMPROVED:
+            return .mrcImproved
+        case CYRINX_BULK_AUTO_REASON_PRIMARY_MARGIN_NOT_MET:
+            return .primaryMarginNotMet
+        case CYRINX_BULK_AUTO_REASON_INSUFFICIENT_PILOTS:
+            return .insufficientPilots
+        case CYRINX_BULK_AUTO_REASON_NONFINITE_SCORE:
+            return .nonfiniteScore
+        case CYRINX_BULK_AUTO_REASON_RESOURCE_FAILURE:
+            return .resourceFailure
+        case CYRINX_BULK_AUTO_REASON_SECOND_UNAVAILABLE:
+            return .secondUnavailable
+        default:
+            return nil
         }
     }
 }

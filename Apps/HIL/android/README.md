@@ -80,6 +80,67 @@ Check logs:
 adb logcat -d -s CyrinxHILAndroid
 ```
 
+### Raw capture and same-device calibration
+
+`rec_pcm` supports `unprocessed`, `camcorder`, `mic`, and `voice_recognition` sources. A request for
+two logical channels does not prove that two microphone capsules are exposed. While recording, the
+app logs the routed device, active microphones, direct/processed channel mappings, positions, and
+declared frequency-response endpoints. Raw captures must still be checked for exact duplication and
+effective rank.
+
+`playrec_pcm` records continuously while playing a preloaded PCM16 file. It exists for
+one-speaker-at-a-time, same-device characterization; the transmit waveform must contain its own
+alignment markers. The command reports Android monotonic audio timestamps as provenance, but those
+timestamps do not replace received-marker correlation and do not by themselves measure propagation
+delay. This primitive is not yet qualified for unsupervised physical use: the host wrapper lacks a
+fail-closed phone-volume transaction, playback peak ceiling, and realized playback-route check.
+
+```bash
+adb push /tmp/calibration-stereo-s16le.pcm /data/local/tmp/calibration.pcm
+adb shell am start -n com.dweekly.cyrinxhil/.MainActivity \
+  --es cmd playrec_pcm \
+  --es path /data/local/tmp/calibration.pcm \
+  --es out_name calibration-capture.pcm \
+  --es request_id calibration-left-001 \
+  --ei sample_rate_hz 48000 --ei input_channels 2 --ei output_channels 2 \
+  --ei pre_roll_ms 500 --ei post_roll_ms 750 --es source camcorder
+```
+
+This command does not change media volume. The caller must set a reviewed level explicitly and
+restore it afterward. To characterize two logical speakers, run separate files with one stereo
+column identically zero in each acquisition; never infer physical speaker identity from the channel
+label alone. Use a unique shell-safe `request_id` for every command and retain only lines carrying
+that token; do not clear the device-wide log buffer.
+
+### Bulk-PHY benchmark decode
+
+`bulk_decode` reports headline goodput only when the caller supplies the first scheduled frame's
+chirp position in capture-sample coordinates. The origin must come from independent timing or a
+separate synchronization marker; deriving it from decoded payload identity would let reordered
+frames receive credit. Without `schedule_origin_sample`, the app emits `goodput=REFUSED` and only
+labels content-based attribution as diagnostic.
+
+For the five-frame, 48 kHz flagship schedule, pass the exact gap and trailing pad as samples:
+
+```bash
+adb shell am start -n com.dweekly.cyrinxhil/.MainActivity \
+  --es cmd bulk_decode \
+  --es request_id baseline-decode-001 \
+  --es path /data/user/0/com.dweekly.cyrinxhil/files/final_m2a.pcm \
+  --ei channels 2 --ef f_lo 1100 --ef f_hi 23000 \
+  --ei n_sym 64 --ei n_payloads 5 --ei payload_seed_base 1000 \
+  --ei schedule_origin_sample 33600 --ei slot_tolerance_samples 480 \
+  --ei gap_samples 12000 --ei trailing_pad_samples 16000
+```
+
+The sample origin above is illustrative, not a reusable calibration. The primary denominator is
+always all scheduled frame slots plus all four gaps; missed endpoint frames cannot shorten it.
+`gross_goodput` additionally includes `trailing_pad_samples`.
+
+`bulk_decode` is the fixed CP768/p8/16-QAM/r3/4 Kotlin control decoder. It did
+not decode the Cyrinx 2.0 CP96/p16/64-QAM/r5/6 campaign; that campaign captured
+on Android and used the portable C decoder on the host.
+
 ## macOS Peer CLI
 
 Use the paired CLI endpoint from this repo:

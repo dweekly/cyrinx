@@ -66,6 +66,13 @@ them) — A1 step 4 / the floor re-measurement are the referees.
   Per-bin bit loading shaped to the measured iPhone speaker roll-off (usable
   coherent band ≈11 kHz). The weakest headline number and the clearest
   measurable win on iPhone-only hardware.
+- **A7. Maximize throughput at a fixed 3 ft separation (later campaign).**
+  Keep this separate from the near-field Cyrinx 2.0 claim. Re-characterize
+  output level, both speaker→mic paths, delay spread, route/source behavior,
+  and room tone at a measured 3 ft; then run a held-out, order-balanced MCS/CP
+  campaign with the same all-slots goodput denominator. Report both the best
+  route-specific result and robustness across face-up/face-down and modest
+  lateral offsets. Near-field settings and levels do not transfer by default.
 
 ## Track B — 2×2 MIMO cooperative sounding (the frontier)
 
@@ -105,6 +112,13 @@ GitHub links 404 publicly until the Phase 5 repo flip. See `site/README.md`.
 ## Tech debt / hygiene
 
 - **Issue #25:** ~900 pre-existing swift-format violations — pre-public blocker.
+- **Converge the bulk PHY on the C core.** The Android and iOS HIL receivers
+  still duplicate modem DSP and have already drifted in pilot weighting,
+  edge-bin noise smoothing, Viterbi tie handling, supported MCS profiles, and
+  headline attribution. Add a coarse-grained capture/decode C API, use it from
+  Swift and Android JNI, keep Python as a frozen research oracle plus an
+  independent measurement referee, and run the same Cyrinx 1.x/2.0/guarded-MRC
+  fixtures through every binding before retiring the mobile DSP forks.
 - Golden vectors don't yet cover the sounder / MFSK floor / MRC configs.
 - `scratch/hw20k/NOTES.md`: keep the per-script index current as spikes land.
 - Unit coverage: keep `adaptive.py` / `sounder.py` / `mfsk.py` / `freqresp.py`

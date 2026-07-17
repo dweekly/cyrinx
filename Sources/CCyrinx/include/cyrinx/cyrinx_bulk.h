@@ -1,17 +1,14 @@
-/* Cyrinx wideband bulk PHY — portable C core (docs/PUBLICATION.md Phase 1).
+/* Cyrinx wideband bulk PHY — portable C core.
  *
- * This is the canonical, portable implementation of the bulk OFDM modem that
- * achieved the measured 36.6 / 27.3 kbps over-the-air result. It is ported
- * against three living reference implementations — the Python oracle
- * (scratch/hw20k/modem.py) and the Swift/Kotlin BulkDemod files — and validated
- * bit-exact (integer stages) / float-tolerant (FFT stages) against the golden
+ * This is the canonical portable C implementation used by the strict Cyrinx
+ * 2.0 host decoder. It supports both the stable CP768/p8/16-QAM/r3/4 control
+ * geometry and the explicitly configured CP96/p16/64-QAM/r5/6 fast geometry.
+ * The measured fast result is route-specific; callers must characterize and
+ * stage each physical route before selecting it. Android BulkDemod.kt is a
+ * separate Kotlin implementation, not a JNI binding to this library.
+ *
+ * Integer stages are bit-exact and FFT stages float-tolerant against the golden
  * vectors in Tests/Fixtures/golden (see scratch/hw20k/golden_vectors.py).
- *
- * STATUS: under construction (PR 1.2 = TX). The API is evolving and not yet a
- * stable part of the shipping ABI. This header currently exposes the
- * deterministic TX primitives so they can be validated independently.
- *
- * All constants are cited from modem.py (the reference) so the two stay in sync.
  */
 #ifndef CYRINX_BULK_H
 #define CYRINX_BULK_H
@@ -40,7 +37,8 @@ void cyrinx_detrng_bits(cyrinx_detrng *r, uint8_t *out, size_t n);
 /* One byte per output (u64 >> 56) & 0xFF. */
 void cyrinx_detrng_bytes(cyrinx_detrng *r, uint8_t *out, size_t n);
 /* Fisher-Yates permutation of 0..n-1 (matches DetRng.permutation). out is
- * int64 to mirror the golden interleave_perm artifact dtype. */
+ * int64 to mirror the golden interleave_perm artifact dtype. `n == 0` is a
+ * no-op and `n == 1` writes the identity permutation. A NULL out is a no-op. */
 void cyrinx_detrng_permutation(uint64_t seed, int64_t *out, size_t n);
 
 /* PRBS bit stream: DetRng(seed).bits(n) — one bit per byte. */
@@ -64,8 +62,7 @@ size_t cyrinx_puncture_pattern(const char *rate, const uint8_t **out_pattern);
 /* Puncture `coded` (length n) by `pattern` (length p, tiled): keep coded[i]
  * where pattern[i % p] != 0. Writes kept bits to `out` (capacity >= n) and
  * returns the kept count. */
-size_t cyrinx_puncture(const uint8_t *coded, size_t n, const uint8_t *pattern,
-                       size_t p, uint8_t *out);
+size_t cyrinx_puncture(const uint8_t *coded, size_t n, const uint8_t *pattern, size_t p, uint8_t *out);
 
 /* ---------------- Gray-coded QAM ----------------
  * Map `nbits` interleaved bits (MSB first) to one unit-average-power complex
@@ -77,14 +74,15 @@ void cyrinx_qam_map(const uint8_t *bits, int nbits, double *out_re, double *out_
  * Uniform bit-loading config (all data bins carry `bits_per_bin` bits). Mixed
  * per-bin loading arrives with the adaptive sounder (PR 1.4). */
 typedef struct {
-    double f_lo, f_hi;   /* used-band edges in Hz */
-    int pilot_every;     /* comb-pilot spacing in used bins (modem default 8) */
-    int bits_per_bin;    /* 1/2/4/6/8 on every data bin */
-    const char *rate;    /* code rate: "1/2","2/3","3/4","5/6" */
-    int n_sym;           /* number of OFDM data symbols */
-    int nfft, cp, sr;
-    double amp, clip_sigma;
-    double chirp_f0, chirp_f1;
+    double f_lo, f_hi;         /* finite band; selected bins exclude DC and Nyquist */
+    int pilot_every;           /* comb-pilot spacing in used bins (modem default 8) */
+    int bits_per_bin;          /* 1/2/4/6/8 on every data bin */
+    const char *rate;          /* code rate: "1/2","2/3","3/4","5/6" */
+    int n_sym;                 /* number of OFDM data symbols */
+    int nfft, cp, sr;          /* positive even NFFT; 0 <= cp <= nfft; sr > 0 */
+    double amp;                /* finite normalized peak in (0, 1] */
+    double clip_sigma;         /* finite clipping threshold in (0, 10] sigma */
+    double chirp_f0, chirp_f1; /* 0 selects defaults; resolved f0 < f1 <= sr/2 */
 } cyrinx_bulk_config;
 
 /* Derived frame geometry (modem.py:Config.__init__). */
@@ -94,27 +92,45 @@ typedef struct {
     int frame_samples;
 } cyrinx_bulk_geometry;
 
-/* Compute geometry from config. Returns 0 on success, -1 on invalid config. */
-int cyrinx_bulk_compute_geometry(const cyrinx_bulk_config *cfg,
-                                 cyrinx_bulk_geometry *out);
+/* Compute geometry from config. The selected band must exclude the
+ * self-conjugate DC and Nyquist bins, contain at least two pilots and one data
+ * bin, and carry at least one CRC block. All derived values must fit their
+ * public int fields. Returns 0 on success; returns -1 for NULL pointers,
+ * invalid config, or arithmetic overflow without modifying `out`. */
+int cyrinx_bulk_compute_geometry(const cyrinx_bulk_config *cfg, cyrinx_bulk_geometry *out);
 
 /* Modulate one frame. `payload` must be geometry.payload_bytes long. Writes
  * geometry.frame_samples float samples to `wave_out` (capacity wave_cap). If
  * `data_freq_out` is non-NULL it receives n_sym*n_used complex values (re/im
  * interleaved doubles) — the per-data-symbol freq-domain vectors, for golden
- * validation. Returns the number of samples written, or -1 on error. */
-long cyrinx_bulk_modulate(const cyrinx_bulk_config *cfg, const uint8_t *payload,
-                          size_t payload_len, float *wave_out, size_t wave_cap,
-                          double *data_freq_out);
+ * validation. Payload and waveform pointers must be non-NULL. Returns the
+ * number of samples written, or -1 on error. */
+long cyrinx_bulk_modulate(const cyrinx_bulk_config *cfg, const uint8_t *payload, size_t payload_len,
+                          float *wave_out, size_t wave_cap, double *data_freq_out);
 
 /* Demodulate one captured frame (single microphone; the golden cases use
  * track_alpha=0 so per-bin decision-directed tracking is disabled). `rx` is the
  * float capture. On success writes geometry.payload_bytes to `out_payload`,
  * sets *blocks_ok / *blocks_total (CRC-valid blocks) and *evm_rms (optional,
- * may be NULL), and returns payload_bytes. Returns -1 on error. */
-long cyrinx_bulk_demodulate(const cyrinx_bulk_config *cfg, const float *rx,
-                            size_t rx_len, uint8_t *out_payload, size_t out_cap,
-                            int *blocks_ok, int *blocks_total, double *evm_rms);
+ * may be NULL), and returns payload_bytes. `rx` and `out_payload` must be
+ * non-NULL, and rx_len must hold at least geometry.frame_samples. Invalid
+ * inputs are rejected before capture allocation or synchronization. Returns
+ * -1 on error. */
+long cyrinx_bulk_demodulate(const cyrinx_bulk_config *cfg, const float *rx, size_t rx_len,
+                            uint8_t *out_payload, size_t out_cap, int *blocks_ok, int *blocks_total,
+                            double *evm_rms);
+
+/* Extended single-microphone demodulator that reports CRC validity in payload
+ * order. On success, block_valid_out[i] is exactly 0 or 1 for payload bytes
+ * [i*CYRINX_BULK_CRC_BLOCK, (i+1)*CYRINX_BULK_CRC_BLOCK), and the sum of the
+ * first geometry.n_blocks entries equals *blocks_ok. block_valid_out may be
+ * NULL only when block_valid_cap is zero. A non-NULL buffer must have capacity
+ * for at least geometry.n_blocks bytes; otherwise the function returns -1
+ * before decoding. The existing cyrinx_bulk_demodulate ABI is unchanged. */
+long cyrinx_bulk_demodulate_with_block_validity(const cyrinx_bulk_config *cfg, const float *rx, size_t rx_len,
+                                                uint8_t *out_payload, size_t out_cap, int *blocks_ok,
+                                                int *blocks_total, double *evm_rms, uint8_t *block_valid_out,
+                                                size_t block_valid_cap);
 
 /* Two-microphone demodulate with per-subcarrier maximal-ratio combining
  * (the diversity path measured to rescue placements where NEITHER mic decodes
@@ -123,15 +139,95 @@ long cyrinx_bulk_demodulate(const cyrinx_bulk_config *cfg, const float *rx,
  * this ports). `rx` and `rx2` must be sample-aligned captures of the same
  * frame (two channels of one stereo capture). Sync (chirp + fine alignment)
  * runs on `rx`; each mic gets its own channel/noise estimate from the sync
- * symbols; data symbols are combined per subcarrier:
- *   Z = sum_m conj(H_m) Y_m / (sum_m |H_m|^2 + 1e-12)
+ * symbols. A shared per-bin floor caps the branch noise-variance ratio at
+ * 40 dB so a spuriously tiny two-symbol estimate cannot dominate. Data
+ * symbols are combined per subcarrier:
+ *   Z = sum_m(conj(H_m) Y_m / nv_m) / sum_m(|H_m|^2 / nv_m)
  * and the per-bin effective SNR feeding the soft LLRs is the sum across mics,
- * so a null on one mic is filled by the other. `rx2 == NULL` degrades to the
- * single-mic path (bit-identical to cyrinx_bulk_demodulate). */
-long cyrinx_bulk_demodulate2(const cyrinx_bulk_config *cfg, const float *rx,
-                             size_t rx_len, const float *rx2, size_t rx2_len,
-                             uint8_t *out_payload, size_t out_cap,
-                             int *blocks_ok, int *blocks_total, double *evm_rms);
+ * so a null or high-noise branch is downweighted. A non-NULL second capture
+ * must hold at least geometry.frame_samples. `rx2 == NULL, rx2_len == 0`
+ * preserves the mono fallback and is bit-identical to cyrinx_bulk_demodulate;
+ * any other pointer/length mismatch is rejected. */
+long cyrinx_bulk_demodulate2(const cyrinx_bulk_config *cfg, const float *rx, size_t rx_len, const float *rx2,
+                             size_t rx2_len, uint8_t *out_payload, size_t out_cap, int *blocks_ok,
+                             int *blocks_total, double *evm_rms);
+
+/* Extended two-microphone demodulator with the same ordered CRC-validity mask
+ * and capacity contract as cyrinx_bulk_demodulate_with_block_validity. The
+ * existing cyrinx_bulk_demodulate2 ABI is unchanged; this entry point uses the
+ * same current MRC algorithm as cyrinx_bulk_demodulate2. */
+long cyrinx_bulk_demodulate2_with_block_validity(const cyrinx_bulk_config *cfg, const float *rx,
+                                                 size_t rx_len, const float *rx2, size_t rx2_len,
+                                                 uint8_t *out_payload, size_t out_cap, int *blocks_ok,
+                                                 int *blocks_total, double *evm_rms, uint8_t *block_valid_out,
+                                                 size_t block_valid_cap);
+
+/* Receiver selected by the automatic two-microphone decoder. These values are
+ * stable ABI constants and are also recorded in hardware-campaign artifacts. */
+#define CYRINX_BULK_DIVERSITY_PRIMARY 0
+#define CYRINX_BULK_DIVERSITY_MRC 1
+
+/* Auto-diversity policy v1 accepts MRC only when its payload-independent
+ * held-out pilot RMS error is strictly below this fraction of the primary
+ * receiver's error. The square is used when comparing mean squared errors. */
+#define CYRINX_BULK_AUTO_V1_POLICY_VERSION 1
+#define CYRINX_BULK_AUTO_V1_MAX_MRC_PILOT_RMS_RATIO 0.95
+
+#define CYRINX_BULK_AUTO_REASON_NOT_EVALUATED 0
+#define CYRINX_BULK_AUTO_REASON_MRC_IMPROVED 1
+#define CYRINX_BULK_AUTO_REASON_PRIMARY_MARGIN_NOT_MET 2
+#define CYRINX_BULK_AUTO_REASON_INSUFFICIENT_PILOTS 3
+#define CYRINX_BULK_AUTO_REASON_NONFINITE_SCORE 4
+#define CYRINX_BULK_AUTO_REASON_RESOURCE_FAILURE 5
+#define CYRINX_BULK_AUTO_REASON_SECOND_UNAVAILABLE 6
+
+#define CYRINX_BULK_DIVERSITY_DIAGNOSTICS_ABI_VERSION 1
+
+/* Payload-independent evidence and the receiver selected by automatic diversity.
+ * `validation_observations` counts known odd-ordinal pilot observations across
+ * all data symbols. Invalid or insufficient pilot evidence fails closed to the
+ * primary receiver and reports infinite pilot RMS values. `struct_size` and
+ * `abi_version` allow readers to reject layouts they do not understand. */
+typedef struct {
+    uint32_t struct_size;
+    uint32_t abi_version;
+    int policy_version;
+    int selected_receiver; /* CYRINX_BULK_DIVERSITY_PRIMARY or _MRC */
+    int scores_valid;      /* exactly 0 or 1 */
+    int selection_reason;  /* CYRINX_BULK_AUTO_REASON_* */
+    int validation_observations;
+    double primary_holdout_pilot_rms;
+    double mrc_holdout_pilot_rms;
+    double observed_mrc_to_primary_pilot_rms_ratio;
+    double maximum_mrc_to_primary_pilot_rms_ratio;
+} cyrinx_bulk_diversity_diagnostics;
+
+/* Versioned automatic two-microphone demodulator. Before demapping any data
+ * bins, it evaluates the primary receiver and the existing MRC receiver using
+ * known pilots only. Per symbol, even-ordinal pilots fit phase and timing slope
+ * while odd-ordinal pilots provide held-out squared error. Errors are
+ * accumulated over the full frame. MRC is selected only when both scores are
+ * finite and its RMS error is strictly more than 5% lower; every other case
+ * fails closed to the primary receiver. CRCs, decoded bytes, data-bin values,
+ * and payload EVM never enter the selection. When primary is selected, the
+ * decode is arithmetic-identical to cyrinx_bulk_demodulate. When MRC is
+ * selected, it is arithmetic-identical to cyrinx_bulk_demodulate2. Existing
+ * mono and raw-MRC ABIs and behavior are unchanged. `diagnostics` may be NULL.
+ * A NULL `rx2` with zero length selects the primary receiver with a
+ * SECOND_UNAVAILABLE reason. */
+long cyrinx_bulk_demodulate2_auto_v1(const cyrinx_bulk_config *cfg, const float *rx, size_t rx_len,
+                                     const float *rx2, size_t rx2_len, uint8_t *out_payload, size_t out_cap,
+                                     int *blocks_ok, int *blocks_total, double *evm_rms,
+                                     cyrinx_bulk_diversity_diagnostics *diagnostics);
+
+/* Versioned automatic two-microphone demodulator with the ordered CRC-validity
+ * contract of cyrinx_bulk_demodulate2_with_block_validity. */
+long cyrinx_bulk_demodulate2_auto_v1_with_block_validity(const cyrinx_bulk_config *cfg, const float *rx,
+                                                         size_t rx_len, const float *rx2, size_t rx2_len,
+                                                         uint8_t *out_payload, size_t out_cap, int *blocks_ok,
+                                                         int *blocks_total, double *evm_rms,
+                                                         uint8_t *block_valid_out, size_t block_valid_cap,
+                                                         cyrinx_bulk_diversity_diagnostics *diagnostics);
 
 /* Default chirp/guard constants (modem.py). */
 #define CYRINX_BULK_CHIRP_LEN 4096
