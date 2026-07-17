@@ -40,6 +40,8 @@ import json
 import math
 import os
 import random
+import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -60,6 +62,36 @@ AUTO_V1_MAX_MRC_TO_PRIMARY_PILOT_RMS_RATIO = 0.95
 CLIB_CODEC_PATH_ENV = "CYRINX_BULK_CODEC_PATH"
 ROUTE_SIGNATURE_SCHEMA = "cyrinx.android-capture-route-signature.v1"
 RECEIVER_PHASE_ESTIMATOR = "sync-snr-p90-floor0.1-unit-harmonic-3pass-v1"
+LLR_RELIABILITY_ESTIMATOR = "known-pilot-local-frequency-boxcar11-blend25-75-v1"
+BULK_DECODER_BUILD_RECIPE = "clang-c11-o2-kissfft-double-dynamiclib-v1"
+BULK_DECODER_BUILD_INPUTS = (
+    "Sources/CCyrinx/cyrinx_bulk.c",
+    "Sources/CCyrinx/cyrinx_fft.c",
+    "Sources/CCyrinx/include/cyrinx/cyrinx_bulk.h",
+    "Sources/CCyrinx/include/cyrinx/cyrinx_fft.h",
+    "Sources/CCyrinx/kissfft/kiss_fft.c",
+    "Sources/CCyrinx/kissfft/kiss_fftr.c",
+    "Sources/CCyrinx/kissfft/kiss_fft.h",
+    "Sources/CCyrinx/kissfft/kiss_fftr.h",
+    "Sources/CCyrinx/kissfft/_kiss_fft_guts.h",
+    "Sources/CCyrinx/kissfft/kiss_fft_log.h",
+)
+EXPECTED_RECEIVER_CONTRACT_V1 = {
+    "struct_size": 72,
+    "binding_struct_size": 72,
+    "abi_version": 1,
+    "semantics_version": 1,
+    "reliability_estimator": 1,
+    "local_pilot_window": 11,
+    "edge_mode": 1,
+    "global_weight_numerator": 25,
+    "local_weight_numerator": 75,
+    "weight_denominator": 100,
+    "final_comb_mode": 1,
+    "reserved": [0, 0, 0, 0],
+    "snr_floor": 0.1,
+    "nonfinite_residual_ceiling": 1e9,
+}
 # This is an exploratory bench ceiling, not a transferable safety rating.
 # The earlier 14 percent limit came from single-tone qualification and left a
 # real wideband OFDM capture only ~12 dB above adjacent A/C-on room noise.  The
@@ -165,6 +197,45 @@ _EXECUTION_BINDING_SHA256_KEYS = (
     "expected_route_signature_sha256",
     "calibration_artifact_sha256",
 )
+
+
+def llr_reliability_estimator_record() -> dict[str, Any]:
+    """Return the frozen, payload-independent soft-demapper contract."""
+    return {
+        "estimator_id": LLR_RELIABILITY_ESTIMATOR,
+        "implementation": "shared C mono/MRC demapper after per-symbol pilot correction",
+        "required_loaded_binary_contract_v1": dict(EXPECTED_RECEIVER_CONTRACT_V1),
+        "pilot_residual": "squared complex error of each known pilot",
+        "frequency_smoothing": {
+            "kernel": "uniform boxcar",
+            "window_pilots": 11,
+            "edge_mode": "endpoint replication",
+            "fixed_divisor": 11,
+        },
+        "data_bin_interpolation": "linear between adjacent smoothed pilot estimates",
+        "last_partial_comb_interval": "extend final pilot estimate",
+        "noise_variance": (
+            "sync_noise + 0.25 * global_pilot_evm2 + 0.75 * local_pilot_evm2"
+        ),
+        "sync_noise": "inverse selected-receiver per-bin SNR from the two sync symbols",
+        "minimum_effective_sync_snr_linear": 0.1,
+        "global_pilot_evm2_weight": 0.25,
+        "local_pilot_evm2_weight": 0.75,
+        "nonfinite_pilot_residual_policy": "replace with finite ceiling before weighting",
+        "nonfinite_pilot_residual_evm2_ceiling": 1e9,
+        "forbidden_inputs": [
+            "payload bytes",
+            "CRC results or blocks_ok",
+            "decoded bits or bytes",
+            "Viterbi metrics",
+            "payload-bearing data-symbol bin values or magnitudes",
+        ],
+        "live_worktree_context_hash_labels": [
+            "c_bulk_source",
+            "c_bulk_header",
+            "c_bulk_dylib",
+        ],
+    }
 
 
 def _is_sha256_hex(value: Any) -> bool:
@@ -468,16 +539,9 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _stage_execution_decoder_copy(
-    artifact_root: Path,
-    source_path: Path | None = None,
-) -> dict[str, Any]:
-    """Create the content-addressed decoder file that execution will load."""
-    source = (
-        Path(__file__).resolve().with_name("libcyrinxbulk.dylib")
-        if source_path is None
-        else source_path.resolve(strict=True)
-    )
+def _stable_file_snapshot(path: Path) -> tuple[bytes, os.stat_result]:
+    """Read one file while rejecting an identity or metadata change mid-read."""
+    source = path.resolve(strict=True)
     with source.open("rb") as handle:
         stat_before = os.fstat(handle.fileno())
         source_bytes = handle.read()
@@ -497,18 +561,236 @@ def _stage_execution_decoder_copy(
         stat_after.st_ctime_ns,
     )
     if identity_before != identity_after or len(source_bytes) != stat_before.st_size:
-        raise RuntimeError("decoder source changed during its single-read snapshot")
-    source_sha256 = sha256_bytes(source_bytes)
-    artifact_root.mkdir(parents=True, exist_ok=False)
-    decoder_directory = artifact_root / "decoder"
-    decoder_directory.mkdir()
+        raise RuntimeError(f"file changed during its single-read snapshot: {source}")
+    return source_bytes, stat_before
+
+
+def decoder_build_intent_record() -> dict[str, Any]:
+    """Bind a dry plan to the exact C/FFT/KISS inputs intended for execution."""
+    repository_root = Path(__file__).resolve().parents[2]
+    inputs = []
+    for relative in BULK_DECODER_BUILD_INPUTS:
+        source_bytes, source_stat = _stable_file_snapshot(repository_root / relative)
+        inputs.append(
+            {
+                "relative_path": relative,
+                "byte_count": source_stat.st_size,
+                "sha256": sha256_bytes(source_bytes),
+            }
+        )
+    return {
+        "recipe_id": BULK_DECODER_BUILD_RECIPE,
+        "canonical_input_manifest": inputs,
+        "input_manifest_sha256": sha256_bytes(canonical_json_bytes(inputs)),
+    }
+
+
+def campaign_implementation_intent_record() -> dict[str, Any]:
+    """Bind plan generation to the runner, referee, and ctypes binding sources."""
+    paths = {
+        "campaign_runner": Path(__file__).resolve(),
+        "goodput_referee": Path(G.__file__).resolve(),
+        "c_binding": Path(__file__).resolve().with_name("clib.py"),
+        "hil_harness": Path(__file__).resolve().with_name("harness.py"),
+        "audio_transaction_runner": Path(__file__).resolve().with_name(
+            "tone_check_hardware.py"
+        ),
+    }
+    records = {}
+    for label, path in paths.items():
+        source_bytes, source_stat = _stable_file_snapshot(path)
+        records[label] = {
+            "path": str(path),
+            "byte_count": source_stat.st_size,
+            "sha256": sha256_bytes(source_bytes),
+        }
+    return records
+
+
+def _freeze_decoder_bytes(
+    decoder_directory: Path,
+    decoder_bytes: bytes,
+) -> tuple[Path, str]:
+    """Write immutable content-addressed decoder bytes and verify the digest."""
+    source_sha256 = sha256_bytes(decoder_bytes)
     frozen_path = decoder_directory / f"libcyrinxbulk-{source_sha256}.dylib"
-    frozen_path.write_bytes(source_bytes)
+    frozen_path.write_bytes(decoder_bytes)
     os.chmod(frozen_path, 0o444)
     frozen_sha256 = sha256_file(frozen_path)
     if frozen_sha256 != source_sha256:
-        raise RuntimeError("content-addressed decoder copy failed hash verification")
+        raise RuntimeError("content-addressed decoder write failed hash verification")
     os.chmod(decoder_directory, 0o555)
+    return frozen_path, source_sha256
+
+
+def _build_execution_decoder(artifact_root: Path) -> dict[str, Any]:
+    """Build the execution decoder only from retained, immutable input snapshots."""
+    repository_root = Path(__file__).resolve().parents[2]
+    snapshot_root = artifact_root / "decoder-build-inputs"
+    snapshot_root.mkdir()
+    input_records = []
+    for relative in BULK_DECODER_BUILD_INPUTS:
+        source = repository_root / relative
+        source_bytes, source_stat = _stable_file_snapshot(source)
+        snapshot = snapshot_root / relative
+        snapshot.parent.mkdir(parents=True, exist_ok=True)
+        snapshot.write_bytes(source_bytes)
+        os.chmod(snapshot, 0o444)
+        input_records.append(
+            {
+                "relative_path": relative,
+                "byte_count": source_stat.st_size,
+                "sha256": sha256_bytes(source_bytes),
+                "snapshot_path": str(snapshot.resolve(strict=True)),
+            }
+        )
+
+    for directory in sorted(
+        (path for path in snapshot_root.rglob("*") if path.is_dir()),
+        key=lambda path: len(path.parts),
+        reverse=True,
+    ):
+        os.chmod(directory, 0o555)
+    os.chmod(snapshot_root, 0o555)
+
+    compiler_name = shutil.which("clang")
+    if compiler_name is None:
+        raise RuntimeError("cannot build execution decoder: clang is unavailable")
+    compiler = Path(compiler_name).resolve(strict=True)
+    version_result = subprocess.run(
+        [str(compiler), "--version"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    target_result = subprocess.run(
+        [str(compiler), "-dumpmachine"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    decoder_directory = artifact_root / "decoder"
+    decoder_directory.mkdir()
+    temporary_output = decoder_directory / "libcyrinxbulk-unhashed.dylib"
+    include_root = snapshot_root / "Sources/CCyrinx/include"
+    kissfft_root = snapshot_root / "Sources/CCyrinx/kissfft"
+    source_paths = [
+        snapshot_root / "Sources/CCyrinx/cyrinx_bulk.c",
+        snapshot_root / "Sources/CCyrinx/cyrinx_fft.c",
+        snapshot_root / "Sources/CCyrinx/kissfft/kiss_fft.c",
+        snapshot_root / "Sources/CCyrinx/kissfft/kiss_fftr.c",
+    ]
+    command = [
+        str(compiler),
+        "-std=c11",
+        "-O2",
+        "-dynamiclib",
+        "-Dkiss_fft_scalar=double",
+        f"-I{include_root}",
+        f"-I{kissfft_root}",
+        *(str(path) for path in source_paths),
+        "-o",
+        str(temporary_output),
+        "-lm",
+    ]
+    normalized_command = [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-dynamiclib",
+        "-Dkiss_fft_scalar=double",
+        "-I<snapshot>/Sources/CCyrinx/include",
+        "-I<snapshot>/Sources/CCyrinx/kissfft",
+        "<snapshot>/Sources/CCyrinx/cyrinx_bulk.c",
+        "<snapshot>/Sources/CCyrinx/cyrinx_fft.c",
+        "<snapshot>/Sources/CCyrinx/kissfft/kiss_fft.c",
+        "<snapshot>/Sources/CCyrinx/kissfft/kiss_fftr.c",
+        "-o",
+        "<artifact>/decoder/libcyrinxbulk-unhashed.dylib",
+        "-lm",
+    ]
+    build_result = subprocess.run(command, check=True, capture_output=True, text=True)
+    for record in input_records:
+        snapshot = Path(record["snapshot_path"])
+        snapshot_bytes, snapshot_stat = _stable_file_snapshot(snapshot)
+        if (
+            snapshot_stat.st_size != record["byte_count"]
+            or sha256_bytes(snapshot_bytes) != record["sha256"]
+        ):
+            raise RuntimeError(
+                f"decoder build input changed during compilation: {record['relative_path']}"
+            )
+    decoder_bytes, output_stat = _stable_file_snapshot(temporary_output)
+    temporary_output.unlink()
+    frozen_path, source_sha256 = _freeze_decoder_bytes(decoder_directory, decoder_bytes)
+
+    canonical_input_manifest = [
+        {
+            "relative_path": record["relative_path"],
+            "byte_count": record["byte_count"],
+            "sha256": record["sha256"],
+        }
+        for record in input_records
+    ]
+    build_attestation = {
+        "recipe_id": BULK_DECODER_BUILD_RECIPE,
+        "input_manifest": input_records,
+        "canonical_input_manifest": canonical_input_manifest,
+        "input_manifest_sha256": sha256_bytes(
+            canonical_json_bytes(canonical_input_manifest)
+        ),
+        "compiler": {
+            "resolved_path": str(compiler),
+            "version": version_result.stdout.strip(),
+            "target": target_result.stdout.strip(),
+        },
+        "normalized_argv": normalized_command,
+        "stdout": build_result.stdout,
+        "stderr": build_result.stderr,
+        "output_byte_count": output_stat.st_size,
+        "output_sha256": source_sha256,
+    }
+    canonical_build_attestation = {
+        "recipe_id": BULK_DECODER_BUILD_RECIPE,
+        "canonical_input_manifest": canonical_input_manifest,
+        "compiler": build_attestation["compiler"],
+        "normalized_argv": normalized_command,
+        "output_byte_count": output_stat.st_size,
+        "output_sha256": source_sha256,
+    }
+    build_attestation["attestation_sha256"] = sha256_bytes(
+        canonical_json_bytes(canonical_build_attestation)
+    )
+    return {
+        "source_path": None,
+        "source_sha256_from_single_read": source_sha256,
+        "frozen_path": str(frozen_path.resolve(strict=True)),
+        "expected_sha256": source_sha256,
+        "frozen_mode": oct(frozen_path.stat().st_mode & 0o777),
+        "decoder_directory_mode": oct(decoder_directory.stat().st_mode & 0o777),
+        "content_addressed": True,
+        "built_from_retained_snapshots": True,
+        "build_attestation": build_attestation,
+    }
+
+
+def _stage_execution_decoder_copy(
+    artifact_root: Path,
+    source_path: Path | None = None,
+) -> dict[str, Any]:
+    """Build the physical decoder, or stage explicit bytes for binding tests."""
+    artifact_root.mkdir(parents=True, exist_ok=False)
+    if source_path is None:
+        return _build_execution_decoder(artifact_root)
+
+    source = source_path.resolve(strict=True)
+    source_bytes, _ = _stable_file_snapshot(source)
+    source_sha256 = sha256_bytes(source_bytes)
+    decoder_directory = artifact_root / "decoder"
+    decoder_directory.mkdir()
+    frozen_path, frozen_sha256 = _freeze_decoder_bytes(decoder_directory, source_bytes)
+    if frozen_sha256 != source_sha256:
+        raise AssertionError("frozen decoder digest disagrees with source snapshot")
     return {
         "source_path": str(source),
         "source_sha256_from_single_read": source_sha256,
@@ -517,6 +799,7 @@ def _stage_execution_decoder_copy(
         "frozen_mode": oct(frozen_path.stat().st_mode & 0o777),
         "decoder_directory_mode": oct(decoder_directory.stat().st_mode & 0o777),
         "content_addressed": True,
+        "built_from_retained_snapshots": False,
     }
 
 
@@ -639,7 +922,7 @@ def profiles_from_args(args: argparse.Namespace) -> tuple[CampaignProfile, Campa
 def schedule_from_args(args: argparse.Namespace) -> G.BurstSchedule:
     return G.BurstSchedule(
         frames=1 if args.smoke_one_frame else 5,
-        inter_frame_gap_s=0.25,
+        inter_frame_gap_s=args.inter_frame_gap_s,
         leading_pad_s=0.0,
         trailing_pad_s=1.0 / 3.0,
         cold_start_overhead_s=args.cold_start_overhead_s,
@@ -714,6 +997,7 @@ def build_plan(
     drive_envelope: DriveEnvelope = DEFAULT_DRIVE_ENVELOPE,
     paired_identical_payloads: bool = False,
     balanced_pair_order: bool = False,
+    confirm_local_llr_against_legacy: bool = False,
 ) -> dict[str, Any]:
     if len(profiles) != 2:
         raise ValueError("an A/B plan requires exactly two profiles")
@@ -753,6 +1037,13 @@ def build_plan(
     sample_rates = {profile.config.sample_rate_hz for profile in profiles}
     if len(sample_rates) != 1:
         raise ValueError("both A/B profiles must use the same capture sample rate")
+    sample_rate_hz = next(iter(sample_rates))
+    exact_gap_samples = schedule.inter_frame_gap_s * sample_rate_hz
+    gap_samples = round(exact_gap_samples)
+    if not math.isclose(exact_gap_samples, gap_samples, rel_tol=0.0, abs_tol=1e-9):
+        raise ValueError(
+            "inter-frame gap must be an integral sample count at the capture sample rate"
+        )
     payload_byte_counts = {
         G.compute_geometry(profile.config).payload_bytes for profile in profiles
     }
@@ -766,7 +1057,6 @@ def build_plan(
         if not math.isfinite(profile.clip_sigma) or not 0 < profile.clip_sigma <= 10:
             raise ValueError(f"{profile.profile_id} clip sigma must be finite and in (0, 10]")
         geometry = G.compute_geometry(profile.config)
-        gap_samples = round(schedule.inter_frame_gap_s * profile.config.sample_rate_hz)
         frame_period = geometry.frame_samples + gap_samples
         search_radius = round(origin_search_ms * profile.config.sample_rate_hz / 1000)
         anchor_search_stop = round(
@@ -868,10 +1158,28 @@ def build_plan(
         "measurement_contract": {
             "metric": G.metric_definition(),
             "accepted_headline_bps": G.ACCEPTED_HEADLINE_BPS,
+            "decoder_build_intent": decoder_build_intent_record(),
+            "campaign_implementation_intent": campaign_implementation_intent_record(),
             "measurement_class": (
-                "five-frame-headline" if schedule.frames == 5 else "one-frame-non-headline-smoke"
+                f"five-frame-ota-sr{sample_rate_hz}-gap{gap_samples}-samples"
+                if schedule.frames == 5
+                else (
+                    f"one-frame-non-headline-smoke-sr{sample_rate_hz}-"
+                    f"gap{gap_samples}-samples"
+                )
             ),
             "headline_eligible": schedule.frames == 5,
+            "accepted_headline_schedule": {
+                "frames": 5,
+                "sample_rate_hz": 48_000,
+                "inter_frame_gap_samples": 12_000,
+                "inter_frame_gap_s": 0.25,
+            },
+            "schedule_matches_accepted_headline": (
+                schedule.frames == 5
+                and sample_rate_hz == 48_000
+                and gap_samples == 12_000
+            ),
             "randomization": (
                 "seeded exactly balanced first-position assignment across pairs"
                 if balanced_pair_order
@@ -890,6 +1198,30 @@ def build_plan(
                 "identical_bytes_within_pair": paired_identical_payloads,
                 "independent_across_pairs_and_frames": True,
             },
+            "post_capture_decoder_confirmation": (
+                {
+                    "comparison_id": "fresh-capture-local-llr-vs-global-only-v1",
+                    "profile_id": profiles[1].profile_id,
+                    "runs": pairs,
+                    "timing_and_capture": (
+                        "identical retained capture, recorded slot detections, and decode margin"
+                    ),
+                    "score": "ordered CRC-valid mask AND same-position byte identity",
+                    "current_receiver_contract_v1": dict(EXPECTED_RECEIVER_CONTRACT_V1),
+                    "legacy_decoder_sha256": (
+                        "09f7f696df444b93c42209bd2777fd47ce4bf3854f20f14d323b750e0b077069"
+                    ),
+                    "no_early_stopping": True,
+                    "all_scheduled_slots_remain_in_denominator": True,
+                    "predeclared_gates": {
+                        "current_aggregate_verified_blocks_strictly_above_legacy": True,
+                        "maximum_run_regressions": 1,
+                    },
+                    "claim_class": "fresh-OTA-capture-paired-decoder-replay",
+                }
+                if confirm_local_llr_against_legacy
+                else None
+            ),
             "timing_score": "max of per-microphone normalized chirp correlations",
             "per_symbol_phase_tracking": {
                 "estimator_id": RECEIVER_PHASE_ESTIMATOR,
@@ -911,6 +1243,7 @@ def build_plan(
                     "EVM",
                 ],
             },
+            "llr_reliability_estimator": llr_reliability_estimator_record(),
             "origin_anchor": (
                 "strongest known-chirp correlation in a predeclared first-frame acquisition "
                 "interval, subject to score and peak-to-sidelobe gates; payload bytes, CRC count, "
@@ -1492,7 +1825,7 @@ def _runtime_preflight(
     profiles: Sequence[CampaignProfile],
     schedule: G.BurstSchedule,
     seed: int,
-) -> None:
+) -> dict[str, Any]:
     if not getattr(clib, "_HAS_BLOCK_VALIDITY_API", False):
         raise RuntimeError(
             "execution requires a rebuilt libcyrinxbulk with ordered block-validity APIs"
@@ -1500,6 +1833,16 @@ def _runtime_preflight(
     if not getattr(clib, "_HAS_AUTO_V1_API", False):
         raise RuntimeError(
             "execution requires a rebuilt libcyrinxbulk with automatic-diversity policy v1"
+        )
+    if not getattr(clib, "_HAS_RECEIVER_CONTRACT_V1", False):
+        raise RuntimeError(
+            "execution requires a rebuilt libcyrinxbulk with receiver-contract-v1"
+        )
+    receiver_contract = clib.receiver_contract_v1()
+    if receiver_contract != EXPECTED_RECEIVER_CONTRACT_V1:
+        raise RuntimeError(
+            "loaded decoder receiver contract mismatch: "
+            f"observed={receiver_contract!r}, expected={EXPECTED_RECEIVER_CONTRACT_V1!r}"
         )
     frozen_binding_constants = {
         "AUTO_V1_DIAGNOSTICS_ABI_VERSION": AUTO_V1_DIAGNOSTICS_ABI_VERSION,
@@ -1551,6 +1894,110 @@ def _runtime_preflight(
         )
         if schedule.frames not in (1, 5):
             raise RuntimeError("execution permits only one-frame smoke or five-frame measurement")
+    return {
+        "loaded_binary_receiver_contract": receiver_contract,
+        "profile_digital_loopbacks": [profile.profile_id for profile in profiles],
+        "local_llr_behavioral_challenge": _local_llr_behavioral_challenge(numpy, clib),
+    }
+
+
+def _local_llr_behavioral_challenge(numpy: Any, clib: Any) -> dict[str, Any]:
+    """Require a broad-margin local-reliability decode before any playback."""
+    config = clib.make_cfg(
+        bits_per_bin=6,
+        rate="3/4",
+        n_sym=8,
+        f_lo=1_100.0,
+        f_hi=23_000.0,
+        nfft=2_048,
+        cp=96,
+        sr=48_000,
+        amp=0.18,
+        clip_sigma=3.3,
+        pilot_every=8,
+    )
+    geometry = clib.geometry(config)
+    if geometry.n_blocks != 14 or geometry.payload_bytes != 3_584:
+        raise RuntimeError("local-LLR behavioral challenge geometry changed")
+    payload = bytes((index * 31 + 7) & 0xFF for index in range(geometry.payload_bytes))
+    wave = clib.encode(config, payload)
+    state = 0xC0FFEE11
+    symbol_samples = 2_048 + 96
+    data_start = 4_096 + 2_048 + 2 * symbol_samples
+    bin_low = math.ceil(1_100.0 * 2_048 / 48_000)
+    interference_amplitude = 1.7
+    for symbol_index in range(8):
+        spectrum = numpy.zeros(1_025, dtype=numpy.complex128)
+        for used_position in range(40 * 8, 40 * 8 + 11 * 8):
+            state = (1_664_525 * state + 1_013_904_223) & 0xFFFFFFFF
+            real = 2 * (state >> 8) / 0x00FF_FFFF - 1
+            state = (1_664_525 * state + 1_013_904_223) & 0xFFFFFFFF
+            imaginary = 2 * (state >> 8) / 0x00FF_FFFF - 1
+            spectrum[bin_low + used_position] = interference_amplitude * complex(
+                real, imaginary
+            )
+        delta = numpy.fft.irfft(spectrum, n=2_048).astype(numpy.float32)
+        symbol_start = data_start + symbol_index * symbol_samples
+        body_start = symbol_start + 96
+        wave[body_start : body_start + 2_048] += delta
+        wave[symbol_start:body_start] = wave[
+            body_start + 2_048 - 96 : body_start + 2_048
+        ]
+    capture = numpy.concatenate(
+        (
+            numpy.zeros(3_000, dtype=numpy.float32),
+            wave,
+            numpy.zeros(2_000, dtype=numpy.float32),
+        )
+    )
+    expected_capture_sha256 = (
+        "5d6acb04eb217bae8c940854213049c45d0e744052792cb9f50173a0ed627e37"
+    )
+    capture_sha256 = sha256_bytes(capture.tobytes())
+    if capture_sha256 != expected_capture_sha256:
+        raise RuntimeError(
+            "local-LLR behavioral challenge waveform changed: "
+            f"{capture_sha256} != {expected_capture_sha256}"
+        )
+    decoded = clib.decode(config, capture)
+    if (
+        decoded is None
+        or decoded["payload"] != payload
+        or decoded["block_valid"] != [True] * geometry.n_blocks
+        or decoded["blocks_ok"] != geometry.n_blocks
+    ):
+        observed = None if decoded is None else decoded.get("blocks_ok")
+        raise RuntimeError(
+            "loaded decoder failed local-LLR behavioral challenge: "
+            f"observed blocks_ok={observed}, expected={geometry.n_blocks}"
+        )
+    decoded_mrc = clib.decode2(config, capture, capture)
+    if (
+        decoded_mrc is None
+        or decoded_mrc["payload"] != payload
+        or decoded_mrc["block_valid"] != [True] * geometry.n_blocks
+        or decoded_mrc["blocks_ok"] != geometry.n_blocks
+    ):
+        observed = None if decoded_mrc is None else decoded_mrc.get("blocks_ok")
+        raise RuntimeError(
+            "loaded MRC decoder failed local-LLR behavioral challenge: "
+            f"observed blocks_ok={observed}, expected={geometry.n_blocks}"
+        )
+    return {
+        "challenge_id": "frequency-selective-11-pilot-region-v1",
+        "capture_sha256": capture_sha256,
+        "payload_sha256": sha256_bytes(payload),
+        "ordered_validity_mask": [True] * geometry.n_blocks,
+        "mono_verified_blocks": decoded["blocks_ok"],
+        "mrc_verified_blocks": decoded_mrc["blocks_ok"],
+        "total_blocks": geometry.n_blocks,
+        "mono_evm": decoded["evm"],
+        "mrc_evm": decoded_mrc["evm"],
+        "legacy_global_only_reference_blocks": 0,
+        "legacy_global_only_reference_decoder_sha256": (
+            "09f7f696df444b93c42209bd2777fd47ce4bf3854f20f14d323b750e0b077069"
+        ),
+    }
 
 
 def _execution_provenance(
@@ -1559,6 +2006,7 @@ def _execution_provenance(
     *,
     sample_rate_hz: int,
     geometry_label: str,
+    decoder_binding: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Collect execution-only source and anonymized endpoint provenance."""
     repository_root = Path(__file__).resolve().parents[2]
@@ -1584,11 +2032,26 @@ def _execution_provenance(
     for label, path in paths.items():
         if not path.is_file():
             raise RuntimeError(f"provenance input is missing: {label}={path}")
+        source_bytes, source_stat = _stable_file_snapshot(path)
         source_hashes[label] = {
             "path": str(path),
-            "byte_count": path.stat().st_size,
-            "sha256": sha256_file(path),
+            "byte_count": source_stat.st_size,
+            "sha256": sha256_bytes(source_bytes),
         }
+
+    llr_reliability_estimator = llr_reliability_estimator_record()
+    llr_reliability_estimator["live_worktree_context_hashes"] = {
+        label: source_hashes[label]
+        for label in llr_reliability_estimator["live_worktree_context_hash_labels"]
+    }
+    build_attestation = decoder_binding.get("build_attestation")
+    if not decoder_binding.get("built_from_retained_snapshots") or not isinstance(
+        build_attestation, Mapping
+    ):
+        raise RuntimeError("physical decoder lacks a retained-snapshot build attestation")
+    if build_attestation.get("output_sha256") != decoder_binding.get("expected_sha256"):
+        raise RuntimeError("decoder build attestation output hash disagrees with staged binary")
+    llr_reliability_estimator["authoritative_decoder_build"] = dict(build_attestation)
 
     def adb_value(arguments: str, label: str) -> str:
         result = harness.adb(arguments)
@@ -1605,6 +2068,7 @@ def _execution_provenance(
         "recorded_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "physical_geometry_label": geometry_label,
         "source_hashes": source_hashes,
+        "llr_reliability_estimator": llr_reliability_estimator,
         "android": {
             "model": model,
             "build_fingerprint": build_fingerprint,
@@ -2222,7 +2686,23 @@ def _campaign_summary(manifest: Mapping[str, Any]) -> dict[str, Any]:
     measurement_contract = manifest["plan"]["measurement_contract"]
     primary = measurement_contract["primary_receiver"]
     headline_eligible = bool(measurement_contract.get("headline_eligible", True))
+    planned_runs = manifest["plan"]["runs"]
+    planned_ids = [str(run["run_id"]) for run in planned_runs]
+    if len(set(planned_ids)) != len(planned_ids):
+        raise ValueError("campaign plan contains duplicate run identities")
+    result_ids = [str(result.get("run_id")) for result in manifest["results"]]
+    if len(set(result_ids)) != len(result_ids):
+        raise ValueError("campaign results contain duplicate run identities")
+    unexpected_result_ids = sorted(set(result_ids) - set(planned_ids))
+    if unexpected_result_ids:
+        raise ValueError(f"campaign results are not in the plan: {unexpected_result_ids}")
     complete = [result for result in manifest["results"] if result.get("status") == "complete"]
+    complete_ids = {str(result["run_id"]) for result in complete}
+    all_planned_runs_complete = complete_ids == set(planned_ids)
+    unattempted_runs = len(set(planned_ids) - set(result_ids))
+    recorded_failed_runs = sum(
+        result.get("status") != "complete" for result in manifest["results"]
+    )
     by_profile: dict[str, list[float]] = {}
     gross_by_profile: dict[str, list[float]] = {}
     evm_by_profile: dict[str, list[float]] = {}
@@ -2308,6 +2788,13 @@ def _campaign_summary(manifest: Mapping[str, Any]) -> dict[str, Any]:
         and candidate_success >= baseline_success
     )
     descriptive_gate_results = {
+        "all_planned_runs_complete": {
+            "required": len(planned_ids),
+            "observed_complete": len(complete_ids),
+            "recorded_failed": recorded_failed_runs,
+            "unattempted": unattempted_runs,
+            "pass": all_planned_runs_complete,
+        },
         "minimum_complete_pairs": {
             "required": minimum_pairs,
             "observed": len(paired_differences),
@@ -2350,7 +2837,10 @@ def _campaign_summary(manifest: Mapping[str, Any]) -> dict[str, Any]:
         "measurement_class": measurement_contract.get("measurement_class", "unspecified"),
         "headline_eligible": headline_eligible,
         "complete_runs": len(complete),
-        "failed_runs": len(manifest["results"]) - len(complete),
+        "planned_runs": len(planned_ids),
+        "failed_runs": len(planned_ids) - len(complete),
+        "recorded_failed_runs": recorded_failed_runs,
+        "unattempted_runs": unattempted_runs,
         "profile_goodput_bps": {
             profile: {
                 "runs": len(values),
@@ -2416,6 +2906,21 @@ def _campaign_summary(manifest: Mapping[str, Any]) -> dict[str, Any]:
             *(
                 ["One-frame smoke artifacts are explicitly ineligible for a headline claim."]
                 if not headline_eligible
+                else []
+            ),
+            *(
+                [
+                    "This class differs from the accepted 36,571.43 bps benchmark's "
+                    "48 kHz, five-frame schedule with four 250 ms gaps; attribute any "
+                    "sample-rate or gap change separately."
+                ]
+                if headline_eligible
+                and not measurement_contract.get("schedule_matches_accepted_headline", False)
+                else []
+            ),
+            *(
+                ["A headline claim is prohibited unless every planned run completed."]
+                if not all_planned_runs_complete
                 else []
             ),
             "The sign test uses only delta signs and omits ties; it does not estimate effect size.",
@@ -2498,6 +3003,24 @@ def execute_campaign(
         raise RuntimeError("physical execution binding lacks expected_target")
 
     decoder_binding = _stage_execution_decoder_copy(artifact_root)
+    intended_build = manifest["plan"]["measurement_contract"].get(
+        "decoder_build_intent"
+    )
+    actual_build = decoder_binding.get("build_attestation")
+    if not isinstance(intended_build, Mapping) or not isinstance(actual_build, Mapping):
+        raise RuntimeError("decoder build intent or execution attestation is missing")
+    build_identity_fields = (
+        "recipe_id",
+        "canonical_input_manifest",
+        "input_manifest_sha256",
+    )
+    intended_identity = {field: intended_build.get(field) for field in build_identity_fields}
+    actual_identity = {field: actual_build.get(field) for field in build_identity_fields}
+    if intended_identity != actual_identity:
+        raise RuntimeError(
+            "execution decoder build inputs differ from the hashed dry-plan intent"
+        )
+    decoder_binding["matches_plan_build_intent"] = True
     _verify_execution_decoder_copy(decoder_binding, "before_import")
     if "clib" in sys.modules:
         raise RuntimeError(
@@ -2533,7 +3056,7 @@ def execute_campaign(
         )
     _verify_execution_decoder_copy(decoder_binding, "after_load")
 
-    _runtime_preflight(
+    decoder_preflight = _runtime_preflight(
         np,
         clib,
         profiles,
@@ -2545,8 +3068,22 @@ def execute_campaign(
         harness,
         sample_rate_hz=profiles[0].config.sample_rate_hz,
         geometry_label=str(manifest["plan"]["physical_geometry_label"]),
+        decoder_binding=decoder_binding,
     )
+    implementation_intent = manifest["plan"]["measurement_contract"].get(
+        "campaign_implementation_intent"
+    )
+    if not isinstance(implementation_intent, Mapping):
+        raise RuntimeError("campaign implementation intent is missing")
+    observed_implementation = manifest["execution_provenance"]["source_hashes"]
+    for label, expected in implementation_intent.items():
+        if observed_implementation.get(label) != expected:
+            raise RuntimeError(
+                f"execution implementation changed after plan generation: {label}"
+            )
+    manifest["execution_provenance"]["matches_plan_implementation_intent"] = True
     manifest["execution_provenance"]["decoder_binding"] = decoder_binding
+    manifest["execution_provenance"]["decoder_preflight"] = decoder_preflight
     manifest["execution_provenance"]["physical_binding"] = execution_binding
     manifest["execution_provenance"]["android_target_before_campaign"] = (
         harness.assert_android_target(expected_target)
@@ -2827,6 +3364,14 @@ def argument_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="seed and predeclare an exactly balanced first-position assignment",
     )
+    parser.add_argument(
+        "--confirm-local-llr-against-legacy",
+        action="store_true",
+        help=(
+            "predeclare a same-capture comparison of candidate runs against "
+            "the frozen global-only decoder"
+        ),
+    )
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--artifact-dir", type=Path)
     parser.add_argument("--primary-receiver", choices=RECEIVER_POLICIES, default="mic0")
@@ -2866,6 +3411,15 @@ def argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--minimum-chirp-score", type=float, default=0.12)
     parser.add_argument("--minimum-anchor-psr-db", type=float, default=6.0)
     parser.add_argument("--decode-margin-ms", type=float, default=25.0)
+    parser.add_argument(
+        "--inter-frame-gap-s",
+        type=float,
+        default=0.25,
+        help=(
+            "predeclared silence between scheduled frames; defaults to the historical "
+            "0.25 seconds and may be zero for contiguous frames"
+        ),
+    )
     parser.add_argument("--cold-start-overhead-s", type=float, default=0.0)
     parser.add_argument(
         "--android-source",
@@ -2974,6 +3528,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if not math.isfinite(args.clip_sigma) or not 0 < args.clip_sigma <= 10:
         raise SystemExit("--clip-sigma must be finite and in (0, 10]")
+    if not math.isfinite(args.inter_frame_gap_s) or args.inter_frame_gap_s < 0:
+        raise SystemExit("--inter-frame-gap-s must be finite and nonnegative")
+    exact_gap_samples = args.inter_frame_gap_s * args.sample_rate
+    if not math.isclose(
+        exact_gap_samples,
+        round(exact_gap_samples),
+        rel_tol=0.0,
+        abs_tol=1e-9,
+    ):
+        raise SystemExit(
+            "--inter-frame-gap-s must resolve to an integral sample count at --sample-rate"
+        )
     if args.smoke_one_frame and args.pairs != 1:
         raise SystemExit("--smoke-one-frame requires --pairs 1")
     if args.execute and args.mac_output_volume is None:
@@ -3050,6 +3616,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         drive_envelope=drive_envelope,
         paired_identical_payloads=args.paired_identical_payloads,
         balanced_pair_order=args.balanced_pair_order,
+        confirm_local_llr_against_legacy=args.confirm_local_llr_against_legacy,
     )
     manifest = wrap_manifest(plan, mode="execute" if args.execute else "dry-run")
     manifest_path = args.manifest or Path(

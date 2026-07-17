@@ -225,6 +225,78 @@ class ReceiverPolicyTests(unittest.TestCase):
             self.assertIn("held-out known pilots", contract["receiver_selection"])
             self.assertIn("ordinary in-sample EVM", contract["forbidden_selection_inputs"])
 
+    def test_manifest_pins_payload_independent_llr_reliability_estimator(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            manifest_path = Path(directory) / "plan.json"
+            with mock.patch.object(campaign, "assert_dry_run_import_boundary"):
+                campaign.main(["--manifest", str(manifest_path)])
+            contract = json.loads(manifest_path.read_text(encoding="utf-8"))["plan"][
+                "measurement_contract"
+            ]["llr_reliability_estimator"]
+
+        self.assertEqual(
+            contract["estimator_id"],
+            "known-pilot-local-frequency-boxcar11-blend25-75-v1",
+        )
+        self.assertEqual(
+            contract["required_loaded_binary_contract_v1"],
+            campaign.EXPECTED_RECEIVER_CONTRACT_V1,
+        )
+        self.assertEqual(
+            contract["frequency_smoothing"],
+            {
+                "kernel": "uniform boxcar",
+                "window_pilots": 11,
+                "edge_mode": "endpoint replication",
+                "fixed_divisor": 11,
+            },
+        )
+        self.assertEqual(
+            contract["data_bin_interpolation"],
+            "linear between adjacent smoothed pilot estimates",
+        )
+        self.assertEqual(contract["global_pilot_evm2_weight"], 0.25)
+        self.assertEqual(contract["local_pilot_evm2_weight"], 0.75)
+        self.assertEqual(contract["minimum_effective_sync_snr_linear"], 0.1)
+        self.assertEqual(contract["nonfinite_pilot_residual_evm2_ceiling"], 1e9)
+        self.assertIn("sync_noise", contract["noise_variance"])
+        self.assertIn("payload bytes", contract["forbidden_inputs"])
+        self.assertIn("CRC results or blocks_ok", contract["forbidden_inputs"])
+        self.assertIn("decoded bits or bytes", contract["forbidden_inputs"])
+        self.assertIn(
+            "payload-bearing data-symbol bin values or magnitudes",
+            contract["forbidden_inputs"],
+        )
+        self.assertEqual(
+            contract["live_worktree_context_hash_labels"],
+            ["c_bulk_source", "c_bulk_header", "c_bulk_dylib"],
+        )
+
+    def test_manifest_predeclares_fresh_capture_legacy_decoder_comparison(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            manifest_path = Path(directory) / "plan.json"
+            with mock.patch.object(campaign, "assert_dry_run_import_boundary"):
+                campaign.main(
+                    [
+                        "--confirm-local-llr-against-legacy",
+                        "--manifest",
+                        str(manifest_path),
+                    ]
+                )
+            confirmation = json.loads(manifest_path.read_text(encoding="utf-8"))["plan"][
+                "measurement_contract"
+            ]["post_capture_decoder_confirmation"]
+
+        self.assertEqual(confirmation["runs"], 8)
+        self.assertTrue(confirmation["no_early_stopping"])
+        self.assertEqual(
+            confirmation["legacy_decoder_sha256"],
+            "09f7f696df444b93c42209bd2777fd47ce4bf3854f20f14d323b750e0b077069",
+        )
+        self.assertEqual(
+            confirmation["predeclared_gates"]["maximum_run_regressions"], 1
+        )
+
     def test_frozen_diagnostics_invariants_are_validated(self) -> None:
         campaign._validate_auto_v1_diagnostics(
             automatic_diagnostics(), context="test frame"
@@ -295,6 +367,7 @@ class RuntimePreflightTests(unittest.TestCase):
     class FakeCodec:
         _HAS_BLOCK_VALIDITY_API = True
         _HAS_AUTO_V1_API = True
+        _HAS_RECEIVER_CONTRACT_V1 = True
         AUTO_V1_DIAGNOSTICS_ABI_VERSION = 1
         AUTO_V1_POLICY_VERSION = 1
         AUTO_V1_MAX_MRC_TO_PRIMARY_PILOT_RMS_RATIO = 0.95
@@ -305,6 +378,9 @@ class RuntimePreflightTests(unittest.TestCase):
 
         def make_cfg(self, **kwargs):
             return kwargs
+
+        def receiver_contract_v1(self):
+            return dict(campaign.EXPECTED_RECEIVER_CONTRACT_V1)
 
         def geometry(self, config):
             class Geometry:
@@ -344,16 +420,113 @@ class RuntimePreflightTests(unittest.TestCase):
         geometry = G.compute_geometry(profile.config)
         codec = self.FakeCodec(geometry)
 
-        campaign._runtime_preflight(
-            np,
-            codec,
-            [profile],
-            G.BurstSchedule(frames=1),
-            seed=7,
-        )
+        with mock.patch.object(
+            campaign,
+            "_local_llr_behavioral_challenge",
+            return_value={"challenge_id": "test"},
+        ):
+            result = campaign._runtime_preflight(
+                np,
+                codec,
+                [profile],
+                G.BurstSchedule(frames=1),
+                seed=7,
+            )
+        self.assertEqual(result["local_llr_behavioral_challenge"]["challenge_id"], "test")
+
+    def test_receiver_contract_mismatch_fails_before_behavioral_challenge(self) -> None:
+        profile = campaign.CampaignProfile("preflight", G.PHYConfig())
+        codec = self.FakeCodec(G.compute_geometry(profile.config))
+        codec.receiver_contract_v1 = lambda: {
+            **campaign.EXPECTED_RECEIVER_CONTRACT_V1,
+            "local_pilot_window": 9,
+        }
+
+        with mock.patch.object(campaign, "_local_llr_behavioral_challenge") as challenge:
+            with self.assertRaisesRegex(RuntimeError, "receiver contract mismatch"):
+                campaign._runtime_preflight(
+                    np,
+                    codec,
+                    [profile],
+                    G.BurstSchedule(frames=1),
+                    seed=7,
+                )
+        challenge.assert_not_called()
 
 
 class DecoderBindingTests(unittest.TestCase):
+    def test_execution_decoder_rejects_snapshot_mutation_during_build(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            artifact_root = Path(directory) / "artifacts"
+            original_run = campaign.subprocess.run
+            calls = 0
+
+            def mutate_after_build(*args, **kwargs):
+                nonlocal calls
+                calls += 1
+                result = original_run(*args, **kwargs)
+                if calls == 3:
+                    snapshot = (
+                        artifact_root
+                        / "decoder-build-inputs/Sources/CCyrinx/cyrinx_bulk.c"
+                    )
+                    snapshot.parent.chmod(0o755)
+                    snapshot.chmod(0o644)
+                    snapshot.write_bytes(snapshot.read_bytes() + b"\n")
+                return result
+
+            try:
+                with mock.patch.object(
+                    campaign.subprocess, "run", side_effect=mutate_after_build
+                ):
+                    with self.assertRaisesRegex(
+                        RuntimeError, "build input changed during compilation"
+                    ):
+                        campaign._stage_execution_decoder_copy(artifact_root)
+            finally:
+                for path in artifact_root.rglob("*"):
+                    if path.is_dir():
+                        path.chmod(0o755)
+
+    def test_execution_decoder_is_built_from_retained_input_snapshots(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            artifact_root = Path(directory) / "artifacts"
+            intent = campaign.decoder_build_intent_record()
+
+            binding = campaign._stage_execution_decoder_copy(artifact_root)
+
+            self.assertTrue(binding["built_from_retained_snapshots"])
+            self.assertEqual(
+                binding["build_attestation"]["recipe_id"],
+                campaign.BULK_DECODER_BUILD_RECIPE,
+            )
+            self.assertEqual(
+                len(binding["build_attestation"]["input_manifest"]),
+                len(campaign.BULK_DECODER_BUILD_INPUTS),
+            )
+            self.assertEqual(
+                binding["build_attestation"]["output_sha256"],
+                binding["expected_sha256"],
+            )
+            for field in (
+                "recipe_id",
+                "canonical_input_manifest",
+                "input_manifest_sha256",
+            ):
+                self.assertEqual(binding["build_attestation"][field], intent[field])
+            for record in binding["build_attestation"]["input_manifest"]:
+                snapshot = Path(record["snapshot_path"])
+                self.assertEqual(snapshot.stat().st_mode & 0o222, 0)
+                self.assertEqual(campaign.sha256_file(snapshot), record["sha256"])
+            snapshot_root = artifact_root / "decoder-build-inputs"
+            self.assertEqual(snapshot_root.stat().st_mode & 0o222, 0)
+            for path in snapshot_root.rglob("*"):
+                if path.is_dir():
+                    self.assertEqual(path.stat().st_mode & 0o222, 0)
+            for path in artifact_root.rglob("*"):
+                if path.is_dir():
+                    path.chmod(0o755)
+
     def test_content_addressed_decoder_copy_is_read_only_and_reverified(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -378,6 +551,82 @@ class DecoderBindingTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "changed at after_campaign"):
                 campaign._verify_execution_decoder_copy(binding, "after_campaign")
             frozen.parent.chmod(0o755)
+
+
+class CampaignCompletionAccountingTests(unittest.TestCase):
+    def test_unattempted_ninth_pair_prohibits_headline_after_eight_good_pairs(self) -> None:
+        runs = []
+        results = []
+        for pair_index in range(9):
+            for order, profile_id in enumerate(("baseline", "candidate")):
+                run_id = f"pair-{pair_index}-{profile_id}"
+                runs.append(
+                    {
+                        "run_id": run_id,
+                        "pair_index": pair_index,
+                        "within_pair_order": order,
+                        "profile_id": profile_id,
+                    }
+                )
+                if pair_index == 8:
+                    continue
+                goodput = 40_000.0 if profile_id == "baseline" else 60_000.0
+                results.append(
+                    {
+                        "run_id": run_id,
+                        "pair_index": pair_index,
+                        "within_pair_order": order,
+                        "profile_id": profile_id,
+                        "status": "complete",
+                        "policy_scores": {
+                            "mic0": {
+                                "metrics": {
+                                    "scheduled_goodput_bps": goodput,
+                                    "gross_goodput_bps": goodput,
+                                },
+                                "verification": {
+                                    "verified_blocks": 10,
+                                    "total_blocks": 10,
+                                },
+                            }
+                        },
+                        "decoded_diagnostics": {"mic0": []},
+                    }
+                )
+        manifest = {
+            "plan": {
+                "profiles": [
+                    {"profile_id": "baseline"},
+                    {"profile_id": "candidate"},
+                ],
+                "schedule": {"frames": 1},
+                "runs": runs,
+                "measurement_contract": {
+                    "primary_receiver": "mic0",
+                    "headline_eligible": True,
+                    "measurement_class": "test",
+                    "schedule_matches_accepted_headline": True,
+                    "predeclared_descriptive_gates": {
+                        "minimum_complete_pairs": 8,
+                        "minimum_positive_pair_fraction": 1.0,
+                        "candidate_minimum_scheduled_goodput_bps_strictly_above": 36_571.43,
+                    },
+                },
+            },
+            "results": results,
+        }
+
+        summary = campaign._campaign_summary(manifest)
+
+        completion = summary["predeclared_descriptive_gate_results"][
+            "all_planned_runs_complete"
+        ]
+        self.assertFalse(completion["pass"])
+        self.assertEqual(completion["observed_complete"], 16)
+        self.assertEqual(completion["unattempted"], 2)
+        self.assertEqual(summary["failed_runs"], 2)
+        self.assertEqual(summary["complete_pairs"], 8)
+        self.assertFalse(summary["all_descriptive_gates_pass"])
 
 
 class AutomaticDiversitySlotAccountingTests(unittest.TestCase):
@@ -545,6 +794,101 @@ class PairedPayloadTests(unittest.TestCase):
             [record["sha256"] for record in runs[0]["payloads"]],
             [record["sha256"] for record in runs[1]["payloads"]],
         )
+
+
+class ScheduleConfigurationTests(unittest.TestCase):
+    def test_inter_frame_gap_defaults_to_historical_quarter_second(self) -> None:
+        args = campaign.argument_parser().parse_args([])
+        self.assertEqual(campaign.schedule_from_args(args).inter_frame_gap_s, 0.25)
+
+    def test_zero_inter_frame_gap_is_predeclared_and_counted(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            zero_path = root / "zero.json"
+            default_path = root / "default.json"
+            common = [
+                "--pairs",
+                "1",
+                "--amplitude",
+                "0.18",
+                "--manifest",
+            ]
+            with mock.patch.object(campaign, "assert_dry_run_import_boundary"):
+                campaign.main(
+                    [
+                        *common,
+                        str(zero_path),
+                        "--inter-frame-gap-s",
+                        "0",
+                    ]
+                )
+                campaign.main([*common, str(default_path)])
+
+            zero_plan = json.loads(zero_path.read_text(encoding="utf-8"))["plan"]
+            default_plan = json.loads(default_path.read_text(encoding="utf-8"))["plan"]
+            self.assertEqual(zero_plan["schedule"]["inter_frame_gap_s"], 0.0)
+            self.assertEqual(default_plan["schedule"]["inter_frame_gap_s"], 0.25)
+            self.assertEqual(
+                zero_plan["measurement_contract"]["measurement_class"],
+                "five-frame-ota-sr48000-gap0-samples",
+            )
+            self.assertEqual(
+                default_plan["measurement_contract"]["measurement_class"],
+                "five-frame-ota-sr48000-gap12000-samples",
+            )
+            self.assertFalse(
+                zero_plan["measurement_contract"]["schedule_matches_accepted_headline"]
+            )
+            self.assertTrue(
+                default_plan["measurement_contract"]["schedule_matches_accepted_headline"]
+            )
+            zero_candidate = zero_plan["profiles"][1]["error_free_ceiling"]
+            default_candidate = default_plan["profiles"][1]["error_free_ceiling"]
+            self.assertGreater(
+                zero_candidate["scheduled_goodput_bps"],
+                default_candidate["scheduled_goodput_bps"],
+            )
+            self.assertLess(
+                zero_candidate["scheduled_span_s"],
+                default_candidate["scheduled_span_s"],
+            )
+
+    def test_inter_frame_gap_rejects_negative_and_nonfinite_values(self) -> None:
+        for value in ("-0.001", "nan", "inf"):
+            with self.subTest(value=value), self.assertRaisesRegex(
+                SystemExit, "finite and nonnegative"
+            ):
+                campaign.main(["--inter-frame-gap-s", value])
+
+    def test_inter_frame_gap_rejects_fractional_sample_count(self) -> None:
+        with self.assertRaisesRegex(SystemExit, "integral sample count"):
+            campaign.main(["--inter-frame-gap-s", "0.00001"])
+
+    def test_accepted_schedule_class_requires_48_khz_and_quarter_second(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            manifest_path = Path(directory) / "plan.json"
+            with mock.patch.object(campaign, "assert_dry_run_import_boundary"):
+                campaign.main(
+                    [
+                        "--sample-rate",
+                        "96000",
+                        "--inter-frame-gap-s",
+                        "0.125",
+                        "--anchor-search-stop-ms",
+                        "500",
+                        "--manifest",
+                        str(manifest_path),
+                    ]
+                )
+            contract = json.loads(manifest_path.read_text(encoding="utf-8"))["plan"][
+                "measurement_contract"
+            ]
+
+        self.assertEqual(
+            contract["measurement_class"],
+            "five-frame-ota-sr96000-gap12000-samples",
+        )
+        self.assertFalse(contract["schedule_matches_accepted_headline"])
 
 
 class PhysicalBindingTests(unittest.TestCase):
