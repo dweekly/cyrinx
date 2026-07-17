@@ -14,6 +14,42 @@ import goodput_bench as G
 import modem
 
 
+EVIDENCE_ROOT = (
+    Path(__file__).resolve().parent / "evidence" / "pixel7a-faceup-volume50-v1"
+)
+
+
+def load_fixture_binding(root: Path, profile_key: str | None = None) -> dict:
+    return campaign.load_execution_binding(
+        root / "target.json",
+        root / "route.json",
+        root / "calibration.json",
+        profile_key or campaign.PIXEL_VOLUME_50_EVIDENCE_PROFILE_KEY,
+    )
+
+
+def physical_binding_fixture(root: Path) -> tuple[list[str], dict]:
+    provenance = root / "target.json"
+    route = root / "route.json"
+    calibration = root / "calibration.json"
+    provenance.write_bytes((EVIDENCE_ROOT / "target-provenance.json").read_bytes())
+    route.write_bytes((EVIDENCE_ROOT / "route-signature.json").read_bytes())
+    calibration.write_bytes((EVIDENCE_ROOT / "qualification.json").read_bytes())
+    profile_key = campaign.PIXEL_VOLUME_50_EVIDENCE_PROFILE_KEY
+    binding = load_fixture_binding(root, profile_key)
+    cli_arguments = [
+        "--target-provenance",
+        str(provenance),
+        "--expected-route-signature",
+        str(route),
+        "--calibration-artifact",
+        str(calibration),
+        "--calibration-profile-key",
+        profile_key,
+    ]
+    return cli_arguments, binding
+
+
 def automatic_diagnostics(*, selected_receiver="mic0", selection_reason="primary_margin_not_met"):
     return {
         "abi_version": campaign.AUTO_V1_DIAGNOSTICS_ABI_VERSION,
@@ -512,52 +548,118 @@ class PairedPayloadTests(unittest.TestCase):
 
 
 class PhysicalBindingTests(unittest.TestCase):
+    def test_tracked_pixel_volume_50_evidence_bundle_is_exact(self) -> None:
+        target_path = EVIDENCE_ROOT / "target-provenance.json"
+        route_path = EVIDENCE_ROOT / "route-signature.json"
+        qualification_path = EVIDENCE_ROOT / "qualification.json"
+        self.assertEqual(
+            campaign.sha256_file(target_path),
+            campaign.PIXEL_VOLUME_50_TARGET_PROVENANCE_SHA256,
+        )
+        route = json.loads(route_path.read_bytes())
+        self.assertEqual(
+            campaign.sha256_bytes(campaign.canonical_json_bytes(route)),
+            campaign.PIXEL_VOLUME_50_ROUTE_CANONICAL_SHA256,
+        )
+        self.assertEqual(
+            campaign.sha256_file(qualification_path),
+            campaign.PIXEL_VOLUME_50_QUALIFICATION_SHA256,
+        )
+        qualification = json.loads(qualification_path.read_bytes())
+        self.assertEqual(
+            qualification["profile_key"],
+            campaign.PIXEL_VOLUME_50_EVIDENCE_PROFILE_KEY,
+        )
+        campaigns = {
+            item["role"]: item
+            for item in qualification["retained_pixel_campaign_manifests"]
+        }
+        self.assertEqual(
+            campaigns["volume-30-matched-descending-repeat"]["sha256"],
+            "7f4b66bf9f98f35d04056a865bc26ff27671de809a1765faeca8756b30c09707",
+        )
+        self.assertEqual(
+            campaigns["volume-50-level-smoke"]["verified_blocks"],
+            {"baseline-cp768-p8": "75/75", "candidate-cp240-p8-b4-r34": "75/75"},
+        )
+        self.assertEqual(
+            campaigns["volume-70-matched-ascending"]["sha256"],
+            "a719f9c27cc0c0cc7efac209c2f51c6ba1fc9d233179f82adc299a12aba4bd05",
+        )
+        self.assertIn("worse block delivery", campaigns["volume-70-matched-ascending"]["outcome"])
+        self.assertEqual(
+            campaigns["volume-50-reverse-order-confirmation"]["sha256"],
+            "8d60297837577f043421fd7721058e85ae295f99ad87a8c6801a31347b51d86f",
+        )
+        for retained in campaigns.values():
+            self.assertEqual(set(retained["android_source_clipped_samples"].values()), {0})
+
     def test_binding_hashes_target_route_and_calibration(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            provenance = root / "target.json"
-            route = root / "route.json"
-            calibration = root / "calibration.json"
-            provenance.write_text(
-                json.dumps(
-                    {
-                        "android_target": {
-                            "serial": "pixel",
-                            "model": "Pixel 7a",
-                            "build_fingerprint": "google/test",
-                        },
-                        "hil_apk": {"installed_apk_sha256": "a" * 64},
-                    }
-                ),
-                encoding="utf-8",
-            )
-            route.write_text(
-                json.dumps({"schema": campaign.ROUTE_SIGNATURE_SCHEMA}),
-                encoding="utf-8",
-            )
-            calibration.write_text("{}\n", encoding="utf-8")
-            binding = campaign.load_execution_binding(
-                provenance,
-                route,
-                calibration,
-                "pixel|fixed-pose|vol14|peak0.06",
-            )
-            self.assertEqual(binding["expected_target"]["serial"], "pixel")
+            _, binding = physical_binding_fixture(root)
+            self.assertEqual(binding["expected_target"]["serial"], "38291JEHN00306")
             self.assertEqual(
                 binding["calibration_artifact_sha256"],
-                campaign.sha256_file(calibration),
+                campaign.sha256_file(root / "calibration.json"),
             )
             self.assertEqual(
                 binding["expected_route_signature_sha256"],
                 campaign.sha256_bytes(
                     campaign.canonical_json_bytes(
-                        {"schema": campaign.ROUTE_SIGNATURE_SCHEMA}
+                        json.loads((root / "route.json").read_bytes())
                     )
                 ),
             )
 
 
 class PhysicalExecutionLimitTests(unittest.TestCase):
+    @staticmethod
+    def _build_evidence_plan(
+        *,
+        execution_binding: dict | None,
+        authorization_note: str | None,
+        amplitude: float = 0.18,
+        mac_output_volume: int | None = 50,
+        frames: int = 5,
+        android_source: str = "unprocessed",
+        sample_rate_hz: int = 48_000,
+        geometry_label: str = campaign.PIXEL_VOLUME_50_GEOMETRY_LABEL,
+    ) -> dict:
+        args = campaign.argument_parser().parse_args(
+            [
+                "--amplitude",
+                str(amplitude),
+                "--symbols",
+                "65",
+                "--sample-rate",
+                str(sample_rate_hz),
+                "--f-hi",
+                "20000" if sample_rate_hz < 48_000 else "23000",
+            ]
+        )
+        profiles = campaign.profiles_from_args(args)
+        return campaign.build_plan(
+            profiles,
+            G.BurstSchedule(frames=frames),
+            pairs=1,
+            seed=1,
+            primary_receiver="mic0",
+            pre_roll_s=0.7,
+            post_roll_s=0.7,
+            origin_search_ms=350,
+            anchor_search_stop_ms=2_600,
+            minimum_chirp_score=0.12,
+            minimum_anchor_psr_db=6,
+            decode_margin_ms=25,
+            android_source=android_source,
+            mac_output_volume=mac_output_volume,
+            geometry_label=geometry_label,
+            authorization_note=authorization_note,
+            execution_binding=execution_binding,
+            drive_envelope=campaign.PIXEL_VOLUME_50_EVIDENCE_DRIVE_ENVELOPE,
+        )
+
     def test_execute_requires_explicit_waveform_amplitude(self) -> None:
         with self.assertRaisesRegex(SystemExit, "explicit --amplitude"):
             campaign.main(["--execute"])
@@ -709,6 +811,286 @@ class PhysicalExecutionLimitTests(unittest.TestCase):
                     "101",
                 ]
             )
+
+    def test_drive_envelope_flags_are_mutually_exclusive(self) -> None:
+        with self.assertRaisesRegex(SystemExit, "mutually exclusive"):
+            campaign.main(
+                [
+                    "--historical-drive-calibration-envelope",
+                    "--pixel-volume-50-evidence-envelope",
+                ]
+            )
+
+    def test_pixel_volume_50_envelope_accepts_one_and_five_long_frames(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binding_arguments, _ = physical_binding_fixture(root)
+            for frames in (1, 5):
+                with self.subTest(frames=frames):
+                    manifest_path = root / f"plan-{frames}.json"
+                    arguments = [
+                        "--pairs",
+                        "1",
+                        "--pixel-volume-50-evidence-envelope",
+                        "--symbols",
+                        "65",
+                        "--amplitude",
+                        "0.18",
+                        "--mac-output-volume",
+                        "50",
+                        "--authorization-note",
+                        "overnight Pixel bench authorization",
+                        "--geometry-label",
+                        campaign.PIXEL_VOLUME_50_GEOMETRY_LABEL,
+                        "--manifest",
+                        str(manifest_path),
+                        *binding_arguments,
+                    ]
+                    if frames == 1:
+                        arguments.append("--smoke-one-frame")
+                    with mock.patch.object(campaign, "assert_dry_run_import_boundary"):
+                        result = campaign.main(arguments)
+
+                    self.assertEqual(result, 0)
+                    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    plan = manifest["plan"]
+                    envelope = plan["capture_policy"]["drive_envelope"]
+                    self.assertEqual(
+                        envelope["envelope_id"],
+                        "pixel7a-faceup-vol50-wideband-evidence-v1",
+                    )
+                    self.assertEqual(envelope["maximum_output_volume_percent"], 50)
+                    self.assertEqual(envelope["maximum_waveform_peak"], 0.18)
+                    self.assertIn("not an SPL measurement", envelope["scope"])
+                    self.assertIn("acoustic-exposure rating", envelope["scope"])
+                    self.assertTrue(plan["execution_binding"])
+                    self.assertEqual(plan["schedule"]["frames"], frames)
+                    self.assertEqual(
+                        plan["measurement_contract"]["headline_eligible"],
+                        frames == 5,
+                    )
+                    self.assertGreater(
+                        max(
+                            profile["geometry"]["frame_seconds"]
+                            for profile in plan["profiles"]
+                        ),
+                        4.0,
+                    )
+
+    def test_pixel_volume_50_envelope_requires_binding_in_dry_plan(self) -> None:
+        with self.assertRaisesRegex(SystemExit, "requires --target-provenance"):
+            campaign.main(
+                [
+                    "--pixel-volume-50-evidence-envelope",
+                    "--amplitude",
+                    "0.18",
+                    "--mac-output-volume",
+                    "50",
+                    "--authorization-note",
+                    "test authorization",
+                ]
+            )
+
+    def test_pixel_volume_50_envelope_requires_authorization_in_dry_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            binding_arguments, _ = physical_binding_fixture(Path(directory))
+            with self.assertRaisesRegex(SystemExit, "nonempty --authorization-note"):
+                campaign.main(
+                    [
+                        "--pixel-volume-50-evidence-envelope",
+                        "--amplitude",
+                        "0.18",
+                        "--mac-output-volume",
+                        "50",
+                        *binding_arguments,
+                    ]
+                )
+
+    def test_pixel_volume_50_envelope_requires_binding_and_authorization_in_build_plan(
+        self,
+    ) -> None:
+        with self.assertRaisesRegex(ValueError, "authorization note"):
+            self._build_evidence_plan(
+                execution_binding=None,
+                authorization_note=None,
+            )
+        with self.assertRaisesRegex(ValueError, "complete hashed execution binding"):
+            self._build_evidence_plan(
+                execution_binding=None,
+                authorization_note="test authorization",
+            )
+
+    def test_pixel_volume_50_envelope_rejects_incomplete_binding_in_build_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            _, binding = physical_binding_fixture(Path(directory))
+            incomplete = dict(binding)
+            del incomplete["calibration_artifact_sha256"]
+            with self.assertRaisesRegex(ValueError, "calibration_artifact_sha256"):
+                self._build_evidence_plan(
+                    execution_binding=incomplete,
+                    authorization_note="test authorization",
+                )
+
+    def test_pixel_volume_50_envelope_requires_explicit_volume_in_build_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            _, binding = physical_binding_fixture(Path(directory))
+            with self.assertRaisesRegex(ValueError, "explicit output volume"):
+                self._build_evidence_plan(
+                    execution_binding=binding,
+                    authorization_note="test authorization",
+                    mac_output_volume=None,
+                )
+
+    def test_pixel_volume_50_envelope_requires_explicit_volume_in_dry_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            binding_arguments, _ = physical_binding_fixture(Path(directory))
+            with self.assertRaisesRegex(SystemExit, "explicit --mac-output-volume"):
+                campaign.main(
+                    [
+                        "--pixel-volume-50-evidence-envelope",
+                        "--amplitude",
+                        "0.18",
+                        "--authorization-note",
+                        "test authorization",
+                        "--geometry-label",
+                        campaign.PIXEL_VOLUME_50_GEOMETRY_LABEL,
+                        *binding_arguments,
+                    ]
+                )
+
+    def test_pixel_volume_50_envelope_rejects_wrong_geometry(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            _, binding = physical_binding_fixture(Path(directory))
+            with self.assertRaisesRegex(ValueError, "qualified geometry label"):
+                self._build_evidence_plan(
+                    execution_binding=binding,
+                    authorization_note="test authorization",
+                    geometry_label="Pixel moved to a different pose",
+                )
+
+    def test_pixel_volume_50_envelope_rejects_wrong_source_and_rate(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            _, binding = physical_binding_fixture(Path(directory))
+            for arguments, message in (
+                ({"android_source": "camcorder"}, "UNPROCESSED"),
+                ({"sample_rate_hz": 44_100}, "48 kHz"),
+            ):
+                with self.subTest(arguments=arguments):
+                    with self.assertRaisesRegex(ValueError, message):
+                        self._build_evidence_plan(
+                            execution_binding=binding,
+                            authorization_note="test authorization",
+                            **arguments,
+                        )
+
+    def test_pixel_volume_50_envelope_rejects_unqualified_target(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            physical_binding_fixture(root)
+            provenance = json.loads((root / "target.json").read_bytes())
+            provenance["android_target"]["model"] = "Pixel 8"
+            (root / "target.json").write_text(json.dumps(provenance), encoding="utf-8")
+            binding = load_fixture_binding(root)
+            with self.assertRaisesRegex(ValueError, "qualified Pixel 7a target"):
+                self._build_evidence_plan(
+                    execution_binding=binding,
+                    authorization_note="test authorization",
+                )
+
+    def test_pixel_volume_50_envelope_rejects_unqualified_route(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            physical_binding_fixture(root)
+            route = json.loads((root / "route.json").read_bytes())
+            route["actual_source_id"] = 1
+            (root / "route.json").write_text(json.dumps(route), encoding="utf-8")
+            binding = load_fixture_binding(root)
+            with self.assertRaisesRegex(ValueError, "qualified stereo route"):
+                self._build_evidence_plan(
+                    execution_binding=binding,
+                    authorization_note="test authorization",
+                )
+
+    def test_pixel_volume_50_envelope_rejects_unqualified_calibration(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            physical_binding_fixture(root)
+            qualification = json.loads((root / "calibration.json").read_bytes())
+            qualification["qualified_date"] = "changed"
+            (root / "calibration.json").write_text(
+                json.dumps(qualification), encoding="utf-8"
+            )
+            binding = load_fixture_binding(root)
+            with self.assertRaisesRegex(ValueError, "tracked qualification artifact"):
+                self._build_evidence_plan(
+                    execution_binding=binding,
+                    authorization_note="test authorization",
+                )
+
+    def test_pixel_volume_50_envelope_rejects_unqualified_profile_key(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            physical_binding_fixture(root)
+            binding = load_fixture_binding(root, "wrong-profile")
+            with self.assertRaisesRegex(ValueError, "qualified profile key"):
+                self._build_evidence_plan(
+                    execution_binding=binding,
+                    authorization_note="test authorization",
+                )
+
+    def test_pixel_volume_50_envelope_rejects_post_load_file_mutation(self) -> None:
+        for filename, mutation, message in (
+            ("target.json", {"android_target": {}}, "target provenance changed"),
+            ("route.json", {"schema": campaign.ROUTE_SIGNATURE_SCHEMA}, "route signature changed"),
+            ("calibration.json", {"changed": True}, "calibration artifact changed"),
+        ):
+            with self.subTest(filename=filename), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                _, binding = physical_binding_fixture(root)
+                (root / filename).write_text(json.dumps(mutation), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, message):
+                    self._build_evidence_plan(
+                        execution_binding=binding,
+                        authorization_note="test authorization",
+                    )
+
+    def test_pixel_volume_50_envelope_rejects_over_cap_dry_plans(self) -> None:
+        with self.assertRaisesRegex(SystemExit, "amplitude exceeds drive-envelope cap"):
+            campaign.main(
+                [
+                    "--pixel-volume-50-evidence-envelope",
+                    "--amplitude",
+                    "0.180001",
+                    "--mac-output-volume",
+                    "50",
+                ]
+            )
+        with self.assertRaisesRegex(SystemExit, r"--mac-output-volume must be in"):
+            campaign.main(
+                [
+                    "--pixel-volume-50-evidence-envelope",
+                    "--amplitude",
+                    "0.18",
+                    "--mac-output-volume",
+                    "51",
+                ]
+            )
+
+    def test_pixel_volume_50_envelope_rejects_over_cap_build_plans(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            _, binding = physical_binding_fixture(Path(directory))
+            for attribute, value, message in (
+                ("amplitude", 0.180001, "waveform-peak cap"),
+                ("mac_output_volume", 51, "output-volume cap"),
+            ):
+                with self.subTest(attribute=attribute):
+                    arguments = {
+                        "execution_binding": binding,
+                        "authorization_note": "test authorization",
+                        attribute: value,
+                    }
+                    with self.assertRaisesRegex(ValueError, message):
+                        self._build_evidence_plan(**arguments)
 
 
 if __name__ == "__main__":

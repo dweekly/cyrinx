@@ -1,0 +1,157 @@
+{
+  "schema": "cyrinx.drive-envelope-qualification.v1",
+  "envelope_id": "pixel7a-faceup-vol50-wideband-evidence-v1",
+  "profile_key": "pixel7a-faceup-volume50-v1",
+  "qualified_date": "2026-07-16",
+  "scope": {
+    "link_direction": "MacBook Pro built-in left speaker to Pixel 7a built-in microphones",
+    "physical_geometry": "Pixel 7a face-up in the retained near-field function-key bench position",
+    "speaker_channels": [
+      0
+    ],
+    "sample_rate_hz": 48000,
+    "capture_channels": 2,
+    "android_source": "unprocessed",
+    "actual_android_source_id": 9,
+    "mac_output_volume_percent": 50,
+    "maximum_waveform_peak": 0.18
+  },
+  "qualified_target": {
+    "target_provenance_sha256": "5f87abe17227315ae77ea3632bdd21cbfe3364ae5875b1f7d35ca2a04a0c8251",
+    "serial": "38291JEHN00306",
+    "model": "Pixel 7a",
+    "build_fingerprint": "google/lynx/lynx:17/CP2A.260705.006/15641320:user/release-keys",
+    "package": "com.dweekly.cyrinxhil",
+    "installed_package_apk_sha256": "9cb5fd28021edf8948ce97ded262338da2ca1428b19c263537bac6cbb7a37502"
+  },
+  "qualified_route": {
+    "canonical_sha256": "8da17a36acdd7a79d0f70f9fc085b99a8faf508f862387edec3b093180a827d0",
+    "schema": "cyrinx.android-capture-route-signature.v1",
+    "actual_source_id": 9,
+    "sample_rate_hz": 48000,
+    "channels": 2,
+    "encoding_id": 2,
+    "device_id": 23,
+    "device_product_name": "Pixel 7a",
+    "microphone_channel_mappings": [
+      {
+        "address": "bottom",
+        "channel": 0,
+        "mode": "direct"
+      },
+      {
+        "address": "back",
+        "channel": 1,
+        "mode": "direct"
+      }
+    ]
+  },
+  "retained_pixel_campaign_manifests": [
+    {
+      "role": "volume-30-matched-descending-repeat",
+      "path": "artifacts/bench/2026-07-16-pixel7a-faceup-ac-on-vol30-amp018-cp240-matched-descending-exec2.manifest.json",
+      "sha256": "7f4b66bf9f98f35d04056a865bc26ff27671de809a1765faeca8756b30c09707",
+      "headline_eligible": false,
+      "verified_blocks": {
+        "baseline-cp768-p8": "40/75",
+        "candidate-cp240-p8-b4-r34": "66/75"
+      },
+      "capture_peak_abs": {
+        "baseline-cp768-p8": 0.00390625,
+        "candidate-cp240-p8-b4-r34": 0.00390625
+      },
+      "android_source_clipped_samples": {
+        "baseline-cp768-p8": 0,
+        "candidate-cp240-p8-b4-r34": 0
+      }
+    },
+    {
+      "role": "volume-50-level-smoke",
+      "path": "artifacts/bench/2026-07-16-pixel7a-faceup-ac-on-vol50-amp018-cp240-level-smoke-exec1.manifest.json",
+      "sha256": "93132d767e5f3ba07378a6e23e4f93ab67dbfa2170e09984b7a159f06a16233c",
+      "headline_eligible": false,
+      "verified_blocks": {
+        "baseline-cp768-p8": "75/75",
+        "candidate-cp240-p8-b4-r34": "75/75"
+      },
+      "capture_peak_abs": {
+        "baseline-cp768-p8": 0.014862060546875,
+        "candidate-cp240-p8-b4-r34": 0.0147705078125
+      },
+      "android_source_clipped_samples": {
+        "baseline-cp768-p8": 0,
+        "candidate-cp240-p8-b4-r34": 0
+      }
+    },
+    {
+      "role": "volume-70-matched-ascending",
+      "path": "artifacts/bench/2026-07-16-pixel7a-faceup-ac-on-vol70-amp018-cp240-matched-ascending-exec1.manifest.json",
+      "sha256": "a719f9c27cc0c0cc7efac209c2f51c6ba1fc9d233179f82adc299a12aba4bd05",
+      "headline_eligible": false,
+      "verified_blocks": {
+        "baseline-cp768-p8": "24/75",
+        "candidate-cp240-p8-b4-r34": "57/75"
+      },
+      "capture_peak_abs": {
+        "baseline-cp768-p8": 0.03228759765625,
+        "candidate-cp240-p8-b4-r34": 0.0318603515625
+      },
+      "android_source_clipped_samples": {
+        "baseline-cp768-p8": 0,
+        "candidate-cp240-p8-b4-r34": 0
+      },
+      "outcome": "Higher retained level but worse block delivery than the volume-50 cell."
+    },
+    {
+      "role": "volume-50-reverse-order-confirmation",
+      "path": "artifacts/bench/2026-07-16-pixel7a-faceup-ac-on-vol50-amp018-cp240-reverse-order-confirm-exec1.manifest.json",
+      "sha256": "8d60297837577f043421fd7721058e85ae295f99ad87a8c6801a31347b51d86f",
+      "headline_eligible": false,
+      "verified_blocks": {
+        "baseline-cp768-p8": "75/75",
+        "candidate-cp240-p8-b4-r34": "74/75"
+      },
+      "capture_peak_abs": {
+        "baseline-cp768-p8": 0.014923095703125,
+        "candidate-cp240-p8-b4-r34": 0.015045166015625
+      },
+      "android_source_clipped_samples": {
+        "baseline-cp768-p8": 0,
+        "candidate-cp240-p8-b4-r34": 0
+      },
+      "outcome": "Near-error-free delivery persisted with the within-pair profile order reversed."
+    }
+  ],
+  "retained_mac_witness_manifests": [
+    {
+      "role": "volume-30-matched-descending-repeat",
+      "path": "artifacts/hil/2026-07-16-pixel7a-faceup-ac-on-level-ladder-v1/macbook-microphone-vol30-amp018-matched-descending-exec2.json",
+      "sha256": "b5a91eb57945cc929a2d747c08d175b25f84ab73f72c7ec3bb648711f1c8f0dd",
+      "capture_sha256": "4a3c1bc713f823bbafabc7adba50234f6611c0e287034b191e1f574fce155b98"
+    },
+    {
+      "role": "volume-50-witness",
+      "path": "artifacts/hil/2026-07-16-pixel7a-faceup-ac-on-level-ladder-v1/macbook-microphone-vol50-amp018-witness-exec1.json",
+      "sha256": "3a70e634cd2465d4a6a4a225711c0b559f34a4697907ad1be14f3dffea9d9744",
+      "capture_sha256": "476991b7b33a31ba8639c09094d00641d9f591957b38cbe645970b0731ea4576"
+    },
+    {
+      "role": "volume-70-matched-ascending",
+      "path": "artifacts/hil/2026-07-16-pixel7a-faceup-ac-on-level-ladder-v1/macbook-microphone-vol70-amp018-matched-ascending-exec1.json",
+      "sha256": "afe22e184c24b1ee3c0c573791664fe81dc6f52598eca1711db7afb1e7c059b3",
+      "capture_sha256": "1af067ba5de8eed29a7ae69bde2aa48b07ce941aee6a0d41aff1c2d6019195ba"
+    },
+    {
+      "role": "volume-50-reverse-order-confirmation",
+      "path": "artifacts/hil/2026-07-16-pixel7a-faceup-ac-on-level-ladder-v1/macbook-microphone-vol50-amp018-reverse-order-confirm-exec1.json",
+      "sha256": "fda5d7c30038715d226a3f47ec9de7f2e80211319da84058ce6eb2ea62f8d333",
+      "capture_sha256": "27f4e3ebbf182e62fde33c33d1141daa2bf8906d6552f78ebdbd9d7d1ac9c71b"
+    }
+  ],
+  "limitations": [
+    "Endpoint percentages and waveform peaks are not sound-pressure-level measurements or acoustic-exposure ratings.",
+    "The air conditioner was enabled but thermostat-cycling; room noise was not instrumented and was not stationary across all retained captures.",
+    "Qualification is limited to the exact target, APK, route, pose, speaker channel, sample rate, source, and near-field bench geometry recorded here.",
+    "The retained MacBook microphone captures are secondary level witnesses and do not establish transferable human-auditory safety limits."
+  ]
+}

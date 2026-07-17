@@ -1,0 +1,12 @@
+{
+  "android_target": {
+    "build_fingerprint": "google/lynx/lynx:17/CP2A.260705.006/15641320:user/release-keys",
+    "model": "Pixel 7a",
+    "serial": "38291JEHN00306"
+  },
+  "hil_apk": {
+    "installed_apk_byte_count": 7044160,
+    "installed_apk_path": "/data/app/~~wFFQwJqrU4A1nH6DWPdFjA==/com.dweekly.cyrinxhil-ciQxTT5wmgXefvXZj21jdA==/base.apk",
+    "installed_apk_sha256": "9cb5fd28021edf8948ce97ded262338da2ca1428b19c263537bac6cbb7a37502"
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "actual_source_id": 9,
+  "buffer_frames": 24000,
+  "channel_index_mask": 0,
+  "channel_mask": 12,
+  "channels": 2,
+  "device": {
+    "address": "bottom",
+    "channel_counts": [
+      1,
+      2
+    ],
+    "channel_index_masks": [],
+    "channel_masks": [
+      12,
+      16
+    ],
+    "id": 23,
+    "product_name": "Pixel 7a",
+    "sample_rates_hz": [
+      48000
+    ],
+    "type": 15
+  },
+  "encoding_id": 2,
+  "microphones": [
+    {
+      "address": "bottom",
+      "channel_mapping": [
+        {
+          "channel": 0,
+          "mode": "direct"
+        }
+      ],
+      "description": "builtin_mic_1",
+      "directionality": 1,
+      "frequency_response": "points=93 first=100.0:-0.78 last=20000.0:24.89",
+      "group": 0,
+      "group_index": 0,
+      "id": "23",
+      "location": 1,
+      "orientation": "0.0,0.0,1.0",
+      "position": "0.0269,0.0058,0.0079",
+      "sensitivity": "-37.0",
+      "spl": "28.5...132.5",
+      "type": 15
+    },
+    {
+      "address": "back",
+      "channel_mapping": [
+        {
+          "channel": 1,
+          "mode": "direct"
+        }
+      ],
+      "description": "builtin_mic_2",
+      "directionality": 1,
+      "frequency_response": "points=92 first=106.0:-0.75 last=20000.0:5.18",
+      "group": 0,
+      "group_index": 1,
+      "id": "24",
+      "location": 1,
+      "orientation": "0.0,1.0,0.0",
+      "position": "0.0546,0.1456,0.00415",
+      "sensitivity": "-37.0",
+      "spl": "28.5...132.5",
+      "type": 15
+    }
+  ],
+  "sample_rate_hz": 48000,
+  "schema": "cyrinx.android-capture-route-signature.v1"
+}

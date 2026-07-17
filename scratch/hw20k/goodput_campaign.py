@@ -70,6 +70,23 @@ MAX_EXECUTION_OUTPUT_VOLUME_PERCENT = 30
 MAX_EXECUTION_WAVEFORM_PEAK = 0.18
 HISTORICAL_CALIBRATION_OUTPUT_VOLUME_PERCENT = 100
 HISTORICAL_CALIBRATION_WAVEFORM_PEAK = 0.7
+PIXEL_VOLUME_50_OUTPUT_VOLUME_PERCENT = 50
+PIXEL_VOLUME_50_WAVEFORM_PEAK = 0.18
+PIXEL_VOLUME_50_EVIDENCE_PROFILE_KEY = "pixel7a-faceup-volume50-v1"
+PIXEL_VOLUME_50_GEOMETRY_LABEL = (
+    "Pixel 7a face-up on 0.5-inch soft cloth above the MacBook left function key; "
+    "bottom microphone near the MacBook built-in left speaker; MacBook built-in left "
+    "speaker only; A/C enabled but thermostat-cycling and uninstrumented; SPL uninstrumented"
+)
+PIXEL_VOLUME_50_TARGET_PROVENANCE_SHA256 = (
+    "5f87abe17227315ae77ea3632bdd21cbfe3364ae5875b1f7d35ca2a04a0c8251"
+)
+PIXEL_VOLUME_50_ROUTE_CANONICAL_SHA256 = (
+    "8da17a36acdd7a79d0f70f9fc085b99a8faf508f862387edec3b093180a827d0"
+)
+PIXEL_VOLUME_50_QUALIFICATION_SHA256 = (
+    "ec28faa1b67bfcea8a615ee4b6dd6d85f3427d79fae075e30b5b6ffd84ff165d"
+)
 CAPTURE_SETUP_BUDGET_S = 4.0
 
 
@@ -101,6 +118,254 @@ HISTORICAL_CALIBRATION_DRIVE_ENVELOPE = DriveEnvelope(
     scope="one-frame non-headline calibration, one A/B pair only",
 )
 
+# This narrowly scoped policy promotes the retained Pixel level study into a
+# reproducible campaign bound.  It is deliberately device/pose/route specific:
+# the percentages are endpoint settings, not acoustic pressure measurements.
+PIXEL_VOLUME_50_EVIDENCE_DRIVE_ENVELOPE = DriveEnvelope(
+    envelope_id="pixel7a-faceup-vol50-wideband-evidence-v1",
+    maximum_output_volume_percent=PIXEL_VOLUME_50_OUTPUT_VOLUME_PERCENT,
+    maximum_waveform_peak=PIXEL_VOLUME_50_WAVEFORM_PEAK,
+    evidence_basis=(
+        "July 2026 matched-waveform Pixel 7a 30/50/70 percent drive study: "
+        "50 percent increased retained-capture SNR relative to 30 percent with "
+        "stable UNPROCESSED stereo routing and no observed source-sample clipping"
+    ),
+    scope=(
+        "one- or five-frame Mac-left-speaker to Pixel-7a face-up near-field campaigns at "
+        "48 kHz, only with the exact hashed target/route/calibration binding; this is a "
+        "bench drive policy, not an SPL measurement or acoustic-exposure rating"
+    ),
+)
+
+PIXEL_VOLUME_50_EXPECTED_TARGET = {
+    "serial": "38291JEHN00306",
+    "model": "Pixel 7a",
+    "build_fingerprint": (
+        "google/lynx/lynx:17/CP2A.260705.006/15641320:user/release-keys"
+    ),
+    "package": "com.dweekly.cyrinxhil",
+    "installed_package_apk_sha256": (
+        "9cb5fd28021edf8948ce97ded262338da2ca1428b19c263537bac6cbb7a37502"
+    ),
+}
+
+_EXECUTION_BINDING_REQUIRED_KEYS = (
+    "expected_target",
+    "target_provenance_path",
+    "target_provenance_sha256",
+    "expected_route_signature",
+    "expected_route_signature_path",
+    "expected_route_signature_sha256",
+    "calibration_artifact_path",
+    "calibration_artifact_sha256",
+    "calibration_profile_key",
+)
+_EXECUTION_BINDING_SHA256_KEYS = (
+    "target_provenance_sha256",
+    "expected_route_signature_sha256",
+    "calibration_artifact_sha256",
+)
+
+
+def _is_sha256_hex(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdefABCDEF" for character in value)
+    )
+
+
+def _read_binding_snapshot(path_text: str, label: str) -> bytes:
+    try:
+        return Path(path_text).read_bytes()
+    except OSError as error:
+        raise ValueError(f"execution binding {label} cannot be read: {error}") from error
+
+
+def _parse_json_snapshot(snapshot: bytes, label: str) -> Any:
+    try:
+        return json.loads(snapshot)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError(f"execution binding {label} is not valid JSON: {error}") from error
+
+
+def _target_from_provenance(provenance: Mapping[str, Any]) -> dict[str, str]:
+    try:
+        android = provenance["android_target"]
+        apk = provenance["hil_apk"]
+        return {
+            "serial": str(android["serial"]),
+            "model": str(android["model"]),
+            "build_fingerprint": str(android["build_fingerprint"]),
+            "package": "com.dweekly.cyrinxhil",
+            "installed_package_apk_sha256": str(
+                apk["installed_apk_sha256"]
+            ).lower(),
+        }
+    except (KeyError, TypeError) as error:
+        raise ValueError("target provenance identity is incomplete") from error
+
+
+def _validate_pixel_volume_50_route_semantics(route: Mapping[str, Any]) -> None:
+    device = route.get("device")
+    microphones = route.get("microphones")
+    if (
+        route.get("actual_source_id") != 9
+        or route.get("sample_rate_hz") != 48_000
+        or route.get("channels") != 2
+        or route.get("encoding_id") != 2
+        or not isinstance(device, Mapping)
+        or device.get("id") != 23
+        or device.get("product_name") != "Pixel 7a"
+        or not isinstance(microphones, list)
+        or len(microphones) != 2
+    ):
+        raise ValueError("Pixel volume-50 evidence requires its qualified stereo route")
+    expected_mappings = (("bottom", 0), ("back", 1))
+    for microphone, (address, channel) in zip(microphones, expected_mappings):
+        if not isinstance(microphone, Mapping):
+            raise ValueError("Pixel volume-50 evidence route microphones are incomplete")
+        if microphone.get("address") != address or microphone.get("channel_mapping") != [
+            {"channel": channel, "mode": "direct"}
+        ]:
+            raise ValueError(
+                "Pixel volume-50 evidence requires direct bottom/back channel mappings"
+            )
+
+
+def validate_complete_hashed_execution_binding(
+    execution_binding: Mapping[str, Any] | None,
+) -> None:
+    """Validate the complete content-addressed physical campaign binding."""
+
+    if not isinstance(execution_binding, Mapping):
+        raise ValueError("evidence-bound drive requires a complete hashed execution binding")
+    missing = [
+        key
+        for key in _EXECUTION_BINDING_REQUIRED_KEYS
+        if key not in execution_binding or execution_binding[key] is None
+    ]
+    if missing:
+        raise ValueError(
+            "evidence-bound drive requires a complete hashed execution binding; "
+            f"missing {', '.join(missing)}"
+        )
+    for key in _EXECUTION_BINDING_SHA256_KEYS:
+        if not _is_sha256_hex(execution_binding[key]):
+            raise ValueError(f"execution binding {key} must be a valid SHA-256 digest")
+
+    expected_target = execution_binding["expected_target"]
+    if not isinstance(expected_target, Mapping):
+        raise ValueError("execution binding expected_target must be an object")
+    target_text_keys = ("serial", "model", "build_fingerprint", "package")
+    if any(
+        not isinstance(expected_target.get(key), str) or not expected_target[key].strip()
+        for key in target_text_keys
+    ):
+        raise ValueError("execution binding expected_target identity must be complete")
+    if not _is_sha256_hex(expected_target.get("installed_package_apk_sha256")):
+        raise ValueError("execution binding installed APK must have a valid SHA-256 digest")
+
+    expected_route = execution_binding["expected_route_signature"]
+    if (
+        not isinstance(expected_route, Mapping)
+        or expected_route.get("schema") != ROUTE_SIGNATURE_SCHEMA
+    ):
+        raise ValueError(f"execution binding route signature must use {ROUTE_SIGNATURE_SCHEMA}")
+    canonical_route_hash = sha256_bytes(canonical_json_bytes(expected_route))
+    if canonical_route_hash.lower() != str(
+        execution_binding["expected_route_signature_sha256"]
+    ).lower():
+        raise ValueError("execution binding route signature hash does not match its content")
+
+    for key in (
+        "target_provenance_path",
+        "expected_route_signature_path",
+        "calibration_artifact_path",
+        "calibration_profile_key",
+    ):
+        if (
+            not isinstance(execution_binding[key], str)
+            or not execution_binding[key].strip()
+        ):
+            raise ValueError(f"execution binding {key} must be nonempty")
+
+    target_snapshot = _read_binding_snapshot(
+        execution_binding["target_provenance_path"], "target provenance"
+    )
+    if sha256_bytes(target_snapshot).lower() != str(
+        execution_binding["target_provenance_sha256"]
+    ).lower():
+        raise ValueError("execution binding target provenance changed after it was loaded")
+    target_provenance = _parse_json_snapshot(target_snapshot, "target provenance")
+    if not isinstance(target_provenance, Mapping):
+        raise ValueError("execution binding target provenance must be an object")
+    if _target_from_provenance(target_provenance) != dict(expected_target):
+        raise ValueError("execution binding target identity does not match its provenance")
+
+    route_snapshot = _read_binding_snapshot(
+        execution_binding["expected_route_signature_path"], "route signature"
+    )
+    route_from_path = _parse_json_snapshot(route_snapshot, "route signature")
+    if not isinstance(route_from_path, Mapping):
+        raise ValueError("execution binding route signature must be an object")
+    if canonical_json_bytes(route_from_path) != canonical_json_bytes(expected_route):
+        raise ValueError("execution binding route signature changed after it was loaded")
+    if sha256_bytes(canonical_json_bytes(route_from_path)).lower() != str(
+        execution_binding["expected_route_signature_sha256"]
+    ).lower():
+        raise ValueError("execution binding route signature hash does not match its path")
+
+    calibration_snapshot = _read_binding_snapshot(
+        execution_binding["calibration_artifact_path"], "calibration artifact"
+    )
+    if sha256_bytes(calibration_snapshot).lower() != str(
+        execution_binding["calibration_artifact_sha256"]
+    ).lower():
+        raise ValueError("execution binding calibration artifact changed after it was loaded")
+
+
+def validate_pixel_volume_50_execution_binding(
+    execution_binding: Mapping[str, Any],
+) -> None:
+    expected_target = execution_binding["expected_target"]
+    if dict(expected_target) != PIXEL_VOLUME_50_EXPECTED_TARGET:
+        raise ValueError("Pixel volume-50 evidence requires the qualified Pixel 7a target")
+    if (
+        str(execution_binding["target_provenance_sha256"]).lower()
+        != PIXEL_VOLUME_50_TARGET_PROVENANCE_SHA256
+    ):
+        raise ValueError(
+            "Pixel volume-50 evidence requires the qualified target provenance digest"
+        )
+
+    expected_route = execution_binding["expected_route_signature"]
+    _validate_pixel_volume_50_route_semantics(expected_route)
+    if (
+        str(execution_binding["expected_route_signature_sha256"]).lower()
+        != PIXEL_VOLUME_50_ROUTE_CANONICAL_SHA256
+    ):
+        raise ValueError("Pixel volume-50 evidence requires the qualified route digest")
+
+    if (
+        str(execution_binding["calibration_artifact_sha256"]).lower()
+        != PIXEL_VOLUME_50_QUALIFICATION_SHA256
+    ):
+        raise ValueError("Pixel volume-50 evidence requires the tracked qualification artifact")
+    if execution_binding["calibration_profile_key"] != PIXEL_VOLUME_50_EVIDENCE_PROFILE_KEY:
+        raise ValueError("Pixel volume-50 evidence requires the qualified profile key")
+    qualification_snapshot = _read_binding_snapshot(
+        execution_binding["calibration_artifact_path"], "qualification artifact"
+    )
+    qualification = _parse_json_snapshot(qualification_snapshot, "qualification artifact")
+    if (
+        not isinstance(qualification, Mapping)
+        or qualification.get("envelope_id")
+        != PIXEL_VOLUME_50_EVIDENCE_DRIVE_ENVELOPE.envelope_id
+        or qualification.get("profile_key") != PIXEL_VOLUME_50_EVIDENCE_PROFILE_KEY
+    ):
+        raise ValueError("Pixel volume-50 qualification artifact has incompatible semantics")
+
 
 def validate_drive_envelope_plan(
     drive_envelope: DriveEnvelope,
@@ -109,25 +374,56 @@ def validate_drive_envelope_plan(
     *,
     pairs: int,
     authorization_note: str | None,
+    execution_binding: Mapping[str, Any] | None = None,
+    mac_output_volume: int | None = None,
+    android_source: str | None = None,
+    physical_geometry_label: str | None = None,
 ) -> None:
     if drive_envelope not in (
         DEFAULT_DRIVE_ENVELOPE,
         HISTORICAL_CALIBRATION_DRIVE_ENVELOPE,
+        PIXEL_VOLUME_50_EVIDENCE_DRIVE_ENVELOPE,
     ):
         raise ValueError("drive envelope must be one of the runner's fixed policies")
-    if drive_envelope != HISTORICAL_CALIBRATION_DRIVE_ENVELOPE:
+    if drive_envelope == DEFAULT_DRIVE_ENVELOPE:
         return
-    if schedule.frames != 1 or pairs != 1:
-        raise ValueError(
-            "historical drive calibration requires one frame and one A/B pair"
-        )
+    if drive_envelope == HISTORICAL_CALIBRATION_DRIVE_ENVELOPE:
+        if schedule.frames != 1 or pairs != 1:
+            raise ValueError(
+                "historical drive calibration requires one frame and one A/B pair"
+            )
+        if authorization_note is None or not authorization_note.strip():
+            raise ValueError("historical drive calibration requires an authorization note")
+        frame_seconds = [
+            G.compute_geometry(profile.config).frame_seconds for profile in profiles
+        ]
+        if max(frame_seconds) > 4.0:
+            raise ValueError(
+                "historical drive calibration frame duration must not exceed 4.0 seconds"
+            )
+        return
+
+    if schedule.frames not in (1, 5):
+        raise ValueError("Pixel volume-50 evidence drive permits one or five frames")
     if authorization_note is None or not authorization_note.strip():
-        raise ValueError("historical drive calibration requires an authorization note")
-    frame_seconds = [G.compute_geometry(profile.config).frame_seconds for profile in profiles]
-    if max(frame_seconds) > 4.0:
-        raise ValueError(
-            "historical drive calibration frame duration must not exceed 4.0 seconds"
-        )
+        raise ValueError("Pixel volume-50 evidence drive requires an authorization note")
+    validate_complete_hashed_execution_binding(execution_binding)
+    assert execution_binding is not None
+    validate_pixel_volume_50_execution_binding(execution_binding)
+    if mac_output_volume is None:
+        raise ValueError("Pixel volume-50 evidence drive requires an explicit output volume")
+    if not 1 <= mac_output_volume <= drive_envelope.maximum_output_volume_percent:
+        raise ValueError("Pixel volume-50 evidence drive exceeds its output-volume cap")
+    if android_source != "unprocessed":
+        raise ValueError("Pixel volume-50 evidence drive requires Android UNPROCESSED source")
+    if physical_geometry_label != PIXEL_VOLUME_50_GEOMETRY_LABEL:
+        raise ValueError("Pixel volume-50 evidence drive requires its qualified geometry label")
+    if any(profile.config.sample_rate_hz != 48_000 for profile in profiles):
+        raise ValueError("Pixel volume-50 evidence drive requires 48 kHz profiles")
+    if any(
+        profile.amplitude > drive_envelope.maximum_waveform_peak for profile in profiles
+    ):
+        raise ValueError("Pixel volume-50 evidence drive exceeds its waveform-peak cap")
 
 
 @dataclass(frozen=True)
@@ -248,34 +544,31 @@ def load_execution_binding(
 ) -> dict[str, Any]:
     """Load a dry, content-addressed physical target/route/calibration binding."""
 
-    provenance = json.loads(target_provenance_path.read_text(encoding="utf-8"))
-    route_signature = json.loads(route_signature_path.read_text(encoding="utf-8"))
-    android = provenance["android_target"]
-    apk = provenance["hil_apk"]
-    target = {
-        "serial": str(android["serial"]),
-        "model": str(android["model"]),
-        "build_fingerprint": str(android["build_fingerprint"]),
-        "package": "com.dweekly.cyrinxhil",
-        "installed_package_apk_sha256": str(apk["installed_apk_sha256"]).lower(),
-    }
+    provenance_snapshot = target_provenance_path.read_bytes()
+    route_snapshot = route_signature_path.read_bytes()
+    calibration_snapshot = calibration_artifact_path.read_bytes()
+    provenance = json.loads(provenance_snapshot)
+    route_signature = json.loads(route_snapshot)
+    if not isinstance(provenance, Mapping):
+        raise ValueError("target provenance must be an object")
+    if not isinstance(route_signature, Mapping):
+        raise ValueError("route signature must be an object")
+    target = _target_from_provenance(provenance)
     if route_signature.get("schema") != ROUTE_SIGNATURE_SCHEMA:
         raise ValueError(f"route signature must use {ROUTE_SIGNATURE_SCHEMA}")
     if not calibration_profile_key.strip():
         raise ValueError("calibration profile key must be nonempty")
-    if not calibration_artifact_path.is_file():
-        raise ValueError("calibration artifact must be an existing file")
     return {
         "expected_target": target,
         "target_provenance_path": str(target_provenance_path),
-        "target_provenance_sha256": sha256_file(target_provenance_path),
+        "target_provenance_sha256": sha256_bytes(provenance_snapshot),
         "expected_route_signature": route_signature,
         "expected_route_signature_path": str(route_signature_path),
         "expected_route_signature_sha256": sha256_bytes(
             canonical_json_bytes(route_signature)
         ),
         "calibration_artifact_path": str(calibration_artifact_path),
-        "calibration_artifact_sha256": sha256_file(calibration_artifact_path),
+        "calibration_artifact_sha256": sha256_bytes(calibration_snapshot),
         "calibration_profile_key": calibration_profile_key.strip(),
     }
 
@@ -436,6 +729,10 @@ def build_plan(
         schedule,
         pairs=pairs,
         authorization_note=authorization_note,
+        execution_binding=execution_binding,
+        mac_output_volume=mac_output_volume,
+        android_source=android_source,
+        physical_geometry_label=geometry_label,
     )
     if primary_receiver not in RECEIVER_POLICIES:
         raise ValueError("unknown primary receiver policy")
@@ -2586,6 +2883,15 @@ def argument_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--pixel-volume-50-evidence-envelope",
+        action="store_true",
+        help=(
+            "permit a calibration-bound Pixel 7a campaign at up to 50%% output and "
+            "0.18 waveform peak; requires a complete hashed physical binding and "
+            "authorization even for a dry plan, and is not an SPL/exposure rating"
+        ),
+    )
+    parser.add_argument(
         "--geometry-label",
         help="explicit physical placement/orientation label; required with --execute",
     )
@@ -2622,11 +2928,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise SystemExit("--selftest and --execute are mutually exclusive")
         run_selftests()
         return 0
-    drive_envelope = (
-        HISTORICAL_CALIBRATION_DRIVE_ENVELOPE
-        if args.historical_drive_calibration_envelope
-        else DEFAULT_DRIVE_ENVELOPE
-    )
+    if (
+        int(args.historical_drive_calibration_envelope)
+        + int(args.pixel_volume_50_evidence_envelope)
+        > 1
+    ):
+        raise SystemExit("drive-envelope flags are mutually exclusive")
+    if args.historical_drive_calibration_envelope:
+        drive_envelope = HISTORICAL_CALIBRATION_DRIVE_ENVELOPE
+    elif args.pixel_volume_50_evidence_envelope:
+        drive_envelope = PIXEL_VOLUME_50_EVIDENCE_DRIVE_ENVELOPE
+    else:
+        drive_envelope = DEFAULT_DRIVE_ENVELOPE
     if args.historical_drive_calibration_envelope and (
         not args.smoke_one_frame or args.pairs != 1
     ):
@@ -2651,9 +2964,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.amplitude = 0.7
     if not math.isfinite(args.amplitude) or not 0 < args.amplitude <= 1:
         raise SystemExit("--amplitude must be finite and in (0, 1]")
-    if args.execute and args.amplitude > drive_envelope.maximum_waveform_peak:
+    if (
+        args.execute or args.pixel_volume_50_evidence_envelope
+    ) and args.amplitude > drive_envelope.maximum_waveform_peak:
         raise SystemExit(
-            "--execute amplitude exceeds drive-envelope cap "
+            "amplitude exceeds drive-envelope cap "
             f"{drive_envelope.maximum_waveform_peak} "
             f"({drive_envelope.envelope_id})"
         )
@@ -2663,21 +2978,38 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise SystemExit("--smoke-one-frame requires --pairs 1")
     if args.execute and args.mac_output_volume is None:
         raise SystemExit("--execute requires an explicit --mac-output-volume")
+    if args.pixel_volume_50_evidence_envelope and args.mac_output_volume is None:
+        raise SystemExit(
+            "--pixel-volume-50-evidence-envelope requires an explicit --mac-output-volume"
+        )
     if args.execute and (args.geometry_label is None or not args.geometry_label.strip()):
         raise SystemExit("--execute requires a nonempty --geometry-label")
     if args.execute and (
         args.authorization_note is None or not args.authorization_note.strip()
     ):
         raise SystemExit("--execute requires a nonempty --authorization-note")
+    if args.pixel_volume_50_evidence_envelope and (
+        args.authorization_note is None or not args.authorization_note.strip()
+    ):
+        raise SystemExit(
+            "--pixel-volume-50-evidence-envelope requires a nonempty --authorization-note"
+        )
     binding_paths = (
         args.target_provenance,
         args.expected_route_signature,
         args.calibration_artifact,
         args.calibration_profile_key,
     )
-    if args.execute and any(value is None for value in binding_paths):
+    if (args.execute or args.pixel_volume_50_evidence_envelope) and any(
+        value is None for value in binding_paths
+    ):
+        requirement = (
+            "--pixel-volume-50-evidence-envelope"
+            if args.pixel_volume_50_evidence_envelope
+            else "--execute"
+        )
         raise SystemExit(
-            "--execute requires --target-provenance, --expected-route-signature, "
+            f"{requirement} requires --target-provenance, --expected-route-signature, "
             "--calibration-artifact, and --calibration-profile-key"
         )
     execution_binding = None
