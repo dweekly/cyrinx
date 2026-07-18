@@ -1,7 +1,8 @@
 # Spike 8b result: bracketing estimate does not clear the offline gate
 
-Date: 2026-07-18  
-Maturity: BENCH-SPIKE, offline only  
+Date: 2026-07-18
+
+Maturity: BENCH-SPIKE, offline only
 Claim class: `non-claimable-terminal-oracle`
 
 ## Result
