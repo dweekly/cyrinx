@@ -2,9 +2,12 @@
 
 Frozen on 2026-07-18 before implementing or inspecting any bracketing-estimator
 outcome. Existing campaign-level results in the tracked evidence ledger were
-known when this document was written. This is an offline, non-claimable oracle
-screen. It does not authorize playback, recording, ADB access, or a receiver
-promotion claim.
+known when this document was written. A pre-implementation accounting
+correction was committed separately before candidate outcome inspection: the
+canonical campaign `gross` denominator is scheduled span plus recorded trailing
+padding, while complete raw-capture duration is an additional acquisition-span
+diagnostic. This is an offline, non-claimable oracle screen. It does not
+authorize playback, recording, ADB access, or a receiver promotion claim.
 
 ## Falsifiable hypothesis and incumbent
 
@@ -121,7 +124,9 @@ Report exact payload bits and these distinct denominators:
 
 - scheduled: first preamble sample through the final data/trainer sample across
   all five zero-gap frames;
-- gross: the complete retained capture duration, including pre/post roll; and
+- gross: scheduled span plus the manifest's recorded trailing padding;
+- acquisition: the complete retained capture duration, including capture
+  pre/post roll; and
 - session: discovery, sounding, buffering, and decode wall time. Retained burst
   captures cannot establish a session denominator, so report it as unavailable
   rather than equating it with scheduled or gross time.
