@@ -586,6 +586,35 @@ def estimate_alignment(program: ToneProgram, capture_channel: np.ndarray) -> Ali
     )
 
 
+def shared_clock_schedule_alignment(
+    reference: AlignmentEstimate,
+    observed: AlignmentEstimate,
+) -> AlignmentEstimate:
+    """Use a valid interleaved channel's sample clock for a weak peer channel.
+
+    Stereo AudioRecord channels share the same capture frame clock. A weak
+    microphone can therefore use the other channel's affine schedule mapping
+    for tone fitting without pretending that its own markers were detected.
+    The caller retains ``observed`` separately as the own-marker diagnostic.
+    """
+
+    if not reference.valid:
+        return observed
+    return AlignmentEstimate(
+        valid=True,
+        capture_origin_sample=reference.capture_origin_sample,
+        start_marker_sample=observed.start_marker_sample,
+        end_marker_sample=observed.end_marker_sample,
+        sample_scale=reference.sample_scale,
+        clock_error_ppm=reference.clock_error_ppm,
+        start_score=observed.start_score,
+        end_score=observed.end_score,
+        peak_to_sidelobe_db=observed.peak_to_sidelobe_db,
+        uncertainty_samples=max(reference.uncertainty_samples, observed.uncertainty_samples),
+        reason="schedule inherited from valid channel on the shared interleaved capture clock",
+    )
+
+
 def _capture_slice(
     capture_channel: np.ndarray,
     alignment: AlignmentEstimate,

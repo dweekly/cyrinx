@@ -127,6 +127,45 @@ class ToneProgramTests(unittest.TestCase):
             [0.0, 0.0],
         )
 
+    def test_shared_clock_schedule_preserves_reference_affine_mapping(self) -> None:
+        reference = tone_check.AlignmentEstimate(
+            valid=True,
+            capture_origin_sample=1234,
+            start_marker_sample=25_234,
+            end_marker_sample=112_358,
+            sample_scale=1.00005,
+            clock_error_ppm=50.0,
+            start_score=0.4,
+            end_score=0.5,
+            peak_to_sidelobe_db=12.0,
+            uncertainty_samples=3,
+            reason=None,
+        )
+        weak = tone_check.AlignmentEstimate(
+            valid=False,
+            capture_origin_sample=-50,
+            start_marker_sample=100,
+            end_marker_sample=200,
+            sample_scale=1.0,
+            clock_error_ppm=0.0,
+            start_score=0.03,
+            end_score=0.02,
+            peak_to_sidelobe_db=1.0,
+            uncertainty_samples=7,
+            reason="weak marker",
+        )
+
+        inherited = tone_check.shared_clock_schedule_alignment(reference, weak)
+
+        self.assertTrue(inherited.valid)
+        self.assertEqual(inherited.capture_origin_sample, reference.capture_origin_sample)
+        self.assertEqual(inherited.sample_scale, reference.sample_scale)
+        self.assertEqual(inherited.clock_error_ppm, reference.clock_error_ppm)
+        self.assertEqual(inherited.start_score, weak.start_score)
+        self.assertEqual(inherited.end_score, weak.end_score)
+        self.assertEqual(inherited.uncertainty_samples, weak.uncertainty_samples)
+        self.assertIn("shared interleaved capture clock", inherited.reason)
+
 
 if __name__ == "__main__":
     unittest.main()

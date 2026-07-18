@@ -1,0 +1,334 @@
+{
+  "lr": {
+    "digital_peak": 0.18000000715255737,
+    "digital_rms_all_channels": 0.03844164853049447,
+    "digital_rms_per_channel": [
+      0.03844164853049447,
+      0.03844164853049447
+    ],
+    "duration_s": 19.481333333333332,
+    "evm_probe": {
+      "cp": 768,
+      "fec": "convolutional-r1/2",
+      "modulation": "16-QAM",
+      "nfft": 2048,
+      "payload_bytes": 12800,
+      "payload_sha256": "3d33a8692fdab11b792184efbd86a322fa0d2145336c68a381e6db0093db9384",
+      "symbols": 64,
+      "wave_sha256": "9adf5ec0a296682e6e1382b755025ac6b9c84e42cb4d97bfc28e26e780dcda6b"
+    },
+    "frames": 935104,
+    "output_channels": 2,
+    "sample_rate_hz": 48000,
+    "segments": [
+      {
+        "end_sample": 174480,
+        "probe": "tone-linearity",
+        "speaker": 0,
+        "start_sample": 33600
+      },
+      {
+        "end_sample": 238352,
+        "probe": "repeated-qpsk-sounder",
+        "speaker": 0,
+        "start_sample": 193680
+      },
+      {
+        "end_sample": 449552,
+        "probe": "random-16qam-r12-evm",
+        "speaker": 0,
+        "start_sample": 257552
+      },
+      {
+        "end_sample": 621632,
+        "probe": "tone-linearity",
+        "speaker": 1,
+        "start_sample": 480752
+      },
+      {
+        "end_sample": 685504,
+        "probe": "repeated-qpsk-sounder",
+        "speaker": 1,
+        "start_sample": 640832
+      },
+      {
+        "end_sample": 896704,
+        "probe": "random-16qam-r12-evm",
+        "speaker": 1,
+        "start_sample": 704704
+      }
+    ],
+    "sounder": {
+      "cp": 768,
+      "f_hi_hz": 23000.0,
+      "f_lo_hz": 1100.0,
+      "nfft": 2048,
+      "symbols": 8,
+      "wave_sha256": "c8e4f6590bea0a172aef08a0706fa73fef06c70dc29095c1ff496f4ce3d94cfa"
+    },
+    "speaker_order": [
+      0,
+      1
+    ],
+    "stereo_f32le_sha256": "fba14bd882679c8abac430ea2c29f87a61a99c9ce969ea26c082216d261a8360",
+    "tone_program": {
+      "digital_peak": 0.18,
+      "duration_seconds": 2.935,
+      "end_sync_sample": 111120,
+      "mono_sha256": "21713472f61017d6bf9e1f2cc168eb4861c89e2a796a38d500e50f371e9a6b28",
+      "sample_rate_hz": 48000,
+      "segments": [
+        {
+          "end_sample": 44400,
+          "frequencies_hz": [
+            997.0
+          ],
+          "kind": "single",
+          "label": "single-997hz",
+          "start_sample": 38640
+        },
+        {
+          "end_sample": 51840,
+          "frequencies_hz": [
+            3001.0
+          ],
+          "kind": "single",
+          "label": "single-3001hz",
+          "start_sample": 46080
+        },
+        {
+          "end_sample": 59280,
+          "frequencies_hz": [
+            7001.0
+          ],
+          "kind": "single",
+          "label": "single-7001hz",
+          "start_sample": 53520
+        },
+        {
+          "end_sample": 66720,
+          "frequencies_hz": [
+            12001.0
+          ],
+          "kind": "single",
+          "label": "single-12001hz",
+          "start_sample": 60960
+        },
+        {
+          "end_sample": 74160,
+          "frequencies_hz": [
+            17003.0
+          ],
+          "kind": "single",
+          "label": "single-17003hz",
+          "start_sample": 68400
+        },
+        {
+          "end_sample": 81600,
+          "frequencies_hz": [
+            21001.0
+          ],
+          "kind": "single",
+          "label": "single-21001hz",
+          "start_sample": 75840
+        },
+        {
+          "end_sample": 91920,
+          "frequencies_hz": [
+            997.0,
+            1499.0
+          ],
+          "kind": "imd-pair",
+          "label": "imd-997-1499hz",
+          "start_sample": 83280
+        },
+        {
+          "end_sample": 102240,
+          "frequencies_hz": [
+            18001.0,
+            19001.0
+          ],
+          "kind": "imd-pair",
+          "label": "imd-18001-19001hz",
+          "start_sample": 93600
+        }
+      ],
+      "start_sync_sample": 24000,
+      "sync_marker_peak": 0.05999999865889549,
+      "sync_marker_samples": 5760,
+      "sync_separation_samples": 87120,
+      "sync_sha256": "fcc76a99ba8d5c4573be7dff28f69efec324e627f7fe6ef2089dec8a74ec839a",
+      "tone_component_peak_policy": "single=digital_peak; imd-pair=half-digital-peak-per-component",
+      "tone_edge_ramp_samples": 480,
+      "tone_guard_samples": 1680,
+      "tone_probe_sample": 36960,
+      "total_samples": 140880
+    }
+  },
+  "rl": {
+    "digital_peak": 0.18000000715255737,
+    "digital_rms_all_channels": 0.03844164853049447,
+    "digital_rms_per_channel": [
+      0.03844164853049447,
+      0.03844164853049447
+    ],
+    "duration_s": 19.481333333333332,
+    "evm_probe": {
+      "cp": 768,
+      "fec": "convolutional-r1/2",
+      "modulation": "16-QAM",
+      "nfft": 2048,
+      "payload_bytes": 12800,
+      "payload_sha256": "3d33a8692fdab11b792184efbd86a322fa0d2145336c68a381e6db0093db9384",
+      "symbols": 64,
+      "wave_sha256": "9adf5ec0a296682e6e1382b755025ac6b9c84e42cb4d97bfc28e26e780dcda6b"
+    },
+    "frames": 935104,
+    "output_channels": 2,
+    "sample_rate_hz": 48000,
+    "segments": [
+      {
+        "end_sample": 174480,
+        "probe": "tone-linearity",
+        "speaker": 1,
+        "start_sample": 33600
+      },
+      {
+        "end_sample": 238352,
+        "probe": "repeated-qpsk-sounder",
+        "speaker": 1,
+        "start_sample": 193680
+      },
+      {
+        "end_sample": 449552,
+        "probe": "random-16qam-r12-evm",
+        "speaker": 1,
+        "start_sample": 257552
+      },
+      {
+        "end_sample": 621632,
+        "probe": "tone-linearity",
+        "speaker": 0,
+        "start_sample": 480752
+      },
+      {
+        "end_sample": 685504,
+        "probe": "repeated-qpsk-sounder",
+        "speaker": 0,
+        "start_sample": 640832
+      },
+      {
+        "end_sample": 896704,
+        "probe": "random-16qam-r12-evm",
+        "speaker": 0,
+        "start_sample": 704704
+      }
+    ],
+    "sounder": {
+      "cp": 768,
+      "f_hi_hz": 23000.0,
+      "f_lo_hz": 1100.0,
+      "nfft": 2048,
+      "symbols": 8,
+      "wave_sha256": "c8e4f6590bea0a172aef08a0706fa73fef06c70dc29095c1ff496f4ce3d94cfa"
+    },
+    "speaker_order": [
+      1,
+      0
+    ],
+    "stereo_f32le_sha256": "0ed435fa8343ff8a006af7f32fe65d68abbf86432827aa377d02af0ca9075900",
+    "tone_program": {
+      "digital_peak": 0.18,
+      "duration_seconds": 2.935,
+      "end_sync_sample": 111120,
+      "mono_sha256": "21713472f61017d6bf9e1f2cc168eb4861c89e2a796a38d500e50f371e9a6b28",
+      "sample_rate_hz": 48000,
+      "segments": [
+        {
+          "end_sample": 44400,
+          "frequencies_hz": [
+            997.0
+          ],
+          "kind": "single",
+          "label": "single-997hz",
+          "start_sample": 38640
+        },
+        {
+          "end_sample": 51840,
+          "frequencies_hz": [
+            3001.0
+          ],
+          "kind": "single",
+          "label": "single-3001hz",
+          "start_sample": 46080
+        },
+        {
+          "end_sample": 59280,
+          "frequencies_hz": [
+            7001.0
+          ],
+          "kind": "single",
+          "label": "single-7001hz",
+          "start_sample": 53520
+        },
+        {
+          "end_sample": 66720,
+          "frequencies_hz": [
+            12001.0
+          ],
+          "kind": "single",
+          "label": "single-12001hz",
+          "start_sample": 60960
+        },
+        {
+          "end_sample": 74160,
+          "frequencies_hz": [
+            17003.0
+          ],
+          "kind": "single",
+          "label": "single-17003hz",
+          "start_sample": 68400
+        },
+        {
+          "end_sample": 81600,
+          "frequencies_hz": [
+            21001.0
+          ],
+          "kind": "single",
+          "label": "single-21001hz",
+          "start_sample": 75840
+        },
+        {
+          "end_sample": 91920,
+          "frequencies_hz": [
+            997.0,
+            1499.0
+          ],
+          "kind": "imd-pair",
+          "label": "imd-997-1499hz",
+          "start_sample": 83280
+        },
+        {
+          "end_sample": 102240,
+          "frequencies_hz": [
+            18001.0,
+            19001.0
+          ],
+          "kind": "imd-pair",
+          "label": "imd-18001-19001hz",
+          "start_sample": 93600
+        }
+      ],
+      "start_sync_sample": 24000,
+      "sync_marker_peak": 0.05999999865889549,
+      "sync_marker_samples": 5760,
+      "sync_separation_samples": 87120,
+      "sync_sha256": "fcc76a99ba8d5c4573be7dff28f69efec324e627f7fe6ef2089dec8a74ec839a",
+      "tone_component_peak_policy": "single=digital_peak; imd-pair=half-digital-peak-per-component",
+      "tone_edge_ramp_samples": 480,
+      "tone_guard_samples": 1680,
+      "tone_probe_sample": 36960,
+      "total_samples": 140880
+    }
+  }
+}

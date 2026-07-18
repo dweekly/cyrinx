@@ -1,0 +1,190 @@
+{
+  "schema": "cyrinx.rank5-spike-results-ledger.v1",
+  "date": "2026-07-18",
+  "status": "BENCH-SPIKE_NOT_PROMOTED",
+  "repository_base": "61558c296aaf30a4baf133c45e54813480e37a14",
+  "physical_cell": {
+    "geometry": "Pixel 7a face-up in the user-established optimal near-field position over the MacBook function-key area; not moved during the campaign",
+    "environment": "HVAC state unknown; passive spectra retained",
+    "absolute_spl_calibrated": false
+  },
+  "target": {
+    "serial": "38291JEHN00306",
+    "model": "Pixel 7a",
+    "build_fingerprint": "google/lynx/lynx:17/CP2A.260705.006/15641320:user/release-keys",
+    "package": "com.dweekly.cyrinxhil",
+    "installed_apk_sha256": "9cb5fd28021edf8948ce97ded262338da2ca1428b19c263537bac6cbb7a37502"
+  },
+  "preregistration": {
+    "path": "artifacts/spikes/rank5-pixel-mac-20260718/preregistration.json",
+    "sha256": "582d1a16b0e60590de9defeeee95d0c0e3e0ef08300cdc86456e16a049bb0521",
+    "frozen_before_first_playback": true,
+    "waveform_manifest_sha256": "3cb92a7fb8086bd3978260a03fbbc9cd9e07fe2acae043c4e5d89da753b9a18a",
+    "acquisition_script_sha256_at_freeze": "02331434925123afcb5f4c6ff1d4dd850678bb5c9f3db69323a3a0372fdeb7c4"
+  },
+  "route": {
+    "direction": "Mac built-in speakers to Pixel built-in microphones",
+    "android_source_requested_and_realized": "UNPROCESSED (9)",
+    "sample_rate_hz": 48000,
+    "channels": 2,
+    "channel_0": "direct bottom microphone id 23",
+    "channel_1": "direct back microphone id 24",
+    "stable_across_passive_and_F0": true,
+    "expected_signature_sha256": "da2f520fc6c08d4b35565c42a56db2ea0d7828db0a16d9064ffef4339b9b77b6"
+  },
+  "passive": {
+    "pixel_rms": [0.0006954694999402993, 0.000631822510681781],
+    "pixel_peak": [0.005401611328125, 0.007080078125],
+    "pixel_covariance": [
+      [4.833007350897942e-07, 2.140821801912138e-07],
+      [2.140821801912138e-07, 3.988848807814592e-07]
+    ],
+    "pixel_correlation": 0.4875823805961336,
+    "pixel_exact_sample_equal_fraction": 0.07176041666666666,
+    "pixel_near_ultrasonic_interferer": [false, false],
+    "mac_rms": 0.009087129708262589,
+    "mac_peak": 0.08160975575447083,
+    "mac_near_ultrasonic_interferer": false,
+    "pixel_pcm_sha256": "ad04e9b16c5078dd955f864a35aed4104c0e078baa4ee0d4302cd5f1820589fa",
+    "mac_pcm_sha256": "e0634163f9a55dd17c20bfd1fa822bf64a96e50aa3801fb50dd355180539e7f3"
+  },
+  "forward_F0": {
+    "mac_output": "MacBook Pro Speakers / BuiltInSpeakerDevice",
+    "mac_volume_percent": 30,
+    "render_peak": 0.18000000715255737,
+    "render_rms_per_active_channel": 0.03844164853049447,
+    "render_duration_s": 19.481333333333332,
+    "render_phase_continuous_single_stereo_launch": true,
+    "capture_peak": [0.008941650390625, 0.007537841796875],
+    "capture_rms": [0.0008901405873307481, 0.000712597775258883],
+    "capture_full_scale_count": 0,
+    "capture_pcm_sha256": "b59680373f6d582158f39727e330530b768a3b472dde8243c37baf2fae48d5e5",
+    "sample_clock_error_ppm": 53.83686834092849,
+    "logical_microphones_appear_duplicated": false,
+    "speaker_0": {
+      "receiver_0": {
+        "median_repeated_pilot_snr_db": 5.067993618179766,
+        "delay_spread_ms_15": 24.541666666666668,
+        "evm": 0.3296362537905323,
+        "strict_probe_blocks": "50/50",
+        "probe_scheduled_goodput_kbps": 25.6,
+        "descriptive_repeated_pilot_capacity_kbps": 32.24
+      },
+      "receiver_1": {
+        "median_repeated_pilot_snr_db": -7.335188623130452,
+        "delay_spread_ms_15": 40.604166666666664,
+        "evm": 2.0549526838991974,
+        "strict_probe_blocks": "0/50",
+        "probe_scheduled_goodput_kbps": 0.0,
+        "descriptive_repeated_pilot_capacity_kbps": 5.96
+      },
+      "mrc_strict_probe_blocks": "50/50",
+      "mrc_evm": 0.29052866946802935
+    },
+    "speaker_1": {
+      "receiver_0": {
+        "median_repeated_pilot_snr_db": 3.5008537228420544,
+        "delay_spread_ms_15": 42.291666666666664,
+        "evm": 1.6212865044553053,
+        "strict_probe_blocks": "0/50",
+        "descriptive_repeated_pilot_capacity_kbps": 27.27
+      },
+      "receiver_1": {
+        "median_repeated_pilot_snr_db": -0.4513478302168436,
+        "delay_spread_ms_15": 39.770833333333336,
+        "evm": 2.5483188963396914,
+        "strict_probe_blocks": "0/50",
+        "descriptive_repeated_pilot_capacity_kbps": 16.50
+      },
+      "mrc_strict_probe_blocks": "0/50",
+      "mrc_evm": 0.9732493399967493
+    },
+    "escalation_gate_passed": false,
+    "gate_failures": [
+      "conservative IMD exceeded -30 dBc on both paths",
+      "back-microphone THD/IMD bounds failed for both speaker columns",
+      "speaker-1 to back-microphone within-stage gain changed 5.77 dB"
+    ],
+    "consequence": "Volume-50 F1 and F2 were not executed; the preregistered forward repeatability primary metric is unevaluated."
+  },
+  "local_self_characterization": {
+    "pixel": {
+      "status": "blocked-before-playback",
+      "requested_media_volume": 15,
+      "realized_media_volume": 25,
+      "reason": "AudioService accepted the request in its event log but did not change the speaker-route index; fail-closed volume transaction stopped playrec."
+    },
+    "mac": {
+      "status": "measured-descriptive",
+      "mac_volume_percent": 30,
+      "capture_peak": 0.01227616984397173,
+      "capture_pcm_sha256": "2e9159cd2113497698b30a924d48cbdd9ccf83ba490e094ef21e2bbfe8ce44b6",
+      "logical_speaker_0": {
+        "strict_probe_blocks": "50/50",
+        "median_repeated_pilot_snr_db": 27.847771425110032,
+        "delay_spread_ms_15": 1.0416666666666667
+      },
+      "logical_speaker_1": {
+        "strict_probe_blocks": "0/50",
+        "median_repeated_pilot_snr_db": 9.868848679034532,
+        "delay_spread_ms_15": 42.25
+      }
+    }
+  },
+  "reverse_bounded_5c": {
+    "status": "measured-descriptive-not-promotable",
+    "limitation": "The existing play_pcm primitive did not produce a strict parsed realized-output-route signature, so logical speaker indices are not assigned physical transducers.",
+    "pixel_media_volume": 25,
+    "capture_peak": [0.6999676823616028, 0.6928960084915161],
+    "sample_clock_error_ppm": [-46.08591786159355, -9.457921985922546],
+    "logical_speaker_0": {
+      "strict_probe_blocks_calibration": "0/50",
+      "strict_probe_blocks_heldout": "0/50",
+      "probe_scheduled_goodput_kbps": [0.0, 0.0],
+      "delay_spread_ms_15": [16.895833333333332, 14.666666666666666],
+      "active_bins_both_repeats": "315/935",
+      "magnitude_change_median_db": 0.9372611741939547,
+      "magnitude_change_p90_db": 2.2121540112031877,
+      "phase_residual_std_deg": 12.561398092790975
+    },
+    "logical_speaker_1": {
+      "strict_probe_blocks_calibration": "43/50",
+      "strict_probe_blocks_heldout": "45/50",
+      "probe_scheduled_goodput_kbps": [22.016, 23.04],
+      "delay_spread_ms_15": [1.0625, 1.0833333333333333],
+      "active_bins_both_repeats": "413/935",
+      "magnitude_change_median_db": 0.25805571233767566,
+      "magnitude_change_p90_db": 0.5175024213421789,
+      "phase_residual_std_deg": 2.245486689454071
+    },
+    "predictor_failure": "Repeated-pilot descriptive capacity was roughly 65-69 kbps while logical speaker 0 delivered zero strict blocks and logical speaker 1 delivered only 22.016-23.04 kbps. The calculation is not an adaptation-qualified capacity predictor."
+  },
+  "rank11a_compatibility": {
+    "compatible_evidence": [
+      "one phase-continuous stereo Mac render",
+      "one uninterrupted interleaved Pixel stereo capture",
+      "both independently mapped Pixel rows retained",
+      "sequential left/right columns and passive covariance retained",
+      "exact digital peak/RMS, route, source, sample rate, raw PCM and hashes retained"
+    ],
+    "not_compatible_with_full_rank11a_gate": [
+      "CP is 768 rather than 240",
+      "columns are sequential rather than the preregistered orthogonal two-symbol code",
+      "no simultaneous randomized two-stream probe",
+      "drive is per-speaker peak matched rather than the Rank-11 fixed-sum P/2 class",
+      "only one forward repeat was permitted after the F0 gate failed"
+    ]
+  },
+  "measurement_semantics": {
+    "probe_goodput": "strict ordered recovered bytes divided by the 4.0-second EVM waveform duration; excludes discovery, setup, sounding, ARQ and retransmission",
+    "capacity": "descriptive repeated-pilot log2(1+SNR) arithmetic; not Shannon capacity, GMI, measured goodput or a qualified adaptation estimate",
+    "application_goodput_measured": false
+  },
+  "retained_local_artifact_root": "artifacts/spikes/rank5-pixel-mac-20260718",
+  "final_tool_hashes": {
+    "rank5_matrix_spike_py": "fe2e24cf3e985d9e291e40ca46b4ad83c53327833295d1f2cca3ae041b2313f3",
+    "tone_check_hardware_py": "1b8044de52b332aedd69d9c278e6c044814f1e4dc7a02d5f04004e2ed966c945",
+    "portable_c_dylib": "bb2adfc0cd84ca823c7d5383f21c4c49226aacfc04872130eaf030920395ad88"
+  },
+  "next_gate": "Add a fail-closed arbitrary Pixel-volume transaction and strict output-route provenance, then preregister a lower-noise linearity screen or instrumented distortion method. Re-run two forward repeats only after the screen passes. The full Rank-11a orthogonal/fixed-sum campaign remains separate."
+}
