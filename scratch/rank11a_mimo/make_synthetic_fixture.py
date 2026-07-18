@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 
@@ -14,9 +15,17 @@ def _pairs(array: np.ndarray) -> list:
     return np.stack((array.real, array.imag), axis=-1).tolist()
 
 
+def seal_allocation(allocation: dict) -> None:
+    """Replace the allocation hash with its canonical JSON SHA-256."""
+
+    allocation.pop("allocation_sha256", None)
+    canonical = json.dumps(allocation, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    allocation["allocation_sha256"] = hashlib.sha256(canonical).hexdigest()
+
+
 def build_fixture() -> dict:
     rng = np.random.default_rng(110_202_607_18)
-    active_bins = list(range(96, 104))
+    active_bins = list(range(96, 106))
     bin_axis = np.arange(len(active_bins), dtype=np.float64)
     base = np.empty((len(active_bins), 2, 2), dtype=np.complex128)
     base[:, 0, 0] = np.exp(-1j * 0.030 * bin_axis)
@@ -53,8 +62,30 @@ def build_fixture() -> dict:
                 }
             )
 
+    frozen_allocation = {
+        "allocation_id": "synthetic-calibration-all-bins-qpsk-r12-v1",
+        "source": "calibration_repeats_only",
+        "frozen_before_held_out": True,
+        "power_policy": {
+            "one_mode_bin_total_power_fraction": 1.0,
+            "two_mode_bin_power_fractions": [0.5, 0.5],
+            "sum_digital_sample_power_matches_control": True,
+        },
+        "mode1": {
+            "active_bins": active_bins.copy(),
+            "bits_per_subcarrier": 2,
+            "code_rate": 0.5,
+        },
+        "mode2": {
+            "active_bins": active_bins.copy(),
+            "bits_per_subcarrier": 2,
+            "code_rate": 0.5,
+        },
+    }
+    seal_allocation(frozen_allocation)
+
     return {
-        "schema": "cyrinx.rank11a.matrix-dataset.v1",
+        "schema": "cyrinx.rank11a.matrix-dataset.v2",
         "evidence_class": "synthetic",
         "geometry": "deterministic_full_rank_fixture",
         "provenance": {
@@ -74,6 +105,9 @@ def build_fixture() -> dict:
             "device_route_identity": "synthetic-known-2tx-2rx",
             "channel_map": "tx0,tx1 -> rx0,rx1",
             "probe_waveform_hash": "synthetic-seed-11020260718",
+            "analysis_amendment_sha256": (
+                "a87f849a6da576844da1202f152f76596a4c0ff872394fdd7ab1df743b7f9f37"
+            ),
             "geometry_label": "deterministic full-rank fixture",
             "environment_label": "complex AWGN with correlated receiver noise",
         },
@@ -103,9 +137,14 @@ def build_fixture() -> dict:
                 "gap_samples_per_frame": 12000,
                 "control_samples_per_frame": 2048,
             },
-            "mimo_streams": 2,
+            "frozen_allocation": frozen_allocation,
             "control_recovery": 0.99,
-            "mimo_recovery": 0.99,
+            "mimo_residual_recovery": 0.99,
+            "recovery_accounting": {
+                "control_source": "explicit_synthetic_model",
+                "mimo_residual_source": "explicit_synthetic_model",
+                "application_order": "after per-mode per-bin held-out GMI masking",
+            },
             "control_setup_s": 0.15,
             "mimo_setup_s": 0.60,
         },

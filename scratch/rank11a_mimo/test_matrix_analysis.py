@@ -12,8 +12,8 @@ import unittest
 
 import numpy as np
 
-from make_synthetic_fixture import build_fixture
 from audit_retained_corpus import build_audit
+from make_synthetic_fixture import build_fixture, seal_allocation
 from matrix_analysis import _capacity_metrics, analyze_dataset, bitwise_gmi
 
 
@@ -21,6 +21,12 @@ HERE = Path(__file__).resolve().parent
 
 
 class MatrixAnalysisTests(unittest.TestCase):
+    @staticmethod
+    def _eraseModeGmi(fixture: dict, mode: int, bins: set[int]) -> None:
+        for observation in fixture["gmi_observations"]:
+            if observation["mode"] == mode and observation["bin"] in bins:
+                observation["llrs"] = np.zeros_like(observation["llrs"]).tolist()
+
     def testKnownDiagonalLogDetCapacity(self) -> None:
         channel = np.eye(2, dtype=np.complex128)[None, :, :]
         covariance = np.eye(2, dtype=np.complex128)[None, :, :]
@@ -86,12 +92,82 @@ class MatrixAnalysisTests(unittest.TestCase):
 
     def testWeakModeTwoLlrFailsGmiGate(self) -> None:
         fixture = build_fixture()
-        for observation in fixture["gmi_observations"]:
-            if observation["mode"] == 1:
-                observation["llrs"] = np.zeros_like(observation["llrs"]).tolist()
+        self._eraseModeGmi(fixture, mode=1, bins=set(fixture["active_bins"]))
         result = analyze_dataset(fixture)
-        self.assertEqual(result["gmi"]["mode2_qpsk_rate_half_bin_fraction"], 0.0)
+        self.assertEqual(result["gmi"]["observed_mode2_qpsk_rate_half_bin_fraction"], 0.0)
         self.assertFalse(result["gates"]["mode2_qpsk_rate_half_on_at_least_40_percent_bins"])
+        ceilings = result["session_accounting"]["scheduled_ceiling_bps"]
+        self.assertAlmostEqual(ceilings["two_mode_mimo"], ceilings["best_speaker_simo"])
+        self.assertFalse(result["gates"]["one_mib_net_gain_at_least_1_35"])
+
+    def testFortyPercentModeTwoCreditsOnlySupportedFrozenBins(self) -> None:
+        fixture = build_fixture()
+        bins = fixture["active_bins"]
+        self._eraseModeGmi(fixture, mode=1, bins=set(bins[4:]))
+        result = analyze_dataset(fixture)
+        allocation = result["session_accounting"]["frozen_allocation"]
+        self.assertEqual(allocation["usable_bin_count_by_mode"]["1"], 10)
+        self.assertEqual(allocation["usable_bin_count_by_mode"]["2"], 4)
+        self.assertEqual(allocation["usable_payload_fraction_by_mode"]["2"], 0.4)
+        ceilings = result["session_accounting"]["scheduled_ceiling_bps"]
+        self.assertAlmostEqual(ceilings["two_mode_mimo"] / ceilings["best_speaker_simo"], 1.4)
+        self.assertLess(
+            result["session_accounting"]["transfers"]["1MiB"]["ratio"],
+            1.4,
+        )
+
+    def testPartialRankCannotFalsePassNetGainGate(self) -> None:
+        fixture = build_fixture()
+        bins = fixture["active_bins"]
+        self._eraseModeGmi(fixture, mode=0, bins=set(bins[8:]))
+        self._eraseModeGmi(fixture, mode=1, bins=set(bins[4:]))
+        result = analyze_dataset(fixture)
+        allocation = result["session_accounting"]["frozen_allocation"]
+        self.assertEqual(allocation["usable_bin_count_by_mode"], {"1": 8, "2": 4})
+        ceilings = result["session_accounting"]["scheduled_ceiling_bps"]
+        self.assertAlmostEqual(ceilings["two_mode_mimo"] / ceilings["best_speaker_simo"], 1.2)
+        self.assertTrue(result["gates"]["mode2_qpsk_rate_half_on_at_least_40_percent_bins"])
+        self.assertFalse(result["gates"]["one_mib_net_gain_at_least_1_35"])
+        self.assertFalse(result["all_geometry_gates_pass"])
+
+    def testFrozenModeTwoMaskCannotExpandFromHeldOutGmi(self) -> None:
+        fixture = build_fixture()
+        bins = fixture["active_bins"]
+        allocation = fixture["scheduling"]["frozen_allocation"]
+        allocation["mode2"]["active_bins"] = bins[:4]
+        seal_allocation(allocation)
+        result = analyze_dataset(fixture)
+        allocation = result["session_accounting"]["frozen_allocation"]
+        self.assertEqual(allocation["allocated_bin_count_by_mode"]["2"], 4)
+        self.assertEqual(allocation["usable_bin_count_by_mode"]["2"], 4)
+        ceilings = result["session_accounting"]["scheduled_ceiling_bps"]
+        self.assertAlmostEqual(ceilings["two_mode_mimo"] / ceilings["best_speaker_simo"], 1.4)
+
+    def testPostFreezeAllocationMutationCannotProduceCandidateRate(self) -> None:
+        fixture = build_fixture()
+        fixture["scheduling"]["frozen_allocation"]["mode2"]["active_bins"].pop()
+        result = analyze_dataset(fixture)
+        self.assertFalse(result["session_accounting"]["available"])
+        self.assertIn("SHA-256", result["session_accounting"]["reason"])
+        self.assertFalse(result["gates"]["one_mib_net_gain_at_least_1_35"])
+
+    def testMissingFrozenAllocationCannotProduceCandidateRate(self) -> None:
+        fixture = build_fixture()
+        del fixture["scheduling"]["frozen_allocation"]
+        result = analyze_dataset(fixture)
+        self.assertFalse(result["session_accounting"]["available"])
+        self.assertIsNone(result["session_accounting"]["scheduled_ceiling_bps"]["two_mode_mimo"])
+        self.assertFalse(result["gates"]["one_mib_net_gain_at_least_1_35"])
+
+    def testExtraMimoPowerCannotProduceCandidateRate(self) -> None:
+        fixture = build_fixture()
+        policy = fixture["scheduling"]["frozen_allocation"]["power_policy"]
+        policy["two_mode_bin_power_fractions"] = [1.0, 1.0]
+        seal_allocation(fixture["scheduling"]["frozen_allocation"])
+        result = analyze_dataset(fixture)
+        self.assertFalse(result["session_accounting"]["available"])
+        self.assertIn("fixed-total-power", result["session_accounting"]["reason"])
+        self.assertFalse(result["gates"]["one_mib_net_gain_at_least_1_35"])
 
     def testFrozenRetainedCorpusFormallyStops(self) -> None:
         audit = build_audit(HERE.parents[1])
@@ -136,6 +212,11 @@ class MatrixAnalysisTests(unittest.TestCase):
         self.assertEqual(
             hashlib.sha256(preregistration).hexdigest(),
             plan["preregistration_sha256"],
+        )
+        amendment = (HERE / "analysis-amendment-001.json").read_bytes()
+        self.assertEqual(
+            hashlib.sha256(amendment).hexdigest(),
+            plan["analysis_amendment_sha256"],
         )
 
 

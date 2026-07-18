@@ -91,6 +91,40 @@ independence, route, clock, noise, or repeat provenance is absent. It also
 keeps evidence classes explicit: `synthetic`, `retained_replay`, and
 `measured_ota`.
 
+### Allocation-accounting correction
+
+[`analysis-amendment-001.json`](analysis-amendment-001.json) records a
+promotion-blocking defect found during independent audit. The first analyzer
+required mode-2 GMI support on only 40% of bins but calculated candidate
+throughput with an unconditional `streams=2` multiplier over every payload
+bin. A partial-rank channel could therefore receive throughput credit for
+unsupported second-mode bits.
+
+The corrected analyzer requires an explicit per-mode bin mask and MCS frozen
+from calibration repeats before held-out analysis. Its canonical JSON SHA-256
+must verify before any candidate rate is computed. For each mode and bin it
+credits `bits_per_subcarrier * code_rate` only when held-out bitwise GMI meets
+that same threshold. Unsupported allocated bins remain in frame airtime but
+contribute zero delivered bits. Mode 2 must be a subset of mode 1 and is
+credited only where mode 1 is also usable. The residual recovery scalar is
+applied after this masking and cannot restore unsupported bits. Non-synthetic
+evidence must source both recovery values from held-out block replay rather
+than an assumed scalar.
+
+Deterministic regressions now show:
+
+- 100% mode-1 plus 40% mode-2 support produces a 1.4x scheduled ceiling, not
+  the former 2.0x;
+- 80% mode-1 plus 40% mode-2 support produces 1.2x and cannot pass the 1.35x
+  session-net gate;
+- held-out GMI cannot expand the calibration-frozen mask;
+- post-freeze mask or MCS changes invalidate its hash; and
+- a missing frozen allocation produces no candidate session-rate result.
+
+This correction changes no hypothesis or promotion threshold and examined no
+measured 2x2 OTA outcome. The retained result remains
+`STOP_NOT_IDENTIFIABLE`.
+
 ### Synthetic validation result
 
 The seeded full-rank fixture validates formulas and failure gates; it makes no
@@ -98,13 +132,13 @@ claim about the room or devices.
 
 | Synthetic metric | Result |
 |---|---:|
-| Minimum held-out repeat coherence | 0.999950 |
-| p90 residual phase SD | 0.198 degrees |
-| p90 amplitude CV | 0.00552 |
-| p10 effective rank | 1.8595 |
+| Minimum held-out repeat coherence | 0.999934 |
+| p90 residual phase SD | 0.241 degrees |
+| p90 amplitude CV | 0.00505 |
+| p10 effective rank | 1.8591 |
 | Equal-power MIMO / best-speaker-SIMO log-det ratio | 1.4464x |
 | Mode-2 QPSK-r1/2 GMI bin coverage | 100% |
-| Fixture 1 MiB scheduled session ratio | 1.99996x |
+| Fixture 1 MiB scheduled session ratio | 1.99995x |
 | Decision | `SYNTHETIC_VALIDATION_ONLY` |
 
 The scheduled ratio is nearly two because this deliberately low-rate fixture
@@ -142,8 +176,10 @@ gate requires 15 valid captures: five whole captures in each of optimized
 near-field, centered 3-ft, and 18-inch-lateral-offset 3-ft cells. The first two
 captures in each cell are calibration; the last three are held out.
 
-Changing the CP, band, power class, geometry, or analysis after seeing a
-candidate outcome requires a new preregistration rather than an in-place edit.
+Changing the CP, band, power class, geometry, hypothesis, or threshold after
+seeing a candidate outcome requires a new preregistration. Correctness defects
+found before measured OTA analysis are recorded as immutable analysis
+amendments rather than silently editing the frozen preregistration.
 
 ## Reproduction
 

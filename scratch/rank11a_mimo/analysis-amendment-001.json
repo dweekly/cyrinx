@@ -1,0 +1,31 @@
+{
+  "schema": "cyrinx.rank11a.analysis-amendment.v1",
+  "amendment_id": "rank11a-allocation-accounting-001",
+  "recorded_at": "2026-07-18",
+  "preregistration_sha256": "d0133ec1b825637c1b9b178718ebbfe5ed3d993d4fb2486dfa5b9556c95a35e3",
+  "superseded_analyzer_commit": "3656d4c98d5188fb692e600d9d6a449254765a7d",
+  "trigger": "Independent audit found that the synthetic analyzer required mode-2 GMI support on 40% of bins but credited two streams on 100% of bins in scheduled/session accounting.",
+  "severity": "promotion-blocking false-positive risk for partial-rank matrices",
+  "frozen_hypothesis_or_threshold_changed": false,
+  "measured_ota_outcome_examined": false,
+  "correction": [
+    "Advance the research dataset and result schemas to v2 so v1 files cannot silently retain unconditional-stream semantics.",
+    "Require explicit per-mode active-bin masks and MCSs frozen from calibration repeats before held-out analysis.",
+    "Verify the canonical allocation JSON SHA-256 before using held-out GMI so post-freeze mask or MCS edits cannot receive rate credit.",
+    "Require mode-2 allocated bins to be a subset of mode-1 allocated bins.",
+    "Credit each mode/bin only when held-out bitwise GMI supports its frozen MCS.",
+    "Credit mode 2 only when mode 1 is also usable on that bin.",
+    "Keep unsupported allocated bins in frame airtime while assigning them zero delivered information bits.",
+    "Apply the residual recovery scalar after per-bin GMI credit instead of using it as a substitute for allocation support.",
+    "Require non-synthetic control and residual-recovery scalars to come from held-out block replay.",
+    "Compute 64 KiB and 1 MiB session rates from credited information bits per OFDM symbol, never from an unconditional two-stream multiplier."
+  ],
+  "required_regressions": [
+    "A 40%-usable mode-2 fixture reports a 1.4x scheduled ceiling rather than 2.0x when mode 1 remains usable everywhere.",
+    "A partial-rank fixture with 80% usable mode 1 and 40% usable mode 2 reports a 1.2x scheduled ceiling and fails the 1.35x net-gain gate.",
+    "Held-out GMI outside the calibration-frozen mode-2 mask cannot expand the credited mask.",
+    "A post-freeze allocation mutation invalidates the allocation hash and produces no candidate session rate.",
+    "Missing frozen allocation makes candidate session goodput unavailable and cannot pass promotion."
+  ],
+  "claim_boundary": "The retained-corpus decision remains STOP_NOT_IDENTIFIABLE and synthetic fixtures remain arithmetic validation only."
+}

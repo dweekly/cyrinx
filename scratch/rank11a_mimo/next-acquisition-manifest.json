@@ -2,6 +2,7 @@
   "schema": "cyrinx.rank11a.phase-continuous-acquisition-plan.v1",
   "status": "DESIGN_ONLY_NOT_EXECUTED",
   "preregistration_sha256": "d0133ec1b825637c1b9b178718ebbfe5ed3d993d4fb2486dfa5b9556c95a35e3",
+  "analysis_amendment_sha256": "a87f849a6da576844da1202f152f76596a4c0ff872394fdd7ab1df743b7f9f37",
   "purpose": "Acquire an identifiable MacBook two-speaker to Pixel two-microphone H[k], noise covariance, repeat stability, and randomized two-stream probe under fixed total digital sample power.",
   "hard_prohibitions": [
     "Do not create the two H columns with separate player launches.",
@@ -205,6 +206,30 @@
       "enabled": false,
       "restriction": "Requires a separate manifest and must never be pooled with the primary class."
     }
+  },
+  "analysis_allocation_contract": {
+    "allocation_source": "For each geometry, derive mode-1 and mode-2 active-bin masks and their MCS only from calibration repeats 01 and 02.",
+    "freeze_point": "Serialize and SHA-256 hash the allocation before decoding or calculating GMI on held-out repeats 03 through 05.",
+    "mode_relationship": "The frozen mode-2 mask must be a subset of the frozen mode-1 mask.",
+    "power_policy": {
+      "one_mode_bin": "Assign the full declared per-bin power to mode 1.",
+      "two_mode_bin": "Split the same per-bin total power 0.5/0.5 across modes 1 and 2.",
+      "time_domain_constraint": "The rendered candidate must retain the same sum digital sample power as the control and obey every per-speaker peak limit."
+    },
+    "held_out_rate_credit": [
+      "A frozen mode/MCS/bin contributes its declared information bits only when held-out bitwise GMI on that same mode/bin is at least bits_per_subcarrier times code_rate.",
+      "An unsupported allocated bin still consumes the declared OFDM frame schedule but contributes zero delivered information bits.",
+      "Mode 2 contributes only where mode 1 is also usable; it is an additional stream, not a replacement stream.",
+      "The residual candidate recovery scalar must come from held-out block replay and is applied only after unsupported mode/bin bits have been removed; it may not restore or amortize those bits.",
+      "Compute scheduled and setup-inclusive 64 KiB and 1 MiB rates from the resulting sum of credited information bits per OFDM symbol, not from a global streams=2 multiplier."
+    ],
+    "required_retained_artifacts": [
+      "calibration-allocation.json",
+      "calibration-allocation.sha256",
+      "per-mode per-bin held-out GMI",
+      "credited and unsupported bin maps",
+      "scheduled and session accounting worksheet"
+    ]
   },
   "geometry_cells_in_acquisition_order": [
     {

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Iterable, Sequence
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -20,8 +21,8 @@ from typing import Any
 import numpy as np
 
 
-SCHEMA = "cyrinx.rank11a.matrix-dataset.v1"
-RESULT_SCHEMA = "cyrinx.rank11a.matrix-analysis.v1"
+SCHEMA = "cyrinx.rank11a.matrix-dataset.v2"
+RESULT_SCHEMA = "cyrinx.rank11a.matrix-analysis.v2"
 REQUIRED_PROVENANCE_FLAGS = (
     "independent_tx_ports",
     "independent_rx_ports",
@@ -213,6 +214,8 @@ def _capacity_metrics(
             "minimum": min(effective_ranks),
         },
         "best_speaker_by_bin": best_speaker_by_bin,
+        "best_speaker_simo_logdet_bits_per_bin": control_bits_per_use,
+        "equal_power_mimo_logdet_bits_per_bin": mimo_bits_per_use,
         "best_speaker_simo_logdet_bits_per_ofdm_use": sum(control_bits_per_use),
         "equal_power_mimo_logdet_bits_per_ofdm_use": sum(mimo_bits_per_use),
         "logdet_ratio": sum(mimo_bits_per_use) / sum(control_bits_per_use),
@@ -244,13 +247,13 @@ def _gmi_metrics(dataset: dict[str, Any], bins: list[int]) -> dict[str, Any]:
         return {
             "available": False,
             "reason": "actual randomized known bits and demapper LLRs were not retained",
-            "mode2_qpsk_rate_half_bin_fraction": None,
+            "observed_mode2_qpsk_rate_half_bin_fraction": None,
         }
     if dataset.get("provenance", {}).get("randomized_probe_documented") is not True:
         return {
             "available": False,
             "reason": "randomized known-probe provenance is not documented",
-            "mode2_qpsk_rate_half_bin_fraction": None,
+            "observed_mode2_qpsk_rate_half_bin_fraction": None,
         }
     if not isinstance(observations, list):
         raise AnalysisError("gmi_observations must be a list")
@@ -264,32 +267,179 @@ def _gmi_metrics(dataset: dict[str, Any], bins: list[int]) -> dict[str, Any]:
             raise AnalysisError(f"duplicate GMI observation for bin/mode {key}")
         by_bin_mode[key] = bitwise_gmi(observation["bits"], observation["llrs"])
 
-    mode2 = {bin_index: by_bin_mode.get((bin_index, 1)) for bin_index in bins}
-    if any(value is None for value in mode2.values()):
+    by_mode = {
+        mode: {bin_index: by_bin_mode.get((bin_index, mode)) for bin_index in bins}
+        for mode in (0, 1)
+    }
+    if any(value is None for values in by_mode.values() for value in values.values()):
         return {
             "available": False,
-            "reason": "mode-2 GMI observations do not cover every active bin",
-            "mode2_qpsk_rate_half_bin_fraction": None,
-            "gmi_bits_per_symbol_by_bin": {str(key): value for key, value in mode2.items()},
+            "reason": "mode-1 and mode-2 GMI observations must cover every active bin",
+            "observed_mode2_qpsk_rate_half_bin_fraction": None,
+            "gmi_bits_per_symbol_by_mode_and_bin": {
+                str(mode + 1): {str(key): value for key, value in values.items()}
+                for mode, values in by_mode.items()
+            },
         }
-    values = {key: float(value) for key, value in mode2.items() if value is not None}
-    passing = sum(value >= 1.0 for value in values.values())
+    values = {
+        mode: {key: float(value) for key, value in mode_values.items() if value is not None}
+        for mode, mode_values in by_mode.items()
+    }
+    mode2_passing = sum(value >= 1.0 for value in values[1].values())
     return {
         "available": True,
         "threshold_bits_per_qpsk_symbol": 1.0,
-        "mode2_qpsk_rate_half_bin_fraction": passing / len(bins),
-        "mode2_gmi_bits_per_symbol_by_bin": {str(key): value for key, value in values.items()},
+        "observed_mode2_qpsk_rate_half_bin_fraction": mode2_passing / len(bins),
+        "gmi_bits_per_symbol_by_mode_and_bin": {
+            str(mode + 1): {str(key): value for key, value in mode_values.items()}
+            for mode, mode_values in values.items()
+        },
     }
 
 
-def _scheduled_ceiling(schedule: dict[str, Any], streams: int) -> float:
+def _frozen_allocation(
+    dataset: dict[str, Any],
+    gmi: dict[str, Any],
+    bins: list[int],
+) -> dict[str, Any]:
+    scheduling = dataset.get("scheduling")
+    if not isinstance(scheduling, dict):
+        raise AnalysisError("scheduling object is required")
+    allocation = scheduling.get("frozen_allocation")
+    if not isinstance(allocation, dict):
+        return {
+            "available": False,
+            "reason": "calibration-frozen per-bin allocation is absent",
+        }
+    declared_hash = allocation.get("allocation_sha256")
+    hashed_fields = {key: value for key, value in allocation.items() if key != "allocation_sha256"}
+    calculated_hash = hashlib.sha256(
+        json.dumps(hashed_fields, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    if declared_hash != calculated_hash:
+        return {
+            "available": False,
+            "reason": "calibration-frozen allocation SHA-256 is absent or does not match",
+        }
+    if (
+        allocation.get("source") != "calibration_repeats_only"
+        or allocation.get("frozen_before_held_out") is not True
+    ):
+        return {
+            "available": False,
+            "reason": "allocation was not frozen from calibration repeats before held-out analysis",
+        }
+    power_policy = allocation.get("power_policy")
+    if not isinstance(power_policy, dict):
+        return {"available": False, "reason": "frozen allocation power policy is absent"}
+    two_mode_fractions = power_policy.get("two_mode_bin_power_fractions")
+    if (
+        float(power_policy.get("one_mode_bin_total_power_fraction", -1.0)) != 1.0
+        or not isinstance(two_mode_fractions, list)
+        or len(two_mode_fractions) != 2
+        or not all(math.isclose(float(value), 0.5, abs_tol=1e-12) for value in two_mode_fractions)
+        or power_policy.get("sum_digital_sample_power_matches_control") is not True
+    ):
+        return {
+            "available": False,
+            "reason": "frozen allocation violates the fixed-total-power 1.0/0.5+0.5 policy",
+        }
+
+    active_set = set(bins)
+    allocated_by_mode: dict[int, list[int]] = {}
+    mcs_by_mode: dict[int, dict[str, float]] = {}
+    for mode in (0, 1):
+        key = f"mode{mode + 1}"
+        mode_config = allocation.get(key)
+        if not isinstance(mode_config, dict):
+            raise AnalysisError(f"frozen_allocation.{key} object is required")
+        allocated = mode_config.get("active_bins")
+        if (
+            not isinstance(allocated, list)
+            or not all(isinstance(bin_index, int) for bin_index in allocated)
+            or len(set(allocated)) != len(allocated)
+            or not set(allocated).issubset(active_set)
+        ):
+            raise AnalysisError(f"frozen_allocation.{key}.active_bins must be a unique active-bin subset")
+        bits = float(mode_config.get("bits_per_subcarrier", 0.0))
+        code_rate = float(mode_config.get("code_rate", 0.0))
+        if bits <= 0.0 or not 0.0 < code_rate <= 1.0:
+            raise AnalysisError(f"frozen_allocation.{key} has an invalid MCS")
+        allocated_by_mode[mode] = allocated
+        mcs_by_mode[mode] = {
+            "bits_per_subcarrier": bits,
+            "code_rate": code_rate,
+            "required_gmi_bits_per_symbol": bits * code_rate,
+        }
+    if not set(allocated_by_mode[1]).issubset(set(allocated_by_mode[0])):
+        raise AnalysisError("frozen mode-2 bins must be a subset of frozen mode-1 bins")
+
+    if not gmi.get("available"):
+        return {
+            "available": False,
+            "reason": "frozen allocation cannot be credited without complete held-out GMI",
+            "allocation_id": allocation.get("allocation_id"),
+            "allocated_bins_by_mode": {
+                str(mode + 1): values for mode, values in allocated_by_mode.items()
+            },
+        }
+
+    gmi_values = gmi["gmi_bits_per_symbol_by_mode_and_bin"]
+    usable_by_mode: dict[int, list[int]] = {}
+    for mode in (0, 1):
+        required_gmi = mcs_by_mode[mode]["required_gmi_bits_per_symbol"]
+        usable = [
+            bin_index
+            for bin_index in allocated_by_mode[mode]
+            if float(gmi_values[str(mode + 1)][str(bin_index)]) >= required_gmi
+        ]
+        usable_by_mode[mode] = usable
+    # Mode 2 is an additional stream, not a replacement for an unusable first
+    # mode. This conservative dependency also rejects inconsistent LLR labels.
+    mode1_usable = set(usable_by_mode[0])
+    usable_by_mode[1] = [bin_index for bin_index in usable_by_mode[1] if bin_index in mode1_usable]
+    information_bits_by_mode: dict[int, float] = {}
+    for mode in (0, 1):
+        required_gmi = mcs_by_mode[mode]["required_gmi_bits_per_symbol"]
+        information_bits_by_mode[mode] = len(usable_by_mode[mode]) * required_gmi
+
+    return {
+        "available": True,
+        "allocation_id": allocation.get("allocation_id"),
+        "allocation_sha256": declared_hash,
+        "source": allocation["source"],
+        "frozen_before_held_out": True,
+        "power_policy": power_policy,
+        "mcs_by_mode": {str(mode + 1): values for mode, values in mcs_by_mode.items()},
+        "allocated_bins_by_mode": {
+            str(mode + 1): values for mode, values in allocated_by_mode.items()
+        },
+        "usable_bins_by_mode": {str(mode + 1): values for mode, values in usable_by_mode.items()},
+        "allocated_bin_count_by_mode": {
+            str(mode + 1): len(values) for mode, values in allocated_by_mode.items()
+        },
+        "usable_bin_count_by_mode": {
+            str(mode + 1): len(values) for mode, values in usable_by_mode.items()
+        },
+        "usable_payload_fraction_by_mode": {
+            str(mode + 1): len(values) / len(bins) for mode, values in usable_by_mode.items()
+        },
+        "information_bits_per_ofdm_symbol_by_mode": {
+            str(mode + 1): value for mode, value in information_bits_by_mode.items()
+        },
+        "total_information_bits_per_ofdm_symbol": sum(information_bits_by_mode.values()),
+        "unsupported_allocated_bins_contribute_delivered_bits": False,
+    }
+
+
+def _scheduled_ceiling(
+    schedule: dict[str, Any],
+    information_bits_per_ofdm_symbol: float,
+) -> float:
     required = (
         "sample_rate_hz",
         "nfft",
         "cyclic_prefix_samples",
-        "payload_bins",
-        "bits_per_subcarrier",
-        "code_rate",
         "data_symbols_per_frame",
         "preamble_samples_per_frame",
         "gap_samples_per_frame",
@@ -298,13 +448,7 @@ def _scheduled_ceiling(schedule: dict[str, Any], streams: int) -> float:
     missing = [key for key in required if key not in schedule]
     if missing:
         raise AnalysisError(f"schedule is missing {', '.join(missing)}")
-    payload_bits = (
-        streams
-        * float(schedule["payload_bins"])
-        * float(schedule["bits_per_subcarrier"])
-        * float(schedule["code_rate"])
-        * float(schedule["data_symbols_per_frame"])
-    )
+    payload_bits = information_bits_per_ofdm_symbol * float(schedule["data_symbols_per_frame"])
     frame_samples = (
         float(schedule["preamble_samples_per_frame"])
         + float(schedule["gap_samples_per_frame"])
@@ -317,7 +461,11 @@ def _scheduled_ceiling(schedule: dict[str, Any], streams: int) -> float:
     return payload_bits * float(schedule["sample_rate_hz"]) / frame_samples
 
 
-def _session_metrics(dataset: dict[str, Any]) -> dict[str, Any]:
+def _session_metrics(
+    dataset: dict[str, Any],
+    gmi: dict[str, Any],
+    bins: list[int],
+) -> dict[str, Any]:
     scheduling = dataset.get("scheduling")
     if not isinstance(scheduling, dict):
         raise AnalysisError("scheduling object is required")
@@ -325,10 +473,54 @@ def _session_metrics(dataset: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(schedule, dict):
         raise AnalysisError("scheduling.frame object is required")
 
-    control_rate = _scheduled_ceiling(schedule, streams=1)
-    mimo_rate = _scheduled_ceiling(schedule, streams=int(scheduling.get("mimo_streams", 2)))
-    control_recovery = float(scheduling.get("control_recovery", 1.0))
-    mimo_recovery = float(scheduling.get("mimo_recovery", 1.0))
+    if int(schedule.get("payload_bins", -1)) != len(bins):
+        raise AnalysisError("scheduling.frame.payload_bins must match the active-bin count")
+    control_information_bits = (
+        float(schedule["payload_bins"])
+        * float(schedule["bits_per_subcarrier"])
+        * float(schedule["code_rate"])
+    )
+    control_rate = _scheduled_ceiling(schedule, control_information_bits)
+    allocation = _frozen_allocation(dataset, gmi, bins)
+    if not allocation["available"]:
+        return {
+            "available": False,
+            "reason": allocation["reason"],
+            "frozen_allocation": allocation,
+            "scheduled_ceiling_bps": {"best_speaker_simo": control_rate, "two_mode_mimo": None},
+            "transfers": {},
+        }
+    if float(allocation["total_information_bits_per_ofdm_symbol"]) <= 0.0:
+        return {
+            "available": False,
+            "reason": "no frozen allocation/MCS bin has held-out GMI support",
+            "frozen_allocation": allocation,
+            "scheduled_ceiling_bps": {"best_speaker_simo": control_rate, "two_mode_mimo": 0.0},
+            "transfers": {},
+        }
+    mimo_rate = _scheduled_ceiling(
+        schedule,
+        float(allocation["total_information_bits_per_ofdm_symbol"]),
+    )
+    if "control_recovery" not in scheduling or "mimo_residual_recovery" not in scheduling:
+        raise AnalysisError("control and residual MIMO recovery fractions are required")
+    recovery_accounting = scheduling.get("recovery_accounting")
+    if not isinstance(recovery_accounting, dict):
+        raise AnalysisError("recovery_accounting provenance is required")
+    expected_source = (
+        "explicit_synthetic_model"
+        if dataset.get("evidence_class") == "synthetic"
+        else "held_out_block_replay"
+    )
+    if (
+        recovery_accounting.get("control_source") != expected_source
+        or recovery_accounting.get("mimo_residual_source") != expected_source
+    ):
+        raise AnalysisError(
+            f"recovery sources must both be {expected_source} for this evidence class"
+        )
+    control_recovery = float(scheduling["control_recovery"])
+    mimo_recovery = float(scheduling["mimo_residual_recovery"])
     control_setup = float(scheduling.get("control_setup_s", 0.0))
     mimo_setup = float(scheduling.get("mimo_setup_s", 0.0))
     if not (0.0 < control_recovery <= 1.0 and 0.0 < mimo_recovery <= 1.0):
@@ -351,6 +543,8 @@ def _session_metrics(dataset: dict[str, Any]) -> dict[str, Any]:
             "two_mode_mimo_duration_s": mimo_duration,
         }
     return {
+        "available": True,
+        "frozen_allocation": allocation,
         "scheduled_ceiling_bps": {
             "best_speaker_simo": control_rate,
             "two_mode_mimo": mimo_rate,
@@ -359,6 +553,11 @@ def _session_metrics(dataset: dict[str, Any]) -> dict[str, Any]:
             "best_speaker_simo": control_setup,
             "two_mode_mimo": mimo_setup,
         },
+        "recovery_fractions_after_gmi_masking": {
+            "best_speaker_simo": control_recovery,
+            "two_mode_mimo": mimo_recovery,
+        },
+        "recovery_accounting": recovery_accounting,
         "transfers": transfers,
     }
 
@@ -388,7 +587,25 @@ def analyze_dataset(dataset: dict[str, Any]) -> dict[str, Any]:
     per_bin_power = power.get("per_active_bin_total_symbol_power", 0.0)
     capacity = _capacity_metrics(held_out_channel, noise, per_bin_power)
     gmi = _gmi_metrics(dataset, bins)
-    session = _session_metrics(dataset)
+    session = _session_metrics(dataset, gmi, bins)
+    if session["available"]:
+        allocation = session["frozen_allocation"]
+        mode1_usable = set(allocation["usable_bins_by_mode"]["1"])
+        mode2_usable = set(allocation["usable_bins_by_mode"]["2"])
+        hybrid_logdet = 0.0
+        for index, bin_index in enumerate(bins):
+            if bin_index in mode1_usable and bin_index in mode2_usable:
+                hybrid_logdet += capacity["equal_power_mimo_logdet_bits_per_bin"][index]
+            elif bin_index in mode1_usable or bin_index in mode2_usable:
+                # A one-mode bin receives the full per-bin power under the frozen policy.
+                hybrid_logdet += capacity["best_speaker_simo_logdet_bits_per_bin"][index]
+        capacity["gmi_supported_frozen_allocation_logdet_bits_per_ofdm_use"] = hybrid_logdet
+        capacity["gmi_supported_frozen_allocation_logdet_ratio"] = (
+            hybrid_logdet / capacity["best_speaker_simo_logdet_bits_per_ofdm_use"]
+        )
+    else:
+        capacity["gmi_supported_frozen_allocation_logdet_bits_per_ofdm_use"] = None
+        capacity["gmi_supported_frozen_allocation_logdet_ratio"] = None
 
     measured_peaks = [float(value) for value in power.get("mimo_per_speaker_sample_peaks", [])]
     peak_limit = float(power.get("control_single_speaker_sample_peak", -1.0))
@@ -400,6 +617,17 @@ def analyze_dataset(dataset: dict[str, Any]) -> dict[str, Any]:
         and mimo_sample_power > 0.0
         and math.isclose(control_sample_power, mimo_sample_power, rel_tol=1e-6, abs_tol=1e-12)
     )
+    mode2_qpsk_rate_half_gate = False
+    if session["available"]:
+        mode2_mcs = session["frozen_allocation"]["mcs_by_mode"]["2"]
+        mode2_qpsk_rate_half_gate = (
+            mode2_mcs["bits_per_subcarrier"] == 2.0
+            and mode2_mcs["code_rate"] == 0.5
+            and float(
+                session["frozen_allocation"]["usable_payload_fraction_by_mode"]["2"]
+            )
+            >= 0.40
+        )
     gates = {
         "repeat_coherence_at_least_0_95": stability["minimum_repeat_coherence"] >= 0.95,
         "residual_phase_sd_at_most_15_degrees": (
@@ -408,12 +636,12 @@ def analyze_dataset(dataset: dict[str, Any]) -> dict[str, Any]:
         "amplitude_cv_at_most_0_15": (
             stability["p90_amplitude_coefficient_of_variation"] <= 0.15
         ),
-        "mode2_qpsk_rate_half_on_at_least_40_percent_bins": (
-            gmi["available"] and float(gmi["mode2_qpsk_rate_half_bin_fraction"]) >= 0.40
-        ),
+        "mode2_qpsk_rate_half_on_at_least_40_percent_bins": mode2_qpsk_rate_half_gate,
         "per_speaker_peak_limit": peak_gate,
         "fixed_sum_digital_sample_power": fixed_sum_gate,
-        "one_mib_net_gain_at_least_1_35": session["transfers"]["1MiB"]["ratio"] >= 1.35,
+        "one_mib_net_gain_at_least_1_35": (
+            session["available"] and session["transfers"]["1MiB"]["ratio"] >= 1.35
+        ),
     }
     all_gates = all(gates.values())
     evidence_class = dataset.get("evidence_class")
