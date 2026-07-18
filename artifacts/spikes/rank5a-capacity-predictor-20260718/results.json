@@ -1,0 +1,2423 @@
+{
+  "analysis_implementation": {
+    "numpy_version": "2.4.6",
+    "python_version": "3.14.6",
+    "repository_base": "27b148a2664d47c0ab3dae13d4d6d4887ef63e5f",
+    "script": "scratch/hw20k/rank5a_capacity_predictor.py",
+    "script_sha256": "08e0c15091542724add20f19ea8f4f41cf0b5b6918df5a46f8ee10dee52efbc4"
+  },
+  "awgn_equivalent_curve": {
+    "points": [
+      {
+        "gmi_per_bit": 0.025445349380965654,
+        "snr_db": -10.0
+      },
+      {
+        "gmi_per_bit": 0.026965280389125157,
+        "snr_db": -9.75
+      },
+      {
+        "gmi_per_bit": 0.02857311184167799,
+        "snr_db": -9.5
+      },
+      {
+        "gmi_per_bit": 0.030273546414174457,
+        "snr_db": -9.25
+      },
+      {
+        "gmi_per_bit": 0.032071596344683595,
+        "snr_db": -9.0
+      },
+      {
+        "gmi_per_bit": 0.03397210853069754,
+        "snr_db": -8.75
+      },
+      {
+        "gmi_per_bit": 0.035979248710846345,
+        "snr_db": -8.5
+      },
+      {
+        "gmi_per_bit": 0.03809800447403633,
+        "snr_db": -8.25
+      },
+      {
+        "gmi_per_bit": 0.04033492383466275,
+        "snr_db": -8.0
+      },
+      {
+        "gmi_per_bit": 0.04269615340422561,
+        "snr_db": -7.75
+      },
+      {
+        "gmi_per_bit": 0.045186377136616884,
+        "snr_db": -7.5
+      },
+      {
+        "gmi_per_bit": 0.0478123769658213,
+        "snr_db": -7.25
+      },
+      {
+        "gmi_per_bit": 0.05058293378902856,
+        "snr_db": -7.0
+      },
+      {
+        "gmi_per_bit": 0.05350350833254214,
+        "snr_db": -6.75
+      },
+      {
+        "gmi_per_bit": 0.05657806102400165,
+        "snr_db": -6.5
+      },
+      {
+        "gmi_per_bit": 0.05981460400908789,
+        "snr_db": -6.25
+      },
+      {
+        "gmi_per_bit": 0.06322098001103993,
+        "snr_db": -6.0
+      },
+      {
+        "gmi_per_bit": 0.06680462510123641,
+        "snr_db": -5.75
+      },
+      {
+        "gmi_per_bit": 0.07057552380906407,
+        "snr_db": -5.5
+      },
+      {
+        "gmi_per_bit": 0.07453700886626446,
+        "snr_db": -5.25
+      },
+      {
+        "gmi_per_bit": 0.07869867773557082,
+        "snr_db": -5.0
+      },
+      {
+        "gmi_per_bit": 0.0830685168735249,
+        "snr_db": -4.75
+      },
+      {
+        "gmi_per_bit": 0.08765295738918333,
+        "snr_db": -4.5
+      },
+      {
+        "gmi_per_bit": 0.09246077147045773,
+        "snr_db": -4.25
+      },
+      {
+        "gmi_per_bit": 0.09750429467947863,
+        "snr_db": -4.0
+      },
+      {
+        "gmi_per_bit": 0.10279126731124433,
+        "snr_db": -3.75
+      },
+      {
+        "gmi_per_bit": 0.10832501836980069,
+        "snr_db": -3.5
+      },
+      {
+        "gmi_per_bit": 0.11411787142916396,
+        "snr_db": -3.25
+      },
+      {
+        "gmi_per_bit": 0.12018154499888367,
+        "snr_db": -3.0
+      },
+      {
+        "gmi_per_bit": 0.1265205037131405,
+        "snr_db": -2.75
+      },
+      {
+        "gmi_per_bit": 0.13313247774260384,
+        "snr_db": -2.5
+      },
+      {
+        "gmi_per_bit": 0.14003034431978512,
+        "snr_db": -2.25
+      },
+      {
+        "gmi_per_bit": 0.14722383171149467,
+        "snr_db": -2.0
+      },
+      {
+        "gmi_per_bit": 0.15472581099925564,
+        "snr_db": -1.75
+      },
+      {
+        "gmi_per_bit": 0.16254211203085478,
+        "snr_db": -1.5
+      },
+      {
+        "gmi_per_bit": 0.17067083049091492,
+        "snr_db": -1.25
+      },
+      {
+        "gmi_per_bit": 0.17912164707620626,
+        "snr_db": -1.0
+      },
+      {
+        "gmi_per_bit": 0.18791192837056891,
+        "snr_db": -0.75
+      },
+      {
+        "gmi_per_bit": 0.1970400071242292,
+        "snr_db": -0.5
+      },
+      {
+        "gmi_per_bit": 0.2065149471408354,
+        "snr_db": -0.25
+      },
+      {
+        "gmi_per_bit": 0.2163337402880401,
+        "snr_db": 0.0
+      },
+      {
+        "gmi_per_bit": 0.22650376037412123,
+        "snr_db": 0.25
+      },
+      {
+        "gmi_per_bit": 0.23701945467470087,
+        "snr_db": 0.5
+      },
+      {
+        "gmi_per_bit": 0.24789098541130394,
+        "snr_db": 0.75
+      },
+      {
+        "gmi_per_bit": 0.25912381557708575,
+        "snr_db": 1.0
+      },
+      {
+        "gmi_per_bit": 0.2707059724519648,
+        "snr_db": 1.25
+      },
+      {
+        "gmi_per_bit": 0.2826204938479939,
+        "snr_db": 1.5
+      },
+      {
+        "gmi_per_bit": 0.29488263096379363,
+        "snr_db": 1.75
+      },
+      {
+        "gmi_per_bit": 0.30748863567879337,
+        "snr_db": 2.0
+      },
+      {
+        "gmi_per_bit": 0.32042102898108027,
+        "snr_db": 2.25
+      },
+      {
+        "gmi_per_bit": 0.3336695494740203,
+        "snr_db": 2.5
+      },
+      {
+        "gmi_per_bit": 0.3472176638230994,
+        "snr_db": 2.75
+      },
+      {
+        "gmi_per_bit": 0.36104537791489777,
+        "snr_db": 3.0
+      },
+      {
+        "gmi_per_bit": 0.3751601447625752,
+        "snr_db": 3.25
+      },
+      {
+        "gmi_per_bit": 0.3895521000458021,
+        "snr_db": 3.5
+      },
+      {
+        "gmi_per_bit": 0.4041972758129515,
+        "snr_db": 3.75
+      },
+      {
+        "gmi_per_bit": 0.4190727133049589,
+        "snr_db": 4.0
+      },
+      {
+        "gmi_per_bit": 0.43414346976209306,
+        "snr_db": 4.25
+      },
+      {
+        "gmi_per_bit": 0.4493978192195326,
+        "snr_db": 4.5
+      },
+      {
+        "gmi_per_bit": 0.46481071026137666,
+        "snr_db": 4.75
+      },
+      {
+        "gmi_per_bit": 0.4803377963338481,
+        "snr_db": 5.0
+      },
+      {
+        "gmi_per_bit": 0.4959478914160871,
+        "snr_db": 5.25
+      },
+      {
+        "gmi_per_bit": 0.5116343113773106,
+        "snr_db": 5.5
+      },
+      {
+        "gmi_per_bit": 0.52738164537773,
+        "snr_db": 5.75
+      },
+      {
+        "gmi_per_bit": 0.5432036569495758,
+        "snr_db": 6.0
+      },
+      {
+        "gmi_per_bit": 0.5590473837124871,
+        "snr_db": 6.25
+      },
+      {
+        "gmi_per_bit": 0.5748984850919735,
+        "snr_db": 6.5
+      },
+      {
+        "gmi_per_bit": 0.5907425404276856,
+        "snr_db": 6.75
+      },
+      {
+        "gmi_per_bit": 0.6065484870243982,
+        "snr_db": 7.0
+      },
+      {
+        "gmi_per_bit": 0.6223314106222309,
+        "snr_db": 7.25
+      },
+      {
+        "gmi_per_bit": 0.6380849808452635,
+        "snr_db": 7.5
+      },
+      {
+        "gmi_per_bit": 0.6537869126925916,
+        "snr_db": 7.75
+      },
+      {
+        "gmi_per_bit": 0.6694362510088665,
+        "snr_db": 8.0
+      },
+      {
+        "gmi_per_bit": 0.6850058123730409,
+        "snr_db": 8.25
+      },
+      {
+        "gmi_per_bit": 0.7004949463317385,
+        "snr_db": 8.5
+      },
+      {
+        "gmi_per_bit": 0.715894114999494,
+        "snr_db": 8.75
+      },
+      {
+        "gmi_per_bit": 0.7311789327676512,
+        "snr_db": 9.0
+      },
+      {
+        "gmi_per_bit": 0.7463265116801994,
+        "snr_db": 9.25
+      },
+      {
+        "gmi_per_bit": 0.7613113198874557,
+        "snr_db": 9.5
+      },
+      {
+        "gmi_per_bit": 0.7761016428945157,
+        "snr_db": 9.75
+      },
+      {
+        "gmi_per_bit": 0.7906769990812927,
+        "snr_db": 10.0
+      },
+      {
+        "gmi_per_bit": 0.8049910721806757,
+        "snr_db": 10.25
+      },
+      {
+        "gmi_per_bit": 0.8190012905904659,
+        "snr_db": 10.5
+      },
+      {
+        "gmi_per_bit": 0.832666816192523,
+        "snr_db": 10.75
+      },
+      {
+        "gmi_per_bit": 0.8459458854543619,
+        "snr_db": 11.0
+      },
+      {
+        "gmi_per_bit": 0.8587967519728235,
+        "snr_db": 11.25
+      },
+      {
+        "gmi_per_bit": 0.8711786539337762,
+        "snr_db": 11.5
+      },
+      {
+        "gmi_per_bit": 0.8830527619402662,
+        "snr_db": 11.75
+      },
+      {
+        "gmi_per_bit": 0.894383091898501,
+        "snr_db": 12.0
+      },
+      {
+        "gmi_per_bit": 0.9051373496848976,
+        "snr_db": 12.25
+      },
+      {
+        "gmi_per_bit": 0.9152876887270522,
+        "snr_db": 12.5
+      },
+      {
+        "gmi_per_bit": 0.9248113702290235,
+        "snr_db": 12.75
+      },
+      {
+        "gmi_per_bit": 0.9336913162286156,
+        "snr_db": 13.0
+      },
+      {
+        "gmi_per_bit": 0.9419165486231673,
+        "snr_db": 13.25
+      },
+      {
+        "gmi_per_bit": 0.949482500931677,
+        "snr_db": 13.5
+      },
+      {
+        "gmi_per_bit": 0.9563911847640438,
+        "snr_db": 13.75
+      },
+      {
+        "gmi_per_bit": 0.9626511920736712,
+        "snr_db": 14.0
+      },
+      {
+        "gmi_per_bit": 0.9682775243271182,
+        "snr_db": 14.25
+      },
+      {
+        "gmi_per_bit": 0.973291256457774,
+        "snr_db": 14.5
+      },
+      {
+        "gmi_per_bit": 0.9777190541435942,
+        "snr_db": 14.75
+      },
+      {
+        "gmi_per_bit": 0.9815925582948172,
+        "snr_db": 15.0
+      },
+      {
+        "gmi_per_bit": 0.9849476424356537,
+        "snr_db": 15.25
+      },
+      {
+        "gmi_per_bit": 0.9878235588979449,
+        "snr_db": 15.5
+      },
+      {
+        "gmi_per_bit": 0.9902620102046799,
+        "snr_db": 15.75
+      },
+      {
+        "gmi_per_bit": 0.9923061702894173,
+        "snr_db": 16.0
+      },
+      {
+        "gmi_per_bit": 0.9939996375240417,
+        "snr_db": 16.25
+      },
+      {
+        "gmi_per_bit": 0.9953853138080273,
+        "snr_db": 16.5
+      },
+      {
+        "gmi_per_bit": 0.9965043145118945,
+        "snr_db": 16.75
+      },
+      {
+        "gmi_per_bit": 0.9973951190763465,
+        "snr_db": 17.0
+      },
+      {
+        "gmi_per_bit": 0.9980931571949276,
+        "snr_db": 17.25
+      },
+      {
+        "gmi_per_bit": 0.998630844535639,
+        "snr_db": 17.5
+      },
+      {
+        "gmi_per_bit": 0.9990376837335057,
+        "snr_db": 17.75
+      },
+      {
+        "gmi_per_bit": 0.9993397881431684,
+        "snr_db": 18.0
+      },
+      {
+        "gmi_per_bit": 0.9995590441921518,
+        "snr_db": 18.25
+      },
+      {
+        "gmi_per_bit": 0.9997133809051529,
+        "snr_db": 18.5
+      },
+      {
+        "gmi_per_bit": 0.999818298140699,
+        "snr_db": 18.75
+      },
+      {
+        "gmi_per_bit": 0.9998875868368806,
+        "snr_db": 19.0
+      },
+      {
+        "gmi_per_bit": 0.9999324107145539,
+        "snr_db": 19.25
+      },
+      {
+        "gmi_per_bit": 0.9999605885041724,
+        "snr_db": 19.5
+      },
+      {
+        "gmi_per_bit": 0.9999777448421773,
+        "snr_db": 19.75
+      },
+      {
+        "gmi_per_bit": 0.9999883471966678,
+        "snr_db": 20.0
+      },
+      {
+        "gmi_per_bit": 0.9999949067487813,
+        "snr_db": 20.25
+      },
+      {
+        "gmi_per_bit": 0.9999982842988216,
+        "snr_db": 20.5
+      },
+      {
+        "gmi_per_bit": 0.9999995430085185,
+        "snr_db": 20.75
+      },
+      {
+        "gmi_per_bit": 0.9999998976816039,
+        "snr_db": 21.0
+      },
+      {
+        "gmi_per_bit": 0.9999999801724265,
+        "snr_db": 21.25
+      },
+      {
+        "gmi_per_bit": 0.9999999966624794,
+        "snr_db": 21.5
+      },
+      {
+        "gmi_per_bit": 0.9999999995150112,
+        "snr_db": 21.75
+      },
+      {
+        "gmi_per_bit": 0.9999999999397217,
+        "snr_db": 22.0
+      },
+      {
+        "gmi_per_bit": 0.9999999999936589,
+        "snr_db": 22.25
+      },
+      {
+        "gmi_per_bit": 0.9999999999994417,
+        "snr_db": 22.5
+      },
+      {
+        "gmi_per_bit": 0.9999999999999594,
+        "snr_db": 22.75
+      },
+      {
+        "gmi_per_bit": 0.9999999999999976,
+        "snr_db": 23.0
+      },
+      {
+        "gmi_per_bit": 0.9999999999999999,
+        "snr_db": 23.25
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 23.5
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 23.75
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 24.0
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 24.25
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 24.5
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 24.75
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 25.0
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 25.25
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 25.5
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 25.75
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 26.0
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 26.25
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 26.5
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 26.75
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 27.0
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 27.25
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 27.5
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 27.75
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 28.0
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 28.25
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 28.5
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 28.75
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 29.0
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 29.25
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 29.5
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 29.75
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 30.0
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 30.25
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 30.5
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 30.75
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 31.0
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 31.25
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 31.5
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 31.75
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 32.0
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 32.25
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 32.5
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 32.75
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 33.0
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 33.25
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 33.5
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 33.75
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 34.0
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 34.25
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 34.5
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 34.75
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 35.0
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 35.25
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 35.5
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 35.75
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 36.0
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 36.25
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 36.5
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 36.75
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 37.0
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 37.25
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 37.5
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 37.75
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 38.0
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 38.25
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 38.5
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 38.75
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 39.0
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 39.25
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 39.5
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 39.75
+      },
+      {
+        "gmi_per_bit": 1.0,
+        "snr_db": 40.0
+      }
+    ],
+    "seed": 20260718,
+    "snr_max_db": 40.0,
+    "snr_min_db": -10.0,
+    "snr_step_db": 0.25,
+    "symbols_per_point": 50000
+  },
+  "observations": [
+    {
+      "confidence_and_provenance": {
+        "acquisition_sha256": "eab258990645b5348cd065c299cc8d003e8e438023eb51ee5fd84e65797ac584",
+        "active_h_repeat_available": false,
+        "active_h_repeat_limitation": "only one active matrix exists for this path",
+        "capture_sha256": "b59680373f6d582158f39727e330530b768a3b472dde8243c37baf2fae48d5e5",
+        "confidence": "descriptive-low",
+        "measurement_age_at_preregistration_s": 3182.479555,
+        "noise_relation": "same-campaign passive capture; not simultaneous with QAM probe"
+      },
+      "direction": "Mac-to-Pixel",
+      "id": "F0-S0-R0",
+      "is_scalar_input_simo": false,
+      "measurement_inventory": {
+        "active_h_k_available": true,
+        "active_h_k_repeat_available": false,
+        "actual_randomized_known_qam": true,
+        "llr_provenance": "Offline reconstruction of receiver-semantics-v1 LLRs; the C API does not expose LLRs, so exact ordered block-mask parity is required.",
+        "passive_noise_covariance_available": true,
+        "passive_noise_covariance_kind": "P0 Pixel full 2x2 per-bin covariance",
+        "randomized_qam_payload_sha256": "3d33a8692fdab11b792184efbd86a322fa0d2145336c68a381e6db0093db9384",
+        "receiver_matched_actual_llrs": true,
+        "stable_h_k_qualified": false,
+        "stable_h_k_reason": "No held-out active repeat exists.",
+        "strict_ordered_block_mask_available": true
+      },
+      "predictors": {
+        "actual_llr_gmi_common_scale": 2.034581132771557,
+        "actual_llr_gmi_optimized_per_bit": 0.8717963076271708,
+        "actual_llr_gmi_s1_per_bit": 0.843648226732451,
+        "actual_llr_gmi_selects_profile": true,
+        "effective_sinr_censoring": "none",
+        "effective_sinr_db": 11.51300421246499,
+        "passive_stationary_shannon_median_snr_db": 16.525802849763398,
+        "passive_stationary_shannon_selects_profile": true,
+        "passive_stationary_shannon_upper_bound_bps": 85815.4971498776,
+        "repeated_pilot_arithmetic_selects_profile": true,
+        "repeated_pilot_log2_arithmetic_bps": 32243.956114857283
+      },
+      "protocol": {
+        "configured_info_bit_rate": 0.499971347799511,
+        "gmi_margin": 0.37182495982765973,
+        "scheduled_payload_ceiling_bps": 25600.0
+      },
+      "receiver": "mic0",
+      "receiver_diagnostics": {
+        "chirp_score": 0.5722653517775159,
+        "fft_base_in_slice": 15715,
+        "llr_abs_median": 5.631545790572115,
+        "llr_abs_p10": 0.8503377524628808,
+        "pilot_evm_mean": 0.3296362537905322,
+        "sync_snr_db_median": 15.006623595640349,
+        "sync_start_in_slice": 9593
+      },
+      "run": "F0",
+      "speaker": 0,
+      "split": "training-screen-descriptive",
+      "strict": {
+        "blocks_total": 50,
+        "blocks_verified": 50,
+        "bytes_verified": 12800,
+        "observed_probe_goodput_bps": 25600.0,
+        "ordered_block_mask": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "python_llr_to_portable_c_mask_parity": true,
+        "recovery_fraction": 1.0
+      }
+    },
+    {
+      "confidence_and_provenance": {
+        "acquisition_sha256": "eab258990645b5348cd065c299cc8d003e8e438023eb51ee5fd84e65797ac584",
+        "active_h_repeat_available": false,
+        "active_h_repeat_limitation": "only one active matrix exists for this path",
+        "capture_sha256": "b59680373f6d582158f39727e330530b768a3b472dde8243c37baf2fae48d5e5",
+        "confidence": "descriptive-low",
+        "measurement_age_at_preregistration_s": 3182.479555,
+        "noise_relation": "same-campaign passive capture; not simultaneous with QAM probe"
+      },
+      "direction": "Mac-to-Pixel",
+      "id": "F0-S0-R1",
+      "is_scalar_input_simo": false,
+      "measurement_inventory": {
+        "active_h_k_available": true,
+        "active_h_k_repeat_available": false,
+        "actual_randomized_known_qam": true,
+        "llr_provenance": "Offline reconstruction of receiver-semantics-v1 LLRs; the C API does not expose LLRs, so exact ordered block-mask parity is required.",
+        "passive_noise_covariance_available": true,
+        "passive_noise_covariance_kind": "P0 Pixel full 2x2 per-bin covariance",
+        "randomized_qam_payload_sha256": "3d33a8692fdab11b792184efbd86a322fa0d2145336c68a381e6db0093db9384",
+        "receiver_matched_actual_llrs": true,
+        "stable_h_k_qualified": false,
+        "stable_h_k_reason": "No held-out active repeat exists.",
+        "strict_ordered_block_mask_available": true
+      },
+      "predictors": {
+        "actual_llr_gmi_common_scale": 1.167081865241961,
+        "actual_llr_gmi_optimized_per_bit": 0.03986989450028344,
+        "actual_llr_gmi_s1_per_bit": 0.03924489970765832,
+        "actual_llr_gmi_selects_profile": false,
+        "effective_sinr_censoring": "none",
+        "effective_sinr_db": -8.051972071788171,
+        "passive_stationary_shannon_median_snr_db": 1.4813772750746046,
+        "passive_stationary_shannon_selects_profile": false,
+        "passive_stationary_shannon_upper_bound_bps": 23264.40727386526,
+        "repeated_pilot_arithmetic_selects_profile": false,
+        "repeated_pilot_log2_arithmetic_bps": 5959.2119883532
+      },
+      "protocol": {
+        "configured_info_bit_rate": 0.499971347799511,
+        "gmi_margin": -0.4601014532992276,
+        "scheduled_payload_ceiling_bps": 25600.0
+      },
+      "receiver": "mic1",
+      "receiver_diagnostics": {
+        "chirp_score": 0.3087289547298053,
+        "fft_base_in_slice": 15732,
+        "llr_abs_median": 0.1471457598812489,
+        "llr_abs_p10": 0.02099886825433167,
+        "pilot_evm_mean": 2.054952683899198,
+        "sync_snr_db_median": 1.5219983941563537,
+        "sync_start_in_slice": 9612
+      },
+      "run": "F0",
+      "speaker": 0,
+      "split": "training-screen-descriptive",
+      "strict": {
+        "blocks_total": 50,
+        "blocks_verified": 0,
+        "bytes_verified": 0,
+        "observed_probe_goodput_bps": 0.0,
+        "ordered_block_mask": [
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "python_llr_to_portable_c_mask_parity": true,
+        "recovery_fraction": 0.0
+      }
+    },
+    {
+      "confidence_and_provenance": {
+        "acquisition_sha256": "eab258990645b5348cd065c299cc8d003e8e438023eb51ee5fd84e65797ac584",
+        "active_h_repeat_available": false,
+        "active_h_repeat_limitation": "only one active matrix exists for this path",
+        "capture_sha256": "b59680373f6d582158f39727e330530b768a3b472dde8243c37baf2fae48d5e5",
+        "confidence": "descriptive-low",
+        "measurement_age_at_preregistration_s": 3182.479555,
+        "noise_relation": "same-campaign passive capture; not simultaneous with QAM probe"
+      },
+      "direction": "Mac-to-Pixel",
+      "id": "F0-S0-MRC01",
+      "is_scalar_input_simo": true,
+      "measurement_inventory": {
+        "active_h_k_available": true,
+        "active_h_k_repeat_available": false,
+        "actual_randomized_known_qam": true,
+        "llr_provenance": "Offline reconstruction of receiver-semantics-v1 LLRs; the C API does not expose LLRs, so exact ordered block-mask parity is required.",
+        "passive_noise_covariance_available": true,
+        "passive_noise_covariance_kind": "P0 Pixel full 2x2 per-bin covariance",
+        "randomized_qam_payload_sha256": "3d33a8692fdab11b792184efbd86a322fa0d2145336c68a381e6db0093db9384",
+        "receiver_matched_actual_llrs": true,
+        "stable_h_k_qualified": false,
+        "stable_h_k_reason": "No held-out active repeat exists.",
+        "strict_ordered_block_mask_available": true
+      },
+      "predictors": {
+        "actual_llr_gmi_common_scale": 1.7114524643857494,
+        "actual_llr_gmi_optimized_per_bit": 0.87428776939109,
+        "actual_llr_gmi_s1_per_bit": 0.8580004049023375,
+        "actual_llr_gmi_selects_profile": true,
+        "effective_sinr_censoring": "none",
+        "effective_sinr_db": 11.565459979301485,
+        "passive_stationary_shannon_median_snr_db": 17.060308708029446,
+        "passive_stationary_shannon_selects_profile": true,
+        "passive_stationary_shannon_upper_bound_bps": 89031.6382265999,
+        "repeated_pilot_arithmetic_selects_profile": null,
+        "repeated_pilot_log2_arithmetic_bps": null
+      },
+      "protocol": {
+        "configured_info_bit_rate": 0.499971347799511,
+        "gmi_margin": 0.37431642159157896,
+        "scheduled_payload_ceiling_bps": 25600.0
+      },
+      "receiver": "mrc01",
+      "receiver_diagnostics": {
+        "chirp_score": 0.5722653517775159,
+        "fft_base_in_slice": 15715,
+        "llr_abs_median": 6.3278062564626065,
+        "llr_abs_p10": 1.0306166250741144,
+        "pilot_evm_mean": 0.29052866946802935,
+        "sync_snr_db_median": 15.485361060430662,
+        "sync_start_in_slice": 9593
+      },
+      "run": "F0",
+      "speaker": 0,
+      "split": "training-screen-descriptive",
+      "strict": {
+        "blocks_total": 50,
+        "blocks_verified": 50,
+        "bytes_verified": 12800,
+        "observed_probe_goodput_bps": 25600.0,
+        "ordered_block_mask": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "python_llr_to_portable_c_mask_parity": true,
+        "recovery_fraction": 1.0
+      }
+    },
+    {
+      "confidence_and_provenance": {
+        "acquisition_sha256": "eab258990645b5348cd065c299cc8d003e8e438023eb51ee5fd84e65797ac584",
+        "active_h_repeat_available": false,
+        "active_h_repeat_limitation": "only one active matrix exists for this path",
+        "capture_sha256": "b59680373f6d582158f39727e330530b768a3b472dde8243c37baf2fae48d5e5",
+        "confidence": "descriptive-low",
+        "measurement_age_at_preregistration_s": 3182.479555,
+        "noise_relation": "same-campaign passive capture; not simultaneous with QAM probe"
+      },
+      "direction": "Mac-to-Pixel",
+      "id": "F0-S1-R0",
+      "is_scalar_input_simo": false,
+      "measurement_inventory": {
+        "active_h_k_available": true,
+        "active_h_k_repeat_available": false,
+        "actual_randomized_known_qam": true,
+        "llr_provenance": "Offline reconstruction of receiver-semantics-v1 LLRs; the C API does not expose LLRs, so exact ordered block-mask parity is required.",
+        "passive_noise_covariance_available": true,
+        "passive_noise_covariance_kind": "P0 Pixel full 2x2 per-bin covariance",
+        "randomized_qam_payload_sha256": "3d33a8692fdab11b792184efbd86a322fa0d2145336c68a381e6db0093db9384",
+        "receiver_matched_actual_llrs": true,
+        "stable_h_k_qualified": false,
+        "stable_h_k_reason": "No held-out active repeat exists.",
+        "strict_ordered_block_mask_available": true
+      },
+      "predictors": {
+        "actual_llr_gmi_common_scale": 1.7612598313564731,
+        "actual_llr_gmi_optimized_per_bit": 0.175307052636426,
+        "actual_llr_gmi_s1_per_bit": 0.1535958732537951,
+        "actual_llr_gmi_selects_profile": false,
+        "effective_sinr_censoring": "none",
+        "effective_sinr_db": -1.1128469184392067,
+        "passive_stationary_shannon_median_snr_db": 1.6450326570725609,
+        "passive_stationary_shannon_selects_profile": false,
+        "passive_stationary_shannon_upper_bound_bps": 25527.123682532074,
+        "repeated_pilot_arithmetic_selects_profile": true,
+        "repeated_pilot_log2_arithmetic_bps": 27265.012189648955
+      },
+      "protocol": {
+        "configured_info_bit_rate": 0.499971347799511,
+        "gmi_margin": -0.32466429516308504,
+        "scheduled_payload_ceiling_bps": 25600.0
+      },
+      "receiver": "mic0",
+      "receiver_diagnostics": {
+        "chirp_score": 0.23300629761943797,
+        "fft_base_in_slice": 15731,
+        "llr_abs_median": 0.30595194290372923,
+        "llr_abs_p10": 0.04216936253146769,
+        "pilot_evm_mean": 1.6212865044553073,
+        "sync_snr_db_median": 7.0020321834703205,
+        "sync_start_in_slice": 9613
+      },
+      "run": "F0",
+      "speaker": 1,
+      "split": "training-screen-descriptive",
+      "strict": {
+        "blocks_total": 50,
+        "blocks_verified": 0,
+        "bytes_verified": 0,
+        "observed_probe_goodput_bps": 0.0,
+        "ordered_block_mask": [
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "python_llr_to_portable_c_mask_parity": true,
+        "recovery_fraction": 0.0
+      }
+    },
+    {
+      "confidence_and_provenance": {
+        "acquisition_sha256": "eab258990645b5348cd065c299cc8d003e8e438023eb51ee5fd84e65797ac584",
+        "active_h_repeat_available": false,
+        "active_h_repeat_limitation": "only one active matrix exists for this path",
+        "capture_sha256": "b59680373f6d582158f39727e330530b768a3b472dde8243c37baf2fae48d5e5",
+        "confidence": "descriptive-low",
+        "measurement_age_at_preregistration_s": 3182.479555,
+        "noise_relation": "same-campaign passive capture; not simultaneous with QAM probe"
+      },
+      "direction": "Mac-to-Pixel",
+      "id": "F0-S1-R1",
+      "is_scalar_input_simo": false,
+      "measurement_inventory": {
+        "active_h_k_available": true,
+        "active_h_k_repeat_available": false,
+        "actual_randomized_known_qam": true,
+        "llr_provenance": "Offline reconstruction of receiver-semantics-v1 LLRs; the C API does not expose LLRs, so exact ordered block-mask parity is required.",
+        "passive_noise_covariance_available": true,
+        "passive_noise_covariance_kind": "P0 Pixel full 2x2 per-bin covariance",
+        "randomized_qam_payload_sha256": "3d33a8692fdab11b792184efbd86a322fa0d2145336c68a381e6db0093db9384",
+        "receiver_matched_actual_llrs": true,
+        "stable_h_k_qualified": false,
+        "stable_h_k_reason": "No held-out active repeat exists.",
+        "strict_ordered_block_mask_available": true
+      },
+      "predictors": {
+        "actual_llr_gmi_common_scale": 1.5316107880610266,
+        "actual_llr_gmi_optimized_per_bit": 0.046512626974936966,
+        "actual_llr_gmi_s1_per_bit": 0.041821684901318545,
+        "actual_llr_gmi_selects_profile": false,
+        "effective_sinr_censoring": "none",
+        "effective_sinr_db": -7.37373858296081,
+        "passive_stationary_shannon_median_snr_db": -5.767437882938665,
+        "passive_stationary_shannon_selects_profile": false,
+        "passive_stationary_shannon_upper_bound_bps": 8475.167377498197,
+        "repeated_pilot_arithmetic_selects_profile": false,
+        "repeated_pilot_log2_arithmetic_bps": 16502.87974983289
+      },
+      "protocol": {
+        "configured_info_bit_rate": 0.499971347799511,
+        "gmi_margin": -0.45345872082457406,
+        "scheduled_payload_ceiling_bps": 25600.0
+      },
+      "receiver": "mic1",
+      "receiver_diagnostics": {
+        "chirp_score": 0.287641088069164,
+        "fft_base_in_slice": 15739,
+        "llr_abs_median": 0.1268306232277759,
+        "llr_abs_p10": 0.017522511168596173,
+        "pilot_evm_mean": 2.5483188963396897,
+        "sync_snr_db_median": 2.758909838004522,
+        "sync_start_in_slice": 9619
+      },
+      "run": "F0",
+      "speaker": 1,
+      "split": "training-screen-descriptive",
+      "strict": {
+        "blocks_total": 50,
+        "blocks_verified": 0,
+        "bytes_verified": 0,
+        "observed_probe_goodput_bps": 0.0,
+        "ordered_block_mask": [
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "python_llr_to_portable_c_mask_parity": true,
+        "recovery_fraction": 0.0
+      }
+    },
+    {
+      "confidence_and_provenance": {
+        "acquisition_sha256": "eab258990645b5348cd065c299cc8d003e8e438023eb51ee5fd84e65797ac584",
+        "active_h_repeat_available": false,
+        "active_h_repeat_limitation": "only one active matrix exists for this path",
+        "capture_sha256": "b59680373f6d582158f39727e330530b768a3b472dde8243c37baf2fae48d5e5",
+        "confidence": "descriptive-low",
+        "measurement_age_at_preregistration_s": 3182.479555,
+        "noise_relation": "same-campaign passive capture; not simultaneous with QAM probe"
+      },
+      "direction": "Mac-to-Pixel",
+      "id": "F0-S1-MRC01",
+      "is_scalar_input_simo": true,
+      "measurement_inventory": {
+        "active_h_k_available": true,
+        "active_h_k_repeat_available": false,
+        "actual_randomized_known_qam": true,
+        "llr_provenance": "Offline reconstruction of receiver-semantics-v1 LLRs; the C API does not expose LLRs, so exact ordered block-mask parity is required.",
+        "passive_noise_covariance_available": true,
+        "passive_noise_covariance_kind": "P0 Pixel full 2x2 per-bin covariance",
+        "randomized_qam_payload_sha256": "3d33a8692fdab11b792184efbd86a322fa0d2145336c68a381e6db0093db9384",
+        "receiver_matched_actual_llrs": true,
+        "stable_h_k_qualified": false,
+        "stable_h_k_reason": "No held-out active repeat exists.",
+        "strict_ordered_block_mask_available": true
+      },
+      "predictors": {
+        "actual_llr_gmi_common_scale": 1.7017356928607301,
+        "actual_llr_gmi_optimized_per_bit": 0.3190399934492162,
+        "actual_llr_gmi_s1_per_bit": 0.2896488874935962,
+        "actual_llr_gmi_selects_profile": false,
+        "effective_sinr_censoring": "none",
+        "effective_sinr_db": 2.223302785115191,
+        "passive_stationary_shannon_median_snr_db": 3.0587627970328475,
+        "passive_stationary_shannon_selects_profile": true,
+        "passive_stationary_shannon_upper_bound_bps": 29384.812290283535,
+        "repeated_pilot_arithmetic_selects_profile": null,
+        "repeated_pilot_log2_arithmetic_bps": null
+      },
+      "protocol": {
+        "configured_info_bit_rate": 0.499971347799511,
+        "gmi_margin": -0.18093135435029484,
+        "scheduled_payload_ceiling_bps": 25600.0
+      },
+      "receiver": "mrc01",
+      "receiver_diagnostics": {
+        "chirp_score": 0.23300629761943797,
+        "fft_base_in_slice": 15731,
+        "llr_abs_median": 0.6293389473190104,
+        "llr_abs_p10": 0.09248182549147951,
+        "pilot_evm_mean": 0.9732493399967502,
+        "sync_snr_db_median": 9.288665019269494,
+        "sync_start_in_slice": 9613
+      },
+      "run": "F0",
+      "speaker": 1,
+      "split": "training-screen-descriptive",
+      "strict": {
+        "blocks_total": 50,
+        "blocks_verified": 0,
+        "bytes_verified": 0,
+        "observed_probe_goodput_bps": 0.0,
+        "ordered_block_mask": [
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "python_llr_to_portable_c_mask_parity": true,
+        "recovery_fraction": 0.0
+      }
+    },
+    {
+      "confidence_and_provenance": {
+        "acquisition_sha256": "8a93b8682789058419683d638d42f8f6d03df5f4fc5013fabc08f83dac02d603",
+        "active_h_repeat_available": true,
+        "active_h_repeat_limitation": "R1/R2 are order-balanced repeats but lack strict realized-output-route provenance",
+        "capture_sha256": "514dad561b9f22e80b5ca5851dec572846407e32be69569329495e9b211dfd5d",
+        "confidence": "descriptive-low",
+        "measurement_age_at_preregistration_s": 2625.154729,
+        "noise_relation": "same-campaign passive capture; not simultaneous with QAM probe"
+      },
+      "direction": "Pixel-to-Mac",
+      "id": "R1-S0-R0",
+      "is_scalar_input_simo": false,
+      "measurement_inventory": {
+        "active_h_k_available": true,
+        "active_h_k_repeat_available": true,
+        "actual_randomized_known_qam": true,
+        "llr_provenance": "Offline reconstruction of receiver-semantics-v1 LLRs; the C API does not expose LLRs, so exact ordered block-mask parity is required.",
+        "passive_noise_covariance_available": true,
+        "passive_noise_covariance_kind": "P0 Mac scalar per-bin covariance",
+        "randomized_qam_payload_sha256": "3d33a8692fdab11b792184efbd86a322fa0d2145336c68a381e6db0093db9384",
+        "receiver_matched_actual_llrs": true,
+        "stable_h_k_qualified": false,
+        "stable_h_k_reason": "R1/R2 repeat exists, but only 33.7% (speaker 0) or 44.2% (speaker 1) of bins cleared the repeat gate and output-route provenance is incomplete.",
+        "strict_ordered_block_mask_available": true
+      },
+      "predictors": {
+        "actual_llr_gmi_common_scale": 2.952955852632294,
+        "actual_llr_gmi_optimized_per_bit": 0.5132671684984653,
+        "actual_llr_gmi_s1_per_bit": 0.4114426862478866,
+        "actual_llr_gmi_selects_profile": true,
+        "effective_sinr_censoring": "none",
+        "effective_sinr_db": 5.525922754942379,
+        "passive_stationary_shannon_median_snr_db": 17.91098826770402,
+        "passive_stationary_shannon_selects_profile": true,
+        "passive_stationary_shannon_upper_bound_bps": 82816.88325116938,
+        "repeated_pilot_arithmetic_selects_profile": true,
+        "repeated_pilot_log2_arithmetic_bps": 64638.32139835358
+      },
+      "protocol": {
+        "configured_info_bit_rate": 0.499971347799511,
+        "gmi_margin": 0.013295820698954297,
+        "scheduled_payload_ceiling_bps": 25600.0
+      },
+      "receiver": "mic0",
+      "receiver_diagnostics": {
+        "chirp_score": 0.47666322140130357,
+        "fft_base_in_slice": 15724,
+        "llr_abs_median": 0.7350812867989311,
+        "llr_abs_p10": 0.07519696950822242,
+        "pilot_evm_mean": 0.938183093735234,
+        "sync_snr_db_median": 10.634679255742084,
+        "sync_start_in_slice": 9604
+      },
+      "run": "R1",
+      "speaker": 0,
+      "split": "calibration-descriptive",
+      "strict": {
+        "blocks_total": 50,
+        "blocks_verified": 0,
+        "bytes_verified": 0,
+        "observed_probe_goodput_bps": 0.0,
+        "ordered_block_mask": [
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "python_llr_to_portable_c_mask_parity": true,
+        "recovery_fraction": 0.0
+      }
+    },
+    {
+      "confidence_and_provenance": {
+        "acquisition_sha256": "8a93b8682789058419683d638d42f8f6d03df5f4fc5013fabc08f83dac02d603",
+        "active_h_repeat_available": true,
+        "active_h_repeat_limitation": "R1/R2 are order-balanced repeats but lack strict realized-output-route provenance",
+        "capture_sha256": "514dad561b9f22e80b5ca5851dec572846407e32be69569329495e9b211dfd5d",
+        "confidence": "descriptive-low",
+        "measurement_age_at_preregistration_s": 2625.154729,
+        "noise_relation": "same-campaign passive capture; not simultaneous with QAM probe"
+      },
+      "direction": "Pixel-to-Mac",
+      "id": "R1-S1-R0",
+      "is_scalar_input_simo": false,
+      "measurement_inventory": {
+        "active_h_k_available": true,
+        "active_h_k_repeat_available": true,
+        "actual_randomized_known_qam": true,
+        "llr_provenance": "Offline reconstruction of receiver-semantics-v1 LLRs; the C API does not expose LLRs, so exact ordered block-mask parity is required.",
+        "passive_noise_covariance_available": true,
+        "passive_noise_covariance_kind": "P0 Mac scalar per-bin covariance",
+        "randomized_qam_payload_sha256": "3d33a8692fdab11b792184efbd86a322fa0d2145336c68a381e6db0093db9384",
+        "receiver_matched_actual_llrs": true,
+        "stable_h_k_qualified": false,
+        "stable_h_k_reason": "R1/R2 repeat exists, but only 33.7% (speaker 0) or 44.2% (speaker 1) of bins cleared the repeat gate and output-route provenance is incomplete.",
+        "strict_ordered_block_mask_available": true
+      },
+      "predictors": {
+        "actual_llr_gmi_common_scale": 4.45657179808389,
+        "actual_llr_gmi_optimized_per_bit": 0.6957917697093071,
+        "actual_llr_gmi_s1_per_bit": 0.5436846806806148,
+        "actual_llr_gmi_selects_profile": true,
+        "effective_sinr_censoring": "none",
+        "effective_sinr_db": 8.424089096346952,
+        "passive_stationary_shannon_median_snr_db": 37.14328122334416,
+        "passive_stationary_shannon_selects_profile": true,
+        "passive_stationary_shannon_upper_bound_bps": 161199.73000785653,
+        "repeated_pilot_arithmetic_selects_profile": true,
+        "repeated_pilot_log2_arithmetic_bps": 67116.75987864057
+      },
+      "protocol": {
+        "configured_info_bit_rate": 0.499971347799511,
+        "gmi_margin": 0.1958204219097961,
+        "scheduled_payload_ceiling_bps": 25600.0
+      },
+      "receiver": "mic0",
+      "receiver_diagnostics": {
+        "chirp_score": 0.5023640389807884,
+        "fft_base_in_slice": 15716,
+        "llr_abs_median": 1.1493581674891145,
+        "llr_abs_p10": 0.14819928871107707,
+        "pilot_evm_mean": 1.263131369230719,
+        "sync_snr_db_median": 18.929503672040553,
+        "sync_start_in_slice": 9604
+      },
+      "run": "R1",
+      "speaker": 1,
+      "split": "calibration-descriptive",
+      "strict": {
+        "blocks_total": 50,
+        "blocks_verified": 43,
+        "bytes_verified": 11008,
+        "observed_probe_goodput_bps": 22016.0,
+        "ordered_block_mask": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          false,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          false,
+          false,
+          false,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          false,
+          true,
+          false,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          false,
+          true,
+          true,
+          true,
+          true
+        ],
+        "python_llr_to_portable_c_mask_parity": true,
+        "recovery_fraction": 0.86
+      }
+    },
+    {
+      "confidence_and_provenance": {
+        "acquisition_sha256": "a6241ec057a3f88162b92e875c7322e34573542759bf1882b6df18279218c98d",
+        "active_h_repeat_available": true,
+        "active_h_repeat_limitation": "R1/R2 are order-balanced repeats but lack strict realized-output-route provenance",
+        "capture_sha256": "05249cf2d98d94a35573496f4da04332e6cc6fdd0f4d87d3ead2ff2db7e17074",
+        "confidence": "descriptive-low",
+        "measurement_age_at_preregistration_s": 2577.183331,
+        "noise_relation": "same-campaign passive capture; not simultaneous with QAM probe"
+      },
+      "direction": "Pixel-to-Mac",
+      "id": "R2-S0-R0",
+      "is_scalar_input_simo": false,
+      "measurement_inventory": {
+        "active_h_k_available": true,
+        "active_h_k_repeat_available": true,
+        "actual_randomized_known_qam": true,
+        "llr_provenance": "Offline reconstruction of receiver-semantics-v1 LLRs; the C API does not expose LLRs, so exact ordered block-mask parity is required.",
+        "passive_noise_covariance_available": true,
+        "passive_noise_covariance_kind": "P0 Mac scalar per-bin covariance",
+        "randomized_qam_payload_sha256": "3d33a8692fdab11b792184efbd86a322fa0d2145336c68a381e6db0093db9384",
+        "receiver_matched_actual_llrs": true,
+        "stable_h_k_qualified": false,
+        "stable_h_k_reason": "R1/R2 repeat exists, but only 33.7% (speaker 0) or 44.2% (speaker 1) of bins cleared the repeat gate and output-route provenance is incomplete.",
+        "strict_ordered_block_mask_available": true
+      },
+      "predictors": {
+        "actual_llr_gmi_common_scale": 6.799720489064197,
+        "actual_llr_gmi_optimized_per_bit": 0.4475131637676051,
+        "actual_llr_gmi_s1_per_bit": 0.22922876162394945,
+        "actual_llr_gmi_selects_profile": false,
+        "effective_sinr_censoring": "none",
+        "effective_sinr_db": 4.4691128183278845,
+        "passive_stationary_shannon_median_snr_db": 17.1805093615335,
+        "passive_stationary_shannon_selects_profile": true,
+        "passive_stationary_shannon_upper_bound_bps": 85851.29893046728,
+        "repeated_pilot_arithmetic_selects_profile": true,
+        "repeated_pilot_log2_arithmetic_bps": 69490.91217680174
+      },
+      "protocol": {
+        "configured_info_bit_rate": 0.499971347799511,
+        "gmi_margin": -0.05245818403190594,
+        "scheduled_payload_ceiling_bps": 25600.0
+      },
+      "receiver": "mic0",
+      "receiver_diagnostics": {
+        "chirp_score": 0.4451713908206675,
+        "fft_base_in_slice": 15718,
+        "llr_abs_median": 0.2373147195940988,
+        "llr_abs_p10": 0.03039088708973313,
+        "pilot_evm_mean": 2.750538801525118,
+        "sync_snr_db_median": 11.922341858542806,
+        "sync_start_in_slice": 9598
+      },
+      "run": "R2",
+      "speaker": 0,
+      "split": "held-out-descriptive",
+      "strict": {
+        "blocks_total": 50,
+        "blocks_verified": 0,
+        "bytes_verified": 0,
+        "observed_probe_goodput_bps": 0.0,
+        "ordered_block_mask": [
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "python_llr_to_portable_c_mask_parity": true,
+        "recovery_fraction": 0.0
+      }
+    },
+    {
+      "confidence_and_provenance": {
+        "acquisition_sha256": "a6241ec057a3f88162b92e875c7322e34573542759bf1882b6df18279218c98d",
+        "active_h_repeat_available": true,
+        "active_h_repeat_limitation": "R1/R2 are order-balanced repeats but lack strict realized-output-route provenance",
+        "capture_sha256": "05249cf2d98d94a35573496f4da04332e6cc6fdd0f4d87d3ead2ff2db7e17074",
+        "confidence": "descriptive-low",
+        "measurement_age_at_preregistration_s": 2577.183331,
+        "noise_relation": "same-campaign passive capture; not simultaneous with QAM probe"
+      },
+      "direction": "Pixel-to-Mac",
+      "id": "R2-S1-R0",
+      "is_scalar_input_simo": false,
+      "measurement_inventory": {
+        "active_h_k_available": true,
+        "active_h_k_repeat_available": true,
+        "actual_randomized_known_qam": true,
+        "llr_provenance": "Offline reconstruction of receiver-semantics-v1 LLRs; the C API does not expose LLRs, so exact ordered block-mask parity is required.",
+        "passive_noise_covariance_available": true,
+        "passive_noise_covariance_kind": "P0 Mac scalar per-bin covariance",
+        "randomized_qam_payload_sha256": "3d33a8692fdab11b792184efbd86a322fa0d2145336c68a381e6db0093db9384",
+        "receiver_matched_actual_llrs": true,
+        "stable_h_k_qualified": false,
+        "stable_h_k_reason": "R1/R2 repeat exists, but only 33.7% (speaker 0) or 44.2% (speaker 1) of bins cleared the repeat gate and output-route provenance is incomplete.",
+        "strict_ordered_block_mask_available": true
+      },
+      "predictors": {
+        "actual_llr_gmi_common_scale": 3.7560245404196433,
+        "actual_llr_gmi_optimized_per_bit": 0.70429830599878,
+        "actual_llr_gmi_s1_per_bit": 0.5843955122791857,
+        "actual_llr_gmi_selects_profile": true,
+        "effective_sinr_censoring": "none",
+        "effective_sinr_db": 8.56174618495811,
+        "passive_stationary_shannon_median_snr_db": 37.2060543986296,
+        "passive_stationary_shannon_selects_profile": true,
+        "passive_stationary_shannon_upper_bound_bps": 170040.73645332863,
+        "repeated_pilot_arithmetic_selects_profile": true,
+        "repeated_pilot_log2_arithmetic_bps": 68965.71174231017
+      },
+      "protocol": {
+        "configured_info_bit_rate": 0.499971347799511,
+        "gmi_margin": 0.20432695819926894,
+        "scheduled_payload_ceiling_bps": 25600.0
+      },
+      "receiver": "mic0",
+      "receiver_diagnostics": {
+        "chirp_score": 0.4877957362456548,
+        "fft_base_in_slice": 15710,
+        "llr_abs_median": 1.4459218215964582,
+        "llr_abs_p10": 0.1471310499983821,
+        "pilot_evm_mean": 1.118399761830962,
+        "sync_snr_db_median": 18.962111034943614,
+        "sync_start_in_slice": 9598
+      },
+      "run": "R2",
+      "speaker": 1,
+      "split": "held-out-descriptive",
+      "strict": {
+        "blocks_total": 50,
+        "blocks_verified": 45,
+        "bytes_verified": 11520,
+        "observed_probe_goodput_bps": 23040.0,
+        "ordered_block_mask": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          false,
+          true,
+          false,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          false,
+          true,
+          true,
+          true,
+          false,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          false,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "python_llr_to_portable_c_mask_parity": true,
+        "recovery_fraction": 0.9
+      }
+    },
+    {
+      "confidence_and_provenance": {
+        "acquisition_sha256": "f747af0fb659fa7d77f3ec58b0ff1e06de028a7726b0859113eabc466faabead",
+        "active_h_repeat_available": false,
+        "active_h_repeat_limitation": "only one active matrix exists for this path",
+        "capture_sha256": "2e9159cd2113497698b30a924d48cbdd9ccf83ba490e094ef21e2bbfe8ce44b6",
+        "confidence": "descriptive-low",
+        "measurement_age_at_preregistration_s": 2671.64072,
+        "noise_relation": "same-campaign passive capture; not simultaneous with QAM probe"
+      },
+      "direction": "Mac-self",
+      "id": "SM-S0-R0",
+      "is_scalar_input_simo": false,
+      "measurement_inventory": {
+        "active_h_k_available": true,
+        "active_h_k_repeat_available": false,
+        "actual_randomized_known_qam": true,
+        "llr_provenance": "Offline reconstruction of receiver-semantics-v1 LLRs; the C API does not expose LLRs, so exact ordered block-mask parity is required.",
+        "passive_noise_covariance_available": true,
+        "passive_noise_covariance_kind": "P0 Mac scalar per-bin covariance",
+        "randomized_qam_payload_sha256": "3d33a8692fdab11b792184efbd86a322fa0d2145336c68a381e6db0093db9384",
+        "receiver_matched_actual_llrs": true,
+        "stable_h_k_qualified": false,
+        "stable_h_k_reason": "No held-out active repeat exists.",
+        "strict_ordered_block_mask_available": true
+      },
+      "predictors": {
+        "actual_llr_gmi_common_scale": 2.555060691636298,
+        "actual_llr_gmi_optimized_per_bit": 0.849036414007241,
+        "actual_llr_gmi_s1_per_bit": 0.8199988899171617,
+        "actual_llr_gmi_selects_profile": true,
+        "effective_sinr_censoring": "none",
+        "effective_sinr_db": 11.060122960355226,
+        "passive_stationary_shannon_median_snr_db": 10.744372384366883,
+        "passive_stationary_shannon_selects_profile": true,
+        "passive_stationary_shannon_upper_bound_bps": 62614.61572052711,
+        "repeated_pilot_arithmetic_selects_profile": true,
+        "repeated_pilot_log2_arithmetic_bps": 135448.51160866427
+      },
+      "protocol": {
+        "configured_info_bit_rate": 0.499971347799511,
+        "gmi_margin": 0.3490650662077299,
+        "scheduled_payload_ceiling_bps": 25600.0
+      },
+      "receiver": "mic0",
+      "receiver_diagnostics": {
+        "chirp_score": 0.7296230439886757,
+        "fft_base_in_slice": 15713,
+        "llr_abs_median": 5.974859706457082,
+        "llr_abs_p10": 0.2662845648346706,
+        "pilot_evm_mean": 0.5437489917893419,
+        "sync_snr_db_median": 23.733148009800175,
+        "sync_start_in_slice": 9593
+      },
+      "run": "S-M",
+      "speaker": 0,
+      "split": "descriptive-only",
+      "strict": {
+        "blocks_total": 50,
+        "blocks_verified": 50,
+        "bytes_verified": 12800,
+        "observed_probe_goodput_bps": 25600.0,
+        "ordered_block_mask": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "python_llr_to_portable_c_mask_parity": true,
+        "recovery_fraction": 1.0
+      }
+    },
+    {
+      "confidence_and_provenance": {
+        "acquisition_sha256": "f747af0fb659fa7d77f3ec58b0ff1e06de028a7726b0859113eabc466faabead",
+        "active_h_repeat_available": false,
+        "active_h_repeat_limitation": "only one active matrix exists for this path",
+        "capture_sha256": "2e9159cd2113497698b30a924d48cbdd9ccf83ba490e094ef21e2bbfe8ce44b6",
+        "confidence": "descriptive-low",
+        "measurement_age_at_preregistration_s": 2671.64072,
+        "noise_relation": "same-campaign passive capture; not simultaneous with QAM probe"
+      },
+      "direction": "Mac-self",
+      "id": "SM-S1-R0",
+      "is_scalar_input_simo": false,
+      "measurement_inventory": {
+        "active_h_k_available": true,
+        "active_h_k_repeat_available": false,
+        "actual_randomized_known_qam": true,
+        "llr_provenance": "Offline reconstruction of receiver-semantics-v1 LLRs; the C API does not expose LLRs, so exact ordered block-mask parity is required.",
+        "passive_noise_covariance_available": true,
+        "passive_noise_covariance_kind": "P0 Mac scalar per-bin covariance",
+        "randomized_qam_payload_sha256": "3d33a8692fdab11b792184efbd86a322fa0d2145336c68a381e6db0093db9384",
+        "receiver_matched_actual_llrs": true,
+        "stable_h_k_qualified": false,
+        "stable_h_k_reason": "No held-out active repeat exists.",
+        "strict_ordered_block_mask_available": true
+      },
+      "predictors": {
+        "actual_llr_gmi_common_scale": 2.427693789126227,
+        "actual_llr_gmi_optimized_per_bit": 0.24474362101953995,
+        "actual_llr_gmi_s1_per_bit": 0.18817526496241432,
+        "actual_llr_gmi_selects_profile": false,
+        "effective_sinr_censoring": "none",
+        "effective_sinr_db": 0.6776237066329763,
+        "passive_stationary_shannon_median_snr_db": -6.225531925732165,
+        "passive_stationary_shannon_selects_profile": false,
+        "passive_stationary_shannon_upper_bound_bps": 9045.734305728633,
+        "repeated_pilot_arithmetic_selects_profile": true,
+        "repeated_pilot_log2_arithmetic_bps": 53649.773525342134
+      },
+      "protocol": {
+        "configured_info_bit_rate": 0.499971347799511,
+        "gmi_margin": -0.2552277267799711,
+        "scheduled_payload_ceiling_bps": 25600.0
+      },
+      "receiver": "mic0",
+      "receiver_diagnostics": {
+        "chirp_score": 0.39357113195200527,
+        "fft_base_in_slice": 15718,
+        "llr_abs_median": 0.3152081564695206,
+        "llr_abs_p10": 0.05117744095552831,
+        "pilot_evm_mean": 1.3159063576681338,
+        "sync_snr_db_median": 4.929969260140307,
+        "sync_start_in_slice": 9598
+      },
+      "run": "S-M",
+      "speaker": 1,
+      "split": "descriptive-only",
+      "strict": {
+        "blocks_total": 50,
+        "blocks_verified": 0,
+        "bytes_verified": 0,
+        "observed_probe_goodput_bps": 0.0,
+        "ordered_block_mask": [
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "python_llr_to_portable_c_mask_parity": true,
+        "recovery_fraction": 0.0
+      }
+    }
+  ],
+  "passive_noise": {
+    "mac_fft_records": 234,
+    "mac_pcm_sha256": "e0634163f9a55dd17c20bfd1fa822bf64a96e50aa3801fb50dd355180539e7f3",
+    "pixel_fft_records": 234,
+    "pixel_pcm_sha256": "ad04e9b16c5078dd955f864a35aed4104c0e078baa4ee0d4302cd5f1820589fa",
+    "warning": "Campaign-stationary digital receiver noise; not simultaneous probe noise, calibrated SPL, or a broadly valid environment model."
+  },
+  "preregistration_sha256": "ece043f5c94e96643ac3e9235525a594c7d7450942438b3f74781c860d357fbd",
+  "raw_input_inventory_sha256": "694b39561bcfe97a38d5baaefbe50c18ed363091b7166a13a4ef09df8c8ae7f8",
+  "receiver_semantics": {
+    "actual_llr_gate": "ordered Python block mask must equal retained portable-C block mask for every observation",
+    "all_observations_passed_mask_parity": true,
+    "global_pilot_evm_weight": 0.25,
+    "local_pilot_evm_weight": 0.75,
+    "local_pilot_window": 11,
+    "snr_floor": 0.1,
+    "source": "Python reconstruction of portable-C receiver semantics v1"
+  },
+  "schema": "cyrinx.rank5a-capacity-predictor-results.v1",
+  "summary": {
+    "exact_schedule": {
+      "bits_per_symbol": 3272,
+      "capacity_coded_bits": 209408,
+      "components": "4096-sample chirp + 2048-sample guard + 2 sync and 64 data symbols, each 2048+768 samples; no inter-frame gap",
+      "configured_info_bit_rate": 0.499971347799511,
+      "data_bins": 818,
+      "frame_samples": 192000,
+      "frame_seconds": 4.0,
+      "info_bits": 104698,
+      "occupied_bins": 935,
+      "payload_bytes": 12800,
+      "pilot_bins": 117,
+      "scheduled_payload_ceiling_bps": 25600.0
+    },
+    "heldout_R2_descriptive": {
+      "ids": [
+        "R2-S0-R0",
+        "R2-S1-R0"
+      ],
+      "note": "Two speaker paths from one correlated physical run; no model was fitted, and n=2 is too small for a meaningful held-out rank statistic.",
+      "selection_rules": {
+        "actual_llr_gmi": {
+          "catastrophic_optimistic_below_90pct": [],
+          "false_negative_at_or_above_98pct": [],
+          "false_positive_below_98pct": [
+            "R2-S1-R0"
+          ],
+          "mean_absolute_goodput_error_bps": 1280.0,
+          "median_absolute_goodput_error_bps": 1280.0,
+          "observations": 2,
+          "optimistic_by_more_than_20pct_or_zero_actual": []
+        },
+        "passive_stationary_shannon": {
+          "catastrophic_optimistic_below_90pct": [
+            "R2-S0-R0"
+          ],
+          "false_negative_at_or_above_98pct": [],
+          "false_positive_below_98pct": [
+            "R2-S0-R0",
+            "R2-S1-R0"
+          ],
+          "mean_absolute_goodput_error_bps": 14080.0,
+          "median_absolute_goodput_error_bps": 14080.0,
+          "observations": 2,
+          "optimistic_by_more_than_20pct_or_zero_actual": [
+            "R2-S0-R0"
+          ]
+        },
+        "repeated_pilot_arithmetic": {
+          "catastrophic_optimistic_below_90pct": [
+            "R2-S0-R0"
+          ],
+          "false_negative_at_or_above_98pct": [],
+          "false_positive_below_98pct": [
+            "R2-S0-R0",
+            "R2-S1-R0"
+          ],
+          "mean_absolute_goodput_error_bps": 14080.0,
+          "median_absolute_goodput_error_bps": 14080.0,
+          "observations": 2,
+          "optimistic_by_more_than_20pct_or_zero_actual": [
+            "R2-S0-R0"
+          ]
+        }
+      }
+    },
+    "observation_counts": {
+      "all": 12,
+      "heldout_devices": 1,
+      "heldout_paths": 2,
+      "independent_heldout_physical_cells": 1,
+      "primary_unique_mono": 10,
+      "scalar_input_simo_diagnostic": 2
+    },
+    "qualification": {
+      "adaptation_promotion_permitted": false,
+      "classification": "QUALIFICATION_GAP",
+      "reasons": [
+        "Only one held-out physical run is available, below the preregistered five-cell/two-device minimum.",
+        "F0 and Mac-self have no held-out active repeat, so H[k] stability is not established.",
+        "R1/R2 lack a strict realized Pixel output-route signature.",
+        "Only one fixed 16-QAM rate-1/2 profile was probed, so within-10%-of-oracle profile choice cannot be scored.",
+        "The 50-block outcomes within a frame are not independent physical cells."
+      ],
+      "roadmap_gate_evaluable": false
+    },
+    "schema": "cyrinx.rank5a-capacity-predictor-summary.v1",
+    "selection_rules_primary_mono": {
+      "actual_llr_gmi": {
+        "catastrophic_optimistic_below_90pct": [
+          "R1-S0-R0",
+          "R1-S1-R0"
+        ],
+        "false_negative_at_or_above_98pct": [],
+        "false_positive_below_98pct": [
+          "R1-S0-R0",
+          "R1-S1-R0",
+          "R2-S1-R0"
+        ],
+        "mean_absolute_goodput_error_bps": 3174.4,
+        "median_absolute_goodput_error_bps": 0.0,
+        "observations": 10,
+        "optimistic_by_more_than_20pct_or_zero_actual": [
+          "R1-S0-R0"
+        ]
+      },
+      "passive_stationary_shannon": {
+        "catastrophic_optimistic_below_90pct": [
+          "R1-S0-R0",
+          "R1-S1-R0",
+          "R2-S0-R0"
+        ],
+        "false_negative_at_or_above_98pct": [],
+        "false_positive_below_98pct": [
+          "R1-S0-R0",
+          "R1-S1-R0",
+          "R2-S0-R0",
+          "R2-S1-R0"
+        ],
+        "mean_absolute_goodput_error_bps": 5734.4,
+        "median_absolute_goodput_error_bps": 0.0,
+        "observations": 10,
+        "optimistic_by_more_than_20pct_or_zero_actual": [
+          "R1-S0-R0",
+          "R2-S0-R0"
+        ]
+      },
+      "repeated_pilot_arithmetic": {
+        "catastrophic_optimistic_below_90pct": [
+          "F0-S1-R0",
+          "R1-S0-R0",
+          "R1-S1-R0",
+          "R2-S0-R0",
+          "SM-S1-R0"
+        ],
+        "false_negative_at_or_above_98pct": [],
+        "false_positive_below_98pct": [
+          "F0-S1-R0",
+          "R1-S0-R0",
+          "R1-S1-R0",
+          "R2-S0-R0",
+          "R2-S1-R0",
+          "SM-S1-R0"
+        ],
+        "mean_absolute_goodput_error_bps": 10854.4,
+        "median_absolute_goodput_error_bps": 3072.0,
+        "observations": 10,
+        "optimistic_by_more_than_20pct_or_zero_actual": [
+          "F0-S1-R0",
+          "R1-S0-R0",
+          "R2-S0-R0",
+          "SM-S1-R0"
+        ]
+      }
+    },
+    "spearman_primary_mono": {
+      "actual_llr_gmi": 0.8842048302391148,
+      "effective_sinr": 0.8842048302391148,
+      "passive_stationary_shannon": 0.5277811777396266,
+      "repeated_pilot_arithmetic": 0.4729467696627823
+    },
+    "status": "BENCH-SPIKE_NOT_PROMOTED"
+  }
+}
