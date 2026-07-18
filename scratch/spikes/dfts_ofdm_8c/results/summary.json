@@ -184,7 +184,7 @@
       "pass": true
     }
   },
-  "implementation_sha256": "c3003b56c14ee0d6223fa44eb01621e813dbc128ba053ad65f891226dbce4aac",
+  "implementation_sha256": "9a1760c4c851a7670956b120e584231ce5a6101a2577ca9e036dcbddf363c18d",
   "library_integration_permitted": false,
   "limits": [
     "no speaker, microphone, OS dynamics/protection, clipping, THD, intermodulation, or acoustic SPL is modelled or measured",

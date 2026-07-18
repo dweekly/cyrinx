@@ -31,4 +31,3 @@ If Rank 5a does not find repeatable output compression/protection that the
 production OFDM waveform triggers, stop this localized DFT-spread branch. The
 current synthetic screen is not evidence that a different pilot layout or a
 post-hoc 2.75 dB threshold should be tried.
-

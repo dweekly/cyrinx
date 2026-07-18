@@ -43,6 +43,8 @@ bounded OTA screen, not integration or a throughput claim.
 .venv/bin/python scratch/spikes/dfts_ofdm_8c/spike.py run
 ```
 
-Preregistration SHA-256: `4bc76ad6297d5719dc58c83365a8382aaff6e269fb1ec6be58e5d6fbc7a9c221`  
-Implementation SHA-256: `c3003b56c14ee0d6223fa44eb01621e813dbc128ba053ad65f891226dbce4aac`  
+Preregistration SHA-256: `4bc76ad6297d5719dc58c83365a8382aaff6e269fb1ec6be58e5d6fbc7a9c221`
+
+Implementation SHA-256: `9a1760c4c851a7670956b120e584231ce5a6101a2577ca9e036dcbddf363c18d`
+
 Campaign wall time: 105.228 s.

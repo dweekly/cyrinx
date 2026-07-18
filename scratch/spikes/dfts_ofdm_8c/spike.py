@@ -697,7 +697,7 @@ def run_campaign(document: dict[str, Any], output_dir: Path) -> dict[str, Any]:
 
 def write_cells_csv(cells: list[dict[str, Any]], path: Path) -> None:
     with path.open("w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(cells[0]))
+        writer = csv.DictWriter(handle, fieldnames=list(cells[0]), lineterminator="\n")
         writer.writeheader()
         writer.writerows(cells)
 
@@ -751,8 +751,10 @@ bounded OTA screen, not integration or a throughput claim.
 .venv/bin/python scratch/spikes/dfts_ofdm_8c/spike.py run
 ```
 
-Preregistration SHA-256: `{result['preregistration_sha256']}`  
-Implementation SHA-256: `{result['implementation_sha256']}`  
+Preregistration SHA-256: `{result['preregistration_sha256']}`
+
+Implementation SHA-256: `{result['implementation_sha256']}`
+
 Campaign wall time: {result['campaign_wall_seconds']:.3f} s.
 """
     path.write_text(text)
@@ -779,4 +781,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
