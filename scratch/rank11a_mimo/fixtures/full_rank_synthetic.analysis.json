@@ -1,0 +1,123 @@
+{
+  "all_geometry_gates_pass": true,
+  "capacity": {
+    "best_speaker_by_bin": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "best_speaker_simo_cp_inclusive_bps": 788.7659262398444,
+    "best_speaker_simo_logdet_bits_per_ofdm_use": 37.597842484099246,
+    "effective_rank": {
+      "median": 1.864703183637314,
+      "minimum": 1.8584254894096957,
+      "p10": 1.8595275463975647
+    },
+    "equal_power_mimo_cp_inclusive_bps": 1140.8409098727502,
+    "equal_power_mimo_logdet_bits_per_ofdm_use": 54.38008337060109,
+    "logdet_ratio": 1.4463618063616106,
+    "singular_values_by_bin": [
+      [
+        16.689725902807123,
+        11.413183071664493
+      ],
+      [
+        16.660271806283955,
+        11.371802609679365
+      ],
+      [
+        16.743645222141083,
+        11.393240393389172
+      ],
+      [
+        16.726305185657683,
+        11.36452813045596
+      ],
+      [
+        16.718759303708477,
+        11.319500716994272
+      ],
+      [
+        16.76448213289982,
+        11.314480774597142
+      ],
+      [
+        16.715300653935035,
+        11.252525503684133
+      ],
+      [
+        16.761960118253647,
+        11.255904371778808
+      ]
+    ]
+  },
+  "claim_boundary": "Synthetic matrices validate arithmetic only and cannot satisfy the Rank 11a OTA gate.",
+  "decision": "SYNTHETIC_VALIDATION_ONLY",
+  "evidence_class": "synthetic",
+  "gates": {
+    "amplitude_cv_at_most_0_15": true,
+    "fixed_sum_digital_sample_power": true,
+    "mode2_qpsk_rate_half_on_at_least_40_percent_bins": true,
+    "one_mib_net_gain_at_least_1_35": true,
+    "per_speaker_peak_limit": true,
+    "repeat_coherence_at_least_0_95": true,
+    "residual_phase_sd_at_most_15_degrees": true
+  },
+  "geometry": "deterministic_full_rank_fixture",
+  "gmi": {
+    "available": true,
+    "mode2_gmi_bits_per_symbol_by_bin": {
+      "100": 1.980072520563173,
+      "101": 1.9784305966279936,
+      "102": 1.9748577961986677,
+      "103": 1.986311228485984,
+      "96": 1.9786648545989387,
+      "97": 1.9846507748825206,
+      "98": 1.977918714535014,
+      "99": 1.9809897028755323
+    },
+    "mode2_qpsk_rate_half_bin_fraction": 1.0,
+    "threshold_bits_per_qpsk_symbol": 1.0
+  },
+  "identifiability_reasons": [],
+  "identifiable_phase_coherent_matrix": true,
+  "promotion_gate_evaluable": false,
+  "schema": "cyrinx.rank11a.matrix-analysis.v1",
+  "session_accounting": {
+    "scheduled_ceiling_bps": {
+      "best_speaker_simo": 145.70290267501423,
+      "two_mode_mimo": 291.40580535002846
+    },
+    "setup_s": {
+      "best_speaker_simo": 0.15,
+      "two_mode_mimo": 0.6
+    },
+    "transfers": {
+      "1MiB": {
+        "best_speaker_simo_duration_s": 58155.075252525254,
+        "best_speaker_simo_net_bps": 144.24550159335826,
+        "ratio": 1.9999638903040584,
+        "two_mode_mimo_duration_s": 29078.062626262625,
+        "two_mode_mimo_net_bps": 288.48579452551303
+      },
+      "64KiB": {
+        "best_speaker_simo_duration_s": 3634.8328282828284,
+        "best_speaker_simo_net_bps": 144.23992100007655,
+        "ratio": 1.9994224236315692,
+        "two_mode_mimo_duration_s": 1817.941414141414,
+        "two_mode_mimo_net_bps": 288.39653243039913
+      }
+    }
+  },
+  "stability": {
+    "median_repeat_coherence": 0.9999724016979239,
+    "minimum_repeat_coherence": 0.9999501615503947,
+    "p90_amplitude_coefficient_of_variation": 0.005524230916557375,
+    "p90_residual_phase_sd_degrees": 0.19813561532448187
+  }
+}

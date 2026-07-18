@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "spike": "Cyrinx roadmap Rank 11a: offline NxM/MIMO feasibility and capacity accounting",
+  "frozen_at": "2026-07-18",
+  "code_base": "61558c2",
+  "scope": {
+    "allowed_evidence": [
+      "tracked retained captures and manifests present in this isolated worktree",
+      "deterministic synthetic fixtures generated from declared matrices"
+    ],
+    "forbidden_actions": [
+      "ADB or attached-device access",
+      "speaker playback",
+      "microphone recording",
+      "live audio or hardware acquisition",
+      "integration into Sources"
+    ],
+    "evidence_classes": [
+      "synthetic",
+      "retained_replay",
+      "measured_ota"
+    ]
+  },
+  "hypothesis": "At fixed total digital sample power and per-speaker peak limits, a phase-coherent, independently driven and independently observed retained 2x2 channel matrix predicts at least 1.35x setup-inclusive net goodput over the best-speaker/SIMO control in at least two of three required geometries.",
+  "incumbent": "Per-bin best single speaker with all independent receive microphones combined using noise-whitened SIMO combining, under the same active-bin mask, total digital sample power, CP, pilot, control, sounding, and update overhead.",
+  "evidence_audit": {
+    "required_tx": "At least two logical speaker channels independently driven within one phase-continuous multichannel render, or an equivalent documented common phase reference.",
+    "required_rx": "At least two raw logical microphone channels retained without sample-identical duplication or undocumented mixing.",
+    "required_repeats": 5,
+    "required_geometries": [
+      "optimized_near_field",
+      "centered_3ft",
+      "lateral_offset_3ft"
+    ],
+    "required_provenance": [
+      "device and route identity",
+      "sample rates and channel maps",
+      "common capture clock continuity",
+      "probe waveform and exact timing",
+      "speaker drive amplitudes and peaks",
+      "noise-only interval",
+      "geometry and environment",
+      "software/configuration hashes"
+    ],
+    "hard_stop_conditions": [
+      "speaker columns come from separate phase-incoherent launches",
+      "fewer than two independently driven outputs",
+      "fewer than two independently retained inputs",
+      "undocumented channel mixing or route change",
+      "no noise interval or power-accounting provenance",
+      "fewer than five matrices in any required geometry"
+    ]
+  },
+  "waveform_and_schedule": {
+    "sample_rate_hz": 48000,
+    "nfft": 2048,
+    "cyclic_prefix_samples": 240,
+    "active_band_hz": [
+      1100,
+      23000
+    ],
+    "matrix_probe": "One phase-continuous stereo PCM acquisition per repeat. Both transmit columns use mutually orthogonal known OFDM pilot allocations with identical active-bin support; pilot polarity is deterministic from the manifest seed. A leading synchronization chirp and repeated pilot blocks provide timing/CFO/SRO removal and repeat-coherence measurement. Sequential columns are acceptable only as non-overlapping slots in the same uninterrupted stereo render and receive capture.",
+    "payload_probe": "Independently seeded randomized QPSK symbols for each stream, encoded as known bits. Actual demapper LLRs are required for bitwise GMI; otherwise GMI is reported unavailable.",
+    "primary_power_class": "Fixed sum digital sample power across speakers, with each speaker constrained by the same declared sample-peak limit as the one-speaker control.",
+    "diagnostic_power_class": "Equal per-speaker drive at the one-speaker amplitude, explicitly labeled as approximately +3 dB total digital power.",
+    "forbidden_power_claim": "No calibrated acoustic/SPL comparison without an instrumented level record."
+  },
+  "analysis": {
+    "channel_estimate": "Per-bin complex least-squares H[k] from known orthogonal probes after shared timing/CFO/SRO correction.",
+    "noise_covariance": "Per-bin sample covariance from a noise-only interval; use diagonal loading declared in output if inversion is ill-conditioned.",
+    "coherence": "Magnitude of normalized complex correlation between aligned repeat channel estimates, computed per path and payload-weighted across active bins.",
+    "residual_phase_sd": "Circular standard deviation in degrees after removal of one fitted common delay and common phase per repeat; aggregate as payload-weighted p90 across paths/bins.",
+    "amplitude_stability": "Repeat coefficient of variation of abs(H), payload-weighted p90; preregistered bound <= 0.15.",
+    "effective_rank": "exp(-sum(p_i * ln(p_i))) from normalized eigenvalues of the noise-whitened H H^H matrix.",
+    "shannon": "sum_k log2 det(I + H[k] Q[k] H[k]^H Rn[k]^-1), with Q split equally across active transmit modes for the MIMO diagnostic and all power assigned to each tested speaker for the best-speaker/SIMO control.",
+    "mode2_gmi": "Bitwise GMI from actual known QPSK bits and actual demapper LLRs after the declared total-power split; no EVM-to-GMI substitution.",
+    "scheduled_ceiling": "Payload bits divided by CP/pilot/FEC/preamble/gap-inclusive schedule duration.",
+    "session_net": "Delivered application bits divided by sounding + feedback + profile activation + precoder update + scheduled transfer airtime. Report 64 KiB and 1 MiB transfers.",
+    "uncertainty": "Report every repeat and geometry, median and p10 by whole-matrix cluster. Do not resample bins as independent observations."
+  },
+  "primary_metric": "Predicted setup-inclusive 1 MiB two-mode session-net-goodput ratio versus the best-speaker/SIMO control at fixed total digital sample power.",
+  "non_regression_constraints": [
+    "repeat coherence >= 0.95",
+    "payload-weighted p90 residual phase standard deviation <= 15 degrees",
+    "payload-weighted p90 amplitude coefficient of variation <= 0.15",
+    "mode-2 bitwise GMI supports QPSK rate 1/2 on >= 40% of payload-weighted active bins",
+    "per-speaker peak constraints are met",
+    "all setup and update overhead is included"
+  ],
+  "promotion_threshold": "Predicted setup-inclusive 1 MiB session-net ratio >= 1.35 in at least two of optimized-near-field, centered-3ft, and lateral-offset-3ft, with every evidence and non-regression gate satisfied.",
+  "stop_condition": "Stop and publish an identifiability result if the retained corpus lacks any required coherent/independent/provenance evidence. If evidence is identifiable but the gain is 1.15x to <1.35x, stop in the roadmap gray zone. If it is <1.15x, reject two-stream work and retain best-speaker/SIMO analysis.",
+  "data_split": {
+    "calibration": "The first two repeats by manifest acquisition order in each geometry may set timing, diagonal loading, and fixed analysis constants.",
+    "held_out": "The remaining at least three repeats per geometry decide coherence, mode-2, and gain gates. Whole captures, not bins, are held out.",
+    "synthetic": "Synthetic fixtures validate implementation only and never satisfy the measured feasibility gate."
+  },
+  "retained_outputs": [
+    "this preregistration manifest",
+    "machine-readable retained-corpus inventory",
+    "audit report with explicit rejection reasons",
+    "matrix-analysis source and deterministic tests",
+    "synthetic fixtures and expected numerical results",
+    "acquisition manifest/probe design for the next hardware campaign",
+    "analysis JSON separating synthetic, retained-replay, and measured-OTA claims"
+  ]
+}

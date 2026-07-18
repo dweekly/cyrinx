@@ -1,0 +1,321 @@
+{
+  "schema": "cyrinx.rank11a.phase-continuous-acquisition-plan.v1",
+  "status": "DESIGN_ONLY_NOT_EXECUTED",
+  "preregistration_sha256": "d0133ec1b825637c1b9b178718ebbfe5ed3d993d4fb2486dfa5b9556c95a35e3",
+  "purpose": "Acquire an identifiable MacBook two-speaker to Pixel two-microphone H[k], noise covariance, repeat stability, and randomized two-stream probe under fixed total digital sample power.",
+  "hard_prohibitions": [
+    "Do not create the two H columns with separate player launches.",
+    "Do not downmix, beamform, reorder, or discard either Pixel input channel.",
+    "Do not infer input independence from Android channel count alone.",
+    "Do not compare equal amplitude on both speakers to one speaker as the primary power class.",
+    "Do not label endpoint volume and sample amplitude as calibrated SPL.",
+    "Do not use payload decisions, CRC results, or expected payload bytes for channel selection."
+  ],
+  "endpoints": {
+    "transmitter": {
+      "device": "Mac16,5 MacBook Pro",
+      "route": "BuiltInSpeakerDevice",
+      "logical_channels": [
+        {
+          "index": 0,
+          "label": "built-in left speaker"
+        },
+        {
+          "index": 1,
+          "label": "built-in right speaker"
+        }
+      ],
+      "required_audio_session": "One continuously running two-channel output unit for the entire probe. Both channel buffers begin on the same render sample timeline.",
+      "sample_rate_hz": 48000,
+      "sample_format": "float32 or int16 with the exact conversion recorded"
+    },
+    "receiver": {
+      "device": "Pixel 7a",
+      "expected_serial": "38291JEHN00306",
+      "android_source": "UNPROCESSED",
+      "expected_source_id": 9,
+      "expected_route_signature_sha256": "8da17a36acdd7a79d0f70f9fc085b99a8faf508f862387edec3b093180a827d0",
+      "logical_channels": [
+        {
+          "index": 0,
+          "expected_address": "bottom",
+          "required_mapping": "direct"
+        },
+        {
+          "index": 1,
+          "expected_address": "back",
+          "required_mapping": "direct"
+        }
+      ],
+      "required_capture": "One uninterrupted, interleaved two-channel 48 kHz PCM capture retaining original sample order.",
+      "sample_rate_hz": 48000,
+      "encoding": "PCM_16BIT or PCM_FLOAT, recorded in the completed manifest"
+    }
+  },
+  "waveform": {
+    "sample_rate_hz": 48000,
+    "nfft": 2048,
+    "cyclic_prefix_samples": 240,
+    "subcarrier_spacing_hz": 23.4375,
+    "active_positive_bins_inclusive": [
+      47,
+      981
+    ],
+    "occupied_band_hz_actual": [
+      1101.5625,
+      22992.1875
+    ],
+    "real_waveform": "Hermitian symmetry; DC and Nyquist are zero.",
+    "pilot_seed": 11020260718,
+    "simo_control_seeds": [
+      11020260721,
+      11020260722
+    ],
+    "payload_stream_seeds": [
+      11020260719,
+      11020260720
+    ],
+    "papr_limiter": {
+      "algorithm": "deterministic iterative clipping and active-bin filtering",
+      "clip_sigma": 3.3,
+      "iterations": 3,
+      "forbidden": "No per-capture normalization after the drive class is frozen."
+    },
+    "timeline": [
+      {
+        "label": "noise_and_capture_lead",
+        "start_sample": 0,
+        "sample_count": 33600,
+        "tx0": "zero",
+        "tx1": "zero",
+        "use": "noise covariance and capture lead"
+      },
+      {
+        "label": "stereo_sync",
+        "start_sample": 33600,
+        "sample_count": 4096,
+        "tx0": "deterministic 1101.5625-to-22992.1875-Hz chirp",
+        "tx1": "negative time-reversed deterministic sync chirp",
+        "use": "shared origin and output-channel mapping; not H estimation"
+      },
+      {
+        "label": "post_sync_guard",
+        "start_sample": 37696,
+        "sample_count": 4096,
+        "tx0": "zero",
+        "tx1": "zero"
+      },
+      {
+        "label": "orthogonal_matrix_probe",
+        "start_sample": 41792,
+        "sample_count": 36608,
+        "ofdm_symbols": 16,
+        "tx_code": {
+          "group_length_symbols": 2,
+          "tx0": [
+            1,
+            1
+          ],
+          "tx1": [
+            1,
+            -1
+          ],
+          "groups": 8,
+          "per_bin_pilot": "deterministic BPSK from pilot_seed; identical active-bin support for both outputs"
+        },
+        "estimator": "For each two-symbol group and bin, solve Y=HX using the known 2x2 orthogonal code; retain all eight H estimates before averaging."
+      },
+      {
+        "label": "pre_control_guard",
+        "start_sample": 78400,
+        "sample_count": 4096,
+        "tx0": "zero",
+        "tx1": "zero"
+      },
+      {
+        "label": "randomized_tx0_simo_control",
+        "start_sample": 82496,
+        "sample_count": 73216,
+        "ofdm_symbols": 32,
+        "tx0": "independently seeded QPSK control stream on every active bin at total control power P",
+        "tx1": "zero",
+        "receiver": "Per-bin noise-whitened SIMO; retain actual bits, LLRs, EVM, and symbol estimates."
+      },
+      {
+        "label": "inter_control_guard",
+        "start_sample": 155712,
+        "sample_count": 4096,
+        "tx0": "zero",
+        "tx1": "zero"
+      },
+      {
+        "label": "randomized_tx1_simo_control",
+        "start_sample": 159808,
+        "sample_count": 73216,
+        "ofdm_symbols": 32,
+        "tx0": "zero",
+        "tx1": "independently seeded QPSK control stream on every active bin at total control power P",
+        "receiver": "Per-bin noise-whitened SIMO; retain actual bits, LLRs, EVM, and symbol estimates."
+      },
+      {
+        "label": "pre_two_stream_guard",
+        "start_sample": 233024,
+        "sample_count": 4096,
+        "tx0": "zero",
+        "tx1": "zero"
+      },
+      {
+        "label": "randomized_two_stream_probe",
+        "start_sample": 237120,
+        "sample_count": 146432,
+        "ofdm_symbols": 64,
+        "tx0": "independently seeded QPSK stream 0 on every active bin",
+        "tx1": "independently seeded QPSK stream 1 on every active bin",
+        "receiver": "Per-bin noise-whitened MMSE; retain actual known bits, actual LLRs, EVM, and decoded symbol estimates for both physical streams.",
+        "note": "This unprecoded physical-port probe is a conservative mode-2 GMI test. A later preloaded-SVD probe requires a separately preregistered feedback-burst experiment."
+      },
+      {
+        "label": "tail_silence",
+        "start_sample": 383552,
+        "sample_count": 33600,
+        "tx0": "zero",
+        "tx1": "zero",
+        "use": "post-signal noise witness and protection from the known macOS stream-end fade"
+      }
+    ],
+    "total_render_samples": 417152,
+    "render_duration_s": 8.690666666666667
+  },
+  "power_classes": {
+    "primary": {
+      "label": "fixed-sum-digital-sample-power",
+      "control": "One speaker carries total mean active-signal sample power P; the other is exactly zero.",
+      "matrix_and_two_stream": "Each speaker carries P/2 mean active-signal sample power.",
+      "per_speaker_absolute_sample_peak_limit": 0.18,
+      "required_report": [
+        "mean square per speaker by timeline segment",
+        "sum mean square across speakers by segment",
+        "sample peak and clipped-sample count per speaker",
+        "OS output volume and route",
+        "rendered PCM SHA-256"
+      ]
+    },
+    "separate_optional_diagnostic": {
+      "label": "equal-per-speaker-plus-3dB-total",
+      "enabled": false,
+      "restriction": "Requires a separate manifest and must never be pooled with the primary class."
+    }
+  },
+  "geometry_cells_in_acquisition_order": [
+    {
+      "cell": "optimized_near_field",
+      "description": "Pixel face-up on 0.5-inch soft cloth above the MacBook function-key area, in the retained optimal position.",
+      "repeat_ids": [
+        "near-01",
+        "near-02",
+        "near-03",
+        "near-04",
+        "near-05"
+      ],
+      "calibration_repeat_ids": [
+        "near-01",
+        "near-02"
+      ],
+      "held_out_repeat_ids": [
+        "near-03",
+        "near-04",
+        "near-05"
+      ]
+    },
+    {
+      "cell": "centered_3ft",
+      "description": "Pixel centerline three feet from the MacBook speaker baseline; exact xyz coordinates and orientation photographed and measured.",
+      "repeat_ids": [
+        "center3ft-01",
+        "center3ft-02",
+        "center3ft-03",
+        "center3ft-04",
+        "center3ft-05"
+      ],
+      "calibration_repeat_ids": [
+        "center3ft-01",
+        "center3ft-02"
+      ],
+      "held_out_repeat_ids": [
+        "center3ft-03",
+        "center3ft-04",
+        "center3ft-05"
+      ]
+    },
+    {
+      "cell": "lateral_offset_3ft",
+      "description": "Three-foot range with a preregistered 18-inch lateral offset from the MacBook centerline; exact xyz coordinates and orientation photographed and measured.",
+      "repeat_ids": [
+        "lateral3ft-01",
+        "lateral3ft-02",
+        "lateral3ft-03",
+        "lateral3ft-04",
+        "lateral3ft-05"
+      ],
+      "calibration_repeat_ids": [
+        "lateral3ft-01",
+        "lateral3ft-02"
+      ],
+      "held_out_repeat_ids": [
+        "lateral3ft-03",
+        "lateral3ft-04",
+        "lateral3ft-05"
+      ]
+    }
+  ],
+  "per_repeat_sequence": [
+    "Record preflight route signature, OS volume, source, APK/build identity, and clock timestamps.",
+    "Start the two-channel Pixel capture before playback and preserve its original interleaving.",
+    "Start one phase-continuous Mac stereo render; do not stop or reopen the output unit between speakers or segments.",
+    "Record postflight route signature and reject the repeat on any route/source/channel-map change.",
+    "Hash raw capture, rendered stereo PCM, completed manifest, and analyzer version before examining candidate metrics.",
+    "Alternate the sign of the tx1 Walsh row on even repeat IDs as a channel-map and estimator control; canonicalize it in analysis."
+  ],
+  "independence_and_integrity_checks": {
+    "digital_render": [
+      "Both output channels have the declared sample count and shared origin.",
+      "Each Walsh row is orthogonal to the other to numerical tolerance <= 1e-12 before PCM quantization.",
+      "Wrong-column energy during single-column digital unit checks is <= -80 dBFS."
+    ],
+    "receiver_rows": [
+      "Reject sample-identical channels.",
+      "Report zero-lag and lag-optimized correlation during noise, sync, matrix, and payload segments.",
+      "Reject undocumented Android mixing, channel reorder, or non-direct mapping.",
+      "Do not reject high acoustic correlation alone; independence is a routing/sample question, while spatial rank is measured from H[k]."
+    ],
+    "clock_and_phase": [
+      "Estimate timing, CFO, and SRO only from sync and known matrix probes.",
+      "Retain one fitted timing/CFO/SRO correction per capture and its residuals.",
+      "Repeat coherence must be >= 0.95 and p90 residual phase SD <= 15 degrees after correction.",
+      "p90 abs(H) coefficient of variation must be <= 0.15 over held-out repeats."
+    ],
+    "channel_validity": [
+      "Reject any capture with source clipping, Mac output peak violation, missing samples, or a discontinuity marker.",
+      "Reject if the measured delay support invalidates CP=240 for this estimator; changing CP requires a new preregistration.",
+      "Estimate full per-bin 2x2 receiver noise covariance from both silence intervals and report diagonal loading."
+    ]
+  },
+  "minimum_outputs_per_repeat": [
+    "raw-pixel-stereo.pcm or lossless WAV with format metadata",
+    "rendered-mac-stereo.wav",
+    "completed-manifest.json",
+    "route-preflight.json",
+    "route-postflight.json",
+    "H-repeats.npz with eight within-capture group estimates",
+    "noise-covariance.npz",
+    "randomized-probe-bits-and-llrs.npz",
+    "matrix-analysis.json"
+  ],
+  "staged_minimum": {
+    "first_action": "Acquire near-01 only and run integrity checks before exposing the remaining cells.",
+    "near_field_feasibility_minimum": "Five valid near-field repeats establish only the near-field geometry result.",
+    "full_rank11a_minimum": "Fifteen valid captures: five whole matrices in each of the three declared geometries.",
+    "promotion_requirement": "At least two geometry cells must independently clear every gate and predict >=1.35x setup-inclusive 1 MiB net goodput over best-speaker/SIMO."
+  },
+  "artifact_claim_class": "New acquisitions are measured OTA. Synthetic fixture outputs remain synthetic; summaries without raw capture replay remain insufficient."
+}
