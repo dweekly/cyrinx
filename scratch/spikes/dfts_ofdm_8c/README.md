@@ -12,3 +12,9 @@ normalization, seeds, cells, held-out split, and gates must not change after an
 outcome is observed. A failed gate is a result, not permission to tune this
 candidate in place.
 
+Run the deterministic checks and complete campaign from the repository root:
+
+```bash
+.venv/bin/python scratch/spikes/dfts_ofdm_8c/test_spike.py
+.venv/bin/python scratch/spikes/dfts_ofdm_8c/spike.py run
+```
