@@ -1,8 +1,10 @@
 # cyrinx.org
 
-Static site for the Cyrinx acoustic-modem research project. There is no build
-step, framework, client-side JavaScript, analytics, or third-party runtime
-request. The site uses plain HTML/CSS and self-hosted IBM Plex WOFF2 subsets.
+Static site for the Cyrinx acoustic-modem research project. The checked-in
+source has no build step, framework, or authored client-side JavaScript. It
+uses plain HTML/CSS and self-hosted IBM Plex WOFF2 subsets. Cloudflare currently
+injects its Web Analytics beacon into production HTML responses on the custom
+domain; that runtime script is not present in this directory.
 
 ## Local preview
 
