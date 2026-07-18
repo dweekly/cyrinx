@@ -1,0 +1,302 @@
+{
+  "development": {
+    "campaign": "development",
+    "dry_run_manifest": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym64-local-llr-fresh-eightpair-seed20260770-v2.dryrun.manifest.json",
+    "dry_run_manifest_sha256": "d57dd5cbcea47b7e8c763820a3d97475010d929b41f1e6e2d5d6b6b291a5fc81",
+    "frames": 40,
+    "microphones": 2,
+    "root": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym64-local-llr-fresh-eightpair-seed20260770-v2.exec1.artifacts",
+    "runs": [
+      {
+        "capture_clipped_samples": 0,
+        "files": {
+          "capture-stereo-s16le.pcm": "23ecd5daacd70786c8697dcb01d99144a403a8a5b91b9cafbcaa8a4e6c597bf3",
+          "expected-frame-0.bin": "b598af33187daef2072c32e79904f8c653dd26befec5c33cfdb18d1c5e6f9e81",
+          "expected-frame-1.bin": "194ae2c6253bb546d3b248420ffa7b7e144c6e43f0c21cd9cadd67a5b370eb47",
+          "expected-frame-2.bin": "db2950034654f0bf536ff8c52803731ac06bff00aaf43939dcefa724f22753bf",
+          "expected-frame-3.bin": "2e09abcbc2b603e8fa9a734692abccbb3f54c46f94eb0451b30f8ded004c0680",
+          "expected-frame-4.bin": "92a6f16ccaed4d37c2072ff4fdbb2daaccfcb072203514b0259a77e8f61586c3",
+          "result.json": "d11375ebd0815f16a3c1ce75242b49560f31fc781682d4b6e2ba5b2a69dfe329",
+          "tx-stereo-f32le.pcm": "eba0de2c8932710b3ac3151d37602657335c805dd779626447e3b931079f5e8c"
+        },
+        "pair_index": 0,
+        "route_signature_sha256": "8da17a36acdd7a79d0f70f9fc085b99a8faf508f862387edec3b093180a827d0",
+        "run_id": "pair-000-order-0-candidate-cp96-p16-b6-r23",
+        "within_pair_order": 0
+      },
+      {
+        "capture_clipped_samples": 0,
+        "files": {
+          "capture-stereo-s16le.pcm": "30ffc647d257f7bd1304053bdd2e8375b018b3dac61730a9e74319668c548411",
+          "expected-frame-0.bin": "d842e1d53cfa0cfbd69364cce837cd6eb58d8a9b88bb445caebe085eaa32d04e",
+          "expected-frame-1.bin": "cbb801d67000cb93f66dd79183a93c00419df4a3c70d14d1d8f89cb9dbd7dbce",
+          "expected-frame-2.bin": "2731a09102b98402f18c7461408b130de6efca6e12f225fb0de6fb29f543c406",
+          "expected-frame-3.bin": "88824ac88a36335dd3e7bf6ebde1ba443aab97b433866147a92a1ec88fa4021b",
+          "expected-frame-4.bin": "a4a122b57dcec86c39e7cf96d68a39d2926f252e99e6c9d3891d67aaf165fd09",
+          "result.json": "50165b0ee15642c4d16b2c643725d949b90e288064889e5cc2455f0e69a7ebab",
+          "tx-stereo-f32le.pcm": "c795c0191c5dec49829eb4b8a6a0b8544c0a4bb4948381a10daa17fbb3f6df4e"
+        },
+        "pair_index": 1,
+        "route_signature_sha256": "8da17a36acdd7a79d0f70f9fc085b99a8faf508f862387edec3b093180a827d0",
+        "run_id": "pair-001-order-0-candidate-cp96-p16-b6-r23",
+        "within_pair_order": 0
+      },
+      {
+        "capture_clipped_samples": 0,
+        "files": {
+          "capture-stereo-s16le.pcm": "068fc609f2c5c73eaa0a58fedb05a3b5de1d12c18e742ef824495ddd3ad332d3",
+          "expected-frame-0.bin": "19f83f7fb25f872ac63b800042f0f0d62112b7063a72b18daff427d1e5bcb25e",
+          "expected-frame-1.bin": "491256c9ec5e868c42f89b863d0775a3836d48f0396e7c79f4324067c3c0a3cc",
+          "expected-frame-2.bin": "eb02190d6f0a993e382b47bde8f39c8ba1691cb7357ee67987eeedb0d7ee37ac",
+          "expected-frame-3.bin": "5a28cd68048fe51bdcd92303b1c5db13365f291c9dbb0f13c6fff43ba87f76b9",
+          "expected-frame-4.bin": "2aecc30f67d3e7b55872f0cef0656ed78003bb69c249e2ee315eafe2a0b29446",
+          "result.json": "9103bfbb0fd52e2417b1b8e1deb06ff6511d0ed81a72552f695c74e860d7a77b",
+          "tx-stereo-f32le.pcm": "45d22721c999914d183aae4622fe21e981c68cae491f47ca5192e2be57029d7b"
+        },
+        "pair_index": 2,
+        "route_signature_sha256": "8da17a36acdd7a79d0f70f9fc085b99a8faf508f862387edec3b093180a827d0",
+        "run_id": "pair-002-order-0-candidate-cp96-p16-b6-r23",
+        "within_pair_order": 0
+      },
+      {
+        "capture_clipped_samples": 0,
+        "files": {
+          "capture-stereo-s16le.pcm": "fc32a81041e0034946541863f2f3d0ad176cca438921314e91b82e1dc25f6ef6",
+          "expected-frame-0.bin": "e124ab5c2449317a1088b44e0bcf31a401705df9c5f1a10a89e38897f04af29b",
+          "expected-frame-1.bin": "70b4a1c279a9a5bd5822d6c382949975f735b7fbb88d8347ac13fa96d0dc69f8",
+          "expected-frame-2.bin": "bb54a02ade073341c3967a997a368ba0c722c3eab5b0b177d1e1319999a9d227",
+          "expected-frame-3.bin": "88b8958bbf19120f55ab50966866dc02da35b306dfe6a89ed571b4026aff0350",
+          "expected-frame-4.bin": "59de09fe08195b5d6198e7916de0d1527f0fed22c30473bff5b7f130aad3c21e",
+          "result.json": "e8690e13d450befcb1139e24eeaf524251e3d4d12e4d3e0ba3cf8dd17693e14b",
+          "tx-stereo-f32le.pcm": "a1c6efd81b02683b9549ef7fb163f4ba828694cb938c22761e76d40616287032"
+        },
+        "pair_index": 3,
+        "route_signature_sha256": "8da17a36acdd7a79d0f70f9fc085b99a8faf508f862387edec3b093180a827d0",
+        "run_id": "pair-003-order-1-candidate-cp96-p16-b6-r23",
+        "within_pair_order": 1
+      },
+      {
+        "capture_clipped_samples": 0,
+        "files": {
+          "capture-stereo-s16le.pcm": "d9cdff62ef221e4f08a823d70895e18e9aff21def16ce7ce2ff30934fedb1707",
+          "expected-frame-0.bin": "5a8562fb8706f3416f807e5638c00c0e150c40b9bf1b94dc97b1f6b4e89fe414",
+          "expected-frame-1.bin": "bf1b0f98679321e08005362a461e1936999c36c34989cbd6ecbf8acf2b04b374",
+          "expected-frame-2.bin": "bb712fe7331fe6b9d1f1b1a61fdbd17511b8a587258a4c523ff0893617eaaadf",
+          "expected-frame-3.bin": "958e009698a94434cb449eaeec010ee0bf2b35c853fdb4ab31dd369bee92fb6c",
+          "expected-frame-4.bin": "b5d364381ddb11197bb014c798e6c954dcb7dc59f5101f970d4496fe0c11c36d",
+          "result.json": "47b51fe7eae07135a7aece2d11de5b25657e0e1dc3717ff9dcc11325b5ed0a48",
+          "tx-stereo-f32le.pcm": "39a2cc5aab2c80ce6ee610226da11a96ae9a7aac6985faa13295ef3c3aa229bb"
+        },
+        "pair_index": 4,
+        "route_signature_sha256": "8da17a36acdd7a79d0f70f9fc085b99a8faf508f862387edec3b093180a827d0",
+        "run_id": "pair-004-order-0-candidate-cp96-p16-b6-r23",
+        "within_pair_order": 0
+      },
+      {
+        "capture_clipped_samples": 0,
+        "files": {
+          "capture-stereo-s16le.pcm": "250e6d4b6ee807396cb2d8bb3d8f44709f1379c4fc2b39b2bae490c0bdeb8842",
+          "expected-frame-0.bin": "09d8ef4ffdcfc02cec4ad1d417df59439a89d158c75058535bc378e087beae9c",
+          "expected-frame-1.bin": "2e6d1944584ccb276192821338ed1fb73bd0847be3205c2049b5a21407f09339",
+          "expected-frame-2.bin": "6d60fd219bfdeaee4c55747e685885e0ffbc1d927ac8e51b77333ad1e17889c1",
+          "expected-frame-3.bin": "ae68449f97c718277f2e982df4f77018aa7e0df7ff7d457537303c0f614a697c",
+          "expected-frame-4.bin": "9cbc06e97a1cf88843e8c9622355ca9d637f9a8a2d8dc1a49d4fcf3cf060fce9",
+          "result.json": "d14b2142851f8815dbfacfb4ff0904727b82d513749abcf1da22944229981810",
+          "tx-stereo-f32le.pcm": "8bd448434baef13f8b14cf5020f8bfe5212dd40110deee9f54099c01384f98af"
+        },
+        "pair_index": 5,
+        "route_signature_sha256": "8da17a36acdd7a79d0f70f9fc085b99a8faf508f862387edec3b093180a827d0",
+        "run_id": "pair-005-order-1-candidate-cp96-p16-b6-r23",
+        "within_pair_order": 1
+      },
+      {
+        "capture_clipped_samples": 0,
+        "files": {
+          "capture-stereo-s16le.pcm": "95638045eb8c230c8ea850aac8fc119edff5218c66e93d8c9b3c495f38f59b0b",
+          "expected-frame-0.bin": "7edd5831d7763fd484ce0c6f81ff9ddfb29334ad56b7304f2863a406a20413f6",
+          "expected-frame-1.bin": "b344d506618345927fb4ba165766c976819da3f1e62b4c08751f1b1d44643511",
+          "expected-frame-2.bin": "de8b83c7d0d19e4a2a543144281945a9df5e779b1356b26170eb155daed62834",
+          "expected-frame-3.bin": "72dd282ff6507500bbe5910c5262e298a0b668c75fce3f449eb469c91b891740",
+          "expected-frame-4.bin": "4fa336f8460c06876a85a6d84b9b4c9e0c1fcb837908e28591918250ddc8477f",
+          "result.json": "c35c13113177795628f256b84d6017728bad5f3ab30777a860baf361db30d10d",
+          "tx-stereo-f32le.pcm": "67317ab03cd53d7e23b083eff379245b72eaafccf578765d7a2de233367c0e1b"
+        },
+        "pair_index": 6,
+        "route_signature_sha256": "8da17a36acdd7a79d0f70f9fc085b99a8faf508f862387edec3b093180a827d0",
+        "run_id": "pair-006-order-1-candidate-cp96-p16-b6-r23",
+        "within_pair_order": 1
+      },
+      {
+        "capture_clipped_samples": 0,
+        "files": {
+          "capture-stereo-s16le.pcm": "30e8ec6723bb8c4e65260a896d3e30ea7983601c2d0375a432bf082aee2356cb",
+          "expected-frame-0.bin": "bb618d808e390e6939e280cd9529621a8496a91f042fd0d2d2958154489c36b0",
+          "expected-frame-1.bin": "a85d13121e788a455b79ce2138b556c76bb6153fb12c17c0c9fcb3d8806c5eeb",
+          "expected-frame-2.bin": "cbba80c1847d85549157614959dce833b7954b27407d6f987f2a55bfe0fd83ac",
+          "expected-frame-3.bin": "07e4d85bb07df8121908d3c23774d4d3b4ab65bf38208785ac2af49d5511a07c",
+          "expected-frame-4.bin": "bb56c610ef075679e5d1aeeea56b5b10685bd835e6001b40e96cc9b7278e5d2a",
+          "result.json": "80616927b711bc7d40ae565174c4dc1aedd7eef190854518255a6e9c5b0c35d6",
+          "tx-stereo-f32le.pcm": "19b54ccb5632a68540eda5540052fa74edb25768435f69c19420c45319dfd81b"
+        },
+        "pair_index": 7,
+        "route_signature_sha256": "8da17a36acdd7a79d0f70f9fc085b99a8faf508f862387edec3b093180a827d0",
+        "run_id": "pair-007-order-1-candidate-cp96-p16-b6-r23",
+        "within_pair_order": 1
+      }
+    ]
+  },
+  "external_stability": {
+    "campaign": "external-stability",
+    "dry_run_manifest": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-16-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-eightpair-fiveframe-confirmatory-seed20260750-v1.dryrun.manifest.json",
+    "dry_run_manifest_sha256": "2129c2e8a4dd0611e0a050b1718498b79c733550e1017445ea00442793e04c72",
+    "frames": 40,
+    "microphones": 2,
+    "root": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-16-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-eightpair-fiveframe-confirmatory-seed20260750-v1.exec1.artifacts",
+    "runs": [
+      {
+        "capture_clipped_samples": 0,
+        "files": {
+          "capture-stereo-s16le.pcm": "865a009cfd8adcd0e7d6d41d70e7218026c852de806535b0b693fd81838f99af",
+          "expected-frame-0.bin": "8297255db03703407a9ded28ed73bfb85033cace9d27d6d6295285346147868f",
+          "expected-frame-1.bin": "4dc1ea45c5b0403bcbb9bd3f5d7f6715b845f9988078d93f6985218340171f94",
+          "expected-frame-2.bin": "e9e15f6359acd086d31442115baeaa0e0557eb05ca6af49b1b84acb6c80247fa",
+          "expected-frame-3.bin": "96df5171e01334d12c38295cb4b15d2b7a7603e683fbb3ae6542a161e3409a48",
+          "expected-frame-4.bin": "b71ef3af52881b49d017b00113563297d7937c6eeaffd4f609656ca1eea31ae1",
+          "result.json": "86dba320775fe3470288403e8010dad291f343bdd95440d4aad3cdf4c7589250",
+          "tx-stereo-f32le.pcm": "46fdfca0b731d48c7a7fbb89b9db0accdfb07d49e34912c4caf7c725539ff74a"
+        },
+        "pair_index": 0,
+        "route_signature_sha256": "8da17a36acdd7a79d0f70f9fc085b99a8faf508f862387edec3b093180a827d0",
+        "run_id": "pair-000-order-1-candidate-cp96-p16-b6-r23",
+        "within_pair_order": 1
+      },
+      {
+        "capture_clipped_samples": 0,
+        "files": {
+          "capture-stereo-s16le.pcm": "0a27c816cf3b63bbd2ae659a36ab3555dcf954b377a2a57bc2645f54fdf63dca",
+          "expected-frame-0.bin": "f121246bbaafee20ac077986e7e7979704b4d4c51fd9421c3c9c7e69b03f6cde",
+          "expected-frame-1.bin": "a57f6f332f0be1a1127425dc664da4a0de96df27581ab135b3bcb13f1daf07d9",
+          "expected-frame-2.bin": "f5394b237f926b79ba9da764b57577f7715688f02aa760a31298de62c0457cd9",
+          "expected-frame-3.bin": "f9b6eebc84a57c37cada9a77a4f6c9488d685a8a8e9c09f2f1f0492a0812549e",
+          "expected-frame-4.bin": "9e109fedacfe90702a3cc2b29a1023aa15ec2b5c43b3fef12bb26ac46d0d4096",
+          "result.json": "6ad3505ba9fd3fdfaef411b1d24afbfc775d56d69c05ac2ecf7b7d01996f16ff",
+          "tx-stereo-f32le.pcm": "c47b20936ef9eb1b52601a95c7c1a40ad7b489d9d5389368209b76394c5f386e"
+        },
+        "pair_index": 1,
+        "route_signature_sha256": "8da17a36acdd7a79d0f70f9fc085b99a8faf508f862387edec3b093180a827d0",
+        "run_id": "pair-001-order-0-candidate-cp96-p16-b6-r23",
+        "within_pair_order": 0
+      },
+      {
+        "capture_clipped_samples": 0,
+        "files": {
+          "capture-stereo-s16le.pcm": "d64865888567026bce76bcdad818d3873d10ee6a582b9760a77cfa1bfcbe848e",
+          "expected-frame-0.bin": "70579df5ec8f9d5ccc2c874ba827c2fe655ed650f783ff0a8baf0a56684c29d2",
+          "expected-frame-1.bin": "d54f5f076271bb5dcdd5fd3ae128498aeb17905a2eb2c3c9f1fa128785d2d433",
+          "expected-frame-2.bin": "a7586b01683132207701df77278645a93b0596093f7aa8aacc763d3b96a6dbf1",
+          "expected-frame-3.bin": "44020c8656a4513eb094955351db854fa252fcac135f24b84f5db3462287cdad",
+          "expected-frame-4.bin": "95f33c318e2a47817508c877b4ad9ee71262948a0c49b5c17542ffca18020779",
+          "result.json": "ac89c7e8b5cf9931e89a0abcec4804b422eb230b506fd5dcd947489daddd7248",
+          "tx-stereo-f32le.pcm": "2fde532b215fed6157543895c165aacfc18872224f6a5086db36f7fda534dbae"
+        },
+        "pair_index": 2,
+        "route_signature_sha256": "8da17a36acdd7a79d0f70f9fc085b99a8faf508f862387edec3b093180a827d0",
+        "run_id": "pair-002-order-1-candidate-cp96-p16-b6-r23",
+        "within_pair_order": 1
+      },
+      {
+        "capture_clipped_samples": 0,
+        "files": {
+          "capture-stereo-s16le.pcm": "ce7997a6f8a49ef9a1fa8c26b41a1ca312d2a2d2111a4cd2516e2416faa3d0ba",
+          "expected-frame-0.bin": "87491e4ee73480a2627dcb3f325c4d7f53ea33e9bfac9d311badcd993831fb83",
+          "expected-frame-1.bin": "affc3efac983fe2c28624f73cd6ceed9d9b13fbf7cf6b8bce1bf16d2a0d1f1c9",
+          "expected-frame-2.bin": "58a4c4ec33a7149691b739a74b13f57afbafbf0eb7cfcff3b16476bed2939167",
+          "expected-frame-3.bin": "a5b5f335a222c6aa3349e562619001742f3d0799f7e56ca8680538d9917d145f",
+          "expected-frame-4.bin": "38eaa804a516168cc0fca9e5c1e299170e8fcd4b01466df58eca97bbd1ae07b3",
+          "result.json": "0c923c53818ba41e15e6bc4de163d4353133f2f17fd7b8e9d3f434ac374b37fb",
+          "tx-stereo-f32le.pcm": "459dacc498804f02d97c2f0b826dfdd9a409f6e7a9c08b2a87a8648696815a87"
+        },
+        "pair_index": 3,
+        "route_signature_sha256": "8da17a36acdd7a79d0f70f9fc085b99a8faf508f862387edec3b093180a827d0",
+        "run_id": "pair-003-order-1-candidate-cp96-p16-b6-r23",
+        "within_pair_order": 1
+      },
+      {
+        "capture_clipped_samples": 0,
+        "files": {
+          "capture-stereo-s16le.pcm": "bf32e12f35efca53656819e530525a261b21b7fa7a13ed11d6dd4fe4d59e2f63",
+          "expected-frame-0.bin": "291e080011f8bf67ca8fb7ce23cff6b9efa686ef64a23ab2e6ec6f60d9568f83",
+          "expected-frame-1.bin": "51a8b0292e555fd20cc82e207a855dab76f709cfced6f2183a56b541c3e18708",
+          "expected-frame-2.bin": "4e05f3afc30f8cbe244a20a17d26bfcf67481e63daacf80955b584d0f77ad64d",
+          "expected-frame-3.bin": "b80542e9b514f33a3e6c7e1f3c92c7190cd2b583c5db24d4fcba6b1f261b3993",
+          "expected-frame-4.bin": "b209a9d1e212861a20b8a0e3087af04b43fe851ed622c806b452bce857b81d60",
+          "result.json": "7eea349e9272e270aea1e0308a56d257f3b5434343745d257694a5cdb4c73f57",
+          "tx-stereo-f32le.pcm": "7c34b79b321d03ab2e93e7bb5939e1a7bbdf9c74ff66dd1bb594773d45cc8216"
+        },
+        "pair_index": 4,
+        "route_signature_sha256": "8da17a36acdd7a79d0f70f9fc085b99a8faf508f862387edec3b093180a827d0",
+        "run_id": "pair-004-order-0-candidate-cp96-p16-b6-r23",
+        "within_pair_order": 0
+      },
+      {
+        "capture_clipped_samples": 0,
+        "files": {
+          "capture-stereo-s16le.pcm": "36ed747d4d9b7ebf16c3ebfdfbaf80c47946badd46fe0b8db8921d4b51fe6f32",
+          "expected-frame-0.bin": "f680efc56fb2c251479f0da40a4580cda2a127657588f7d5dbebc69b9331656f",
+          "expected-frame-1.bin": "1b3ea07d61e1d9ad9dec6a0f89e5a538ea2e5e16307bb6a3692a5adc51887abd",
+          "expected-frame-2.bin": "84387bb6da339196067348b0cd2adebedf1ed37fff4668a9281d2c3e35363a91",
+          "expected-frame-3.bin": "5c2ecc1ea74cf1cd563321c19570291a2290839640bfdad43e1edcf2a2303e1c",
+          "expected-frame-4.bin": "ebf401589e84ad4f5bfd9a509148c61ded7deb1afb083780a04b8abd7991d8e7",
+          "result.json": "ffee2ebc6cfca6e41e43bc7665f14f29039d62aa0580ead34a9a088afa8495f3",
+          "tx-stereo-f32le.pcm": "bfe1d606326e756e11121ef1679e4e84be08273a502a898c0b7ff67bc96b36e4"
+        },
+        "pair_index": 5,
+        "route_signature_sha256": "8da17a36acdd7a79d0f70f9fc085b99a8faf508f862387edec3b093180a827d0",
+        "run_id": "pair-005-order-0-candidate-cp96-p16-b6-r23",
+        "within_pair_order": 0
+      },
+      {
+        "capture_clipped_samples": 0,
+        "files": {
+          "capture-stereo-s16le.pcm": "62981cd14e78bea8367e81dc9c204bb82d15e19ac0bba61d285c2cdfdbf58982",
+          "expected-frame-0.bin": "dddfd850bb9ee2da825d2d906a2ec47a18d1c69152fce75ef0a015ec3642e899",
+          "expected-frame-1.bin": "0df3d520f6f3ebd7c26bc32a1f77795b3f5a68c3b912313c09a7949239a9c526",
+          "expected-frame-2.bin": "ec5287189d2891c1c257951f567591e1efe7833990eded6daa39bfbb9bb26b90",
+          "expected-frame-3.bin": "a2573065384f0736dc57bf1f39f825686eae542bcc1f2870883cb508247aabc4",
+          "expected-frame-4.bin": "78ae88922c55e2f0fe650ba373467cebe2a59fb4aed72e1c178db63ac3d7ba35",
+          "result.json": "73788ea5b7397f95cdaa8fa63875fbc45f04d12dcb00656ab95c4ac167015359",
+          "tx-stereo-f32le.pcm": "f09cc23aa912b53cf21c62a6e97fb8d216f5b01bc63562b6121f82199d548318"
+        },
+        "pair_index": 6,
+        "route_signature_sha256": "8da17a36acdd7a79d0f70f9fc085b99a8faf508f862387edec3b093180a827d0",
+        "run_id": "pair-006-order-1-candidate-cp96-p16-b6-r23",
+        "within_pair_order": 1
+      },
+      {
+        "capture_clipped_samples": 0,
+        "files": {
+          "capture-stereo-s16le.pcm": "c2fbaf30ddcb23f9a7ce8c9962eb9a3230390c57cd8b6c0290aff98d625411ee",
+          "expected-frame-0.bin": "dbd7329b081ea98a318a1349db28c47f50964d35199ec5218f07a48217cf3733",
+          "expected-frame-1.bin": "1a934585b91badb55e00f94ea7eaae5cc3d3e81b033566e24a3e74f441d930ed",
+          "expected-frame-2.bin": "bea687cf4daa97061b938d9697cad41e9ff769cc19d43ca2564e8cafec0247c4",
+          "expected-frame-3.bin": "19b8faed06ca99d3574cca0553e29973a6081f652f0e82d558f9be51025d0f27",
+          "expected-frame-4.bin": "9f3e1b7170e99c193e53414368fc85248d7c2d4e2ae23e21e765d115fe1428e6",
+          "result.json": "eb8991dd3cd2f57bcca17a757f7c0baa95cafdb0b55bd9155fddaaff6900e81d",
+          "tx-stereo-f32le.pcm": "1f883c3d0062d96f407a8d7ad0cce3aeaadb8c09f92acae6d1060999372968f6"
+        },
+        "pair_index": 7,
+        "route_signature_sha256": "8da17a36acdd7a79d0f70f9fc085b99a8faf508f862387edec3b093180a827d0",
+        "run_id": "pair-007-order-0-candidate-cp96-p16-b6-r23",
+        "within_pair_order": 0
+      }
+    ]
+  },
+  "limitations": [
+    "All retained development and external-stability arms use one nominal near-field pose; they are temporal/HVAC repeats, not the three preregistered small placement offsets required by ROADMAP Spike 8a.",
+    "Every retained OTA waveform is flat. Candidate pre-equalized received PCM and candidate byte/block outcomes do not exist.",
+    "No retained calibrated SPL, LAeq, LCpeak, THD, intermodulation, or protection-DSP measurement is available.",
+    "The corpus supports a causal profile-selection split and a linear counterfactual replay screen, but cannot by itself support OTA promotion or an acoustic-safety/nonlinearity claim."
+  ],
+  "preregistration_sha256": "6b8f5bd0c47b081f35062343d22c93ee7f2297f86827714d6123bb4f084934e5",
+  "schema": "cyrinx.spike-8a-preeq.inventory.v1"
+}
