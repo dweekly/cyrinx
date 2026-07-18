@@ -1,0 +1,1195 @@
+{
+  "created_utc": "2026-07-18T19:18:02Z",
+  "manifests": [
+    {
+      "completed_results": 16,
+      "eligible_profiles": [
+        {
+          "amplitude": 0.18,
+          "clip_sigma": 3.3,
+          "config": {
+            "bits_per_bin": 4,
+            "code_rate": "3/4",
+            "cp_samples": 240,
+            "data_symbols": 128,
+            "f_hi_hz": 23000.0,
+            "f_lo_hz": 1100.0,
+            "nfft": 2048,
+            "pilot_every": 8,
+            "sample_rate_hz": 48000
+          },
+          "error_free_ceiling": {
+            "block_failure_rate": 0.0,
+            "block_failure_wilson95": [
+              0.0,
+              0.005062267982384733
+            ],
+            "block_failure_wilson95_scope": "descriptive_block_level_not_cluster_adjusted",
+            "block_success_rate": 1.0,
+            "cold_start_goodput_bps": 48385.522061124444,
+            "cold_start_span_s": 31.956666666666663,
+            "gross_goodput_bps": 48385.522061124444,
+            "gross_span_s": 31.956666666666663,
+            "scheduled_goodput_bps": 48895.541266996945,
+            "scheduled_span_s": 31.62333333333333,
+            "steady_state_goodput_bps": 48895.541266996945,
+            "steady_state_period_s": 6.324666666666666,
+            "total_blocks": 755,
+            "verified_blocks": 755,
+            "verified_payload_bits": 1546240
+          },
+          "geometry": {
+            "bin_hi": 981,
+            "bin_lo": 47,
+            "bits_per_symbol": 3272,
+            "coded_capacity_bits": 418816,
+            "crc_bits": 4832,
+            "crc_blocks": 151,
+            "data_bins": 818,
+            "fill_bits": 26,
+            "frame_samples": 303584,
+            "frame_seconds": 6.324666666666666,
+            "info_bits": 314106,
+            "payload_bits": 309248,
+            "payload_bytes": 38656,
+            "pilot_bins": 117,
+            "used_bins": 935
+          },
+          "profile_id": "baseline-cp240-p8",
+          "warning": "geometry-only ceiling; not an OTA result"
+        },
+        {
+          "amplitude": 0.18,
+          "clip_sigma": 3.3,
+          "config": {
+            "bits_per_bin": 6,
+            "code_rate": "2/3",
+            "cp_samples": 96,
+            "data_symbols": 128,
+            "f_hi_hz": 23000.0,
+            "f_lo_hz": 1100.0,
+            "nfft": 2048,
+            "pilot_every": 16,
+            "sample_rate_hz": 48000
+          },
+          "error_free_ceiling": {
+            "block_failure_rate": 0.0,
+            "block_failure_wilson95": [
+              0.0,
+              0.0035607259892415587
+            ],
+            "block_failure_wilson95_scope": "descriptive_block_level_not_cluster_adjusted",
+            "block_success_rate": 1.0,
+            "cold_start_goodput_bps": 73370.36214174629,
+            "cold_start_span_s": 30.006666666666664,
+            "gross_goodput_bps": 73370.36214174629,
+            "gross_span_s": 30.006666666666664,
+            "scheduled_goodput_bps": 74194.56301954617,
+            "scheduled_span_s": 29.673333333333332,
+            "steady_state_goodput_bps": 74194.56301954617,
+            "steady_state_period_s": 5.934666666666667,
+            "total_blocks": 1075,
+            "verified_blocks": 1075,
+            "verified_payload_bits": 2201600
+          },
+          "geometry": {
+            "bin_hi": 981,
+            "bin_lo": 47,
+            "bits_per_symbol": 5256,
+            "coded_capacity_bits": 672768,
+            "crc_bits": 6880,
+            "crc_blocks": 215,
+            "data_bins": 876,
+            "fill_bits": 1306,
+            "frame_samples": 284864,
+            "frame_seconds": 5.934666666666667,
+            "info_bits": 448506,
+            "payload_bits": 440320,
+            "payload_bytes": 55040,
+            "pilot_bins": 59,
+            "used_bins": 935
+          },
+          "profile_id": "candidate-cp96-p16-b6-r23",
+          "warning": "geometry-only ceiling; not an OTA result"
+        }
+      ],
+      "ledger_bound_source": true,
+      "manifest": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.manifest.json",
+      "manifest_sha256": "0f81dc4dce591c47e7fb1aeefeb635ac49de2ce01fbf0fd7805326446668af9e",
+      "plan_sha256": "122957926f1954e20bef3de938a4d0c7a94bb8d50b475c0622a919624d05616d",
+      "results": [
+        {
+          "capture": {
+            "byte_count": 6663676,
+            "observed_sha256": "71993ef689856ce804372d4b03f1b167160b8e511ea48ac029cb73a45c725e67",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-000-order-0-candidate-cp96-p16-b6-r23/capture-stereo-s16le.pcm",
+            "present": true,
+            "recorded_sha256": "71993ef689856ce804372d4b03f1b167160b8e511ea48ac029cb73a45c725e67",
+            "verified": true
+          },
+          "expected_payload_count": 5,
+          "expected_payloads": [
+            {
+              "byte_count": 55040,
+              "observed_sha256": "99a31cd1a6b5560f623f63006aef233a1502ebae3e24cc348bded2ace66837f2",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-000-order-0-candidate-cp96-p16-b6-r23/expected-frame-0.bin",
+              "present": true,
+              "recorded_sha256": "99a31cd1a6b5560f623f63006aef233a1502ebae3e24cc348bded2ace66837f2",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "8634fd52b9b3ac43a3f4ad5d6f51ca13e07fb8ab5d25c70883ac422313b25b92",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-000-order-0-candidate-cp96-p16-b6-r23/expected-frame-1.bin",
+              "present": true,
+              "recorded_sha256": "8634fd52b9b3ac43a3f4ad5d6f51ca13e07fb8ab5d25c70883ac422313b25b92",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "c80aae82b547d6d490a77e1785492c3184bd81aed741a8c6f75e6552542da98d",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-000-order-0-candidate-cp96-p16-b6-r23/expected-frame-2.bin",
+              "present": true,
+              "recorded_sha256": "c80aae82b547d6d490a77e1785492c3184bd81aed741a8c6f75e6552542da98d",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "39e5983d0fbacfc4c72d23b79ea2671700b723e5de53c05523e8fb83d8047561",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-000-order-0-candidate-cp96-p16-b6-r23/expected-frame-3.bin",
+              "present": true,
+              "recorded_sha256": "39e5983d0fbacfc4c72d23b79ea2671700b723e5de53c05523e8fb83d8047561",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "ec0e83cfdf3cda9a1fd78bc3cb9e6a0149955387f4b4154d3fd40088c7e0404b",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-000-order-0-candidate-cp96-p16-b6-r23/expected-frame-4.bin",
+              "present": true,
+              "recorded_sha256": "ec0e83cfdf3cda9a1fd78bc3cb9e6a0149955387f4b4154d3fd40088c7e0404b",
+              "verified": true
+            }
+          ],
+          "known_symbol_provenance": "verified expected bytes -> deterministic C/Python-parity encoder",
+          "payloads_bound_to_plan": true,
+          "profile_id": "candidate-cp96-p16-b6-r23",
+          "run_id": "pair-000-order-0-candidate-cp96-p16-b6-r23",
+          "status": "complete",
+          "transmit": {
+            "byte_count": 11522560,
+            "observed_sha256": "06ff86ad206ae56c9c4b15e1fe41793bdab43589ce246fa0e4f654378c3761eb",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-000-order-0-candidate-cp96-p16-b6-r23/tx-stereo-f32le.pcm",
+            "present": true,
+            "recorded_sha256": "06ff86ad206ae56c9c4b15e1fe41793bdab43589ce246fa0e4f654378c3761eb",
+            "verified": true
+          }
+        },
+        {
+          "capture": {
+            "byte_count": 7038080,
+            "observed_sha256": "80e681db45cd98a24fc5350f4ae6f8d1d7316fdc98e7988ae80b42380d8b16fa",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-000-order-1-baseline-cp240-p8/capture-stereo-s16le.pcm",
+            "present": true,
+            "recorded_sha256": "80e681db45cd98a24fc5350f4ae6f8d1d7316fdc98e7988ae80b42380d8b16fa",
+            "verified": true
+          },
+          "expected_payload_count": 5,
+          "expected_payloads": [
+            {
+              "byte_count": 38656,
+              "observed_sha256": "db304c52992b358ad94c57678f6a572419e88cae3f56c3d497f587d4fb614224",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-000-order-1-baseline-cp240-p8/expected-frame-0.bin",
+              "present": true,
+              "recorded_sha256": "db304c52992b358ad94c57678f6a572419e88cae3f56c3d497f587d4fb614224",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "c599a18d66b14f124126b807587d04e2340cf7da34234670f1f7fa28079c03c6",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-000-order-1-baseline-cp240-p8/expected-frame-1.bin",
+              "present": true,
+              "recorded_sha256": "c599a18d66b14f124126b807587d04e2340cf7da34234670f1f7fa28079c03c6",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "5908e0594c4b991be57f13d421dd55e3eeeb81abaa8a03b29ee43c302f4df5cc",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-000-order-1-baseline-cp240-p8/expected-frame-2.bin",
+              "present": true,
+              "recorded_sha256": "5908e0594c4b991be57f13d421dd55e3eeeb81abaa8a03b29ee43c302f4df5cc",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "a69eaa6e71999cbe952e3f94c3d2192d98218f4cfd846702574e4cbb24f70f71",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-000-order-1-baseline-cp240-p8/expected-frame-3.bin",
+              "present": true,
+              "recorded_sha256": "a69eaa6e71999cbe952e3f94c3d2192d98218f4cfd846702574e4cbb24f70f71",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "ab55c04050856d1559e75d783d3dbadf80332050672820bfbd501543e5edd895",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-000-order-1-baseline-cp240-p8/expected-frame-4.bin",
+              "present": true,
+              "recorded_sha256": "ab55c04050856d1559e75d783d3dbadf80332050672820bfbd501543e5edd895",
+              "verified": true
+            }
+          ],
+          "known_symbol_provenance": "verified expected bytes -> deterministic C/Python-parity encoder",
+          "payloads_bound_to_plan": true,
+          "profile_id": "baseline-cp240-p8",
+          "run_id": "pair-000-order-1-baseline-cp240-p8",
+          "status": "complete",
+          "transmit": {
+            "byte_count": 12271360,
+            "observed_sha256": "80b7829a114f23c9cdc426a3ffa91bd794961daf02bced2a8ead02ac93a386ae",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-000-order-1-baseline-cp240-p8/tx-stereo-f32le.pcm",
+            "present": true,
+            "recorded_sha256": "80b7829a114f23c9cdc426a3ffa91bd794961daf02bced2a8ead02ac93a386ae",
+            "verified": true
+          }
+        },
+        {
+          "capture": {
+            "byte_count": 7038080,
+            "observed_sha256": "64d71c220cd3ee943ede7560e9a32353e03183d242988c225322bf80ade50179",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-001-order-0-baseline-cp240-p8/capture-stereo-s16le.pcm",
+            "present": true,
+            "recorded_sha256": "64d71c220cd3ee943ede7560e9a32353e03183d242988c225322bf80ade50179",
+            "verified": true
+          },
+          "expected_payload_count": 5,
+          "expected_payloads": [
+            {
+              "byte_count": 38656,
+              "observed_sha256": "614afe8159fbf8ec3cc4f759b459c59ef9c5596aa6d49b1142a620d0c203d045",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-001-order-0-baseline-cp240-p8/expected-frame-0.bin",
+              "present": true,
+              "recorded_sha256": "614afe8159fbf8ec3cc4f759b459c59ef9c5596aa6d49b1142a620d0c203d045",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "3ae759f53e34da30ee886c20476fb0a25116921f8197d63c042760cf4f0e11c4",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-001-order-0-baseline-cp240-p8/expected-frame-1.bin",
+              "present": true,
+              "recorded_sha256": "3ae759f53e34da30ee886c20476fb0a25116921f8197d63c042760cf4f0e11c4",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "ca6c76232e0d3b5f57a7884ef7f61bad3c3dbee87c873037042d85f68b067339",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-001-order-0-baseline-cp240-p8/expected-frame-2.bin",
+              "present": true,
+              "recorded_sha256": "ca6c76232e0d3b5f57a7884ef7f61bad3c3dbee87c873037042d85f68b067339",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "936a8d82894bc7e69969372b4001c928134ac00ea1222447a045a63e932f9104",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-001-order-0-baseline-cp240-p8/expected-frame-3.bin",
+              "present": true,
+              "recorded_sha256": "936a8d82894bc7e69969372b4001c928134ac00ea1222447a045a63e932f9104",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "d7ee0f508434c5c7cdd5fd23deca3c4a2e9a11ce1997b30772f5c958d3dcbdfb",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-001-order-0-baseline-cp240-p8/expected-frame-4.bin",
+              "present": true,
+              "recorded_sha256": "d7ee0f508434c5c7cdd5fd23deca3c4a2e9a11ce1997b30772f5c958d3dcbdfb",
+              "verified": true
+            }
+          ],
+          "known_symbol_provenance": "verified expected bytes -> deterministic C/Python-parity encoder",
+          "payloads_bound_to_plan": true,
+          "profile_id": "baseline-cp240-p8",
+          "run_id": "pair-001-order-0-baseline-cp240-p8",
+          "status": "complete",
+          "transmit": {
+            "byte_count": 12271360,
+            "observed_sha256": "46c2c392d4fe25e61c7ab2de1932089c04d17b86525829cab0e5fb0422a13fda",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-001-order-0-baseline-cp240-p8/tx-stereo-f32le.pcm",
+            "present": true,
+            "recorded_sha256": "46c2c392d4fe25e61c7ab2de1932089c04d17b86525829cab0e5fb0422a13fda",
+            "verified": true
+          }
+        },
+        {
+          "capture": {
+            "byte_count": 6663676,
+            "observed_sha256": "9ac1528292360296c1ac80f327a40a64510d7c1bee59926804b193f0432882c7",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-001-order-1-candidate-cp96-p16-b6-r23/capture-stereo-s16le.pcm",
+            "present": true,
+            "recorded_sha256": "9ac1528292360296c1ac80f327a40a64510d7c1bee59926804b193f0432882c7",
+            "verified": true
+          },
+          "expected_payload_count": 5,
+          "expected_payloads": [
+            {
+              "byte_count": 55040,
+              "observed_sha256": "0d6f64ba5e5ae2f58279843f231b4dabc3ec2ff54f21f55c6cb5ea3a1d47246f",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-001-order-1-candidate-cp96-p16-b6-r23/expected-frame-0.bin",
+              "present": true,
+              "recorded_sha256": "0d6f64ba5e5ae2f58279843f231b4dabc3ec2ff54f21f55c6cb5ea3a1d47246f",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "fda1cc0727b80552713683ab1dd8af8fe55dbaa03b3488af04d0df720cd096d0",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-001-order-1-candidate-cp96-p16-b6-r23/expected-frame-1.bin",
+              "present": true,
+              "recorded_sha256": "fda1cc0727b80552713683ab1dd8af8fe55dbaa03b3488af04d0df720cd096d0",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "f5a2b6cb2c7fdf2109ae3186ce741b61f5cd2ea36ceb78a7ab6d143757eb75cd",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-001-order-1-candidate-cp96-p16-b6-r23/expected-frame-2.bin",
+              "present": true,
+              "recorded_sha256": "f5a2b6cb2c7fdf2109ae3186ce741b61f5cd2ea36ceb78a7ab6d143757eb75cd",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "5f3d7ac3525b5c93164399e35d543731a036cc3015c93e6e39378cee037c552c",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-001-order-1-candidate-cp96-p16-b6-r23/expected-frame-3.bin",
+              "present": true,
+              "recorded_sha256": "5f3d7ac3525b5c93164399e35d543731a036cc3015c93e6e39378cee037c552c",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "3e7f3e7666f98aee7e242ea8e199ad49dcaf079970fd507147329853dd94a963",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-001-order-1-candidate-cp96-p16-b6-r23/expected-frame-4.bin",
+              "present": true,
+              "recorded_sha256": "3e7f3e7666f98aee7e242ea8e199ad49dcaf079970fd507147329853dd94a963",
+              "verified": true
+            }
+          ],
+          "known_symbol_provenance": "verified expected bytes -> deterministic C/Python-parity encoder",
+          "payloads_bound_to_plan": true,
+          "profile_id": "candidate-cp96-p16-b6-r23",
+          "run_id": "pair-001-order-1-candidate-cp96-p16-b6-r23",
+          "status": "complete",
+          "transmit": {
+            "byte_count": 11522560,
+            "observed_sha256": "7978812b67697169d79a379abe29a6ef24586c9fdbcebe580daf7cb7dfc0b43d",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-001-order-1-candidate-cp96-p16-b6-r23/tx-stereo-f32le.pcm",
+            "present": true,
+            "recorded_sha256": "7978812b67697169d79a379abe29a6ef24586c9fdbcebe580daf7cb7dfc0b43d",
+            "verified": true
+          }
+        },
+        {
+          "capture": {
+            "byte_count": 7038080,
+            "observed_sha256": "c5b31ec983fecfe38d0123989b4500bb9e2969386a1bdd89b0a31117f59a94bf",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-002-order-0-baseline-cp240-p8/capture-stereo-s16le.pcm",
+            "present": true,
+            "recorded_sha256": "c5b31ec983fecfe38d0123989b4500bb9e2969386a1bdd89b0a31117f59a94bf",
+            "verified": true
+          },
+          "expected_payload_count": 5,
+          "expected_payloads": [
+            {
+              "byte_count": 38656,
+              "observed_sha256": "93b2a8cd8651a53c5b1df37a7155501945e7d6f67aedcc5b0f7f082ff0373546",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-002-order-0-baseline-cp240-p8/expected-frame-0.bin",
+              "present": true,
+              "recorded_sha256": "93b2a8cd8651a53c5b1df37a7155501945e7d6f67aedcc5b0f7f082ff0373546",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "46b7d9ef1df425f4fb01b996a98f0f38f3a5b04b896dbdfce1931d05a4eaac0b",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-002-order-0-baseline-cp240-p8/expected-frame-1.bin",
+              "present": true,
+              "recorded_sha256": "46b7d9ef1df425f4fb01b996a98f0f38f3a5b04b896dbdfce1931d05a4eaac0b",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "64e7c0e442665ccd3234e96762edafc8a9705de591f19265e64546955291a869",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-002-order-0-baseline-cp240-p8/expected-frame-2.bin",
+              "present": true,
+              "recorded_sha256": "64e7c0e442665ccd3234e96762edafc8a9705de591f19265e64546955291a869",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "90b1b43db91015f7030d7b13ae2435ac2dcae58a3bfee48b553e7aa5115e569d",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-002-order-0-baseline-cp240-p8/expected-frame-3.bin",
+              "present": true,
+              "recorded_sha256": "90b1b43db91015f7030d7b13ae2435ac2dcae58a3bfee48b553e7aa5115e569d",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "4d91a0955fa18c9cc8d792ff8e9a39b2fc1fce7addc379a97a604a2144be6a60",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-002-order-0-baseline-cp240-p8/expected-frame-4.bin",
+              "present": true,
+              "recorded_sha256": "4d91a0955fa18c9cc8d792ff8e9a39b2fc1fce7addc379a97a604a2144be6a60",
+              "verified": true
+            }
+          ],
+          "known_symbol_provenance": "verified expected bytes -> deterministic C/Python-parity encoder",
+          "payloads_bound_to_plan": true,
+          "profile_id": "baseline-cp240-p8",
+          "run_id": "pair-002-order-0-baseline-cp240-p8",
+          "status": "complete",
+          "transmit": {
+            "byte_count": 12271360,
+            "observed_sha256": "dbdf35a4c601fad689cbcd2ee801a64f8606260af91eb08f4972acd8153d7ef3",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-002-order-0-baseline-cp240-p8/tx-stereo-f32le.pcm",
+            "present": true,
+            "recorded_sha256": "dbdf35a4c601fad689cbcd2ee801a64f8606260af91eb08f4972acd8153d7ef3",
+            "verified": true
+          }
+        },
+        {
+          "capture": {
+            "byte_count": 6663676,
+            "observed_sha256": "16233d94ff9e2f863907cb2d084e6029fb2eab1bbb98274743a93a85434d193a",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-002-order-1-candidate-cp96-p16-b6-r23/capture-stereo-s16le.pcm",
+            "present": true,
+            "recorded_sha256": "16233d94ff9e2f863907cb2d084e6029fb2eab1bbb98274743a93a85434d193a",
+            "verified": true
+          },
+          "expected_payload_count": 5,
+          "expected_payloads": [
+            {
+              "byte_count": 55040,
+              "observed_sha256": "1270c8acd7ae4f995e42e9e35840d92c11ee7d58e71ea6630d3a7f5eb8f4f4f0",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-002-order-1-candidate-cp96-p16-b6-r23/expected-frame-0.bin",
+              "present": true,
+              "recorded_sha256": "1270c8acd7ae4f995e42e9e35840d92c11ee7d58e71ea6630d3a7f5eb8f4f4f0",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "6e37c031bb9aba8adbfe1d85935b0a0771edae3bda3f751c8a2b586e88eae2f3",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-002-order-1-candidate-cp96-p16-b6-r23/expected-frame-1.bin",
+              "present": true,
+              "recorded_sha256": "6e37c031bb9aba8adbfe1d85935b0a0771edae3bda3f751c8a2b586e88eae2f3",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "8fae46ec3a66beac066bea83fa3b1be094c1df385f56558ab73dd43e8de45df5",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-002-order-1-candidate-cp96-p16-b6-r23/expected-frame-2.bin",
+              "present": true,
+              "recorded_sha256": "8fae46ec3a66beac066bea83fa3b1be094c1df385f56558ab73dd43e8de45df5",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "3378db8661de996ec4a32698be4bdcf7dd307dc5de2a7f09e437253de0b04de5",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-002-order-1-candidate-cp96-p16-b6-r23/expected-frame-3.bin",
+              "present": true,
+              "recorded_sha256": "3378db8661de996ec4a32698be4bdcf7dd307dc5de2a7f09e437253de0b04de5",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "5a60bf84bcda9a54007c71457ecb7c5c3891b5c3d1c4eaa754b9b575ed7c0078",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-002-order-1-candidate-cp96-p16-b6-r23/expected-frame-4.bin",
+              "present": true,
+              "recorded_sha256": "5a60bf84bcda9a54007c71457ecb7c5c3891b5c3d1c4eaa754b9b575ed7c0078",
+              "verified": true
+            }
+          ],
+          "known_symbol_provenance": "verified expected bytes -> deterministic C/Python-parity encoder",
+          "payloads_bound_to_plan": true,
+          "profile_id": "candidate-cp96-p16-b6-r23",
+          "run_id": "pair-002-order-1-candidate-cp96-p16-b6-r23",
+          "status": "complete",
+          "transmit": {
+            "byte_count": 11522560,
+            "observed_sha256": "17c01ef590d55e8ea80904be50384e12c26ad532af2403d2b8dd1b73fd9e3927",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-002-order-1-candidate-cp96-p16-b6-r23/tx-stereo-f32le.pcm",
+            "present": true,
+            "recorded_sha256": "17c01ef590d55e8ea80904be50384e12c26ad532af2403d2b8dd1b73fd9e3927",
+            "verified": true
+          }
+        },
+        {
+          "capture": {
+            "byte_count": 6663676,
+            "observed_sha256": "1a3d011b7ae378da018e3f474d3b74f862826fb126e9c2d8abf236c1b07de7b9",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-003-order-0-candidate-cp96-p16-b6-r23/capture-stereo-s16le.pcm",
+            "present": true,
+            "recorded_sha256": "1a3d011b7ae378da018e3f474d3b74f862826fb126e9c2d8abf236c1b07de7b9",
+            "verified": true
+          },
+          "expected_payload_count": 5,
+          "expected_payloads": [
+            {
+              "byte_count": 55040,
+              "observed_sha256": "c024e8de0db7cdd6f247187dc24eac1a5b012c4a73ae2eacb7986c09a67eb3b9",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-003-order-0-candidate-cp96-p16-b6-r23/expected-frame-0.bin",
+              "present": true,
+              "recorded_sha256": "c024e8de0db7cdd6f247187dc24eac1a5b012c4a73ae2eacb7986c09a67eb3b9",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "65a7c924fbb9171aea7448301c9a683546f503db08f19b30738637e1fa1f3f11",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-003-order-0-candidate-cp96-p16-b6-r23/expected-frame-1.bin",
+              "present": true,
+              "recorded_sha256": "65a7c924fbb9171aea7448301c9a683546f503db08f19b30738637e1fa1f3f11",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "f757d6b8bd28e857183a3c67dfe20075f30c1ad809932682906c565553199e0e",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-003-order-0-candidate-cp96-p16-b6-r23/expected-frame-2.bin",
+              "present": true,
+              "recorded_sha256": "f757d6b8bd28e857183a3c67dfe20075f30c1ad809932682906c565553199e0e",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "0199c57cfe7e19164478e7a78d41cea594246c5750074c6c37e6c79674805faf",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-003-order-0-candidate-cp96-p16-b6-r23/expected-frame-3.bin",
+              "present": true,
+              "recorded_sha256": "0199c57cfe7e19164478e7a78d41cea594246c5750074c6c37e6c79674805faf",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "ecb7418bf4ada1c06409602af6855a6318345f45af28fef11a741f70d5229bc2",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-003-order-0-candidate-cp96-p16-b6-r23/expected-frame-4.bin",
+              "present": true,
+              "recorded_sha256": "ecb7418bf4ada1c06409602af6855a6318345f45af28fef11a741f70d5229bc2",
+              "verified": true
+            }
+          ],
+          "known_symbol_provenance": "verified expected bytes -> deterministic C/Python-parity encoder",
+          "payloads_bound_to_plan": true,
+          "profile_id": "candidate-cp96-p16-b6-r23",
+          "run_id": "pair-003-order-0-candidate-cp96-p16-b6-r23",
+          "status": "complete",
+          "transmit": {
+            "byte_count": 11522560,
+            "observed_sha256": "3bcd10f0b7fb7260d350b2c911d4780534c19eb256e9e66b4822dfc419c62f0d",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-003-order-0-candidate-cp96-p16-b6-r23/tx-stereo-f32le.pcm",
+            "present": true,
+            "recorded_sha256": "3bcd10f0b7fb7260d350b2c911d4780534c19eb256e9e66b4822dfc419c62f0d",
+            "verified": true
+          }
+        },
+        {
+          "capture": {
+            "byte_count": 7038080,
+            "observed_sha256": "791f6b4ffcccf3f95ec56e4f747696f1f25b534d07d77c7a43ef8911f0861851",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-003-order-1-baseline-cp240-p8/capture-stereo-s16le.pcm",
+            "present": true,
+            "recorded_sha256": "791f6b4ffcccf3f95ec56e4f747696f1f25b534d07d77c7a43ef8911f0861851",
+            "verified": true
+          },
+          "expected_payload_count": 5,
+          "expected_payloads": [
+            {
+              "byte_count": 38656,
+              "observed_sha256": "3518e0c08434801e3d69ba6988035a2de00ce16fd2bc6c353f0fd57af2b07a77",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-003-order-1-baseline-cp240-p8/expected-frame-0.bin",
+              "present": true,
+              "recorded_sha256": "3518e0c08434801e3d69ba6988035a2de00ce16fd2bc6c353f0fd57af2b07a77",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "c006c4a6345f1e3ea2311f8f81488e5cb502281c755066ac4bb5ae1a0bdbae9a",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-003-order-1-baseline-cp240-p8/expected-frame-1.bin",
+              "present": true,
+              "recorded_sha256": "c006c4a6345f1e3ea2311f8f81488e5cb502281c755066ac4bb5ae1a0bdbae9a",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "747a778b299b2ef7580d1f8d62b758dd18df5afdea31d9ba2078d4421f541b05",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-003-order-1-baseline-cp240-p8/expected-frame-2.bin",
+              "present": true,
+              "recorded_sha256": "747a778b299b2ef7580d1f8d62b758dd18df5afdea31d9ba2078d4421f541b05",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "1ad9c584afb4bee3caaf975eab1becc9794b597f209bdddade059a6da121f0a5",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-003-order-1-baseline-cp240-p8/expected-frame-3.bin",
+              "present": true,
+              "recorded_sha256": "1ad9c584afb4bee3caaf975eab1becc9794b597f209bdddade059a6da121f0a5",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "57cf9902dd9ced8d2789987ca138935b7837523fa6395660a2ad4e240f75b5c5",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-003-order-1-baseline-cp240-p8/expected-frame-4.bin",
+              "present": true,
+              "recorded_sha256": "57cf9902dd9ced8d2789987ca138935b7837523fa6395660a2ad4e240f75b5c5",
+              "verified": true
+            }
+          ],
+          "known_symbol_provenance": "verified expected bytes -> deterministic C/Python-parity encoder",
+          "payloads_bound_to_plan": true,
+          "profile_id": "baseline-cp240-p8",
+          "run_id": "pair-003-order-1-baseline-cp240-p8",
+          "status": "complete",
+          "transmit": {
+            "byte_count": 12271360,
+            "observed_sha256": "9343c56b93e63c23f8e8ef7f6cdbd60cf739d56665977aadfd87b49ce2c3a97d",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-003-order-1-baseline-cp240-p8/tx-stereo-f32le.pcm",
+            "present": true,
+            "recorded_sha256": "9343c56b93e63c23f8e8ef7f6cdbd60cf739d56665977aadfd87b49ce2c3a97d",
+            "verified": true
+          }
+        },
+        {
+          "capture": {
+            "byte_count": 7038080,
+            "observed_sha256": "9de802f4eb19375a2a7406eb88e0dd1160900e294350330c007928b549cac2cd",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-004-order-0-baseline-cp240-p8/capture-stereo-s16le.pcm",
+            "present": true,
+            "recorded_sha256": "9de802f4eb19375a2a7406eb88e0dd1160900e294350330c007928b549cac2cd",
+            "verified": true
+          },
+          "expected_payload_count": 5,
+          "expected_payloads": [
+            {
+              "byte_count": 38656,
+              "observed_sha256": "bdd7428bccae06467879835e5482dbcd41215159ddb9ee80940d43982390ba8b",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-004-order-0-baseline-cp240-p8/expected-frame-0.bin",
+              "present": true,
+              "recorded_sha256": "bdd7428bccae06467879835e5482dbcd41215159ddb9ee80940d43982390ba8b",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "98640cd87622e20ba399ad4a29ea1738c6b3ce4bda7a55d504c9ff6a3d0d020d",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-004-order-0-baseline-cp240-p8/expected-frame-1.bin",
+              "present": true,
+              "recorded_sha256": "98640cd87622e20ba399ad4a29ea1738c6b3ce4bda7a55d504c9ff6a3d0d020d",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "726c2f2b6def673577bf562e4d6f5872e4c432eb23caf56a20c0cdcd9e1828ff",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-004-order-0-baseline-cp240-p8/expected-frame-2.bin",
+              "present": true,
+              "recorded_sha256": "726c2f2b6def673577bf562e4d6f5872e4c432eb23caf56a20c0cdcd9e1828ff",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "832a2ad3da3829c8c62afa2e796bfca1bad0be2540585da2a9e091725d2c1d6a",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-004-order-0-baseline-cp240-p8/expected-frame-3.bin",
+              "present": true,
+              "recorded_sha256": "832a2ad3da3829c8c62afa2e796bfca1bad0be2540585da2a9e091725d2c1d6a",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "ff4fb7fdb37054b53c4bdca4f91c01a2171e932bf995bf263e654bee842b9c37",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-004-order-0-baseline-cp240-p8/expected-frame-4.bin",
+              "present": true,
+              "recorded_sha256": "ff4fb7fdb37054b53c4bdca4f91c01a2171e932bf995bf263e654bee842b9c37",
+              "verified": true
+            }
+          ],
+          "known_symbol_provenance": "verified expected bytes -> deterministic C/Python-parity encoder",
+          "payloads_bound_to_plan": true,
+          "profile_id": "baseline-cp240-p8",
+          "run_id": "pair-004-order-0-baseline-cp240-p8",
+          "status": "complete",
+          "transmit": {
+            "byte_count": 12271360,
+            "observed_sha256": "5c194248d52b711faf422c975f76e244321c112dbfdb6476e28de3603ab0d3e3",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-004-order-0-baseline-cp240-p8/tx-stereo-f32le.pcm",
+            "present": true,
+            "recorded_sha256": "5c194248d52b711faf422c975f76e244321c112dbfdb6476e28de3603ab0d3e3",
+            "verified": true
+          }
+        },
+        {
+          "capture": {
+            "byte_count": 6663676,
+            "observed_sha256": "6b9a516d033f3cbd36c4f847ef95cfc25d47357c6630d6409e2318e4643a60eb",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-004-order-1-candidate-cp96-p16-b6-r23/capture-stereo-s16le.pcm",
+            "present": true,
+            "recorded_sha256": "6b9a516d033f3cbd36c4f847ef95cfc25d47357c6630d6409e2318e4643a60eb",
+            "verified": true
+          },
+          "expected_payload_count": 5,
+          "expected_payloads": [
+            {
+              "byte_count": 55040,
+              "observed_sha256": "26bb30d0d1cb46056320ee2eab88f3b950232f0702e7c03a36cb60de50f1f1b3",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-004-order-1-candidate-cp96-p16-b6-r23/expected-frame-0.bin",
+              "present": true,
+              "recorded_sha256": "26bb30d0d1cb46056320ee2eab88f3b950232f0702e7c03a36cb60de50f1f1b3",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "9c88d002423218fee979d256b1607bd48ae0128ffcb3c23e18d4bd25fa3fef74",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-004-order-1-candidate-cp96-p16-b6-r23/expected-frame-1.bin",
+              "present": true,
+              "recorded_sha256": "9c88d002423218fee979d256b1607bd48ae0128ffcb3c23e18d4bd25fa3fef74",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "6afe5939aa6cf479e4e0e0dfaa8ccc6b925c20fcaba664ec44991ee49c5741a4",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-004-order-1-candidate-cp96-p16-b6-r23/expected-frame-2.bin",
+              "present": true,
+              "recorded_sha256": "6afe5939aa6cf479e4e0e0dfaa8ccc6b925c20fcaba664ec44991ee49c5741a4",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "5a42d14fca17cd1a929826b2b6403a460ca566e5fc33b81a4f9c7e285d42501d",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-004-order-1-candidate-cp96-p16-b6-r23/expected-frame-3.bin",
+              "present": true,
+              "recorded_sha256": "5a42d14fca17cd1a929826b2b6403a460ca566e5fc33b81a4f9c7e285d42501d",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "08f4af66f8de8f8099cca9631fe340eaa841d30716fe9c224d228298c78a428e",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-004-order-1-candidate-cp96-p16-b6-r23/expected-frame-4.bin",
+              "present": true,
+              "recorded_sha256": "08f4af66f8de8f8099cca9631fe340eaa841d30716fe9c224d228298c78a428e",
+              "verified": true
+            }
+          ],
+          "known_symbol_provenance": "verified expected bytes -> deterministic C/Python-parity encoder",
+          "payloads_bound_to_plan": true,
+          "profile_id": "candidate-cp96-p16-b6-r23",
+          "run_id": "pair-004-order-1-candidate-cp96-p16-b6-r23",
+          "status": "complete",
+          "transmit": {
+            "byte_count": 11522560,
+            "observed_sha256": "ac12b27f69de44bc19eb4bd9b4c8c6f443e01763fcfc8ffc2ce0d4559f06080e",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-004-order-1-candidate-cp96-p16-b6-r23/tx-stereo-f32le.pcm",
+            "present": true,
+            "recorded_sha256": "ac12b27f69de44bc19eb4bd9b4c8c6f443e01763fcfc8ffc2ce0d4559f06080e",
+            "verified": true
+          }
+        },
+        {
+          "capture": {
+            "byte_count": 6663676,
+            "observed_sha256": "44e15bbd33ec97271075caae748cfad83c9760d098b0833c80832dbae43f4c69",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-005-order-0-candidate-cp96-p16-b6-r23/capture-stereo-s16le.pcm",
+            "present": true,
+            "recorded_sha256": "44e15bbd33ec97271075caae748cfad83c9760d098b0833c80832dbae43f4c69",
+            "verified": true
+          },
+          "expected_payload_count": 5,
+          "expected_payloads": [
+            {
+              "byte_count": 55040,
+              "observed_sha256": "694d669356d8f97f69d24df3a7a4596f086e04676640a63d058f059d96f4e32d",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-005-order-0-candidate-cp96-p16-b6-r23/expected-frame-0.bin",
+              "present": true,
+              "recorded_sha256": "694d669356d8f97f69d24df3a7a4596f086e04676640a63d058f059d96f4e32d",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "5cde941f07fadc4e40789ccb4a7a870025ff3c0de4d55e1a7fa559b0437aa801",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-005-order-0-candidate-cp96-p16-b6-r23/expected-frame-1.bin",
+              "present": true,
+              "recorded_sha256": "5cde941f07fadc4e40789ccb4a7a870025ff3c0de4d55e1a7fa559b0437aa801",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "41d7380e587f218b93a3b6b93d9d70ae7abde7bf6498d5881117d23cb64f6804",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-005-order-0-candidate-cp96-p16-b6-r23/expected-frame-2.bin",
+              "present": true,
+              "recorded_sha256": "41d7380e587f218b93a3b6b93d9d70ae7abde7bf6498d5881117d23cb64f6804",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "72a4f2e35343e11791a9235157c56f870bfece4cc7b7399f653b3f86a78c31cd",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-005-order-0-candidate-cp96-p16-b6-r23/expected-frame-3.bin",
+              "present": true,
+              "recorded_sha256": "72a4f2e35343e11791a9235157c56f870bfece4cc7b7399f653b3f86a78c31cd",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "9bae9760a6e97c10780505954d77d917ea7b35d5d60c30eb1436773f6c2e6d4a",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-005-order-0-candidate-cp96-p16-b6-r23/expected-frame-4.bin",
+              "present": true,
+              "recorded_sha256": "9bae9760a6e97c10780505954d77d917ea7b35d5d60c30eb1436773f6c2e6d4a",
+              "verified": true
+            }
+          ],
+          "known_symbol_provenance": "verified expected bytes -> deterministic C/Python-parity encoder",
+          "payloads_bound_to_plan": true,
+          "profile_id": "candidate-cp96-p16-b6-r23",
+          "run_id": "pair-005-order-0-candidate-cp96-p16-b6-r23",
+          "status": "complete",
+          "transmit": {
+            "byte_count": 11522560,
+            "observed_sha256": "8d49d0ea9cb2b46a8831421b35fcc9032b0217059cf854caeb36231e4039f503",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-005-order-0-candidate-cp96-p16-b6-r23/tx-stereo-f32le.pcm",
+            "present": true,
+            "recorded_sha256": "8d49d0ea9cb2b46a8831421b35fcc9032b0217059cf854caeb36231e4039f503",
+            "verified": true
+          }
+        },
+        {
+          "capture": {
+            "byte_count": 7038080,
+            "observed_sha256": "a30eea7ae6207c63798e2afa0423f95911f47267b25f1e9bf3b12384420b498e",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-005-order-1-baseline-cp240-p8/capture-stereo-s16le.pcm",
+            "present": true,
+            "recorded_sha256": "a30eea7ae6207c63798e2afa0423f95911f47267b25f1e9bf3b12384420b498e",
+            "verified": true
+          },
+          "expected_payload_count": 5,
+          "expected_payloads": [
+            {
+              "byte_count": 38656,
+              "observed_sha256": "4cf2acd0886119fcbae26c2b4e3e9c6c6cc2f27e84ce8c6f01af07b4e3b8f2bb",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-005-order-1-baseline-cp240-p8/expected-frame-0.bin",
+              "present": true,
+              "recorded_sha256": "4cf2acd0886119fcbae26c2b4e3e9c6c6cc2f27e84ce8c6f01af07b4e3b8f2bb",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "c3263b7a9f6f0b7d145ede9e6103ff168bb3a31f317c9b1774802c5eb76e4041",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-005-order-1-baseline-cp240-p8/expected-frame-1.bin",
+              "present": true,
+              "recorded_sha256": "c3263b7a9f6f0b7d145ede9e6103ff168bb3a31f317c9b1774802c5eb76e4041",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "4dd9c64f4ff45315d4f58d47f7b74d63787a541179c408d8420ffff412fe8bde",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-005-order-1-baseline-cp240-p8/expected-frame-2.bin",
+              "present": true,
+              "recorded_sha256": "4dd9c64f4ff45315d4f58d47f7b74d63787a541179c408d8420ffff412fe8bde",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "f7940760544c31215d21aa08c01fa643066422800f3b08a3cd1a331a3d36a637",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-005-order-1-baseline-cp240-p8/expected-frame-3.bin",
+              "present": true,
+              "recorded_sha256": "f7940760544c31215d21aa08c01fa643066422800f3b08a3cd1a331a3d36a637",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "473fb36ebc2a8fdfb39a87716fcfb93b50ea3cc0ea31b43dc3a2ffac2028f3b5",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-005-order-1-baseline-cp240-p8/expected-frame-4.bin",
+              "present": true,
+              "recorded_sha256": "473fb36ebc2a8fdfb39a87716fcfb93b50ea3cc0ea31b43dc3a2ffac2028f3b5",
+              "verified": true
+            }
+          ],
+          "known_symbol_provenance": "verified expected bytes -> deterministic C/Python-parity encoder",
+          "payloads_bound_to_plan": true,
+          "profile_id": "baseline-cp240-p8",
+          "run_id": "pair-005-order-1-baseline-cp240-p8",
+          "status": "complete",
+          "transmit": {
+            "byte_count": 12271360,
+            "observed_sha256": "bb34ed40a00f59e950c3556ecaa406d1b509983f0b907ad1ee48dfb225a059df",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-005-order-1-baseline-cp240-p8/tx-stereo-f32le.pcm",
+            "present": true,
+            "recorded_sha256": "bb34ed40a00f59e950c3556ecaa406d1b509983f0b907ad1ee48dfb225a059df",
+            "verified": true
+          }
+        },
+        {
+          "capture": {
+            "byte_count": 6663676,
+            "observed_sha256": "197a0dd7ea10dabec09190b3ba4a694c7c7f1f9809d72f4dd076f80619fb7892",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-006-order-0-candidate-cp96-p16-b6-r23/capture-stereo-s16le.pcm",
+            "present": true,
+            "recorded_sha256": "197a0dd7ea10dabec09190b3ba4a694c7c7f1f9809d72f4dd076f80619fb7892",
+            "verified": true
+          },
+          "expected_payload_count": 5,
+          "expected_payloads": [
+            {
+              "byte_count": 55040,
+              "observed_sha256": "f641505c54d9ca8a59cd45a776be7a312e6fb390694d3a5127697cd095ca8ac2",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-006-order-0-candidate-cp96-p16-b6-r23/expected-frame-0.bin",
+              "present": true,
+              "recorded_sha256": "f641505c54d9ca8a59cd45a776be7a312e6fb390694d3a5127697cd095ca8ac2",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "5c132a145670f5a9bea475e2483e2f0c2d82d77d55dbb043aafa7c0867d686d3",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-006-order-0-candidate-cp96-p16-b6-r23/expected-frame-1.bin",
+              "present": true,
+              "recorded_sha256": "5c132a145670f5a9bea475e2483e2f0c2d82d77d55dbb043aafa7c0867d686d3",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "e564eb21e97d6eef560a02b73fc2d21eadcd97dd4cbd3d0c042079a9e60f8dfa",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-006-order-0-candidate-cp96-p16-b6-r23/expected-frame-2.bin",
+              "present": true,
+              "recorded_sha256": "e564eb21e97d6eef560a02b73fc2d21eadcd97dd4cbd3d0c042079a9e60f8dfa",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "08b7f74050af712ad5b90051315e53ad139ac9ff46eeba7a454b022782cc3c23",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-006-order-0-candidate-cp96-p16-b6-r23/expected-frame-3.bin",
+              "present": true,
+              "recorded_sha256": "08b7f74050af712ad5b90051315e53ad139ac9ff46eeba7a454b022782cc3c23",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "44b4d3034db173505b187435178828df3733e16ae67bb8fcd7d0aa1d61d1d1ad",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-006-order-0-candidate-cp96-p16-b6-r23/expected-frame-4.bin",
+              "present": true,
+              "recorded_sha256": "44b4d3034db173505b187435178828df3733e16ae67bb8fcd7d0aa1d61d1d1ad",
+              "verified": true
+            }
+          ],
+          "known_symbol_provenance": "verified expected bytes -> deterministic C/Python-parity encoder",
+          "payloads_bound_to_plan": true,
+          "profile_id": "candidate-cp96-p16-b6-r23",
+          "run_id": "pair-006-order-0-candidate-cp96-p16-b6-r23",
+          "status": "complete",
+          "transmit": {
+            "byte_count": 11522560,
+            "observed_sha256": "81b9181477e647e1bba06df1b8b6c732c6f40d0daaf8c29691cea88f1fe51539",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-006-order-0-candidate-cp96-p16-b6-r23/tx-stereo-f32le.pcm",
+            "present": true,
+            "recorded_sha256": "81b9181477e647e1bba06df1b8b6c732c6f40d0daaf8c29691cea88f1fe51539",
+            "verified": true
+          }
+        },
+        {
+          "capture": {
+            "byte_count": 7038080,
+            "observed_sha256": "5df727218ab749e0d7eeb9eb23b3dbdf5f5e61b829bb66f64c576fa6e91f535d",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-006-order-1-baseline-cp240-p8/capture-stereo-s16le.pcm",
+            "present": true,
+            "recorded_sha256": "5df727218ab749e0d7eeb9eb23b3dbdf5f5e61b829bb66f64c576fa6e91f535d",
+            "verified": true
+          },
+          "expected_payload_count": 5,
+          "expected_payloads": [
+            {
+              "byte_count": 38656,
+              "observed_sha256": "9612a623adc1c116ba094a2794b80ca412a53ff76ec8714b3413e31d283f99da",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-006-order-1-baseline-cp240-p8/expected-frame-0.bin",
+              "present": true,
+              "recorded_sha256": "9612a623adc1c116ba094a2794b80ca412a53ff76ec8714b3413e31d283f99da",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "45d5d84170dcbe665fa17de1ce37850f1ffa86ec71bfa812eff570669952dbeb",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-006-order-1-baseline-cp240-p8/expected-frame-1.bin",
+              "present": true,
+              "recorded_sha256": "45d5d84170dcbe665fa17de1ce37850f1ffa86ec71bfa812eff570669952dbeb",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "089bf502ec8d9a704aff8bd082a9ca8edc452672a69bb762b7645b737b09d69a",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-006-order-1-baseline-cp240-p8/expected-frame-2.bin",
+              "present": true,
+              "recorded_sha256": "089bf502ec8d9a704aff8bd082a9ca8edc452672a69bb762b7645b737b09d69a",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "e9064ec61d260ca87b4e59a7661407c66312432328cc8c56699feaa5b0f11d8a",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-006-order-1-baseline-cp240-p8/expected-frame-3.bin",
+              "present": true,
+              "recorded_sha256": "e9064ec61d260ca87b4e59a7661407c66312432328cc8c56699feaa5b0f11d8a",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "ceeba90490c67301efdf72032ad3bf90aab214ebe4c5976d7aefe9ae710126ca",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-006-order-1-baseline-cp240-p8/expected-frame-4.bin",
+              "present": true,
+              "recorded_sha256": "ceeba90490c67301efdf72032ad3bf90aab214ebe4c5976d7aefe9ae710126ca",
+              "verified": true
+            }
+          ],
+          "known_symbol_provenance": "verified expected bytes -> deterministic C/Python-parity encoder",
+          "payloads_bound_to_plan": true,
+          "profile_id": "baseline-cp240-p8",
+          "run_id": "pair-006-order-1-baseline-cp240-p8",
+          "status": "complete",
+          "transmit": {
+            "byte_count": 12271360,
+            "observed_sha256": "4fd0f20d3733b282471b0617f4661424f8f7f09dbe20e1028307353990be16c8",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-006-order-1-baseline-cp240-p8/tx-stereo-f32le.pcm",
+            "present": true,
+            "recorded_sha256": "4fd0f20d3733b282471b0617f4661424f8f7f09dbe20e1028307353990be16c8",
+            "verified": true
+          }
+        },
+        {
+          "capture": {
+            "byte_count": 7038080,
+            "observed_sha256": "166a4b2f9b04af9955f5dce49fe364ec9180fcbb0e004d6e0867027ac57b3888",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-007-order-0-baseline-cp240-p8/capture-stereo-s16le.pcm",
+            "present": true,
+            "recorded_sha256": "166a4b2f9b04af9955f5dce49fe364ec9180fcbb0e004d6e0867027ac57b3888",
+            "verified": true
+          },
+          "expected_payload_count": 5,
+          "expected_payloads": [
+            {
+              "byte_count": 38656,
+              "observed_sha256": "37597d7c2e3f263b28930c8368339b7a7b6849af596f779204df43edcfed300e",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-007-order-0-baseline-cp240-p8/expected-frame-0.bin",
+              "present": true,
+              "recorded_sha256": "37597d7c2e3f263b28930c8368339b7a7b6849af596f779204df43edcfed300e",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "9c422f6d6962cc935419150d31ab2717406c5d65d4dac5b25fcb634f5cee0734",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-007-order-0-baseline-cp240-p8/expected-frame-1.bin",
+              "present": true,
+              "recorded_sha256": "9c422f6d6962cc935419150d31ab2717406c5d65d4dac5b25fcb634f5cee0734",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "03eaebe3c973e84c71901f56602e8f28ff7220cc721e998f541681b84c1e075d",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-007-order-0-baseline-cp240-p8/expected-frame-2.bin",
+              "present": true,
+              "recorded_sha256": "03eaebe3c973e84c71901f56602e8f28ff7220cc721e998f541681b84c1e075d",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "2b03741ba043b409d1fb241d11d13133bd464bfde90be7531bf490e7943c6520",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-007-order-0-baseline-cp240-p8/expected-frame-3.bin",
+              "present": true,
+              "recorded_sha256": "2b03741ba043b409d1fb241d11d13133bd464bfde90be7531bf490e7943c6520",
+              "verified": true
+            },
+            {
+              "byte_count": 38656,
+              "observed_sha256": "5c4863413da6f98bacb2e8fa824e8eb8bb51bbd5829fc09b09172f59e3f6f568",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-007-order-0-baseline-cp240-p8/expected-frame-4.bin",
+              "present": true,
+              "recorded_sha256": "5c4863413da6f98bacb2e8fa824e8eb8bb51bbd5829fc09b09172f59e3f6f568",
+              "verified": true
+            }
+          ],
+          "known_symbol_provenance": "verified expected bytes -> deterministic C/Python-parity encoder",
+          "payloads_bound_to_plan": true,
+          "profile_id": "baseline-cp240-p8",
+          "run_id": "pair-007-order-0-baseline-cp240-p8",
+          "status": "complete",
+          "transmit": {
+            "byte_count": 12271360,
+            "observed_sha256": "0326bf55f0b22105658c1f03bd98cdb5ff8b95267cf67cdd57ebb289b9aaf201",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-007-order-0-baseline-cp240-p8/tx-stereo-f32le.pcm",
+            "present": true,
+            "recorded_sha256": "0326bf55f0b22105658c1f03bd98cdb5ff8b95267cf67cdd57ebb289b9aaf201",
+            "verified": true
+          }
+        },
+        {
+          "capture": {
+            "byte_count": 6663676,
+            "observed_sha256": "2b7e515cfc17448ed8b9dd6f0fa262c956b7a9a6d5b183b0f5b7babf83eaaf21",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-007-order-1-candidate-cp96-p16-b6-r23/capture-stereo-s16le.pcm",
+            "present": true,
+            "recorded_sha256": "2b7e515cfc17448ed8b9dd6f0fa262c956b7a9a6d5b183b0f5b7babf83eaaf21",
+            "verified": true
+          },
+          "expected_payload_count": 5,
+          "expected_payloads": [
+            {
+              "byte_count": 55040,
+              "observed_sha256": "4de029541853771b41ace8474a72e491df3fd9b96f4cf39e0564440dda2fa1db",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-007-order-1-candidate-cp96-p16-b6-r23/expected-frame-0.bin",
+              "present": true,
+              "recorded_sha256": "4de029541853771b41ace8474a72e491df3fd9b96f4cf39e0564440dda2fa1db",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "ab23b28863b612d0a77aec372b92a9595c1e5e88341d8b4af5c40f9ac5617753",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-007-order-1-candidate-cp96-p16-b6-r23/expected-frame-1.bin",
+              "present": true,
+              "recorded_sha256": "ab23b28863b612d0a77aec372b92a9595c1e5e88341d8b4af5c40f9ac5617753",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "8f91c33bd4509bfb66f60884da2bfd27794bf8e9f05acf99f1e971aff8af73ca",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-007-order-1-candidate-cp96-p16-b6-r23/expected-frame-2.bin",
+              "present": true,
+              "recorded_sha256": "8f91c33bd4509bfb66f60884da2bfd27794bf8e9f05acf99f1e971aff8af73ca",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "fa45ee0c8fe9533a26a3bb5b7d78cf80f5bc052e134d4b9d767c31c337defa8c",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-007-order-1-candidate-cp96-p16-b6-r23/expected-frame-3.bin",
+              "present": true,
+              "recorded_sha256": "fa45ee0c8fe9533a26a3bb5b7d78cf80f5bc052e134d4b9d767c31c337defa8c",
+              "verified": true
+            },
+            {
+              "byte_count": 55040,
+              "observed_sha256": "9f83d1971accf43e0913f1eabecbaa95c5e30e4db2330e150b08dcb3cac73c25",
+              "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-007-order-1-candidate-cp96-p16-b6-r23/expected-frame-4.bin",
+              "present": true,
+              "recorded_sha256": "9f83d1971accf43e0913f1eabecbaa95c5e30e4db2330e150b08dcb3cac73c25",
+              "verified": true
+            }
+          ],
+          "known_symbol_provenance": "verified expected bytes -> deterministic C/Python-parity encoder",
+          "payloads_bound_to_plan": true,
+          "profile_id": "candidate-cp96-p16-b6-r23",
+          "run_id": "pair-007-order-1-candidate-cp96-p16-b6-r23",
+          "status": "complete",
+          "transmit": {
+            "byte_count": 11522560,
+            "observed_sha256": "70edea221bb85a5066fd78db5940efb7a1eb98da4b641ca236a11ac442542dcc",
+            "path": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym128-local-llr-zerogap-eightpair-seed20260780-v1.exec1.artifacts/pair-007-order-1-candidate-cp96-p16-b6-r23/tx-stereo-f32le.pcm",
+            "present": true,
+            "recorded_sha256": "70edea221bb85a5066fd78db5940efb7a1eb98da4b641ca236a11ac442542dcc",
+            "verified": true
+          }
+        }
+      ],
+      "schedule": {
+        "cold_start_overhead_s": 0.0,
+        "frames": 5,
+        "inter_frame_gap_s": 0.0,
+        "leading_pad_s": 0.0,
+        "trailing_pad_s": 0.3333333333333333
+      }
+    }
+  ],
+  "schema": "cyrinx.spike8b-retained-inventory.v1",
+  "summary": {
+    "capture_count": 16,
+    "ledger_bound_manifest_count": 1,
+    "manifest_count": 1,
+    "payload_file_count": 80
+  },
+  "verify_hash": true
+}

@@ -1,0 +1,31 @@
+{
+  "authorization": "not authorized: preregistered offline proceed threshold failed",
+  "candidate": {
+    "bits_per_bin": 6,
+    "code_rate": "2/3",
+    "cp_samples": 96,
+    "data_symbols": [
+      64,
+      128
+    ],
+    "estimator": "complex-linear/full",
+    "inter_frame_gap_samples": 0,
+    "pilot_every": 16,
+    "terminal_trainers_per_frame": [
+      1,
+      2
+    ]
+  },
+  "note": "This executable plan is intentionally not a playback command.",
+  "schema": "cyrinx.spike8b-ota-acquisition-plan.v1",
+  "screen": {
+    "control": "start-only, same waveform with terminal trainer ignored",
+    "order": "balanced",
+    "pairs": 2,
+    "primary_metric": "strict ordered scheduled goodput with terminal training in denominator",
+    "stop": "<25% recovery of control-lost blocks, first-half regression, or no midpoint prediction"
+  },
+  "source_oracle_manifest_sha256": "0f81dc4dce591c47e7fb1aeefeb635ac49de2ce01fbf0fd7805326446668af9e",
+  "source_oracle_result_sha256": "2842dec17cbfb67b41039e0fa4b7817af9739ac1d728606707af2c76d233e96b",
+  "status": "blocked-by-offline-oracle-gate"
+}
