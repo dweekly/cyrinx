@@ -1,0 +1,354 @@
+{
+  "campaign_wall_seconds": 105.22758579207584,
+  "cells": [
+    {
+      "candidate_crc_recovery": 0.85625,
+      "candidate_evm_median": 0.16114401862171943,
+      "candidate_raw_crest_p99_9_db": 12.437978108643645,
+      "cell": "awgn-snr18",
+      "crc_difference": -0.04500000000000004,
+      "frames": 1000,
+      "held_out_frames": 800,
+      "incumbent_crc_recovery": 0.90125,
+      "incumbent_evm_median": 0.16142719079969936,
+      "incumbent_raw_crest_p99_9_db": 15.33604152569265,
+      "provenance": "modelled identity channel",
+      "snr_db": 18.0,
+      "wall_seconds": 10.056048791855574
+    },
+    {
+      "candidate_crc_recovery": 1.0,
+      "candidate_evm_median": 0.06373750005733578,
+      "candidate_raw_crest_p99_9_db": 12.349781900895398,
+      "cell": "awgn-snr26",
+      "crc_difference": 0.0,
+      "frames": 1000,
+      "held_out_frames": 800,
+      "incumbent_crc_recovery": 1.0,
+      "incumbent_evm_median": 0.06460117608349379,
+      "incumbent_raw_crest_p99_9_db": 15.068560617545822,
+      "provenance": "modelled identity channel",
+      "snr_db": 26.0,
+      "wall_seconds": 10.043792417272925
+    },
+    {
+      "candidate_crc_recovery": 0.0,
+      "candidate_evm_median": 0.2368068434344576,
+      "candidate_raw_crest_p99_9_db": 12.18181841826278,
+      "cell": "golden-mic0-snr18",
+      "crc_difference": 0.0,
+      "frames": 1000,
+      "held_out_frames": 800,
+      "incumbent_crc_recovery": 0.0,
+      "incumbent_evm_median": 0.2375887339597991,
+      "incumbent_raw_crest_p99_9_db": 15.229529057826891,
+      "provenance": "Tests/Fixtures/golden deterministic RX_CHANNEL_TAPS; model fixture, not a measured RIR",
+      "snr_db": 18.0,
+      "wall_seconds": 10.442773000337183
+    },
+    {
+      "candidate_crc_recovery": 0.9725,
+      "candidate_evm_median": 0.11552063430786713,
+      "candidate_raw_crest_p99_9_db": 12.366358641412331,
+      "cell": "golden-mic0-snr26",
+      "crc_difference": 0.03125,
+      "frames": 1000,
+      "held_out_frames": 800,
+      "incumbent_crc_recovery": 0.94125,
+      "incumbent_evm_median": 0.11621083464096643,
+      "incumbent_raw_crest_p99_9_db": 15.659294739973882,
+      "provenance": "Tests/Fixtures/golden deterministic RX_CHANNEL_TAPS; model fixture, not a measured RIR",
+      "snr_db": 26.0,
+      "wall_seconds": 10.467597124632448
+    },
+    {
+      "candidate_crc_recovery": 0.00375,
+      "candidate_evm_median": 0.20974914777269715,
+      "candidate_raw_crest_p99_9_db": 12.30532082098229,
+      "cell": "golden-mic1-snr18",
+      "crc_difference": -0.0025000000000000005,
+      "frames": 1000,
+      "held_out_frames": 800,
+      "incumbent_crc_recovery": 0.00625,
+      "incumbent_evm_median": 0.2106893288195409,
+      "incumbent_raw_crest_p99_9_db": 15.076831510926686,
+      "provenance": "Tests/Fixtures/golden deterministic RX2_CHANNEL_TAPS; model fixture, not a measured RIR",
+      "snr_db": 18.0,
+      "wall_seconds": 10.45664345799014
+    },
+    {
+      "candidate_crc_recovery": 0.9925,
+      "candidate_evm_median": 0.10223613766928577,
+      "candidate_raw_crest_p99_9_db": 12.395459548021988,
+      "cell": "golden-mic1-snr26",
+      "crc_difference": -0.0050000000000000044,
+      "frames": 1000,
+      "held_out_frames": 800,
+      "incumbent_crc_recovery": 0.9975,
+      "incumbent_evm_median": 0.1028083624043496,
+      "incumbent_raw_crest_p99_9_db": 15.114420333579815,
+      "provenance": "Tests/Fixtures/golden deterministic RX2_CHANNEL_TAPS; model fixture, not a measured RIR",
+      "snr_db": 26.0,
+      "wall_seconds": 10.48137145768851
+    },
+    {
+      "candidate_crc_recovery": 0.29625,
+      "candidate_evm_median": 0.18572171041491675,
+      "candidate_raw_crest_p99_9_db": 12.319469963779428,
+      "cell": "model-short-snr18",
+      "crc_difference": 0.028749999999999998,
+      "frames": 1000,
+      "held_out_frames": 800,
+      "incumbent_crc_recovery": 0.2675,
+      "incumbent_evm_median": 0.18597815215083288,
+      "incumbent_raw_crest_p99_9_db": 14.782099942460928,
+      "provenance": "synthetic CP-bounded sparse response",
+      "snr_db": 18.0,
+      "wall_seconds": 11.304412041790783
+    },
+    {
+      "candidate_crc_recovery": 1.0,
+      "candidate_evm_median": 0.07296372561427658,
+      "candidate_raw_crest_p99_9_db": 12.403744999669911,
+      "cell": "model-short-snr26",
+      "crc_difference": 0.0,
+      "frames": 1000,
+      "held_out_frames": 800,
+      "incumbent_crc_recovery": 1.0,
+      "incumbent_evm_median": 0.07376980854930577,
+      "incumbent_raw_crest_p99_9_db": 14.892767739640707,
+      "provenance": "synthetic CP-bounded sparse response",
+      "snr_db": 26.0,
+      "wall_seconds": 10.552857709117234
+    },
+    {
+      "candidate_crc_recovery": 0.0,
+      "candidate_evm_median": 0.23713464467597967,
+      "candidate_raw_crest_p99_9_db": 12.434252159814493,
+      "cell": "model-long-snr18",
+      "crc_difference": 0.0,
+      "frames": 1000,
+      "held_out_frames": 800,
+      "incumbent_crc_recovery": 0.0,
+      "incumbent_evm_median": 0.24242542229577074,
+      "incumbent_raw_crest_p99_9_db": 14.909660427045143,
+      "provenance": "synthetic CP-exceeding sparse response",
+      "snr_db": 18.0,
+      "wall_seconds": 10.496078916825354
+    },
+    {
+      "candidate_crc_recovery": 0.78,
+      "candidate_evm_median": 0.1405986466821902,
+      "candidate_raw_crest_p99_9_db": 12.234227728450845,
+      "cell": "model-long-snr26",
+      "crc_difference": 0.05875000000000008,
+      "frames": 1000,
+      "held_out_frames": 800,
+      "incumbent_crc_recovery": 0.72125,
+      "incumbent_evm_median": 0.14452788425893187,
+      "incumbent_raw_crest_p99_9_db": 14.933927012264288,
+      "provenance": "synthetic CP-exceeding sparse response",
+      "snr_db": 26.0,
+      "wall_seconds": 10.555828916840255
+    }
+  ],
+  "frames_completed": 10000,
+  "gates": {
+    "coded_rir": {
+      "bootstrap_95_interval_candidate_minus_incumbent": [
+        0.0059375,
+        0.013906250000000002,
+        0.022031250000000002
+      ],
+      "lower_threshold": -0.005,
+      "minimum_cell_point_difference": -0.0050000000000000044,
+      "minimum_cell_threshold": -0.02,
+      "pass": true
+    },
+    "crest_factor": {
+      "pass": false,
+      "threshold_db": 3.0,
+      "value_db": 2.7775059581140678
+    },
+    "integrity": {
+      "all_metrics_finite": true,
+      "frames_completed": 10000,
+      "pass": true,
+      "required_frames": 10000
+    },
+    "spectral": {
+      "guard_peak_delta_db": -0.204241984567183,
+      "guard_peak_maximum_delta_db": 1.0,
+      "oob_delta_db": -0.16635088227431183,
+      "oob_maximum_delta_db": 0.25,
+      "pass": true
+    }
+  },
+  "implementation_sha256": "c3003b56c14ee0d6223fa44eb01621e813dbc128ba053ad65f891226dbce4aac",
+  "library_integration_permitted": false,
+  "limits": [
+    "no speaker, microphone, OS dynamics/protection, clipping, THD, intermodulation, or acoustic SPL is modelled or measured",
+    "no measured retained room impulse response is available in the tracked checkout",
+    "known timing, no CFO/SRO, and oracle symbol boundaries make this less demanding than OTA acquisition/tracking",
+    "the one-block coded probe is not production frame-wide throughput",
+    "the Python compute ratio does not predict optimized C or mobile real-time cost"
+  ],
+  "numpy": "2.4.6",
+  "ota_permitted_by_frozen_gate": false,
+  "overall": {
+    "held_out": {
+      "candidate": {
+        "crc_recovery": 0.590125,
+        "evm_rms": {
+          "median": 0.15094745643751606,
+          "p90": 0.23705193746856995,
+          "p99": 0.2531644849136166,
+          "p99_9": 0.32993306056371124
+        },
+        "frames": 8000,
+        "hard_probe_ber": 0.04709012464046021,
+        "limited_crest_db": {
+          "median": 10.370388722587347,
+          "p90": 10.370525087425486,
+          "p99": 10.370675755627063,
+          "p99_9": 10.37076027520747
+        },
+        "mean": -1.0371752511876974e-05,
+        "mean_square": 0.00297596476056422,
+        "raw_crest_db": {
+          "median": 10.982470195606307,
+          "p90": 11.50567445305423,
+          "p99": 12.053083957336883,
+          "p99_9": 12.37570901894846
+        },
+        "rms": 0.05455234589824526,
+        "rx_seconds": 14.662622911389917,
+        "tx_seconds": 7.142546685412526,
+        "whole_body_crest_db": {
+          "median": 10.413287176780287,
+          "p90": 10.413420721937655,
+          "p99": 10.413568274600173,
+          "p99_9": 10.413651046426017
+        }
+      },
+      "incumbent": {
+        "crc_recovery": 0.5835,
+        "evm_rms": {
+          "median": 0.15339238376895914,
+          "p90": 0.24031607031816812,
+          "p99": 0.25844747226115694,
+          "p99_9": 0.31962840441563384
+        },
+        "frames": 8000,
+        "hard_probe_ber": 0.03917301853627357,
+        "limited_crest_db": {
+          "median": 10.378020502653552,
+          "p90": 10.379313610917228,
+          "p99": 10.380492371118766,
+          "p99_9": 10.381587287940258
+        },
+        "mean": -1.1219005789153039e-05,
+        "mean_square": 0.002969891825902423,
+        "raw_crest_db": {
+          "median": 13.160268336524002,
+          "p90": 13.87049285664444,
+          "p99": 14.610168023238707,
+          "p99_9": 15.153214977062527
+        },
+        "rms": 0.054496713546813055,
+        "rx_seconds": 12.88831165060401,
+        "tx_seconds": 5.2621742081828415,
+        "whole_body_crest_db": {
+          "median": 10.420761017455883,
+          "p90": 10.422027337956267,
+          "p99": 10.423181672399085,
+          "p99_9": 10.424253895011418
+        }
+      }
+    },
+    "training": {
+      "candidate": {
+        "crc_recovery": 0.5865,
+        "evm_rms": {
+          "median": 0.15066624822465635,
+          "p90": 0.2373979773275544,
+          "p99": 0.2592277983709204,
+          "p99_9": 0.2983295924353727
+        },
+        "frames": 2000,
+        "hard_probe_ber": 0.04701741770533717,
+        "limited_crest_db": {
+          "median": 10.370391867061482,
+          "p90": 10.370535411681894,
+          "p99": 10.370660671268451,
+          "p99_9": 10.370758975485808
+        },
+        "mean": -1.0429169141483291e-05,
+        "mean_square": 0.0029758593356771427,
+        "raw_crest_db": {
+          "median": 10.985706976847265,
+          "p90": 11.522562291538321,
+          "p99": 12.104229067528308,
+          "p99_9": 12.621537618604552
+        },
+        "rms": 0.05455139289717738,
+        "rx_seconds": 3.6153299626894295,
+        "tx_seconds": 1.7630984946154058,
+        "whole_body_crest_db": {
+          "median": 10.413290256235605,
+          "p90": 10.41343083271096,
+          "p99": 10.413553502162898,
+          "p99_9": 10.41364977358115
+        }
+      },
+      "incumbent": {
+        "crc_recovery": 0.582,
+        "evm_rms": {
+          "median": 0.15362197248823967,
+          "p90": 0.24041360249679525,
+          "p99": 0.2619506831970618,
+          "p99_9": 0.30606051388127514
+        },
+        "frames": 2000,
+        "hard_probe_ber": 0.03915308405241291,
+        "limited_crest_db": {
+          "median": 10.378004377591928,
+          "p90": 10.379322460362642,
+          "p99": 10.380451409134917,
+          "p99_9": 10.381044667341117
+        },
+        "mean": -1.1295849360474895e-05,
+        "mean_square": 0.002969884561506081,
+        "raw_crest_db": {
+          "median": 13.136060699311857,
+          "p90": 13.834358998066323,
+          "p99": 14.583257302053756,
+          "p99_9": 14.89896755417583
+        },
+        "rms": 0.05449664690902513,
+        "rx_seconds": 3.1749189971014857,
+        "tx_seconds": 1.3013728624209762,
+        "whole_body_crest_db": {
+          "median": 10.420745226388394,
+          "p90": 10.422036004051492,
+          "p99": 10.423141559320653,
+          "p99_9": 10.423722521943487
+        }
+      }
+    }
+  },
+  "platform": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+  "preregistration_sha256": "4bc76ad6297d5719dc58c83365a8382aaff6e269fb1ec6be58e5d6fbc7a9c221",
+  "python": "3.14.6 (main, Jun 10 2026, 10:03:53) [Clang 21.0.0 (clang-2100.0.123.102)]",
+  "schema": "cyrinx.spike-8c-dfts-ofdm-results.v1",
+  "spectral": {
+    "candidate": {
+      "guard_peak_normalized_db": -54.377475543879264,
+      "out_of_band_to_in_band_db": -29.92280078680899
+    },
+    "incumbent": {
+      "guard_peak_normalized_db": -54.17323355931208,
+      "out_of_band_to_in_band_db": -29.756449904534676
+    }
+  }
+}

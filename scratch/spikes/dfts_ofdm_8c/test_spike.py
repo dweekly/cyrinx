@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 import sys
 import unittest
@@ -79,6 +81,26 @@ class Spike8CTests(unittest.TestCase):
         recovered = spike.batch_viterbi_crc(np.stack(llrs), streams)
         np.testing.assert_array_equal(recovered, np.ones(3, dtype=bool))
 
+    def test_batch_viterbi_matches_scalar_oracle_under_noise(self) -> None:
+        rng = np.random.default_rng(12)
+        streams = []
+        llrs = []
+        scalar = []
+        pattern = np.resize(np.asarray(spike.M.PUNCTURE["2/3"][0], dtype=bool), 4172)
+        for noise_rms in (1.0, 2.5, 4.0):
+            stream, punctured = spike.coded_probe(rng)
+            punctured_llr = np.where(punctured == 0, 3.0, -3.0) + rng.normal(
+                0.0, noise_rms, len(punctured)
+            )
+            full = np.zeros(4172)
+            full[pattern] = punctured_llr
+            bits = spike.M.viterbi_decode(full[0::2], full[1::2], 2080)
+            scalar.append(np.packbits(bits).tobytes() == stream)
+            streams.append(stream)
+            llrs.append(punctured_llr.astype(np.float32))
+        batched = spike.batch_viterbi_crc(np.stack(llrs), streams)
+        np.testing.assert_array_equal(batched, np.asarray(scalar, dtype=bool))
+
     def test_seed_is_stable_and_cell_separated(self) -> None:
         seed = self.document["randomization"]["master_seed"]
         first = spike.frame_seed(seed, "awgn-snr18", 0)
@@ -86,7 +108,21 @@ class Spike8CTests(unittest.TestCase):
         self.assertNotEqual(first, spike.frame_seed(seed, "awgn-snr18", 1))
         self.assertNotEqual(first, spike.frame_seed(seed, "awgn-snr26", 0))
 
+    def test_committed_result_is_internally_consistent(self) -> None:
+        result_path = HERE / "results" / "summary.json"
+        self.assertTrue(result_path.exists())
+        result = json.loads(result_path.read_text())
+        self.assertEqual(result["schema"], spike.SCHEMA)
+        prereg_hash = hashlib.sha256(spike.PREREG_PATH.read_bytes()).hexdigest()
+        implementation_hash = hashlib.sha256((HERE / "spike.py").read_bytes()).hexdigest()
+        self.assertEqual(result["preregistration_sha256"], prereg_hash)
+        self.assertEqual(result["implementation_sha256"], implementation_hash)
+        self.assertEqual(result["frames_completed"], 10000)
+        self.assertEqual(sum(cell["frames"] for cell in result["cells"]), 10000)
+        conjunction = all(gate["pass"] for gate in result["gates"].values())
+        self.assertEqual(result["ota_permitted_by_frozen_gate"], conjunction)
+        self.assertFalse(result["ota_permitted_by_frozen_gate"])
+
 
 if __name__ == "__main__":
     unittest.main()
-

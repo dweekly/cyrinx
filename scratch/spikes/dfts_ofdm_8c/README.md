@@ -18,3 +18,15 @@ Run the deterministic checks and complete campaign from the repository root:
 .venv/bin/python scratch/spikes/dfts_ofdm_8c/test_spike.py
 .venv/bin/python scratch/spikes/dfts_ofdm_8c/spike.py run
 ```
+
+## Result
+
+The complete preregistered campaign ran 10,000 frames, including 8,000 held-
+out frames. The candidate reduced held-out q99.9 pre-limiter crest factor by
+2.7775 dB, missing the frozen 3.0 dB gate. The coded-RIR and spectral gates
+passed, but the conjunction did not; OTA and library integration are not
+permitted by this spike.
+
+See [`results/REPORT.md`](results/REPORT.md) for the quantitative result and
+[`NEXT_EXPERIMENT.md`](NEXT_EXPERIMENT.md) for the conditional minimum follow-
+up. The latter deliberately does not tune the failed candidate in place.
