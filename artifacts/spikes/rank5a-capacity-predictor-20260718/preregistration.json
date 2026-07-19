@@ -1,0 +1,205 @@
+{
+  "schema": "cyrinx.rank5a-capacity-predictor-preregistration.v1",
+  "frozen_at_utc": "2026-07-18T19:28:19Z",
+  "status": "frozen-before-candidate-outcome-calculation",
+  "scope": {
+    "maturity": "BENCH-SPIKE",
+    "integration_permitted": false,
+    "offline_only": true,
+    "live_audio_or_adb_permitted": false,
+    "raw_input_root": "/private/tmp/cyrinx-spike-5-sounder-20260718/artifacts/spikes/rank5-pixel-mac-20260718",
+    "raw_inputs_are_read_only": true,
+    "physical_cell": "Pixel 7a face-up in the user-established near-field position over the MacBook function-key area; HVAC unknown",
+    "decision_data": "The already-acquired Rank 5 raw PCM and frozen strict block maps only"
+  },
+  "hypothesis": "Same-session bitwise GMI and its 16-QAM AWGN-equivalent effective SINR, computed from the randomized known-QAM probe and receiver-matched actual LLRs and interpreted against the exact protocol schedule, discriminate strict block recovery better than passive stationary-noise or repeated-pilot Shannon arithmetic. The expected contrast is strongest for reverse logical output 0, for which prior descriptive arithmetic was optimistic despite 0/50 strict recovery.",
+  "incumbents": [
+    {
+      "id": "passive_stationary_shannon",
+      "description": "Scalar or scalar-input SIMO log2(1+SNR) upper bound using the active known-QPSK channel estimate and the P0 passive-noise PSD/covariance"
+    },
+    {
+      "id": "repeated_pilot_shannon",
+      "description": "Existing eight-repeat known-QPSK log2(1+SNR) arithmetic stored in Rank 5 analysis.json"
+    }
+  ],
+  "frozen_observations": [
+    {
+      "id": "F0-S0-R0",
+      "direction": "Mac-to-Pixel",
+      "run": "F0",
+      "speaker": 0,
+      "receiver": "pixel-mic0",
+      "split": "training-screen-descriptive"
+    },
+    {
+      "id": "F0-S0-R1",
+      "direction": "Mac-to-Pixel",
+      "run": "F0",
+      "speaker": 0,
+      "receiver": "pixel-mic1",
+      "split": "training-screen-descriptive"
+    },
+    {
+      "id": "F0-S1-R0",
+      "direction": "Mac-to-Pixel",
+      "run": "F0",
+      "speaker": 1,
+      "receiver": "pixel-mic0",
+      "split": "training-screen-descriptive"
+    },
+    {
+      "id": "F0-S1-R1",
+      "direction": "Mac-to-Pixel",
+      "run": "F0",
+      "speaker": 1,
+      "receiver": "pixel-mic1",
+      "split": "training-screen-descriptive"
+    },
+    {
+      "id": "F0-S0-MRC01",
+      "direction": "Mac-to-Pixel",
+      "run": "F0",
+      "speaker": 0,
+      "receiver": "pixel-mrc01",
+      "split": "training-screen-descriptive",
+      "note": "Scalar-input SIMO only; not a two-stream or log-det MIMO observation"
+    },
+    {
+      "id": "F0-S1-MRC01",
+      "direction": "Mac-to-Pixel",
+      "run": "F0",
+      "speaker": 1,
+      "receiver": "pixel-mrc01",
+      "split": "training-screen-descriptive",
+      "note": "Scalar-input SIMO only; not a two-stream or log-det MIMO observation"
+    },
+    {
+      "id": "R1-S0-R0",
+      "direction": "Pixel-to-Mac",
+      "run": "R1",
+      "speaker": 0,
+      "receiver": "mac-mic0",
+      "split": "calibration-descriptive"
+    },
+    {
+      "id": "R1-S1-R0",
+      "direction": "Pixel-to-Mac",
+      "run": "R1",
+      "speaker": 1,
+      "receiver": "mac-mic0",
+      "split": "calibration-descriptive"
+    },
+    {
+      "id": "R2-S0-R0",
+      "direction": "Pixel-to-Mac",
+      "run": "R2",
+      "speaker": 0,
+      "receiver": "mac-mic0",
+      "split": "held-out-descriptive"
+    },
+    {
+      "id": "R2-S1-R0",
+      "direction": "Pixel-to-Mac",
+      "run": "R2",
+      "speaker": 1,
+      "receiver": "mac-mic0",
+      "split": "held-out-descriptive"
+    },
+    {
+      "id": "SM-S0-R0",
+      "direction": "Mac-self",
+      "run": "S-M",
+      "speaker": 0,
+      "receiver": "mac-mic0",
+      "split": "descriptive-only"
+    },
+    {
+      "id": "SM-S1-R0",
+      "direction": "Mac-self",
+      "run": "S-M",
+      "speaker": 1,
+      "receiver": "mac-mic0",
+      "split": "descriptive-only"
+    }
+  ],
+  "inventory_policy": {
+    "randomized_qam": "All listed observations contain the same deterministic randomized 16-QAM rate-1/2 probe; verify TX hash before analysis.",
+    "actual_llrs": "Reconstruct the portable-C receiver's sync, equalization, pilot-phase fit, 25:75 global/local pilot reliability blend, and max-log LLRs in an offline Python oracle. An observation has qualified actual LLRs only if the Python decoded ordered block mask exactly matches the retained portable-C mask.",
+    "noise": "F0 uses the P0 Pixel two-channel passive covariance/PSD; reverse and Mac-self use the P0 Mac mono passive PSD. These are campaign-stationary noise observations, not simultaneous data-probe noise.",
+    "channel_stability": "Only R1/R2 provide repeat observations, and their route provenance is incomplete. F0 and S-M have one active matrix only and cannot establish stable H[k].",
+    "strict_outcome": "Use retained portable-C ordered block-validity masks and verify payload positions; do not infer recovery from EVM or aggregate CRC counts."
+  },
+  "waveform_and_schedule": {
+    "sample_rate_hz": 48000,
+    "nfft": 2048,
+    "cp_samples": 768,
+    "occupied_band_hz": [1100, 23000],
+    "occupied_bins": 935,
+    "pilot_every_used_bins": 8,
+    "pilot_bins": 117,
+    "data_bins": 818,
+    "modulation": "16-QAM",
+    "bits_per_data_bin": 4,
+    "fec": "K=7 convolutional rate 1/2 with six tail bits",
+    "data_symbols": 64,
+    "sync_symbols": 2,
+    "preamble_samples": 4096,
+    "guard_samples": 2048,
+    "frame_samples": 192000,
+    "frame_seconds": 4.0,
+    "payload_blocks": 50,
+    "payload_bytes_per_block": 256,
+    "payload_bytes": 12800,
+    "scheduled_payload_ceiling_bps": 25600.0,
+    "inter_frame_gap_seconds": 0.0,
+    "drive": "digital peak 0.18; no calibrated SPL"
+  },
+  "calculations": {
+    "passive_stationary_shannon": "Split each demeaned P0 capture into nonoverlapping 2048-sample rectangular FFT records. For mono, sum_k log2(1+|h[k]|^2/N[k]) times 48000/(2048+768), flooring N[k] at max(1e-18, 1e-6 times the occupied-bin median N). For F0 scalar-input SIMO, replace the scalar ratio with h[k]^H Rn[k]^-1 h[k], loading each 2x2 Rn[k] diagonal by max(1e-18, 1e-3 times trace(Rn[k])/2). Use measured per-bin received signal power at the frozen drive; do not water-fill, extrapolate drive, or call the result achievable.",
+    "repeated_pilot_shannon": "Use the stored eight-symbol repeated-pilot sum log2(1+SNR[k]) times symbol rate, unchanged and explicitly labeled descriptive.",
+    "bitwise_gmi": "For each transmitted interleaved coded bit b and the corresponding actual max-log LLR L=log(P0/P1), compute max over a common s in [0,10] of 1-mean(log2(1+exp(-s*(1-2b)*L))). Report s=1 and optimized values. Optimization is part of the mismatched-decoder GMI definition, not a fitted recovery model.",
+    "effective_sinr": "Invert a deterministic seed-20260718 AWGN 16-QAM max-log s=1 GMI curve made from 50000 uniformly random symbols at -10.0 through 40.0 dB in 0.25 dB steps to the observation's optimized per-bit GMI. Values outside the grid are censored, not extrapolated.",
+    "gmi_feasibility": "Select the fixed probe profile only when optimized per-bit GMI is at least the exact configured coded-bit rate info_bits/capacity. Predicted fixed-profile goodput is then the 25.6 kbps schedule ceiling; otherwise it is zero. This is a preregistered finite-frame heuristic, not a capacity theorem.",
+    "incumbent_feasibility": "Each Shannon incumbent selects the profile when its descriptive rate is at least 25.6 kbps. This intentionally tests the optimistic use that an adaptation layer might make of the bound.",
+    "observed_goodput": "strict ordered verified payload blocks times 256 bytes times 8 divided by exactly 4.0 seconds"
+  },
+  "primary_metric": {
+    "name": "predictor-discrimination-against-strict-recovery",
+    "definition": "Report Spearman rank correlation between each continuous predictor and strict block-recovery fraction across unique listed observations, with F0 MRC rows separated from mono rows to avoid double-counting in the primary all-mono comparison. Also report reverse R2 separately without fitting to it.",
+    "promotion_threshold": "Roadmap held-out gate: median held-out goodput error <=15%; within 10% of measured-oracle profile in >=80% of held-out independent physical cells; no selection below 98% recovery when a compliant option exists; zero catastrophic selections below 90%; held-out Spearman >=0.5 and no >20% optimism.",
+    "stop_condition": "Do not promote adaptation if there are fewer than five independent held-out physical cells spanning at least two devices or if actual-LLR mask parity fails. Publish descriptive evidence and a QUALIFICATION_GAP instead."
+  },
+  "secondary_metrics": [
+    "binary profile-selection false-positive and false-negative counts at the 98% objective",
+    "catastrophic optimistic selections where predicted feasible but strict recovery is below 90%",
+    "absolute predicted-versus-observed probe-goodput error for the preregistered binary feasibility rules",
+    "GMI margin above or below info_bits/capacity",
+    "AWGN-equivalent effective SINR with censoring",
+    "confidence, age, route, capture, code, and raw-input hash provenance"
+  ],
+  "heldout_policy": {
+    "model_fitting_on_physical_observations": "none",
+    "R1": "calibration-descriptive only",
+    "R2": "held-out from any implementation or threshold choice, but its two paths are one correlated physical run and do not meet the roadmap minimum by themselves",
+    "F0_and_SM": "descriptive only because there is no held-out active repeat",
+    "qualification_expected": "QUALIFICATION_GAP unless the frozen inventory unexpectedly contains at least five independent held-out cells; do not pool paths from one run as independent devices/cells"
+  },
+  "raw_input_provenance": {
+    "F0_analysis_sha256": "d7d11a18be7963e5f28d47c7fed3f3e0a7132e29b3c91a14959e7a3ae0179578",
+    "R1_analysis_sha256": "2fedf444cf8a402751ef02e80ea3b723225d0d0d16638d97924b2184204184af",
+    "R2_analysis_sha256": "c09f9ca5723de00506cb94f1c9b17579abb8280567edb2abf8f53607c1c8c660",
+    "SM_analysis_sha256": "0fd7225efb394ebe3f019e581a4ea65b50a4004a2fa348870f825e9149970175",
+    "P0_analysis_sha256": "c53814dfed618f75a00380cff50882ab34030814de8780522f011c04f06b7583",
+    "capture_hashes_are_verified_from": "Each acquisition.json capture_artifact record before loading PCM",
+    "aggregate_manifest": "Generated after freeze without modifying the raw input tree"
+  },
+  "retained_outputs": [
+    "this preregistration and its SHA-256",
+    "analysis implementation and deterministic tests",
+    "raw-input inventory with SHA-256 and read-only provenance",
+    "per-observation predictor and strict-outcome table",
+    "aggregate ranking/error/catastrophic-selection report",
+    "negative findings, assumptions, and formal next acquisition gate"
+  ]
+}

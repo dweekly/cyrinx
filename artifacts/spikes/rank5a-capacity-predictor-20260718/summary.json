@@ -1,0 +1,164 @@
+{
+  "exact_schedule": {
+    "bits_per_symbol": 3272,
+    "capacity_coded_bits": 209408,
+    "components": "4096-sample chirp + 2048-sample guard + 2 sync and 64 data symbols, each 2048+768 samples; no inter-frame gap",
+    "configured_info_bit_rate": 0.499971347799511,
+    "data_bins": 818,
+    "frame_samples": 192000,
+    "frame_seconds": 4.0,
+    "info_bits": 104698,
+    "occupied_bins": 935,
+    "payload_bytes": 12800,
+    "pilot_bins": 117,
+    "scheduled_payload_ceiling_bps": 25600.0
+  },
+  "heldout_R2_descriptive": {
+    "ids": [
+      "R2-S0-R0",
+      "R2-S1-R0"
+    ],
+    "note": "Two speaker paths from one correlated physical run; no model was fitted, and n=2 is too small for a meaningful held-out rank statistic.",
+    "selection_rules": {
+      "actual_llr_gmi": {
+        "catastrophic_optimistic_below_90pct": [],
+        "false_negative_at_or_above_98pct": [],
+        "false_positive_below_98pct": [
+          "R2-S1-R0"
+        ],
+        "mean_absolute_goodput_error_bps": 1280.0,
+        "median_absolute_goodput_error_bps": 1280.0,
+        "observations": 2,
+        "optimistic_by_more_than_20pct_or_zero_actual": []
+      },
+      "passive_stationary_shannon": {
+        "catastrophic_optimistic_below_90pct": [
+          "R2-S0-R0"
+        ],
+        "false_negative_at_or_above_98pct": [],
+        "false_positive_below_98pct": [
+          "R2-S0-R0",
+          "R2-S1-R0"
+        ],
+        "mean_absolute_goodput_error_bps": 14080.0,
+        "median_absolute_goodput_error_bps": 14080.0,
+        "observations": 2,
+        "optimistic_by_more_than_20pct_or_zero_actual": [
+          "R2-S0-R0"
+        ]
+      },
+      "repeated_pilot_arithmetic": {
+        "catastrophic_optimistic_below_90pct": [
+          "R2-S0-R0"
+        ],
+        "false_negative_at_or_above_98pct": [],
+        "false_positive_below_98pct": [
+          "R2-S0-R0",
+          "R2-S1-R0"
+        ],
+        "mean_absolute_goodput_error_bps": 14080.0,
+        "median_absolute_goodput_error_bps": 14080.0,
+        "observations": 2,
+        "optimistic_by_more_than_20pct_or_zero_actual": [
+          "R2-S0-R0"
+        ]
+      }
+    }
+  },
+  "observation_counts": {
+    "all": 12,
+    "heldout_devices": 1,
+    "heldout_paths": 2,
+    "independent_heldout_physical_cells": 1,
+    "primary_unique_mono": 10,
+    "scalar_input_simo_diagnostic": 2
+  },
+  "qualification": {
+    "adaptation_promotion_permitted": false,
+    "classification": "QUALIFICATION_GAP",
+    "reasons": [
+      "Only one held-out physical run is available, below the preregistered five-cell/two-device minimum.",
+      "F0 and Mac-self have no held-out active repeat, so H[k] stability is not established.",
+      "R1/R2 lack a strict realized Pixel output-route signature.",
+      "Only one fixed 16-QAM rate-1/2 profile was probed, so within-10%-of-oracle profile choice cannot be scored.",
+      "The 50-block outcomes within a frame are not independent physical cells."
+    ],
+    "roadmap_gate_evaluable": false
+  },
+  "schema": "cyrinx.rank5a-capacity-predictor-summary.v1",
+  "selection_rules_primary_mono": {
+    "actual_llr_gmi": {
+      "catastrophic_optimistic_below_90pct": [
+        "R1-S0-R0",
+        "R1-S1-R0"
+      ],
+      "false_negative_at_or_above_98pct": [],
+      "false_positive_below_98pct": [
+        "R1-S0-R0",
+        "R1-S1-R0",
+        "R2-S1-R0"
+      ],
+      "mean_absolute_goodput_error_bps": 3174.4,
+      "median_absolute_goodput_error_bps": 0.0,
+      "observations": 10,
+      "optimistic_by_more_than_20pct_or_zero_actual": [
+        "R1-S0-R0"
+      ]
+    },
+    "passive_stationary_shannon": {
+      "catastrophic_optimistic_below_90pct": [
+        "R1-S0-R0",
+        "R1-S1-R0",
+        "R2-S0-R0"
+      ],
+      "false_negative_at_or_above_98pct": [],
+      "false_positive_below_98pct": [
+        "R1-S0-R0",
+        "R1-S1-R0",
+        "R2-S0-R0",
+        "R2-S1-R0"
+      ],
+      "mean_absolute_goodput_error_bps": 5734.4,
+      "median_absolute_goodput_error_bps": 0.0,
+      "observations": 10,
+      "optimistic_by_more_than_20pct_or_zero_actual": [
+        "R1-S0-R0",
+        "R2-S0-R0"
+      ]
+    },
+    "repeated_pilot_arithmetic": {
+      "catastrophic_optimistic_below_90pct": [
+        "F0-S1-R0",
+        "R1-S0-R0",
+        "R1-S1-R0",
+        "R2-S0-R0",
+        "SM-S1-R0"
+      ],
+      "false_negative_at_or_above_98pct": [],
+      "false_positive_below_98pct": [
+        "F0-S1-R0",
+        "R1-S0-R0",
+        "R1-S1-R0",
+        "R2-S0-R0",
+        "R2-S1-R0",
+        "SM-S1-R0"
+      ],
+      "mean_absolute_goodput_error_bps": 10854.4,
+      "median_absolute_goodput_error_bps": 3072.0,
+      "observations": 10,
+      "optimistic_by_more_than_20pct_or_zero_actual": [
+        "F0-S1-R0",
+        "R1-S0-R0",
+        "R2-S0-R0",
+        "SM-S1-R0"
+      ]
+    }
+  },
+  "spearman_primary_mono": {
+    "actual_llr_gmi": 0.8842048302391148,
+    "effective_sinr": 0.8842048302391148,
+    "passive_stationary_shannon": 0.5277811777396266,
+    "repeated_pilot_arithmetic": 0.4729467696627823
+  },
+  "status": "BENCH-SPIKE_NOT_PROMOTED"
+}

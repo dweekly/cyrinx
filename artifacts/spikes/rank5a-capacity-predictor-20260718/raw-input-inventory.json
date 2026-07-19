@@ -1,0 +1,197 @@
+{
+  "files": [
+    {
+      "bytes": 14820,
+      "mode_octal": "0o644",
+      "mtime_ns": 1784399740807010695,
+      "path": "F0-forward-vol30-lr/acquisition.json",
+      "sha256": "eab258990645b5348cd065c299cc8d003e8e438023eb51ee5fd84e65797ac584"
+    },
+    {
+      "bytes": 945910,
+      "mode_octal": "0o644",
+      "mtime_ns": 1784400086053727979,
+      "path": "F0-forward-vol30-lr/analysis.json",
+      "sha256": "d7d11a18be7963e5f28d47c7fed3f3e0a7132e29b3c91a14959e7a3ae0179578"
+    },
+    {
+      "bytes": 3504,
+      "mode_octal": "0o644",
+      "mtime_ns": 1784399740056998890,
+      "path": "F0-forward-vol30-lr/android-route.logcat.txt",
+      "sha256": "69815906213cf11fd2f50a99620f4471ea1cfcb75cc57f93f60a8769d15fe0fc"
+    },
+    {
+      "bytes": 4316416,
+      "mode_octal": "0o644",
+      "mtime_ns": 1784399738766572289,
+      "path": "F0-forward-vol30-lr/rx-pixel-stereo-s16le.pcm",
+      "sha256": "b59680373f6d582158f39727e330530b768a3b472dde8243c37baf2fae48d5e5"
+    },
+    {
+      "bytes": 7480832,
+      "mode_octal": "0o644",
+      "mtime_ns": 1784399712304337112,
+      "path": "F0-forward-vol30-lr/tx-stereo-f32le.pcm",
+      "sha256": "fba14bd882679c8abac430ea2c29f87a61a99c9ce969ea26c082216d261a8360"
+    },
+    {
+      "bytes": 1920000,
+      "mode_octal": "0o644",
+      "mtime_ns": 1784399678985404694,
+      "path": "P0-passive/mac-room-tone-mono-f32le.pcm",
+      "sha256": "e0634163f9a55dd17c20bfd1fa822bf64a96e50aa3801fb50dd355180539e7f3"
+    },
+    {
+      "bytes": 11011,
+      "mode_octal": "0o644",
+      "mtime_ns": 1784399679022366777,
+      "path": "P0-passive/passive-analysis.json",
+      "sha256": "c53814dfed618f75a00380cff50882ab34030814de8780522f011c04f06b7583"
+    },
+    {
+      "bytes": 3346,
+      "mode_octal": "0o644",
+      "mtime_ns": 1784399565857453799,
+      "path": "P0-passive/pixel-room-tone-route.logcat.txt",
+      "sha256": "5cbb370cb95d661dd71e26097199401eeb8f4e54b105b934dd02488414fc5c97"
+    },
+    {
+      "bytes": 1920000,
+      "mode_octal": "0o644",
+      "mtime_ns": 1784399565601607684,
+      "path": "P0-passive/pixel-room-tone-stereo-s16le.pcm",
+      "sha256": "ad04e9b16c5078dd955f864a35aed4104c0e078baa4ee0d4302cd5f1820589fa"
+    },
+    {
+      "bytes": 6490,
+      "mode_octal": "0o644",
+      "mtime_ns": 1784400298618862006,
+      "path": "R1-reverse-vol25-lr/acquisition.json",
+      "sha256": "8a93b8682789058419683d638d42f8f6d03df5f4fc5013fabc08f83dac02d603"
+    },
+    {
+      "bytes": 441135,
+      "mode_octal": "0o644",
+      "mtime_ns": 1784400309083055623,
+      "path": "R1-reverse-vol25-lr/analysis.json",
+      "sha256": "2fedf444cf8a402751ef02e80ea3b723225d0d0d16638d97924b2184204184af"
+    },
+    {
+      "bytes": 4489212,
+      "mode_octal": "0o644",
+      "mtime_ns": 1784400297832918953,
+      "path": "R1-reverse-vol25-lr/rx-mac-mono-f32le.pcm",
+      "sha256": "514dad561b9f22e80b5ca5851dec572846407e32be69569329495e9b211dfd5d"
+    },
+    {
+      "bytes": 7480832,
+      "mode_octal": "0o644",
+      "mtime_ns": 1784400272275058803,
+      "path": "R1-reverse-vol25-lr/tx-pixel-stereo-f32le.pcm",
+      "sha256": "fba14bd882679c8abac430ea2c29f87a61a99c9ce969ea26c082216d261a8360"
+    },
+    {
+      "bytes": 6490,
+      "mode_octal": "0o644",
+      "mtime_ns": 1784400346355251234,
+      "path": "R2-reverse-vol25-rl/acquisition.json",
+      "sha256": "a6241ec057a3f88162b92e875c7322e34573542759bf1882b6df18279218c98d"
+    },
+    {
+      "bytes": 441318,
+      "mode_octal": "0o644",
+      "mtime_ns": 1784400357654502538,
+      "path": "R2-reverse-vol25-rl/analysis.json",
+      "sha256": "c09f9ca5723de00506cb94f1c9b17579abb8280567edb2abf8f53607c1c8c660"
+    },
+    {
+      "bytes": 4489212,
+      "mode_octal": "0o644",
+      "mtime_ns": 1784400345740377731,
+      "path": "R2-reverse-vol25-rl/rx-mac-mono-f32le.pcm",
+      "sha256": "05249cf2d98d94a35573496f4da04332e6cc6fdd0f4d87d3ead2ff2db7e17074"
+    },
+    {
+      "bytes": 7480832,
+      "mode_octal": "0o644",
+      "mtime_ns": 1784400320259794837,
+      "path": "R2-reverse-vol25-rl/tx-pixel-stereo-f32le.pcm",
+      "sha256": "0ed435fa8343ff8a006af7f32fe65d68abbf86432827aa377d02af0ca9075900"
+    },
+    {
+      "bytes": 5711,
+      "mode_octal": "0o644",
+      "mtime_ns": 1784400249198811672,
+      "path": "S-M-mac-self-vol30-lr/acquisition.json",
+      "sha256": "f747af0fb659fa7d77f3ec58b0ff1e06de028a7726b0859113eabc466faabead"
+    },
+    {
+      "bytes": 446427,
+      "mode_octal": "0o644",
+      "mtime_ns": 1784400258653040067,
+      "path": "S-M-mac-self-vol30-lr/analysis.json",
+      "sha256": "0fd7225efb394ebe3f019e581a4ea65b50a4004a2fa348870f825e9149970175"
+    },
+    {
+      "bytes": 3932416,
+      "mode_octal": "0o644",
+      "mtime_ns": 1784400249184437556,
+      "path": "S-M-mac-self-vol30-lr/rx-mac-self-mono-f32le.pcm",
+      "sha256": "2e9159cd2113497698b30a924d48cbdd9ccf83ba490e094ef21e2bbfe8ce44b6"
+    },
+    {
+      "bytes": 7480832,
+      "mode_octal": "0o644",
+      "mtime_ns": 1784400226023000735,
+      "path": "S-M-mac-self-vol30-lr/tx-mac-stereo-f32le.pcm",
+      "sha256": "fba14bd882679c8abac430ea2c29f87a61a99c9ce969ea26c082216d261a8360"
+    },
+    {
+      "bytes": 993,
+      "mode_octal": "0o644",
+      "mtime_ns": 1784400517014219417,
+      "path": "S-P-pixel-self-vol15-lr/preflight-failure.json",
+      "sha256": "1c363143d1213a452b97b16b8fae5ea70549432c2c475339a840a2d0ad03ee8b"
+    },
+    {
+      "bytes": 7480832,
+      "mode_octal": "0o644",
+      "mtime_ns": 1784400147250342413,
+      "path": "S-P-pixel-self-vol15-lr/tx-pixel-stereo-f32le.pcm",
+      "sha256": "fba14bd882679c8abac430ea2c29f87a61a99c9ce969ea26c082216d261a8360"
+    },
+    {
+      "bytes": 10322,
+      "mode_octal": "0o644",
+      "mtime_ns": 1784399500270974819,
+      "path": "preregistration.json",
+      "sha256": "582d1a16b0e60590de9defeeee95d0c0e3e0ef08300cdc86456e16a049bb0521"
+    },
+    {
+      "bytes": 6227,
+      "mode_octal": "0o644",
+      "mtime_ns": 1784400428306220090,
+      "path": "reverse-repeat-comparison.json",
+      "sha256": "ae3b2378449450a1bc464b4c7e83456d8ce312ae8bb7d32016e0fecb55a58515"
+    },
+    {
+      "bytes": 69952,
+      "mode_octal": "0o755",
+      "mtime_ns": 1784399366313009577,
+      "path": "tooling/libcyrinxbulk.dylib",
+      "sha256": "bb2adfc0cd84ca823c7d5383f21c4c49226aacfc04872130eaf030920395ad88"
+    },
+    {
+      "bytes": 8769,
+      "mode_octal": "0o644",
+      "mtime_ns": 1784399366629693953,
+      "path": "waveform-manifest.json",
+      "sha256": "3cb92a7fb8086bd3978260a03fbbc9cd9e07fe2acae043c4e5d89da753b9a18a"
+    }
+  ],
+  "read_only_policy": "No writer opened any path under root; before/after size, mtime, mode and SHA-256 inventories are identical.",
+  "root": "/private/tmp/cyrinx-spike-5-sounder-20260718/artifacts/spikes/rank5-pixel-mac-20260718",
+  "schema": "cyrinx.rank5a-raw-input-inventory.v1",
+  "unchanged_after_analysis": true
+}
