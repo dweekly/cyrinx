@@ -330,8 +330,9 @@ swift run cyrinx-sim-bench --profile quiet --out artifacts/bench/sim-quiet.json
 ## Roadmap & documentation map
 
 - [ROADMAP.md](ROADMAP.md) — the single forward-looking, stack-ranked plan
-  (robust-library track, 2×2-MIMO frontier, website, publication finalization,
-  exploratory backlog).
+  (canonical C convergence, streaming/on-device transport, sounding and
+  negotiation, app-facing events, held-out qualification, gated PHY research,
+  and special acoustic modes).
 - [CHANGELOG.md](CHANGELOG.md) — validated milestone history.
 - [docs/PUBLICATION.md](docs/PUBLICATION.md) — the sequenced publication effort
   (public Apache-2.0 library, [cyrinx.org](https://cyrinx.org), arXiv paper),
