@@ -1,0 +1,105 @@
+{
+  "candidate_profile": {
+    "path": "scratch/hw20k/spike_8a_preeq/results/profile.json",
+    "sha256": "c5b212a32567c5d96508224b36800d4d2364df856494bb25a57d991a1747a2bb"
+  },
+  "cells": [
+    {
+      "cell_id": "centered-optimal",
+      "lateral_offset_mm": 0
+    },
+    {
+      "cell_id": "left-offset",
+      "lateral_offset_mm": -20
+    },
+    {
+      "cell_id": "right-offset",
+      "lateral_offset_mm": 20
+    }
+  ],
+  "confirmatory": {
+    "maximum_balanced_pairs": 8,
+    "promotion_rule": "at least 7/8 paired wins plus ROADMAP Spike 8a metric/recovery gates"
+  },
+  "hard_preconditions": [
+    "exclusive bench ownership and user acoustic authorization",
+    "Pixel 7a UNPROCESSED stereo 48 kHz route signature matches the retained corpus",
+    "Mac built-in left speaker only; Elgato Wave is excluded",
+    "flat and candidate waveforms are verified to peak at or below 0.18 at macOS volume 50",
+    "capture clipping stop remains enabled",
+    "candidate weights are frozen before playback"
+  ],
+  "note": "The frozen candidate burst is directly buildable, but the current goodput_campaign CLI has no pre-EQ profile option. A hardware agent must feed the generated stereo PCM through the existing playback/capture transaction and retain the ordinary strict scorer outputs without changing Sources.",
+  "offline_decision": "stopped-preregistered-offline-gate-not-met",
+  "preregistration_sha256": "6b8f5bd0c47b081f35062343d22c93ee7f2297f86827714d6123bb4f084934e5",
+  "required_retained_artifacts": [
+    "dry-run manifest and exact order",
+    "profile and code hashes",
+    "route provenance",
+    "flat and pre-EQ TX PCM",
+    "raw stereo capture PCM",
+    "per-frame ordered block maps and strict byte verification",
+    "crest factor, clip counts, out-of-band spectrum, and protection/nonlinearity observations",
+    "calibrated LAeq/LCpeak/SPL only if suitable instrumentation is present"
+  ],
+  "runner_contract": {
+    "bits_per_bin": 6,
+    "code_rate": "2/3",
+    "cp_samples": 96,
+    "data_symbols": 64,
+    "f_hi_hz": 23000.0,
+    "f_lo_hz": 1100.0,
+    "mac_output_volume_percent": 50,
+    "nfft": 2048,
+    "pilot_every": 16,
+    "profile_application": "multiply every sync/pilot/data occupied-bin complex symbol by the frozen weights before the existing 3.3-sigma clip and equal-peak normalization; leave the chirp unchanged",
+    "sample_rate_hz": 48000,
+    "waveform_peak": 0.18
+  },
+  "schema": "cyrinx.spike-8a-preeq.ota-acquisition.v1",
+  "screen": {
+    "balanced_pairs_per_cell": 2,
+    "frames_per_run": 5,
+    "inter_frame_gap_samples": 12000,
+    "order": "one flat-first and one pre-eq-first pair per cell",
+    "profiles": [
+      "flat",
+      "frozen-pre-eq"
+    ],
+    "stop_if": [
+      "capture clipping or route mismatch",
+      "candidate has less than 1 dB p10 probe gain",
+      "candidate scheduled goodput or either-mic lower-tail regresses",
+      "audible level or protection behavior changes unexpectedly"
+    ]
+  },
+  "state": "ready-for-hardware-agent-review",
+  "waveform_builder": {
+    "argv_template": [
+      ".venv/bin/python",
+      "scratch/hw20k/spike_8a_preeq/emit_pre_eq_burst.py",
+      "--profile",
+      "scratch/hw20k/spike_8a_preeq/results/profile.json",
+      "--payload",
+      "PAYLOAD_FRAME_0",
+      "--payload",
+      "PAYLOAD_FRAME_1",
+      "--payload",
+      "PAYLOAD_FRAME_2",
+      "--payload",
+      "PAYLOAD_FRAME_3",
+      "--payload",
+      "PAYLOAD_FRAME_4",
+      "--output",
+      "OUTPUT_STEREO_F32LE_PCM",
+      "--metadata-output",
+      "OUTPUT_METADATA_JSON",
+      "--inter-frame-gap-samples",
+      "12000",
+      "--trailing-pad-samples",
+      "16000"
+    ],
+    "script": "scratch/hw20k/spike_8a_preeq/emit_pre_eq_burst.py",
+    "side_effect_boundary": "writes PCM and metadata only; never opens audio or invokes ADB"
+  }
+}

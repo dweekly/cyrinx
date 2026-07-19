@@ -1,0 +1,163 @@
+{
+  "schema": "cyrinx.spike-8a-preeq.preregistration.v1",
+  "created_utc": "2026-07-18T08:00:00Z",
+  "state": "frozen-before-candidate-outcome-inspection",
+  "scope": "offline retained-capture linear replay only",
+  "hypothesis": "A profile frozen from whole training runs and limited to a 3 dB or 6 dB per-bin boost will increase payload-weighted lower-tail effective SINR or BICM GMI on independent flat-waveform captures by compensating the stable smooth component of the Mac-left-speaker to Pixel-7a transfer function.",
+  "incumbent": {
+    "profile_id": "candidate-cp96-p16-b6-r23",
+    "transmit_weights": "flat across occupied bins",
+    "sample_rate_hz": 48000,
+    "nfft": 2048,
+    "cp_samples": 96,
+    "data_symbols": 64,
+    "pilot_every": 16,
+    "bits_per_bin": 6,
+    "code_rate": "2/3",
+    "f_lo_hz": 1100.0,
+    "f_hi_hz": 23000.0,
+    "inter_frame_gap_samples": 12000,
+    "frames_per_run": 5,
+    "waveform_peak": 0.18,
+    "mac_output_volume_percent": 50,
+    "speaker": "Mac built-in output channel 0 only; channel 1 is zero",
+    "receiver": "Pixel 7a UNPROCESSED stereo at 48 kHz"
+  },
+  "retained_corpus": {
+    "locator_note": "Paths identify the local retained corpus. The analysis also accepts --corpus-root and verifies dry-run manifest hashes and run structure, so paths are not treated as stable public identifiers.",
+    "development_campaign": {
+      "root": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym64-local-llr-fresh-eightpair-seed20260770-v2.exec1.artifacts",
+      "dry_run_manifest": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-17-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-sym64-local-llr-fresh-eightpair-seed20260770-v2.dryrun.manifest.json",
+      "dry_run_manifest_sha256": "d57dd5cbcea47b7e8c763820a3d97475010d929b41f1e6e2d5d6b6b291a5fc81",
+      "campaign_seed": 20260770,
+      "geometry": "Pixel 7a face-up on 0.5-inch soft cloth above the MacBook left function key; bottom microphone near the MacBook built-in left speaker; MacBook built-in left speaker only; A/C enabled but thermostat-cycling and uninstrumented; SPL uninstrumented",
+      "included_arms": "pair-???-order-*-candidate-cp96-p16-b6-r23",
+      "required_files_per_arm": [
+        "tx-stereo-f32le.pcm",
+        "capture-stereo-s16le.pcm",
+        "result.json",
+        "expected-frame-0.bin",
+        "expected-frame-1.bin",
+        "expected-frame-2.bin",
+        "expected-frame-3.bin",
+        "expected-frame-4.bin"
+      ],
+      "microphones": [
+        {
+          "pcm_channel": 0,
+          "logical_id": "mic0",
+          "route_description": "builtin_mic_1; address bottom; direct channel mapping"
+        },
+        {
+          "pcm_channel": 1,
+          "logical_id": "mic1",
+          "route_description": "builtin_mic_2; address back; direct channel mapping"
+        }
+      ],
+      "whole_run_split": {
+        "fit_and_profile_selection_pair_indices": [0, 3, 4, 7],
+        "held_out_two_pair_screen_pair_indices": [1, 6],
+        "held_out_two_pair_confirmation_pair_indices": [2, 5],
+        "rationale": "Each subset is balanced between candidate-first and candidate-second arms; no frame, microphone, or block from a held-out pair is used to fit, smooth, regularize, or select a profile."
+      }
+    },
+    "external_stability_campaign": {
+      "root": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-16-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-eightpair-fiveframe-confirmatory-seed20260750-v1.exec1.artifacts",
+      "dry_run_manifest": "/private/tmp/cyrinx-pixel-rerun-20260715/artifacts/bench/2026-07-16-pixel7a-faceup-ac-cycle-vol50-amp018-cp96-p16-b6-r23-eightpair-fiveframe-confirmatory-seed20260750-v1.dryrun.manifest.json",
+      "dry_run_manifest_sha256": "2129c2e8a4dd0611e0a050b1718498b79c733550e1017445ea00442793e04c72",
+      "campaign_seed": 20260750,
+      "included_arms": "all eight pair-???-order-*-candidate-cp96-p16-b6-r23 arms",
+      "use": "external stability evaluation only after the development profile and all thresholds are frozen",
+      "microphones": ["mic0", "mic1"]
+    },
+    "known_limitations": [
+      "All retained development and external-stability arms use one nominal near-field pose; they are temporal/HVAC repeats, not the three preregistered small placement offsets required by ROADMAP Spike 8a.",
+      "Every retained OTA waveform is flat. Candidate pre-equalized received PCM and candidate byte/block outcomes do not exist.",
+      "No retained calibrated SPL, LAeq, LCpeak, THD, intermodulation, or protection-DSP measurement is available.",
+      "The corpus supports a causal profile-selection split and a linear counterfactual replay screen, but cannot by itself support OTA promotion or an acoustic-safety/nonlinearity claim."
+    ]
+  },
+  "candidate_family": {
+    "occupied_bins": "exact incumbent occupied-bin set recovered from retained flat TX",
+    "smooth_magnitude_minimum_phase": {
+      "channel_statistic": "per-bin median log magnitude across both microphones and all five frames of fit pairs after timing/CFO/common-phase alignment",
+      "smoothing": "fixed 41-bin reflected Hann kernel in log magnitude",
+      "regularization": "Tikhonov inverse, with lambda selected only on fit pairs from the fixed grid [0.01, 0.03, 0.1, 0.3] times median occupied-bin power",
+      "phase": "minimum phase reconstructed by real-cepstrum spectral factorization from the smoothed bounded magnitude",
+      "boost_caps_db": [3.0, 6.0]
+    },
+    "fixed_route_complex_inverse_oracle": {
+      "status": "descriptive oracle only; never the selected deployable profile",
+      "form": "conjugate(H)/(abs(H)^2 + lambda), with the same regularization grid and boost caps",
+      "phase_legitimacy_gate": "after removal of a fitted bulk linear phase per run, at least 80% of payload bins must have inter-run vector coherence >= 0.90 and circular phase standard deviation <= 20 degrees on both microphones; otherwise the oracle is not evaluated"
+    },
+    "normalization_classes": {
+      "primary": "equal full-waveform sample peak to the retained flat incumbent peak; no clipping",
+      "diagnostic": "matched active-waveform RMS; report required peak and mark any peak above the incumbent as non-comparable rather than clipping"
+    },
+    "profile_selection": "Select one smooth candidate using fit-pair aggregate p10 BICM-GMI, breaking ties by lower inversion gain, then lower crest factor, then the 3 dB cap. Freeze it before reading held-out result.json outcomes or evaluating held-out metrics."
+  },
+  "counterfactual_model": {
+    "allowed": "Apply the frozen transmit weights to a per-frame channel estimated only from known sync/pilot observations and add the retained residual/noise realization. Candidate selection cannot inspect held-out payload values, expected bytes, CRC, or blocks_ok.",
+    "evaluation_only_known_data": "Expected transmitted QAM symbols may be recovered from retained TX for held-out GMI scoring only after the candidate is frozen.",
+    "forbidden_claim": "Linear replay is not evidence that the physical speaker, OS dynamics/protection, room, or microphone remains linear under candidate drive."
+  },
+  "metrics": {
+    "primary": {
+      "name": "payload_weighted_p10_effective_sinr_db",
+      "unit": "dB",
+      "aggregation": "Compute known-symbol max-log 64-QAM BICM GMI for each whole frame and microphone, map GMI monotonically to equivalent AWGN SINR, and take the payload-weighted p10 across the declared whole-run subset.",
+      "comparison": "frozen smooth candidate minus flat incumbent under equal sample peak"
+    },
+    "co_primary_interpretation": "Report BICM GMI bits per coded bit and bits per occupied data carrier directly; equivalent SINR is a presentation mapping, not a Shannon-limit claim.",
+    "non_regression": [
+      "median effective SINR must not decrease on either microphone",
+      "p10 GMI must not decrease on either microphone",
+      "full-waveform peak must not exceed the incumbent in the primary class",
+      "candidate out-of-band energy fraction may increase by no more than 0.25 dB",
+      "no non-finite samples and no digital sample clipping"
+    ],
+    "secondary": [
+      "per-bin and per-frame SINR/GMI distributions",
+      "crest factor and peak/RMS scale in both normalization classes",
+      "maximum and p99 inversion gain",
+      "out-of-band energy fraction",
+      "phase coherence and complex-oracle eligibility",
+      "actual incumbent ordered byte/block recovery from retained results",
+      "candidate byte/block projection only if a predictor is frozen solely on fit runs and passes leave-one-fit-run-out calibration; otherwise report unavailable"
+    ]
+  },
+  "decisions": {
+    "advance_from_two_pair_screen": "Equal-peak held-out screen gain >= 1.0 dB in aggregate p10 effective SINR, positive p10 GMI change on both microphones, and every non-regression constraint passes.",
+    "offline_confirmation_success": "The independent confirmation repeats >= 1.0 dB aggregate p10 effective-SINR gain, both microphones retain nonnegative p10 GMI change, the external campaign has nonnegative aggregate p10 GMI change, and all non-regression constraints pass.",
+    "roadmap_stage_one_signal": "A >= 3.0 dB aggregate held-out p10 effective-SINR gain or preregistered equivalent GMI gain is recorded as sufficient linear evidence to justify OTA testing, not as library promotion.",
+    "stop": [
+      "the frozen candidate produces < 1.0 dB aggregate p10 effective-SINR gain in the two-pair screen",
+      "either microphone has negative p10 GMI change",
+      "benefit reverses on the confirmation or external campaign",
+      "the best fit candidate needs > 6 dB boost",
+      "the replay cannot recover trustworthy frame boundaries/channel/noise estimates without payload- or outcome-dependent tuning",
+      "the retained corpus cannot support the declared metric"
+    ],
+    "integration": "No result from this offline spike enters Sources. OTA acquisition at three small offsets, matched flat/EQ order-balanced pairs, and measured clipping/nonlinearity/protection/spectral evidence remains mandatory."
+  },
+  "artifact_schema": {
+    "inventory": "cyrinx.spike-8a-preeq.inventory.v1",
+    "profile": "cyrinx.spike-8a-preeq.profile.v1",
+    "analysis": "cyrinx.spike-8a-preeq.analysis.v1",
+    "selftest": "cyrinx.spike-8a-preeq.selftest.v1",
+    "acquisition_manifest": "cyrinx.spike-8a-preeq.ota-acquisition.v1",
+    "required_fields": [
+      "preregistration_sha256",
+      "analysis_code_sha256",
+      "corpus_manifest_sha256",
+      "run_ids and split",
+      "profile weights or deterministic reconstruction parameters",
+      "normalization and spectral metrics",
+      "per-run/per-frame/per-microphone metrics",
+      "decision and failed gates",
+      "limitations"
+    ],
+    "raw_pcm_policy": "Reference retained PCM by SHA-256 and relative run path; do not duplicate large PCM into git."
+  }
+}
