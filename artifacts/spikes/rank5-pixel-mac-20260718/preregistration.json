@@ -1,0 +1,185 @@
+{
+  "schema": "cyrinx.rank5-spike-preregistration.v1",
+  "frozen_at_utc": "2026-07-18T18:30:05Z",
+  "status": "frozen-before-first-playback",
+  "scope": {
+    "roadmap": ["5a", "5b", "bounded-5c"],
+    "maturity": "BENCH-SPIKE",
+    "integration_permitted": false,
+    "physical_geometry": "Pixel 7a face-up in the user-established optimal near-field position over the MacBook function-key area; device must not be moved during this campaign",
+    "environment": "HVAC state unknown; retain passive room tone and do not infer an asserted HVAC state",
+    "authorization": "User explicitly requested the spike experiments and authorized acoustic playback/recording",
+    "output_restriction": "MacBook Pro built-in speakers only; Elgato Wave is prohibited",
+    "input_restriction": "MacBook Pro built-in microphone and Pixel 7a built-in microphone route only"
+  },
+  "hypothesis": "Sequential per-speaker sounding in one phase-continuous stereo render, with both independently retained Pixel microphone rows and same-session passive noise, will yield a stable, nonduplicated 2x2 forward path matrix suitable for profile negotiation and will determine whether common-phase Rank-11 work is technically justified.",
+  "incumbent": {
+    "description": "The existing bench sounder usually excites one Mac output and analyzes a selected Pixel microphone. Tracked route evidence establishes two direct Pixel logical microphone mappings, but no retained phase-continuous full 2x2 H[k] matrix exists.",
+    "qualified_forward_drive_reference": "pixel7a-faceup-volume50-v1",
+    "qualification_sha256": "ec28faa1b67bfcea8a615ee4b6dd6d85f3427d79fae075e30b5b6ffd84ff165d"
+  },
+  "target": {
+    "serial": "38291JEHN00306",
+    "model": "Pixel 7a",
+    "build_fingerprint": "google/lynx/lynx:17/CP2A.260705.006/15641320:user/release-keys",
+    "package": "com.dweekly.cyrinxhil",
+    "installed_apk_sha256": "9cb5fd28021edf8948ce97ded262338da2ca1428b19c263537bac6cbb7a37502",
+    "target_provenance_sha256": "5f87abe17227315ae77ea3632bdd21cbfe3364ae5875b1f7d35ca2a04a0c8251"
+  },
+  "routes": {
+    "android_source_requested": "unprocessed",
+    "android_source_expected_id": 9,
+    "sample_rate_hz": 48000,
+    "pixel_capture_channels": 2,
+    "pixel_expected_direct_mappings": [
+      {"logical_channel": 0, "microphone_id": "23", "address": "bottom"},
+      {"logical_channel": 1, "microphone_id": "24", "address": "back"}
+    ],
+    "expected_route_signature_sha256": "da2f520fc6c08d4b35565c42a56db2ea0d7828db0a16d9064ffef4339b9b77b6",
+    "mac_output": {"name": "MacBook Pro Speakers", "uid": "BuiltInSpeakerDevice", "logical_channels": [0, 1]},
+    "mac_input": {"name": "MacBook Pro Microphone", "uid": "BuiltInMicrophoneDevice", "logical_channels": [0]},
+    "mac_default_output_before_campaign": {"name": "Stage V2", "uid": "00-02-3C-98-C3-73:output"},
+    "pixel_media_volume_before_campaign": 25
+  },
+  "waveform": {
+    "manifest_path": "artifacts/spikes/rank5-pixel-mac-20260718/waveform-manifest.json",
+    "manifest_sha256": "3cb92a7fb8086bd3978260a03fbbc9cd9e07fe2acae043c4e5d89da753b9a18a",
+    "sample_rate_hz": 48000,
+    "duration_s": 19.481333333333332,
+    "digital_peak": 0.18000000715255737,
+    "digital_rms_all_channels": 0.03844164853049447,
+    "drive_is_calibrated_spl": false,
+    "render": "one phase-continuous stereo buffer per matrix; the inactive output column is exact digital zero",
+    "per_speaker_sequence": [
+      "existing repeated-marker tone/THD/IMD program",
+      "8-symbol repeated known-QPSK OFDM sounder: NFFT 2048, CP 768, 1.1-23 kHz",
+      "64-symbol randomized 16-QAM rate-1/2 portable-C EVM frame: NFFT 2048, CP 768, 1.1-23 kHz"
+    ],
+    "lr_stereo_f32le_sha256": "fba14bd882679c8abac430ea2c29f87a61a99c9ce969ea26c082216d261a8360",
+    "evm_payload_sha256": "3d33a8692fdab11b792184efbd86a322fa0d2145336c68a381e6db0093db9384"
+  },
+  "cells_and_frozen_order": [
+    {
+      "index": 0,
+      "id": "P0",
+      "kind": "passive-room-tone",
+      "action": "Pixel stereo 10 s, then Mac mono 10 s; no playback",
+      "split": "measurement-baseline"
+    },
+    {
+      "index": 1,
+      "id": "F0",
+      "kind": "forward-linearity-screen",
+      "direction": "Mac-to-Pixel",
+      "speaker_order": [0, 1],
+      "mac_output_volume_percent": 30,
+      "waveform_peak": 0.18,
+      "split": "training-screen"
+    },
+    {
+      "index": 2,
+      "id": "F1",
+      "kind": "forward-calibration-matrix",
+      "direction": "Mac-to-Pixel",
+      "speaker_order": [0, 1],
+      "mac_output_volume_percent": 50,
+      "waveform_peak": 0.18,
+      "split": "calibration"
+    },
+    {
+      "index": 3,
+      "id": "F2",
+      "kind": "forward-heldout-matrix",
+      "direction": "Mac-to-Pixel",
+      "speaker_order": [1, 0],
+      "mac_output_volume_percent": 50,
+      "waveform_peak": 0.18,
+      "split": "held-out"
+    },
+    {
+      "index": 4,
+      "id": "S-P",
+      "kind": "Pixel-local-self-characterization",
+      "speaker_order": [0, 1],
+      "pixel_media_volume": 15,
+      "waveform_peak": 0.18,
+      "split": "descriptive-only"
+    },
+    {
+      "index": 5,
+      "id": "S-M",
+      "kind": "Mac-local-self-characterization",
+      "speaker_order": [0, 1],
+      "mac_output_volume_percent": 30,
+      "waveform_peak": 0.18,
+      "split": "descriptive-only"
+    },
+    {
+      "index": 6,
+      "id": "R1",
+      "kind": "reverse-calibration-matrix",
+      "direction": "Pixel-to-Mac",
+      "speaker_order": [0, 1],
+      "pixel_media_volume": 25,
+      "waveform_peak": 0.18,
+      "split": "calibration-descriptive"
+    },
+    {
+      "index": 7,
+      "id": "R2",
+      "kind": "reverse-heldout-matrix",
+      "direction": "Pixel-to-Mac",
+      "speaker_order": [1, 0],
+      "pixel_media_volume": 25,
+      "waveform_peak": 0.18,
+      "split": "held-out-descriptive"
+    }
+  ],
+  "primary_metric": {
+    "name": "held-out-forward-path-repeatability",
+    "definition": "For each of four Mac-speaker-to-Pixel-microphone paths, compare F2 with F1 on active bins selected without payload or CRC results. Report median and p90 absolute H-magnitude change, delay-spread change, tone-gain change, repeated-pilot SNR, EVM, and phase residual after common timing/CFO/SRO terms are removed.",
+    "active_bin_rule": "The bin must have at least 12 dB repeated-pilot SNR in both F1 and F2.",
+    "promotion_threshold": "All four forward paths retain at least 80% of occupied bins; median absolute magnitude change <=3 dB and p90 <=6 dB; -15 dB delay spread changes by no more than max(0.5 ms, 25%); route/source/channel mapping is exact and stable; no clipping or linearity stop fires.",
+    "common_phase_feasibility_threshold": "After removing one common affine phase term per repeat, median per-bin repeat coherence >=0.95 and phase standard deviation <=15 degrees on bins with at least 20 dB SNR. This is only a Rank-11 go/no-go input, not a MIMO claim."
+  },
+  "nonregressions": {
+    "route": "Every Pixel capture must exactly match the frozen UNPROCESSED stereo route and two distinct direct microphone mappings.",
+    "clipping": "Zero source-reported clipped samples; absolute sample peak <0.985; clipped-sample fraction <=1e-5.",
+    "linearity": "For the tone screen: minimum resolvable fundamental SNR >=12 dB, conservative THD <=-25 dBc, conservative IMD <=-30 dBc, within-stage gain jump <=4 dB, post-signal noise increase <=6 dB.",
+    "channel_identity": "Do not claim independent microphones if exact equality, >=0.9995 delayed correlation, <=-35 dB scaled-copy residual, or passive covariance rank evidence indicates duplication.",
+    "goodput_semantics": "EVM-frame strict ordered recovered bytes may be reported as probe delivery only. Descriptive Shannon/log-det/GMI arithmetic and scheduled ceilings must never be labeled measured application goodput."
+  },
+  "sequential_stop_conditions": [
+    "Stop all active work if Mac built-in output or requested built-in input cannot be selected and verified, or if Elgato is selected.",
+    "Stop before F1 if F0 route, clipping, or linearity nonregression fails.",
+    "Stop before F2 if F1 route or clipping fails; a high-frequency tone that is merely noise-limited is recorded separately from true distortion and may not silently pass the declared conservative linearity gate.",
+    "Stop a device-local or reverse branch immediately if capture peak reaches 0.985, source clipping is reported, the media-volume transaction cannot be restored, or the output-route provenance changes unexpectedly.",
+    "Do not replace failed cells, move the phone, tune thresholds, or select receivers using payload bytes/CRC results."
+  ],
+  "heldout_policy": {
+    "forward": "F1 is calibration; F2 is the only held-out repeat and reverses speaker order.",
+    "reverse": "R1 is calibration; R2 is held-out and reverses speaker order, but both remain descriptive because the existing play_pcm primitive lacks a strict parsed realized-output-route signature.",
+    "no_model_fitting_on_heldout": true,
+    "whole_physical_cells_are_held_out": true
+  },
+  "retained_artifacts": [
+    "this frozen preregistration and its SHA-256",
+    "waveform manifest and exact generated TX PCM hashes",
+    "raw Pixel stereo PCM and raw Mac mono PCM",
+    "correlated Android route logs",
+    "device, APK, OS, route, source, sample-rate, channel, volume, peak/RMS, geometry, and wall-clock provenance",
+    "passive noise covariance and room-tone spectra",
+    "per-path H[k], delay spread, timing/CFO/SRO, EVM, clipping, THD/IMD, and duplication diagnostics",
+    "strict probe block maps and byte comparisons",
+    "descriptive capacity assumptions separated from delivered probe bytes",
+    "negative findings and next gate"
+  ],
+  "code_and_config": {
+    "repository_head": "61558c296aaf30a4baf133c45e54813480e37a14",
+    "acquisition_script": "scratch/hw20k/rank5_matrix_spike.py",
+    "acquisition_script_sha256": "02331434925123afcb5f4c6ff1d4dd850678bb5c9f3db69323a3a0372fdeb7c4",
+    "portable_c_dylib_sha256": "bb2adfc0cd84ca823c7d5383f21c4c49226aacfc04872130eaf030920395ad88",
+    "python": "/Users/dew/dev/cyrinx/.venv/bin/python",
+    "analysis_policy": "Frozen metrics and thresholds above; analysis implementation may be added after acquisition, but its source hash and all post-freeze changes must be retained."
+  }
+}

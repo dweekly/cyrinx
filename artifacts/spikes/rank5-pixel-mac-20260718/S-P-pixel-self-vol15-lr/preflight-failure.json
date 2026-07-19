@@ -1,0 +1,16 @@
+{
+  "schema": "cyrinx.rank5-preflight-failure.v1",
+  "cell": "S-P",
+  "status": "blocked-before-playback",
+  "playback_occurred": false,
+  "requested_pixel_media_volume": 15,
+  "realized_pixel_media_volume": 25,
+  "maximum_pixel_media_volume": 25,
+  "error": "Pixel media volume realization mismatch: 25 != 15",
+  "diagnosis": "Android AudioService logged the setStreamVolume request but kept the speaker route at index 25. The frozen stop rule required a fail-closed, restorable volume transaction, so playrec_pcm was not launched.",
+  "next_tooling_gate": "Add an HIL app-owned arbitrary media-volume transaction with before/realized/restored values and rebuild/re-preregister against the resulting APK hash before retrying local self-characterization.",
+  "tx_render_generated_but_not_played": {
+    "path": "artifacts/spikes/rank5-pixel-mac-20260718/S-P-pixel-self-vol15-lr/tx-pixel-stereo-f32le.pcm",
+    "sha256": "fba14bd882679c8abac430ea2c29f87a61a99c9ce969ea26c082216d261a8360"
+  }
+}
