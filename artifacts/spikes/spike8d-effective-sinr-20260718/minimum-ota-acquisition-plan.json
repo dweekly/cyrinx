@@ -1,0 +1,731 @@
+{
+  "campaign_seed": 2026071808,
+  "cells": [
+    {
+      "geometry": "Pixel 7a face-up over MacBook function key in marked optimal position",
+      "id": "C0-optimal-calibration",
+      "split": "training"
+    },
+    {
+      "geometry": "Pixel 7a face-up, translated 20 mm laterally from the marked optimal position",
+      "id": "C1-lateral-20mm-holdout",
+      "split": "outcome-blind-holdout"
+    }
+  ],
+  "direction": "MacBook-built-in-speaker-0-to-Pixel-7a-UNPROCESSED-mic-0",
+  "execution_contract": {
+    "decode_barrier": "do not decode or inspect any candidate outcome until all four candidates in the round have been captured",
+    "independent_payloads": true,
+    "policy_selection_record": "canonical JSON plus SHA-256 written after the sounder and before each payload",
+    "position_balance": "each policy appears once in each ordinal position per cell",
+    "retention": "raw TX/RX PCM, expected payload, route log, selection record, and timestamps",
+    "route_checks": "before and after every round; abort on any change",
+    "wall_clock_accounting": "include passive setup, sounder, descriptors, gaps, and padding"
+  },
+  "execution_state": {
+    "blocked_on": [
+      "deterministic mixed 0/2/4-bit bin-loading oracle and decoder do not yet exist",
+      "allocation descriptor/profile-ID encoder and airtime accounting are not validated",
+      "runner must enforce pre-payload selection commits and round decode barriers",
+      "the delegated Spike 8d task is offline-only"
+    ],
+    "ota_permitted": false,
+    "ready": false
+  },
+  "generated_from": {
+    "planner_source": {
+      "bytes": 26409,
+      "path": "/private/tmp/cyrinx-spike-8d-effective-sinr-20260718/scratch/hw20k/effective_sinr_loading.py",
+      "semantically_inspected": true,
+      "sha256": "b492aa4d83401af8f09b564b4b1992c33ccb2c72a369ea6f7d3b2156c7799e20"
+    },
+    "rank5_preregistration": {
+      "bytes": 10322,
+      "path": "/private/tmp/cyrinx-spike-5-sounder-20260718/artifacts/spikes/rank5-pixel-mac-20260718/preregistration.json",
+      "semantically_inspected": true,
+      "sha256": "582d1a16b0e60590de9defeeee95d0c0e3e0ef08300cdc86456e16a049bb0521"
+    },
+    "spike8d_preregistration": {
+      "bytes": 9543,
+      "path": "/private/tmp/cyrinx-spike-8d-effective-sinr-20260718/artifacts/spikes/spike8d-effective-sinr-20260718/preregistration.json",
+      "semantically_inspected": true,
+      "sha256": "c23250b4fd69d89ae765f7b21f023f081377ad3db6a395cfa2a50c6c1ced4b65"
+    }
+  },
+  "jobs": [
+    {
+      "cell_id": "C0-optimal-calibration",
+      "job_id": "C0-optimal-calibration-r00-p0-P0-uniform-incumbent",
+      "outcome_decode_barrier": "C0-optimal-calibration-round-00-decode-barrier",
+      "payload_seed_commitment_sha256": "c3dc95c448553adf9a0596317c9c8fb5a3f7ef487bf8a3b820fc45514cb45e00",
+      "payload_seed_decimal": "216409936667353859",
+      "payload_seed_hex": "0300d7b0d8ec2303",
+      "policy_id": "P0-uniform-incumbent",
+      "round_index": 0,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "training",
+      "within_round_position": 0
+    },
+    {
+      "cell_id": "C0-optimal-calibration",
+      "job_id": "C0-optimal-calibration-r00-p1-P1-raw-psd",
+      "outcome_decode_barrier": "C0-optimal-calibration-round-00-decode-barrier",
+      "payload_seed_commitment_sha256": "22cbc0dd0244841b53b67a5156738152cf59014971e02698ef93c9b072a3c2f5",
+      "payload_seed_decimal": "2683762846145789903",
+      "payload_seed_hex": "253ea416e1e93fcf",
+      "policy_id": "P1-raw-psd",
+      "round_index": 0,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "training",
+      "within_round_position": 1
+    },
+    {
+      "cell_id": "C0-optimal-calibration",
+      "job_id": "C0-optimal-calibration-r00-p2-P2-pilot-gmi",
+      "outcome_decode_barrier": "C0-optimal-calibration-round-00-decode-barrier",
+      "payload_seed_commitment_sha256": "4c9db597aed55f6ada02354e52643a5b8cf82cc322c865322003a88c56d2087b",
+      "payload_seed_decimal": "14406242790427157857",
+      "payload_seed_hex": "c7ed417d87716561",
+      "policy_id": "P2-pilot-gmi",
+      "round_index": 0,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "training",
+      "within_round_position": 2
+    },
+    {
+      "cell_id": "C0-optimal-calibration",
+      "job_id": "C0-optimal-calibration-r00-p3-P3-covariance-gmi",
+      "outcome_decode_barrier": "C0-optimal-calibration-round-00-decode-barrier",
+      "payload_seed_commitment_sha256": "e823d0080dc101e385c1ca3ef46f1e8e834f1bbd36518cfc3ba08a01d744e196",
+      "payload_seed_decimal": "777211260887499988",
+      "payload_seed_hex": "0ac9358620a204d4",
+      "policy_id": "P3-covariance-gmi",
+      "round_index": 0,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "training",
+      "within_round_position": 3
+    },
+    {
+      "cell_id": "C0-optimal-calibration",
+      "job_id": "C0-optimal-calibration-r01-p0-P3-covariance-gmi",
+      "outcome_decode_barrier": "C0-optimal-calibration-round-01-decode-barrier",
+      "payload_seed_commitment_sha256": "ca17b53b2edeaa1747e9932c1230cb935d732bc9d611f05c36dbf089dbb1daea",
+      "payload_seed_decimal": "43015232398183362",
+      "payload_seed_hex": "0098d2203f064bc2",
+      "policy_id": "P3-covariance-gmi",
+      "round_index": 1,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "training",
+      "within_round_position": 0
+    },
+    {
+      "cell_id": "C0-optimal-calibration",
+      "job_id": "C0-optimal-calibration-r01-p1-P2-pilot-gmi",
+      "outcome_decode_barrier": "C0-optimal-calibration-round-01-decode-barrier",
+      "payload_seed_commitment_sha256": "db9477e66ff07f6cc59ac3ca6d4c7fa285f8e82e202092115eba2009ae151d5d",
+      "payload_seed_decimal": "2714800418969941959",
+      "payload_seed_hex": "25ace898f0c8f7c7",
+      "policy_id": "P2-pilot-gmi",
+      "round_index": 1,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "training",
+      "within_round_position": 1
+    },
+    {
+      "cell_id": "C0-optimal-calibration",
+      "job_id": "C0-optimal-calibration-r01-p2-P1-raw-psd",
+      "outcome_decode_barrier": "C0-optimal-calibration-round-01-decode-barrier",
+      "payload_seed_commitment_sha256": "b22b732b4f245be25081652b28609d8cffd312a76120a2bed7007c8540a61de3",
+      "payload_seed_decimal": "1395835324966302065",
+      "payload_seed_hex": "135f00d5258ef171",
+      "policy_id": "P1-raw-psd",
+      "round_index": 1,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "training",
+      "within_round_position": 2
+    },
+    {
+      "cell_id": "C0-optimal-calibration",
+      "job_id": "C0-optimal-calibration-r01-p3-P0-uniform-incumbent",
+      "outcome_decode_barrier": "C0-optimal-calibration-round-01-decode-barrier",
+      "payload_seed_commitment_sha256": "a7466d93f05975a18ff9060d9e4c55a5a941a58ecef2bd48fa866db3c81c2385",
+      "payload_seed_decimal": "14270781352833907648",
+      "payload_seed_hex": "c60c0007d2eefbc0",
+      "policy_id": "P0-uniform-incumbent",
+      "round_index": 1,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "training",
+      "within_round_position": 3
+    },
+    {
+      "cell_id": "C0-optimal-calibration",
+      "job_id": "C0-optimal-calibration-r02-p0-P2-pilot-gmi",
+      "outcome_decode_barrier": "C0-optimal-calibration-round-02-decode-barrier",
+      "payload_seed_commitment_sha256": "dc89d0ec823989f16cd5c3d2677c438344c6c67e8aa1cb52fefc67e74b1c43cb",
+      "payload_seed_decimal": "15753003481043149871",
+      "payload_seed_hex": "da9de933f911a42f",
+      "policy_id": "P2-pilot-gmi",
+      "round_index": 2,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "training",
+      "within_round_position": 0
+    },
+    {
+      "cell_id": "C0-optimal-calibration",
+      "job_id": "C0-optimal-calibration-r02-p1-P0-uniform-incumbent",
+      "outcome_decode_barrier": "C0-optimal-calibration-round-02-decode-barrier",
+      "payload_seed_commitment_sha256": "f1f571783aae6123eb3d649db10b6e1425f905052a77323af897ac7ef635a2ad",
+      "payload_seed_decimal": "17131369760709632247",
+      "payload_seed_hex": "edbeda080ef760f7",
+      "policy_id": "P0-uniform-incumbent",
+      "round_index": 2,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "training",
+      "within_round_position": 1
+    },
+    {
+      "cell_id": "C0-optimal-calibration",
+      "job_id": "C0-optimal-calibration-r02-p2-P3-covariance-gmi",
+      "outcome_decode_barrier": "C0-optimal-calibration-round-02-decode-barrier",
+      "payload_seed_commitment_sha256": "26a3b2525e98eb99e903319d5ccf210bd2fd99914544c4111409d507fb407296",
+      "payload_seed_decimal": "11693594387005112335",
+      "payload_seed_hex": "a247fe23c0f1000f",
+      "policy_id": "P3-covariance-gmi",
+      "round_index": 2,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "training",
+      "within_round_position": 2
+    },
+    {
+      "cell_id": "C0-optimal-calibration",
+      "job_id": "C0-optimal-calibration-r02-p3-P1-raw-psd",
+      "outcome_decode_barrier": "C0-optimal-calibration-round-02-decode-barrier",
+      "payload_seed_commitment_sha256": "9b6e4e7b6362e2b98d3276cad1a2ae9af067b5da2159dca063d0c1a0467e2dee",
+      "payload_seed_decimal": "17203588805596785329",
+      "payload_seed_hex": "eebf6cdec37baab1",
+      "policy_id": "P1-raw-psd",
+      "round_index": 2,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "training",
+      "within_round_position": 3
+    },
+    {
+      "cell_id": "C0-optimal-calibration",
+      "job_id": "C0-optimal-calibration-r03-p0-P1-raw-psd",
+      "outcome_decode_barrier": "C0-optimal-calibration-round-03-decode-barrier",
+      "payload_seed_commitment_sha256": "9c4f330291559f40fe3beda65ccadbc558f9c9582abe8e1cb7166d581d124129",
+      "payload_seed_decimal": "5255809816315481964",
+      "payload_seed_hex": "48f0632e747ecf6c",
+      "policy_id": "P1-raw-psd",
+      "round_index": 3,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "training",
+      "within_round_position": 0
+    },
+    {
+      "cell_id": "C0-optimal-calibration",
+      "job_id": "C0-optimal-calibration-r03-p1-P3-covariance-gmi",
+      "outcome_decode_barrier": "C0-optimal-calibration-round-03-decode-barrier",
+      "payload_seed_commitment_sha256": "90d86bf583df8b10c5a70f4e4e6bd952ee2f3d0d2001c52b7ae47bcb607ec550",
+      "payload_seed_decimal": "891594577644901606",
+      "payload_seed_hex": "0c5f948b643054e6",
+      "policy_id": "P3-covariance-gmi",
+      "round_index": 3,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "training",
+      "within_round_position": 1
+    },
+    {
+      "cell_id": "C0-optimal-calibration",
+      "job_id": "C0-optimal-calibration-r03-p2-P0-uniform-incumbent",
+      "outcome_decode_barrier": "C0-optimal-calibration-round-03-decode-barrier",
+      "payload_seed_commitment_sha256": "6dbd7a8421c4f944c501a163805a92e0eff76a5eebbc49f01b55869755af0eed",
+      "payload_seed_decimal": "10959255234016370692",
+      "payload_seed_hex": "981718921a62e004",
+      "policy_id": "P0-uniform-incumbent",
+      "round_index": 3,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "training",
+      "within_round_position": 2
+    },
+    {
+      "cell_id": "C0-optimal-calibration",
+      "job_id": "C0-optimal-calibration-r03-p3-P2-pilot-gmi",
+      "outcome_decode_barrier": "C0-optimal-calibration-round-03-decode-barrier",
+      "payload_seed_commitment_sha256": "3b170c0c0e3a88099a5d62ee6f12a279e177fe736b90c19f7d0eadaa0470fb2a",
+      "payload_seed_decimal": "4521109113070803851",
+      "payload_seed_hex": "3ebe34c8d35ddb8b",
+      "policy_id": "P2-pilot-gmi",
+      "round_index": 3,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "training",
+      "within_round_position": 3
+    },
+    {
+      "cell_id": "C1-lateral-20mm-holdout",
+      "job_id": "C1-lateral-20mm-holdout-r00-p0-P0-uniform-incumbent",
+      "outcome_decode_barrier": "C1-lateral-20mm-holdout-round-00-decode-barrier",
+      "payload_seed_commitment_sha256": "409e8a798e73c38df5dd1970d7dafebc38840a6daa40695b7649fb8536a0772e",
+      "payload_seed_decimal": "785012693753950024",
+      "payload_seed_hex": "0ae4ece2c3606f48",
+      "policy_id": "P0-uniform-incumbent",
+      "round_index": 0,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "outcome-blind-holdout",
+      "within_round_position": 0
+    },
+    {
+      "cell_id": "C1-lateral-20mm-holdout",
+      "job_id": "C1-lateral-20mm-holdout-r00-p1-P1-raw-psd",
+      "outcome_decode_barrier": "C1-lateral-20mm-holdout-round-00-decode-barrier",
+      "payload_seed_commitment_sha256": "6e3e8363adad03ffb98c87e4940d16a1a016af9d816aab1ccbb6ee425cb6e742",
+      "payload_seed_decimal": "16090099657997178827",
+      "payload_seed_hex": "df4b8463d38e57cb",
+      "policy_id": "P1-raw-psd",
+      "round_index": 0,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "outcome-blind-holdout",
+      "within_round_position": 1
+    },
+    {
+      "cell_id": "C1-lateral-20mm-holdout",
+      "job_id": "C1-lateral-20mm-holdout-r00-p2-P2-pilot-gmi",
+      "outcome_decode_barrier": "C1-lateral-20mm-holdout-round-00-decode-barrier",
+      "payload_seed_commitment_sha256": "392c76c4037b288be5889b7355a96fe3c3d55d4eb81ca7d4f6881be5d74f6f98",
+      "payload_seed_decimal": "15996007109422461126",
+      "payload_seed_hex": "ddfd3bb72dbfb0c6",
+      "policy_id": "P2-pilot-gmi",
+      "round_index": 0,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "outcome-blind-holdout",
+      "within_round_position": 2
+    },
+    {
+      "cell_id": "C1-lateral-20mm-holdout",
+      "job_id": "C1-lateral-20mm-holdout-r00-p3-P3-covariance-gmi",
+      "outcome_decode_barrier": "C1-lateral-20mm-holdout-round-00-decode-barrier",
+      "payload_seed_commitment_sha256": "e2d2ac1cf87eb8bf6be052aa9877a671832443eb3d21e0e125c84b5294187041",
+      "payload_seed_decimal": "16078588411893689828",
+      "payload_seed_hex": "df229ef8fca2ade4",
+      "policy_id": "P3-covariance-gmi",
+      "round_index": 0,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "outcome-blind-holdout",
+      "within_round_position": 3
+    },
+    {
+      "cell_id": "C1-lateral-20mm-holdout",
+      "job_id": "C1-lateral-20mm-holdout-r01-p0-P3-covariance-gmi",
+      "outcome_decode_barrier": "C1-lateral-20mm-holdout-round-01-decode-barrier",
+      "payload_seed_commitment_sha256": "d5ba4b9629d835314d1ae3b93b00351d6069a5ee7a6b306286020902e569cb08",
+      "payload_seed_decimal": "15786154656617956396",
+      "payload_seed_hex": "db13b0058517842c",
+      "policy_id": "P3-covariance-gmi",
+      "round_index": 1,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "outcome-blind-holdout",
+      "within_round_position": 0
+    },
+    {
+      "cell_id": "C1-lateral-20mm-holdout",
+      "job_id": "C1-lateral-20mm-holdout-r01-p1-P2-pilot-gmi",
+      "outcome_decode_barrier": "C1-lateral-20mm-holdout-round-01-decode-barrier",
+      "payload_seed_commitment_sha256": "bb5163d264a19f38793e65b456ee6b247f700e86f91370a310c37a1e2a52d91d",
+      "payload_seed_decimal": "18374911181652957325",
+      "payload_seed_hex": "ff00cc5d81c7188d",
+      "policy_id": "P2-pilot-gmi",
+      "round_index": 1,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "outcome-blind-holdout",
+      "within_round_position": 1
+    },
+    {
+      "cell_id": "C1-lateral-20mm-holdout",
+      "job_id": "C1-lateral-20mm-holdout-r01-p2-P1-raw-psd",
+      "outcome_decode_barrier": "C1-lateral-20mm-holdout-round-01-decode-barrier",
+      "payload_seed_commitment_sha256": "0740980ad9b8e17f2694a8646534d4506a766928b824aaa6ceb50ea61d7cb67e",
+      "payload_seed_decimal": "6610189538086860156",
+      "payload_seed_hex": "5bbc1c5cd3abb57c",
+      "policy_id": "P1-raw-psd",
+      "round_index": 1,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "outcome-blind-holdout",
+      "within_round_position": 2
+    },
+    {
+      "cell_id": "C1-lateral-20mm-holdout",
+      "job_id": "C1-lateral-20mm-holdout-r01-p3-P0-uniform-incumbent",
+      "outcome_decode_barrier": "C1-lateral-20mm-holdout-round-01-decode-barrier",
+      "payload_seed_commitment_sha256": "25b48b6e137c90c4d9f094cf4562ee500b360985bb9084998f741202d4385600",
+      "payload_seed_decimal": "18060721046689943884",
+      "payload_seed_hex": "faa4921a2760114c",
+      "policy_id": "P0-uniform-incumbent",
+      "round_index": 1,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "outcome-blind-holdout",
+      "within_round_position": 3
+    },
+    {
+      "cell_id": "C1-lateral-20mm-holdout",
+      "job_id": "C1-lateral-20mm-holdout-r02-p0-P2-pilot-gmi",
+      "outcome_decode_barrier": "C1-lateral-20mm-holdout-round-02-decode-barrier",
+      "payload_seed_commitment_sha256": "4616adfa079f48668a0c80dd7ebc1023049c4dae3df8d7e0959968662b6c8e11",
+      "payload_seed_decimal": "16262907832437827371",
+      "payload_seed_hex": "e1b174824f5fe72b",
+      "policy_id": "P2-pilot-gmi",
+      "round_index": 2,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "outcome-blind-holdout",
+      "within_round_position": 0
+    },
+    {
+      "cell_id": "C1-lateral-20mm-holdout",
+      "job_id": "C1-lateral-20mm-holdout-r02-p1-P0-uniform-incumbent",
+      "outcome_decode_barrier": "C1-lateral-20mm-holdout-round-02-decode-barrier",
+      "payload_seed_commitment_sha256": "54cb7bf16dc0a5019f2a0ee52f3b25ff7b0100df5f80421be1aefbee094053f0",
+      "payload_seed_decimal": "11419239575525439246",
+      "payload_seed_hex": "9e7949e46846b70e",
+      "policy_id": "P0-uniform-incumbent",
+      "round_index": 2,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "outcome-blind-holdout",
+      "within_round_position": 1
+    },
+    {
+      "cell_id": "C1-lateral-20mm-holdout",
+      "job_id": "C1-lateral-20mm-holdout-r02-p2-P3-covariance-gmi",
+      "outcome_decode_barrier": "C1-lateral-20mm-holdout-round-02-decode-barrier",
+      "payload_seed_commitment_sha256": "7a0fc06abda77aa8e6a413cf1e1fd5b152acddedb4755fbdd989028accb17b69",
+      "payload_seed_decimal": "3009237668053624594",
+      "payload_seed_hex": "29c2f5b7290fa712",
+      "policy_id": "P3-covariance-gmi",
+      "round_index": 2,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "outcome-blind-holdout",
+      "within_round_position": 2
+    },
+    {
+      "cell_id": "C1-lateral-20mm-holdout",
+      "job_id": "C1-lateral-20mm-holdout-r02-p3-P1-raw-psd",
+      "outcome_decode_barrier": "C1-lateral-20mm-holdout-round-02-decode-barrier",
+      "payload_seed_commitment_sha256": "fd23fc9583c89977a6e119de02010de6927bbaec8e1d8c6c36e18ebadcec3a0c",
+      "payload_seed_decimal": "6236113028514504578",
+      "payload_seed_hex": "568b1fc253cadf82",
+      "policy_id": "P1-raw-psd",
+      "round_index": 2,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "outcome-blind-holdout",
+      "within_round_position": 3
+    },
+    {
+      "cell_id": "C1-lateral-20mm-holdout",
+      "job_id": "C1-lateral-20mm-holdout-r03-p0-P1-raw-psd",
+      "outcome_decode_barrier": "C1-lateral-20mm-holdout-round-03-decode-barrier",
+      "payload_seed_commitment_sha256": "01025c4fd4060512471b416f63adefc681e9810a733b572f423251e62c41734c",
+      "payload_seed_decimal": "3443045117672453021",
+      "payload_seed_hex": "2fc8274ae082739d",
+      "policy_id": "P1-raw-psd",
+      "round_index": 3,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "outcome-blind-holdout",
+      "within_round_position": 0
+    },
+    {
+      "cell_id": "C1-lateral-20mm-holdout",
+      "job_id": "C1-lateral-20mm-holdout-r03-p1-P3-covariance-gmi",
+      "outcome_decode_barrier": "C1-lateral-20mm-holdout-round-03-decode-barrier",
+      "payload_seed_commitment_sha256": "92039083a1ab640c5c934ac8d538e2e4c712e9379214967b369ba5174b00525e",
+      "payload_seed_decimal": "13445526456783285447",
+      "payload_seed_hex": "ba981b1332af2cc7",
+      "policy_id": "P3-covariance-gmi",
+      "round_index": 3,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "outcome-blind-holdout",
+      "within_round_position": 1
+    },
+    {
+      "cell_id": "C1-lateral-20mm-holdout",
+      "job_id": "C1-lateral-20mm-holdout-r03-p2-P0-uniform-incumbent",
+      "outcome_decode_barrier": "C1-lateral-20mm-holdout-round-03-decode-barrier",
+      "payload_seed_commitment_sha256": "0f530d74368e65d717e1556202d1c73ff3dc33f86f6b5f5da02cb651694156f6",
+      "payload_seed_decimal": "11633299159004017186",
+      "payload_seed_hex": "a171c7f30248f222",
+      "policy_id": "P0-uniform-incumbent",
+      "round_index": 3,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "outcome-blind-holdout",
+      "within_round_position": 2
+    },
+    {
+      "cell_id": "C1-lateral-20mm-holdout",
+      "job_id": "C1-lateral-20mm-holdout-r03-p3-P2-pilot-gmi",
+      "outcome_decode_barrier": "C1-lateral-20mm-holdout-round-03-decode-barrier",
+      "payload_seed_commitment_sha256": "d0eeac4b1e1bd609931d571d17731399cdfae423ee9665c73725d92eec769ba4",
+      "payload_seed_decimal": "11537092336618800059",
+      "payload_seed_hex": "a01bfc5aa10b83bb",
+      "policy_id": "P2-pilot-gmi",
+      "round_index": 3,
+      "selection_inputs": [
+        "route signature",
+        "same-cell passive noise recorded before the round",
+        "eight known QPSK sounder symbols ending before payload",
+        "32 randomized known 16-QAM probe symbols ending before payload; first 16 fit H/noise and last 16 estimate bitwise GMI"
+      ],
+      "selection_record_must_precede_payload": true,
+      "split": "outcome-blind-holdout",
+      "within_round_position": 3
+    }
+  ],
+  "physical": {
+    "active_band_hz": [
+      1100,
+      23000
+    ],
+    "calibrated_spl": false,
+    "cp_samples": 768,
+    "data_symbols_per_candidate": 64,
+    "digital_sample_peak": 0.18,
+    "elgato_forbidden": true,
+    "fec": "existing constraint-length-7 rate-1/2 convolutional code",
+    "inter_candidate_gap_seconds": 0.25,
+    "known_randomized_qam_symbols_per_round": 32,
+    "known_sounder_symbols_per_round": 8,
+    "mac_output": "MacBook Pro built-in speaker 0 only",
+    "mac_output_volume_percent": 30,
+    "nfft": 2048,
+    "passive_noise_seconds_per_cell": 5.0,
+    "per_bin_noise_estimator": "2048-sample Hann windows, 50% overlap, mean complex cross-spectrum; record scalar PSD and full microphone covariance",
+    "pixel_input": "48 kHz stereo UNPROCESSED retained; mic 0 primary, mic 1 diagnostic",
+    "post_roll_seconds": 0.8,
+    "pre_roll_seconds": 0.7,
+    "qam_probe_split": "first 16 fit H/noise; last 16 estimate bitwise GMI",
+    "sample_rate_hz": 48000
+  },
+  "policies": [
+    {
+      "id": "P0-uniform-incumbent",
+      "kind": "uniform incumbent",
+      "rule": "Assign 4 bits to every eligible bin. Do not inspect channel or payload outcomes."
+    },
+    {
+      "id": "P1-raw-psd",
+      "kind": "raw-PSD thresholds",
+      "rule": "Using only the causally prior active known-probe channel magnitude and passive-noise PSD, assign 0 bits below 6 dB SNR, 2 bits from 6 dB inclusive to 13 dB exclusive, and 4 bits at or above 13 dB."
+    },
+    {
+      "id": "P2-pilot-gmi",
+      "kind": "pilot-GMI thresholds",
+      "rule": "Using only causally prior known sounder/pilot observations and the frozen scalar residual model, assign the highest modulation whose estimated BICM-GMI is at least 1.20 bits/symbol for QPSK or 2.40 bits/symbol for 16-QAM; otherwise turn the bin off."
+    },
+    {
+      "id": "P3-covariance-gmi",
+      "kind": "noise-covariance-aware GMI",
+      "rule": "For independently verified simultaneous microphone inputs, estimate payload-independent complex H and regularized passive-noise covariance, compute the maximum-SINR combiner, then apply P2 thresholds. Fall back exactly to P2 for one usable input or an invalid covariance estimate."
+    }
+  ],
+  "promotion_limits": {
+    "final_gate": "At least 5.0% p10 net-goodput gain, >=98.0% recovery, no hash failure, and wins at least 7 of 8 order-balanced confirmatory pairs after signalling.",
+    "minimum_plan_cannot_clear_final_gate": true,
+    "screen_gate": "At least 2.0% p10 net-goodput gain over P0 after signalling, predictor median held-out error <=15%, profile within 10% of measured oracle in >=80% of held-out cells, held-out Spearman >=0.5, and zero catastrophic optimistic selections."
+  },
+  "purpose": "minimum causal identifiability screen; not final 7/8 qualification",
+  "rank5_source_commit": "61558c296aaf30a4baf133c45e54813480e37a14",
+  "rounds_per_cell": 4,
+  "schema": "cyrinx.spike8d.ota-acquisition-plan.v1",
+  "signalling": {
+    "accounting": "Both descriptor airtime and per-frame profile-ID payload displacement are included in candidate net goodput. P0 has no descriptor activation cost in the incumbent comparison.",
+    "activation_frequency": "once before every 64-data-symbol evaluation burst",
+    "airtime_seconds_per_activation": 0.176,
+    "bearer_assumption": "uniform QPSK with the same rate-1/2 convolutional code across 935 bins",
+    "descriptor": "two bits per eligible bin plus 128 metadata/CRC bits",
+    "nominal_logical_bits": 1998,
+    "ofdm_symbols_per_activation": 3,
+    "profile_id_cost": "32 logical bits reserved from application payload in every data frame"
+  }
+}

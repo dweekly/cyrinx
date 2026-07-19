@@ -1,0 +1,152 @@
+{
+  "schema": "cyrinx.spike8d.preregistration.v1",
+  "frozen_at_utc": "2026-07-18T19:45:48Z",
+  "disclosure_correction_at_utc": "2026-07-18T19:49:39Z",
+  "disclosure_correction": "The initial status text was corrected to record that the required committed Rank 5 report had already exposed aggregate outcomes. No policy, threshold, split, metric, or gate changed in that correction.",
+  "status": "frozen_before_raw-capture, per-bin, or alternate-policy inspection; aggregate Rank 5 outcomes were already disclosed by the required committed report",
+  "roadmap_spike": "8d",
+  "hypothesis": "A payload-independent GMI policy derived from randomized known probes will improve held-out p10 setup-inclusive net goodput over the uniform 16-QAM incumbent by at least 5% while preserving at least 98% ordered block recovery.",
+  "offline_only": true,
+  "integration_allowed": false,
+  "corpus": {
+    "rank5_root": "/private/tmp/cyrinx-spike-5-sounder-20260718/artifacts/spikes/rank5-pixel-mac-20260718",
+    "cells": [
+      {
+        "id": "F0-forward-vol30-lr",
+        "split": "training",
+        "unit": "whole continuous acquisition"
+      },
+      {
+        "id": "R1-reverse-vol25-lr",
+        "split": "training",
+        "unit": "whole continuous acquisition"
+      },
+      {
+        "id": "S-M-mac-self-vol30-lr",
+        "split": "development",
+        "unit": "whole continuous acquisition"
+      },
+      {
+        "id": "R2-reverse-vol25-rl",
+        "split": "pseudo-holdout-outcome-exposed",
+        "unit": "whole continuous acquisition"
+      }
+    ],
+    "ancillary_only": [
+      "P0-passive"
+    ],
+    "excluded": [
+      {
+        "id": "S-P-pixel-self-vol15-lr",
+        "reason": "preflight failure; no received data probe"
+      }
+    ],
+    "holdout_rule": "No threshold, margin, mask, MCS, decoder, or policy change may be made after raw R2 PCM, per-bin data EVM, expected bytes, CRC details, or a policy score is inspected. The required committed Rank 5 report had already disclosed aggregate R2 block counts before this freeze, so R2 is not a blind holdout.",
+    "generalization_limit": "R2 is an order-balanced repeat of the reverse physical cell, not a held-out device or geometry, and its aggregate result is outcome-exposed. It can support only a diagnostic replay, not held-out calibration or a whole-device/cell generalization claim."
+  },
+  "counterfactual_identifiability": {
+    "required": [
+      "known independently randomized payload for every scored burst",
+      "physically transmitted waveform for every candidate allocation and MCS in every scored cell, or a proven sufficient statistic preserving the exact coded observations",
+      "candidate selection frozen from causally prior sounder, passive-noise, route, and pilot observations",
+      "strict ordered recovered application bytes and CRC for each physically transmitted candidate",
+      "exact sample and profile-signalling airtime"
+    ],
+    "insufficient_examples": [
+      "masking bins from a recording of a different codeword and treating the result as a lower-rate transmission",
+      "using expected payload bytes, data-bin EVM, block validity, or CRC to select that frame",
+      "predicting goodput from stationary PSD without a physically observed candidate outcome",
+      "treating repeated-pilot capacity arithmetic as measured application goodput"
+    ],
+    "formal_stop": "If the retained corpus does not meet every requirement, do not report a counterfactual goodput delta and do not authorize OTA from an invented replay gain. Implement the payload-independent estimator and produce an acquisition manifest instead."
+  },
+  "fixed_phy": {
+    "sample_rate_hz": 48000,
+    "nfft": 2048,
+    "cp_samples": 768,
+    "eligible_bins": "the immutable eligible-bin list in the Rank 5 waveform manifest; nominal count 935",
+    "fec": "existing constraint-length-7 rate-1/2 convolutional code with the existing interleaver and CRC",
+    "allowed_bits_per_bin": [
+      0,
+      2,
+      4
+    ],
+    "modulations": {
+      "2": "Gray QPSK",
+      "4": "Gray 16-QAM"
+    },
+    "normalization": "Each physically transmitted policy candidate uses the same digital sample-peak ceiling, OS volume, active band, NFFT, CP, training, and burst duration. Report received RMS only as a diagnostic.",
+    "no_new_code_family": true
+  },
+  "policies": [
+    {
+      "id": "P0-uniform-incumbent",
+      "kind": "uniform incumbent",
+      "rule": "Assign 4 bits to every eligible bin. Do not inspect channel or payload outcomes."
+    },
+    {
+      "id": "P1-raw-psd",
+      "kind": "raw-PSD thresholds",
+      "rule": "Using only the causally prior active known-probe channel magnitude and passive-noise PSD, assign 0 bits below 6 dB SNR, 2 bits from 6 dB inclusive to 13 dB exclusive, and 4 bits at or above 13 dB."
+    },
+    {
+      "id": "P2-pilot-gmi",
+      "kind": "pilot-GMI thresholds",
+      "rule": "Using only causally prior known sounder/pilot observations and the frozen scalar residual model, assign the highest modulation whose estimated BICM-GMI is at least 1.20 bits/symbol for QPSK or 2.40 bits/symbol for 16-QAM; otherwise turn the bin off."
+    },
+    {
+      "id": "P3-covariance-gmi",
+      "kind": "noise-covariance-aware GMI",
+      "rule": "For independently verified simultaneous microphone inputs, estimate payload-independent complex H and regularized passive-noise covariance, compute the maximum-SINR combiner, then apply P2 thresholds. Fall back exactly to P2 for one usable input or an invalid covariance estimate."
+    }
+  ],
+  "fitting": {
+    "thresholds": "fixed a priori; no fit",
+    "only_permitted_training_fit": "A single scalar GMI calibration offset may be selected from {-0.50, -0.25, 0.00} bits/symbol using complete training runs only. Use the most conservative tied value. Development may reject the estimator but may not select a new value.",
+    "holdout": "No fit or redesign on R2, but R2 is not blind because its aggregate result was disclosed. Future OTA qualification must hold out at least one complete, outcome-blind device/geometry cell."
+  },
+  "allocation_signalling": {
+    "descriptor": "two bits per eligible bin plus 128 metadata/CRC bits",
+    "nominal_logical_bits": 1998,
+    "bearer_assumption": "uniform QPSK with the same rate-1/2 convolutional code across 935 bins",
+    "ofdm_symbols_per_activation": 3,
+    "airtime_seconds_per_activation": 0.176,
+    "activation_frequency": "once before every 64-data-symbol evaluation burst",
+    "profile_id_cost": "32 logical bits reserved from application payload in every data frame",
+    "accounting": "Both descriptor airtime and per-frame profile-ID payload displacement are included in candidate net goodput. P0 has no descriptor activation cost in the incumbent comparison."
+  },
+  "objectives": {
+    "primary": "p10 across whole held-out run/cell net goodput in delivered ordered application bits divided by wall-clock seconds including training, allocation signalling, profile-ID displacement, padding, and failed blocks",
+    "recovery": "at least 98.0% strict ordered block recovery and no hash-invalid completed transfer",
+    "secondary": [
+      "median net-goodput delta",
+      "profile-selection oracle regret",
+      "predictor calibration error",
+      "Spearman rank correlation",
+      "catastrophic optimistic selections",
+      "active-bin fraction and selected bit distribution"
+    ],
+    "oracle": "best physically transmitted policy candidate in the same whole cell that meets the recovery objective; oracle is used only for retrospective regret, never selection"
+  },
+  "gates": {
+    "offline_replay_promotion_to_ota_screen": "At least 2.0% p10 net-goodput gain over P0 after signalling, predictor median held-out error <=15%, profile within 10% of measured oracle in >=80% of held-out cells, held-out Spearman >=0.5, and zero catastrophic optimistic selections.",
+    "final_promotion": "At least 5.0% p10 net-goodput gain, >=98.0% recovery, no hash failure, and wins at least 7 of 8 order-balanced confirmatory pairs after signalling.",
+    "catastrophic_selection": "selected candidate recovers <90.0%, or selects below 98.0% when another physically measured candidate meets 98.0%",
+    "stop": [
+      "retained corpus is not counterfactually identifiable",
+      "offline replay gain is below 2.0%",
+      "Rank 5 predictor is not calibrated",
+      "any same-frame payload/expected-byte/CRC leakage is found",
+      "signalling or lower-tail loss erases the gain"
+    ]
+  },
+  "anti_leakage": [
+    "Policy inputs are limited to route metadata, passive PCM, and known sounder/pilot samples ending before candidate payload transmission.",
+    "Payload subcarriers, expected payload bytes, decoded bytes, block masks, CRC, and same-frame data EVM are outcome-only fields.",
+    "Selection and its SHA-256 record must be written before candidate payload outcome decoding.",
+    "Thresholds and the optional scalar offset are selected on whole training runs; no frame split is permitted.",
+    "All candidates in one cell use independent payload seeds, while order is balanced and seed assignment is committed before acquisition.",
+    "The policy implementation has a feature allowlist and rejects unrecognized fields rather than silently consuming them."
+  ],
+  "ota_permission": "forbidden by this preregistration until the offline corpus passes counterfactual-identifiability and the full offline gate; if it cannot, a new acquisition requires a separately reviewed executable manifest"
+}

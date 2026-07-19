@@ -1,0 +1,593 @@
+{
+  "confidence": {
+    "basis": "content-addressed acquisition manifests and physical waveform hashes",
+    "identifiability_stop": "high",
+    "policy_performance": "not estimable from this corpus"
+  },
+  "counterfactual_identifiable": false,
+  "decision": "formal-stop-not-counterfactually-identifiable",
+  "estimator": {
+    "calibration_offset_bits": -0.5,
+    "paths": [
+      {
+        "cell": "F0-forward-vol30-lr",
+        "policies": {
+          "P0-uniform-incumbent": {
+            "active_fraction": 1.0,
+            "allocated_coded_bits_per_symbol": 3740,
+            "allocation_counts": {
+              "0": 0,
+              "2": 0,
+              "4": 935
+            },
+            "allocation_sha256": "0e0eca4a369f432d1adb200d3504688bb28cb2ee0d9f500dc23d360c096b347a"
+          },
+          "P1-raw-psd": {
+            "reason": "retained passive analysis has coarse bands, not aligned per-bin PSD",
+            "status": "unavailable"
+          },
+          "P2-pilot-gmi": {
+            "active_fraction": 0.5358288770053476,
+            "allocated_coded_bits_per_symbol": 1192,
+            "allocation_counts": {
+              "0": 434,
+              "2": 406,
+              "4": 95
+            },
+            "allocation_sha256": "08d277c0049a7f02fac76fa771b4468333e48bda63489d639c0183548d4fafa1"
+          },
+          "P3-covariance-gmi": {
+            "active_fraction": 0.5358288770053476,
+            "allocated_coded_bits_per_symbol": 1192,
+            "allocation_counts": {
+              "0": 434,
+              "2": 406,
+              "4": 95
+            },
+            "allocation_sha256": "08d277c0049a7f02fac76fa771b4468333e48bda63489d639c0183548d4fafa1",
+            "fallback": "P2: retained corpus lacks per-bin noise covariance"
+          }
+        },
+        "receiver": 0,
+        "speaker": 0
+      },
+      {
+        "cell": "F0-forward-vol30-lr",
+        "policies": {
+          "P0-uniform-incumbent": {
+            "active_fraction": 1.0,
+            "allocated_coded_bits_per_symbol": 3740,
+            "allocation_counts": {
+              "0": 0,
+              "2": 0,
+              "4": 935
+            },
+            "allocation_sha256": "0e0eca4a369f432d1adb200d3504688bb28cb2ee0d9f500dc23d360c096b347a"
+          },
+          "P1-raw-psd": {
+            "reason": "retained passive analysis has coarse bands, not aligned per-bin PSD",
+            "status": "unavailable"
+          },
+          "P2-pilot-gmi": {
+            "active_fraction": 0.0021390374331550803,
+            "allocated_coded_bits_per_symbol": 4,
+            "allocation_counts": {
+              "0": 933,
+              "2": 2,
+              "4": 0
+            },
+            "allocation_sha256": "492c70b34ea66e48b1819873c1f0668becd60c89a520a06ef4fa5c116fd18f7e"
+          },
+          "P3-covariance-gmi": {
+            "active_fraction": 0.0021390374331550803,
+            "allocated_coded_bits_per_symbol": 4,
+            "allocation_counts": {
+              "0": 933,
+              "2": 2,
+              "4": 0
+            },
+            "allocation_sha256": "492c70b34ea66e48b1819873c1f0668becd60c89a520a06ef4fa5c116fd18f7e",
+            "fallback": "P2: retained corpus lacks per-bin noise covariance"
+          }
+        },
+        "receiver": 1,
+        "speaker": 0
+      },
+      {
+        "cell": "F0-forward-vol30-lr",
+        "policies": {
+          "P0-uniform-incumbent": {
+            "active_fraction": 1.0,
+            "allocated_coded_bits_per_symbol": 3740,
+            "allocation_counts": {
+              "0": 0,
+              "2": 0,
+              "4": 935
+            },
+            "allocation_sha256": "0e0eca4a369f432d1adb200d3504688bb28cb2ee0d9f500dc23d360c096b347a"
+          },
+          "P1-raw-psd": {
+            "reason": "retained passive analysis has coarse bands, not aligned per-bin PSD",
+            "status": "unavailable"
+          },
+          "P2-pilot-gmi": {
+            "active_fraction": 0.3315508021390374,
+            "allocated_coded_bits_per_symbol": 760,
+            "allocation_counts": {
+              "0": 625,
+              "2": 240,
+              "4": 70
+            },
+            "allocation_sha256": "eab3945a41ebb0170e9a37d7cafed68ecebfebd624b0aa9a974e4c709f0c3886"
+          },
+          "P3-covariance-gmi": {
+            "active_fraction": 0.3315508021390374,
+            "allocated_coded_bits_per_symbol": 760,
+            "allocation_counts": {
+              "0": 625,
+              "2": 240,
+              "4": 70
+            },
+            "allocation_sha256": "eab3945a41ebb0170e9a37d7cafed68ecebfebd624b0aa9a974e4c709f0c3886",
+            "fallback": "P2: retained corpus lacks per-bin noise covariance"
+          }
+        },
+        "receiver": 0,
+        "speaker": 1
+      },
+      {
+        "cell": "F0-forward-vol30-lr",
+        "policies": {
+          "P0-uniform-incumbent": {
+            "active_fraction": 1.0,
+            "allocated_coded_bits_per_symbol": 3740,
+            "allocation_counts": {
+              "0": 0,
+              "2": 0,
+              "4": 935
+            },
+            "allocation_sha256": "0e0eca4a369f432d1adb200d3504688bb28cb2ee0d9f500dc23d360c096b347a"
+          },
+          "P1-raw-psd": {
+            "reason": "retained passive analysis has coarse bands, not aligned per-bin PSD",
+            "status": "unavailable"
+          },
+          "P2-pilot-gmi": {
+            "active_fraction": 0.09839572192513368,
+            "allocated_coded_bits_per_symbol": 204,
+            "allocation_counts": {
+              "0": 843,
+              "2": 82,
+              "4": 10
+            },
+            "allocation_sha256": "b828d386f12d6535b1218861374da7a81de9d6cd2fe474534d8101d82a5a6400"
+          },
+          "P3-covariance-gmi": {
+            "active_fraction": 0.09839572192513368,
+            "allocated_coded_bits_per_symbol": 204,
+            "allocation_counts": {
+              "0": 843,
+              "2": 82,
+              "4": 10
+            },
+            "allocation_sha256": "b828d386f12d6535b1218861374da7a81de9d6cd2fe474534d8101d82a5a6400",
+            "fallback": "P2: retained corpus lacks per-bin noise covariance"
+          }
+        },
+        "receiver": 1,
+        "speaker": 1
+      },
+      {
+        "cell": "R1-reverse-vol25-lr",
+        "policies": {
+          "P0-uniform-incumbent": {
+            "active_fraction": 1.0,
+            "allocated_coded_bits_per_symbol": 3740,
+            "allocation_counts": {
+              "0": 0,
+              "2": 0,
+              "4": 935
+            },
+            "allocation_sha256": "0e0eca4a369f432d1adb200d3504688bb28cb2ee0d9f500dc23d360c096b347a"
+          },
+          "P1-raw-psd": {
+            "reason": "retained passive analysis has coarse bands, not aligned per-bin PSD",
+            "status": "unavailable"
+          },
+          "P2-pilot-gmi": {
+            "active_fraction": 0.9711229946524064,
+            "allocated_coded_bits_per_symbol": 3412,
+            "allocation_counts": {
+              "0": 27,
+              "2": 110,
+              "4": 798
+            },
+            "allocation_sha256": "1330ff9c5d1489f4a085a2354d2895e1c6b809525efc81882d6a47393256fea7"
+          },
+          "P3-covariance-gmi": {
+            "active_fraction": 0.9711229946524064,
+            "allocated_coded_bits_per_symbol": 3412,
+            "allocation_counts": {
+              "0": 27,
+              "2": 110,
+              "4": 798
+            },
+            "allocation_sha256": "1330ff9c5d1489f4a085a2354d2895e1c6b809525efc81882d6a47393256fea7",
+            "fallback": "P2: retained corpus lacks per-bin noise covariance"
+          }
+        },
+        "receiver": 0,
+        "speaker": 0
+      },
+      {
+        "cell": "R1-reverse-vol25-lr",
+        "policies": {
+          "P0-uniform-incumbent": {
+            "active_fraction": 1.0,
+            "allocated_coded_bits_per_symbol": 3740,
+            "allocation_counts": {
+              "0": 0,
+              "2": 0,
+              "4": 935
+            },
+            "allocation_sha256": "0e0eca4a369f432d1adb200d3504688bb28cb2ee0d9f500dc23d360c096b347a"
+          },
+          "P1-raw-psd": {
+            "reason": "retained passive analysis has coarse bands, not aligned per-bin PSD",
+            "status": "unavailable"
+          },
+          "P2-pilot-gmi": {
+            "active_fraction": 0.9764705882352941,
+            "allocated_coded_bits_per_symbol": 3148,
+            "allocation_counts": {
+              "0": 22,
+              "2": 252,
+              "4": 661
+            },
+            "allocation_sha256": "fc288339bfded803a6d453bbaf15593829b390bef0579e26f4edec4213a4d936"
+          },
+          "P3-covariance-gmi": {
+            "active_fraction": 0.9764705882352941,
+            "allocated_coded_bits_per_symbol": 3148,
+            "allocation_counts": {
+              "0": 22,
+              "2": 252,
+              "4": 661
+            },
+            "allocation_sha256": "fc288339bfded803a6d453bbaf15593829b390bef0579e26f4edec4213a4d936",
+            "fallback": "P2: retained corpus lacks per-bin noise covariance"
+          }
+        },
+        "receiver": 0,
+        "speaker": 1
+      },
+      {
+        "cell": "S-M-mac-self-vol30-lr",
+        "policies": {
+          "P0-uniform-incumbent": {
+            "active_fraction": 1.0,
+            "allocated_coded_bits_per_symbol": 3740,
+            "allocation_counts": {
+              "0": 0,
+              "2": 0,
+              "4": 935
+            },
+            "allocation_sha256": "0e0eca4a369f432d1adb200d3504688bb28cb2ee0d9f500dc23d360c096b347a"
+          },
+          "P1-raw-psd": {
+            "reason": "retained passive analysis has coarse bands, not aligned per-bin PSD",
+            "status": "unavailable"
+          },
+          "P2-pilot-gmi": {
+            "active_fraction": 0.8716577540106952,
+            "allocated_coded_bits_per_symbol": 3258,
+            "allocation_counts": {
+              "0": 120,
+              "2": 1,
+              "4": 814
+            },
+            "allocation_sha256": "7a0f75900d12c39fde4d8bb0f717ffb21bb7265949c332a12c694fc3ce47757b"
+          },
+          "P3-covariance-gmi": {
+            "active_fraction": 0.8716577540106952,
+            "allocated_coded_bits_per_symbol": 3258,
+            "allocation_counts": {
+              "0": 120,
+              "2": 1,
+              "4": 814
+            },
+            "allocation_sha256": "7a0f75900d12c39fde4d8bb0f717ffb21bb7265949c332a12c694fc3ce47757b",
+            "fallback": "P2: retained corpus lacks per-bin noise covariance"
+          }
+        },
+        "receiver": 0,
+        "speaker": 0
+      },
+      {
+        "cell": "S-M-mac-self-vol30-lr",
+        "policies": {
+          "P0-uniform-incumbent": {
+            "active_fraction": 1.0,
+            "allocated_coded_bits_per_symbol": 3740,
+            "allocation_counts": {
+              "0": 0,
+              "2": 0,
+              "4": 935
+            },
+            "allocation_sha256": "0e0eca4a369f432d1adb200d3504688bb28cb2ee0d9f500dc23d360c096b347a"
+          },
+          "P1-raw-psd": {
+            "reason": "retained passive analysis has coarse bands, not aligned per-bin PSD",
+            "status": "unavailable"
+          },
+          "P2-pilot-gmi": {
+            "active_fraction": 0.6973262032085561,
+            "allocated_coded_bits_per_symbol": 2324,
+            "allocation_counts": {
+              "0": 283,
+              "2": 142,
+              "4": 510
+            },
+            "allocation_sha256": "0e963d5e494c0b0f7c5d20ad90fed03bf0cb230b2f34fcb94499225a13805352"
+          },
+          "P3-covariance-gmi": {
+            "active_fraction": 0.6973262032085561,
+            "allocated_coded_bits_per_symbol": 2324,
+            "allocation_counts": {
+              "0": 283,
+              "2": 142,
+              "4": 510
+            },
+            "allocation_sha256": "0e963d5e494c0b0f7c5d20ad90fed03bf0cb230b2f34fcb94499225a13805352",
+            "fallback": "P2: retained corpus lacks per-bin noise covariance"
+          }
+        },
+        "receiver": 0,
+        "speaker": 1
+      },
+      {
+        "cell": "R2-reverse-vol25-rl",
+        "policies": {
+          "P0-uniform-incumbent": {
+            "active_fraction": 1.0,
+            "allocated_coded_bits_per_symbol": 3740,
+            "allocation_counts": {
+              "0": 0,
+              "2": 0,
+              "4": 935
+            },
+            "allocation_sha256": "0e0eca4a369f432d1adb200d3504688bb28cb2ee0d9f500dc23d360c096b347a"
+          },
+          "P1-raw-psd": {
+            "reason": "retained passive analysis has coarse bands, not aligned per-bin PSD",
+            "status": "unavailable"
+          },
+          "P2-pilot-gmi": {
+            "active_fraction": 1.0,
+            "allocated_coded_bits_per_symbol": 3570,
+            "allocation_counts": {
+              "0": 0,
+              "2": 85,
+              "4": 850
+            },
+            "allocation_sha256": "5f88b02abb99d47b4773b62fb5a3216469cbd3c15e13102fbb9ccd1f19a2f078"
+          },
+          "P3-covariance-gmi": {
+            "active_fraction": 1.0,
+            "allocated_coded_bits_per_symbol": 3570,
+            "allocation_counts": {
+              "0": 0,
+              "2": 85,
+              "4": 850
+            },
+            "allocation_sha256": "5f88b02abb99d47b4773b62fb5a3216469cbd3c15e13102fbb9ccd1f19a2f078",
+            "fallback": "P2: retained corpus lacks per-bin noise covariance"
+          }
+        },
+        "receiver": 0,
+        "speaker": 1
+      },
+      {
+        "cell": "R2-reverse-vol25-rl",
+        "policies": {
+          "P0-uniform-incumbent": {
+            "active_fraction": 1.0,
+            "allocated_coded_bits_per_symbol": 3740,
+            "allocation_counts": {
+              "0": 0,
+              "2": 0,
+              "4": 935
+            },
+            "allocation_sha256": "0e0eca4a369f432d1adb200d3504688bb28cb2ee0d9f500dc23d360c096b347a"
+          },
+          "P1-raw-psd": {
+            "reason": "retained passive analysis has coarse bands, not aligned per-bin PSD",
+            "status": "unavailable"
+          },
+          "P2-pilot-gmi": {
+            "active_fraction": 0.9636363636363636,
+            "allocated_coded_bits_per_symbol": 3480,
+            "allocation_counts": {
+              "0": 34,
+              "2": 62,
+              "4": 839
+            },
+            "allocation_sha256": "f105f7c16e38abcc526efe83a996783a0b9837227930cd3fef810c8afb01606f"
+          },
+          "P3-covariance-gmi": {
+            "active_fraction": 0.9636363636363636,
+            "allocated_coded_bits_per_symbol": 3480,
+            "allocation_counts": {
+              "0": 34,
+              "2": 62,
+              "4": 839
+            },
+            "allocation_sha256": "f105f7c16e38abcc526efe83a996783a0b9837227930cd3fef810c8afb01606f",
+            "fallback": "P2: retained corpus lacks per-bin noise covariance"
+          }
+        },
+        "receiver": 0,
+        "speaker": 0
+      }
+    ],
+    "same_frame_outcome_fields_consumed": [],
+    "status": "descriptive-only-unqualified",
+    "warning": "Allocation counts are generated from repeated known-pilot SNR. They are not counterfactual decodes, delivered goodput, or a qualified rate predictor."
+  },
+  "failed_requirements": [
+    "Only one uniform waveform/profile was physically transmitted; P1/P2/P3 outcomes are absent.",
+    "The same payload hash was reused across all selected data probes; bursts are not independently randomized.",
+    "No allocation descriptor/profile-ID airtime was transmitted or measured.",
+    "No complete outcome-blind device/geometry holdout exists for this spike.",
+    "The retained passive artifact has broadband covariance, not per-bin noise covariance for P3."
+  ],
+  "ota_permitted": false,
+  "preregistration_sha256": "c23250b4fd69d89ae765f7b21f023f081377ad3db6a395cfa2a50c6c1ced4b65",
+  "provenance": [
+    {
+      "bytes": 14820,
+      "path": "/private/tmp/cyrinx-spike-5-sounder-20260718/artifacts/spikes/rank5-pixel-mac-20260718/F0-forward-vol30-lr/acquisition.json",
+      "semantically_inspected": true,
+      "sha256": "eab258990645b5348cd065c299cc8d003e8e438023eb51ee5fd84e65797ac584"
+    },
+    {
+      "bytes": 945910,
+      "path": "/private/tmp/cyrinx-spike-5-sounder-20260718/artifacts/spikes/rank5-pixel-mac-20260718/F0-forward-vol30-lr/analysis.json",
+      "semantically_inspected": true,
+      "sha256": "d7d11a18be7963e5f28d47c7fed3f3e0a7132e29b3c91a14959e7a3ae0179578"
+    },
+    {
+      "bytes": 3504,
+      "path": "/private/tmp/cyrinx-spike-5-sounder-20260718/artifacts/spikes/rank5-pixel-mac-20260718/F0-forward-vol30-lr/android-route.logcat.txt",
+      "semantically_inspected": false,
+      "sha256": "69815906213cf11fd2f50a99620f4471ea1cfcb75cc57f93f60a8769d15fe0fc"
+    },
+    {
+      "bytes": 4316416,
+      "path": "/private/tmp/cyrinx-spike-5-sounder-20260718/artifacts/spikes/rank5-pixel-mac-20260718/F0-forward-vol30-lr/rx-pixel-stereo-s16le.pcm",
+      "semantically_inspected": false,
+      "sha256": "b59680373f6d582158f39727e330530b768a3b472dde8243c37baf2fae48d5e5"
+    },
+    {
+      "bytes": 7480832,
+      "path": "/private/tmp/cyrinx-spike-5-sounder-20260718/artifacts/spikes/rank5-pixel-mac-20260718/F0-forward-vol30-lr/tx-stereo-f32le.pcm",
+      "semantically_inspected": false,
+      "sha256": "fba14bd882679c8abac430ea2c29f87a61a99c9ce969ea26c082216d261a8360"
+    },
+    {
+      "bytes": 11011,
+      "path": "/private/tmp/cyrinx-spike-5-sounder-20260718/artifacts/spikes/rank5-pixel-mac-20260718/P0-passive/passive-analysis.json",
+      "semantically_inspected": true,
+      "sha256": "c53814dfed618f75a00380cff50882ab34030814de8780522f011c04f06b7583"
+    },
+    {
+      "bytes": 6490,
+      "path": "/private/tmp/cyrinx-spike-5-sounder-20260718/artifacts/spikes/rank5-pixel-mac-20260718/R1-reverse-vol25-lr/acquisition.json",
+      "semantically_inspected": true,
+      "sha256": "8a93b8682789058419683d638d42f8f6d03df5f4fc5013fabc08f83dac02d603"
+    },
+    {
+      "bytes": 441135,
+      "path": "/private/tmp/cyrinx-spike-5-sounder-20260718/artifacts/spikes/rank5-pixel-mac-20260718/R1-reverse-vol25-lr/analysis.json",
+      "semantically_inspected": true,
+      "sha256": "2fedf444cf8a402751ef02e80ea3b723225d0d0d16638d97924b2184204184af"
+    },
+    {
+      "bytes": 4489212,
+      "path": "/private/tmp/cyrinx-spike-5-sounder-20260718/artifacts/spikes/rank5-pixel-mac-20260718/R1-reverse-vol25-lr/rx-mac-mono-f32le.pcm",
+      "semantically_inspected": false,
+      "sha256": "514dad561b9f22e80b5ca5851dec572846407e32be69569329495e9b211dfd5d"
+    },
+    {
+      "bytes": 7480832,
+      "path": "/private/tmp/cyrinx-spike-5-sounder-20260718/artifacts/spikes/rank5-pixel-mac-20260718/R1-reverse-vol25-lr/tx-pixel-stereo-f32le.pcm",
+      "semantically_inspected": false,
+      "sha256": "fba14bd882679c8abac430ea2c29f87a61a99c9ce969ea26c082216d261a8360"
+    },
+    {
+      "bytes": 6490,
+      "path": "/private/tmp/cyrinx-spike-5-sounder-20260718/artifacts/spikes/rank5-pixel-mac-20260718/R2-reverse-vol25-rl/acquisition.json",
+      "semantically_inspected": true,
+      "sha256": "a6241ec057a3f88162b92e875c7322e34573542759bf1882b6df18279218c98d"
+    },
+    {
+      "bytes": 441318,
+      "path": "/private/tmp/cyrinx-spike-5-sounder-20260718/artifacts/spikes/rank5-pixel-mac-20260718/R2-reverse-vol25-rl/analysis.json",
+      "semantically_inspected": true,
+      "sha256": "c09f9ca5723de00506cb94f1c9b17579abb8280567edb2abf8f53607c1c8c660"
+    },
+    {
+      "bytes": 4489212,
+      "path": "/private/tmp/cyrinx-spike-5-sounder-20260718/artifacts/spikes/rank5-pixel-mac-20260718/R2-reverse-vol25-rl/rx-mac-mono-f32le.pcm",
+      "semantically_inspected": false,
+      "sha256": "05249cf2d98d94a35573496f4da04332e6cc6fdd0f4d87d3ead2ff2db7e17074"
+    },
+    {
+      "bytes": 7480832,
+      "path": "/private/tmp/cyrinx-spike-5-sounder-20260718/artifacts/spikes/rank5-pixel-mac-20260718/R2-reverse-vol25-rl/tx-pixel-stereo-f32le.pcm",
+      "semantically_inspected": false,
+      "sha256": "0ed435fa8343ff8a006af7f32fe65d68abbf86432827aa377d02af0ca9075900"
+    },
+    {
+      "bytes": 5711,
+      "path": "/private/tmp/cyrinx-spike-5-sounder-20260718/artifacts/spikes/rank5-pixel-mac-20260718/S-M-mac-self-vol30-lr/acquisition.json",
+      "semantically_inspected": true,
+      "sha256": "f747af0fb659fa7d77f3ec58b0ff1e06de028a7726b0859113eabc466faabead"
+    },
+    {
+      "bytes": 446427,
+      "path": "/private/tmp/cyrinx-spike-5-sounder-20260718/artifacts/spikes/rank5-pixel-mac-20260718/S-M-mac-self-vol30-lr/analysis.json",
+      "semantically_inspected": true,
+      "sha256": "0fd7225efb394ebe3f019e581a4ea65b50a4004a2fa348870f825e9149970175"
+    },
+    {
+      "bytes": 3932416,
+      "path": "/private/tmp/cyrinx-spike-5-sounder-20260718/artifacts/spikes/rank5-pixel-mac-20260718/S-M-mac-self-vol30-lr/rx-mac-self-mono-f32le.pcm",
+      "semantically_inspected": false,
+      "sha256": "2e9159cd2113497698b30a924d48cbdd9ccf83ba490e094ef21e2bbfe8ce44b6"
+    },
+    {
+      "bytes": 7480832,
+      "path": "/private/tmp/cyrinx-spike-5-sounder-20260718/artifacts/spikes/rank5-pixel-mac-20260718/S-M-mac-self-vol30-lr/tx-mac-stereo-f32le.pcm",
+      "semantically_inspected": false,
+      "sha256": "fba14bd882679c8abac430ea2c29f87a61a99c9ce969ea26c082216d261a8360"
+    },
+    {
+      "bytes": 10322,
+      "path": "/private/tmp/cyrinx-spike-5-sounder-20260718/artifacts/spikes/rank5-pixel-mac-20260718/preregistration.json",
+      "semantically_inspected": true,
+      "sha256": "582d1a16b0e60590de9defeeee95d0c0e3e0ef08300cdc86456e16a049bb0521"
+    },
+    {
+      "bytes": 8769,
+      "path": "/private/tmp/cyrinx-spike-5-sounder-20260718/artifacts/spikes/rank5-pixel-mac-20260718/waveform-manifest.json",
+      "semantically_inspected": true,
+      "sha256": "3cb92a7fb8086bd3978260a03fbbc9cd9e07fe2acae043c4e5d89da753b9a18a"
+    },
+    {
+      "bytes": 9543,
+      "path": "/private/tmp/cyrinx-spike-8d-effective-sinr-20260718/artifacts/spikes/spike8d-effective-sinr-20260718/preregistration.json",
+      "semantically_inspected": true,
+      "sha256": "c23250b4fd69d89ae765f7b21f023f081377ad3db6a395cfa2a50c6c1ced4b65"
+    },
+    {
+      "bytes": 26409,
+      "path": "/private/tmp/cyrinx-spike-8d-effective-sinr-20260718/scratch/hw20k/effective_sinr_loading.py",
+      "semantically_inspected": true,
+      "sha256": "b492aa4d83401af8f09b564b4b1992c33ccb2c72a369ea6f7d3b2156c7799e20"
+    }
+  ],
+  "quantitative_result": {
+    "catastrophic_optimistic_selections": null,
+    "oracle_regret_percent": null,
+    "p10_net_goodput_delta_percent": null,
+    "physically_observed_alternate_policy_count": 0,
+    "recovery_percent_by_alternate_policy": null,
+    "required_policy_count": 4,
+    "selected_whole_runs": 4,
+    "unique_payload_hash_count": 1,
+    "unique_physically_transmitted_profile_count": 1
+  },
+  "raw_pcm_semantically_inspected": false,
+  "schema": "cyrinx.spike8d.offline-audit.v1"
+}
