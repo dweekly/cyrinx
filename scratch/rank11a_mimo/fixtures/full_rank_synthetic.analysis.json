@@ -1,0 +1,282 @@
+{
+  "all_geometry_gates_pass": true,
+  "capacity": {
+    "best_speaker_by_bin": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "best_speaker_simo_cp_inclusive_bps": 986.4784746275263,
+    "best_speaker_simo_logdet_bits_per_bin": [
+      4.70274997059343,
+      4.6995318667411,
+      4.700938299890257,
+      4.702092643980497,
+      4.698295381058955,
+      4.69997417489417,
+      4.703219228409058,
+      4.705713118891554,
+      4.70737776156122,
+      4.70224817789185
+    ],
+    "best_speaker_simo_logdet_bits_per_ofdm_use": 47.022140623912094,
+    "effective_rank": {
+      "median": 1.8628184500750047,
+      "minimum": 1.8591077838586396,
+      "p10": 1.859112559931531
+    },
+    "equal_power_mimo_cp_inclusive_bps": 1426.7631948596177,
+    "equal_power_mimo_logdet_bits_per_bin": [
+      6.813966667443274,
+      6.804343089897173,
+      6.801291554998965,
+      6.8084486611694475,
+      6.796463870821661,
+      6.799672506256229,
+      6.79440373671931,
+      6.795577509505957,
+      6.795596690365607,
+      6.7992813344641485
+    ],
+    "equal_power_mimo_logdet_bits_per_ofdm_use": 68.00904562164177,
+    "gmi_supported_frozen_allocation_logdet_bits_per_ofdm_use": 68.00904562164176,
+    "gmi_supported_frozen_allocation_logdet_ratio": 1.4463196426037914,
+    "logdet_ratio": 1.4463196426037916,
+    "singular_values_by_bin": [
+      [
+        16.676870158670773,
+        11.44405298294523
+      ],
+      [
+        16.686236347264472,
+        11.39322804615131
+      ],
+      [
+        16.71098037535047,
+        11.361175587625787
+      ],
+      [
+        16.743913208827188,
+        11.369615177151744
+      ],
+      [
+        16.734842968502612,
+        11.321797280373774
+      ],
+      [
+        16.75314050507553,
+        11.323001588694494
+      ],
+      [
+        16.773313925899323,
+        11.284442787939401
+      ],
+      [
+        16.783319154288876,
+        11.282484848508131
+      ],
+      [
+        16.783448829582856,
+        11.282477451363944
+      ],
+      [
+        16.758264938658765,
+        11.317491123514273
+      ]
+    ]
+  },
+  "claim_boundary": "Synthetic matrices validate arithmetic only and cannot satisfy the Rank 11a OTA gate.",
+  "decision": "SYNTHETIC_VALIDATION_ONLY",
+  "evidence_class": "synthetic",
+  "gates": {
+    "amplitude_cv_at_most_0_15": true,
+    "fixed_sum_digital_sample_power": true,
+    "mode2_qpsk_rate_half_on_at_least_40_percent_bins": true,
+    "one_mib_net_gain_at_least_1_35": true,
+    "per_speaker_peak_limit": true,
+    "repeat_coherence_at_least_0_95": true,
+    "residual_phase_sd_at_most_15_degrees": true
+  },
+  "geometry": "deterministic_full_rank_fixture",
+  "gmi": {
+    "available": true,
+    "gmi_bits_per_symbol_by_mode_and_bin": {
+      "1": {
+        "100": 1.996752552683507,
+        "101": 1.998129744643869,
+        "102": 1.9967027506386053,
+        "103": 1.9963576376701868,
+        "104": 1.9971492690525552,
+        "105": 1.9968314286529465,
+        "96": 1.9979227607691263,
+        "97": 1.9966691970270725,
+        "98": 1.9979350229941994,
+        "99": 1.99685798803722
+      },
+      "2": {
+        "100": 1.9766758401945397,
+        "101": 1.9696929554103093,
+        "102": 1.9787624350638897,
+        "103": 1.9813332909425216,
+        "104": 1.977418401091221,
+        "105": 1.9767798261935419,
+        "96": 1.9792048674718214,
+        "97": 1.976578861591938,
+        "98": 1.9744237401561164,
+        "99": 1.9736937428961954
+      }
+    },
+    "observed_mode2_qpsk_rate_half_bin_fraction": 1.0,
+    "threshold_bits_per_qpsk_symbol": 1.0
+  },
+  "identifiability_reasons": [],
+  "identifiable_phase_coherent_matrix": true,
+  "promotion_gate_evaluable": false,
+  "schema": "cyrinx.rank11a.matrix-analysis.v2",
+  "session_accounting": {
+    "available": true,
+    "frozen_allocation": {
+      "allocated_bin_count_by_mode": {
+        "1": 10,
+        "2": 10
+      },
+      "allocated_bins_by_mode": {
+        "1": [
+          96,
+          97,
+          98,
+          99,
+          100,
+          101,
+          102,
+          103,
+          104,
+          105
+        ],
+        "2": [
+          96,
+          97,
+          98,
+          99,
+          100,
+          101,
+          102,
+          103,
+          104,
+          105
+        ]
+      },
+      "allocation_id": "synthetic-calibration-all-bins-qpsk-r12-v1",
+      "allocation_sha256": "7d8b702b6ba1ab0a0645df1b3f970381a123a7c5ff876f231d0092ba50e8828b",
+      "available": true,
+      "frozen_before_held_out": true,
+      "information_bits_per_ofdm_symbol_by_mode": {
+        "1": 10.0,
+        "2": 10.0
+      },
+      "mcs_by_mode": {
+        "1": {
+          "bits_per_subcarrier": 2.0,
+          "code_rate": 0.5,
+          "required_gmi_bits_per_symbol": 1.0
+        },
+        "2": {
+          "bits_per_subcarrier": 2.0,
+          "code_rate": 0.5,
+          "required_gmi_bits_per_symbol": 1.0
+        }
+      },
+      "power_policy": {
+        "one_mode_bin_total_power_fraction": 1.0,
+        "sum_digital_sample_power_matches_control": true,
+        "two_mode_bin_power_fractions": [
+          0.5,
+          0.5
+        ]
+      },
+      "source": "calibration_repeats_only",
+      "total_information_bits_per_ofdm_symbol": 20.0,
+      "unsupported_allocated_bins_contribute_delivered_bits": false,
+      "usable_bin_count_by_mode": {
+        "1": 10,
+        "2": 10
+      },
+      "usable_bins_by_mode": {
+        "1": [
+          96,
+          97,
+          98,
+          99,
+          100,
+          101,
+          102,
+          103,
+          104,
+          105
+        ],
+        "2": [
+          96,
+          97,
+          98,
+          99,
+          100,
+          101,
+          102,
+          103,
+          104,
+          105
+        ]
+      },
+      "usable_payload_fraction_by_mode": {
+        "1": 1.0,
+        "2": 1.0
+      }
+    },
+    "recovery_accounting": {
+      "application_order": "after per-mode per-bin held-out GMI masking",
+      "control_source": "explicit_synthetic_model",
+      "mimo_residual_source": "explicit_synthetic_model"
+    },
+    "recovery_fractions_after_gmi_masking": {
+      "best_speaker_simo": 0.99,
+      "two_mode_mimo": 0.99
+    },
+    "scheduled_ceiling_bps": {
+      "best_speaker_simo": 182.1286283437678,
+      "two_mode_mimo": 364.2572566875356
+    },
+    "setup_s": {
+      "best_speaker_simo": 0.15,
+      "two_mode_mimo": 0.6
+    },
+    "transfers": {
+      "1MiB": {
+        "best_speaker_simo_duration_s": 46524.090202020205,
+        "best_speaker_simo_net_bps": 180.3067607249146,
+        "ratio": 1.9999548631129132,
+        "two_mode_mimo_duration_s": 23262.5701010101,
+        "two_mode_mimo_net_bps": 360.60538296392934
+      },
+      "64KiB": {
+        "best_speaker_simo_duration_s": 2907.896262626263,
+        "best_speaker_simo_net_bps": 180.29804114349318,
+        "ratio": 1.9992780891049864,
+        "two_mode_mimo_duration_s": 1454.4731313131313,
+        "two_mode_mimo_net_bps": 360.46592316673525
+      }
+    }
+  },
+  "stability": {
+    "median_repeat_coherence": 0.9999707068969017,
+    "minimum_repeat_coherence": 0.9999339395140501,
+    "p90_amplitude_coefficient_of_variation": 0.005054855640356592,
+    "p90_residual_phase_sd_degrees": 0.24093557544598115
+  }
+}

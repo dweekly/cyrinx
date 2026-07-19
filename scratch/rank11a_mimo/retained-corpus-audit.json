@@ -1,0 +1,168 @@
+{
+  "claim_boundary": "This audit rejects a retained-replay MIMO feasibility claim. It does not establish that the physical devices lack usable spatial rank; a new phase-continuous stereo acquisition is required.",
+  "decision": "STOP_NOT_IDENTIFIABLE",
+  "formal_stop_reasons": [
+    "No tracked raw audio or numeric capture array exists.",
+    "The qualified Pixel corpus has two microphone rows but only one independently driven speaker column.",
+    "The left/right tone-check design uses separate captures and therefore lacks common column phase.",
+    "Scalar response summaries omit a jointly estimated 2x2 H[k], repeat matrices, and receiver noise covariance.",
+    "The required five matrices in each of near-field, centered 3-ft, and lateral-offset 3-ft are absent."
+  ],
+  "full_phase_coherent_2x2_matrix_count": 0,
+  "rank11a_evidence_audit": [
+    {
+      "finding": "The accepted Pixel campaign is one MacBook left-speaker column observed on two Pixel inputs.",
+      "path": "scratch/hw20k/evidence/pixel7a-cyrinx2-2026-07-17/results-ledger.json",
+      "present": true,
+      "rank11a_usable": false,
+      "rejection_reasons": [
+        "physical_cell.playback explicitly says built-in left speaker only",
+        "the ledger says raw manifests and captures are ignored local artifacts",
+        "no complex per-bin H[k], noise covariance, or repeat matrices are retained"
+      ],
+      "sha256": "da62fcf90ff84a52b295edb9af7cf679595c0657932f994732718473994cc1f5",
+      "size_bytes": 9710
+    },
+    {
+      "finding": "The route qualification establishes two direct Pixel microphone rows but only speaker channel 0.",
+      "path": "scratch/hw20k/evidence/pixel7a-faceup-volume50-v1/qualification.json",
+      "present": true,
+      "rank11a_usable": false,
+      "rejection_reasons": [
+        "scope.speaker_channels is [0]",
+        "referenced captures are absent from this isolated worktree",
+        "qualification statistics do not retain complex matrix columns"
+      ],
+      "sha256": "ec28faa1b67bfcea8a615ee4b6dd6d85f3427d79fae075e30b5b6ffd84ff165d",
+      "size_bytes": 6694
+    },
+    {
+      "finding": "The Android route declares bottom and back microphone channel mappings.",
+      "path": "scratch/hw20k/evidence/pixel7a-faceup-volume50-v1/route-signature.json",
+      "present": true,
+      "rank11a_usable": false,
+      "rejection_reasons": [
+        "a receive route signature contains no transmit observation",
+        "logical direct mappings do not by themselves prove sample independence",
+        "no probe, common phase, or noise record is present"
+      ],
+      "sha256": "da2f520fc6c08d4b35565c42a56db2ea0d7828db0a16d9064ffef4339b9b77b6",
+      "size_bytes": 1572
+    },
+    {
+      "finding": "The summary has two Mac-to-Android SNR rows and one reverse row, not a complex matrix.",
+      "path": "scratch/hw20k/data/channel.json",
+      "present": true,
+      "rank11a_usable": false,
+      "rejection_reasons": [
+        "rows retain SNR and noise PSD only, not complex H[k]",
+        "there is no second independently driven Mac speaker column",
+        "there are no jointly phase-referenced repeats or receiver noise covariance"
+      ],
+      "sha256": "bc6fb8c19134133830c408cff59a6e2653c9fc2f7ef1f9822b6eff1d2e78a3be",
+      "size_bytes": 75645
+    },
+    {
+      "finding": "This is a scalar phone-speaker phase-jitter summary at selected tones.",
+      "path": "scratch/hw20k/data/ios_phase_coherence.json",
+      "present": true,
+      "rank11a_usable": false,
+      "rejection_reasons": [
+        "it is not a two-output/two-input acquisition",
+        "it does not retain per-bin complex path matrices or receiver covariance"
+      ],
+      "sha256": "890143d16e19feb732b16366cc667dc16e86fa0bae3930d1821ef78bd01df5fe",
+      "size_bytes": 2470
+    },
+    {
+      "finding": "This retains one scalar swept path's magnitude and phase.",
+      "path": "scratch/hw20k/data/freqresp/mac2pixel_dist_5cm_diag.json",
+      "present": true,
+      "rank11a_usable": false,
+      "rejection_reasons": [
+        "speaker and microphone port identities are not a complete 2x2 map",
+        "no common-reference second transmit column or repeated matrices exist",
+        "room-tone covariance is absent"
+      ],
+      "sha256": "08536f67a912105079a034449477201fc7261b974261abb2c1dc74df0d9d7173",
+      "size_bytes": 242340
+    },
+    {
+      "finding": "The historical runner specifies separate left and right acquisitions.",
+      "path": "scratch/hw20k/tone_check_hardware.py",
+      "present": true,
+      "rank11a_usable": false,
+      "rejection_reasons": [
+        "separate captures do not establish channel-column phase",
+        "the runner explicitly states that it cannot prove diversity or MIMO",
+        "source code is an acquisition plan, not retained OTA evidence"
+      ],
+      "sha256": "2d53afa076069f1de028248c909853be475e16129caed57b9cef685a7ba6aa8c",
+      "size_bytes": 82086
+    },
+    {
+      "finding": "A historical summary says blind L+R playback raised EVM and right arrived weaker.",
+      "path": "docs/NEGATIVE_FINDINGS.md",
+      "present": true,
+      "rank11a_usable": false,
+      "rejection_reasons": [
+        "blind duplicate playback is not an orthogonal matrix probe",
+        "the underlying raw left/right captures and repeat provenance are not tracked",
+        "the summary cannot recover a full phase-coherent H[k]"
+      ],
+      "sha256": "0af1a96ea45436cb1a8418ea8ac11746afa9f1a401d75ee5ee4a8fe53cfe0b7a",
+      "size_bytes": 14354
+    }
+  ],
+  "referenced_but_unavailable_artifact_count": 9,
+  "referenced_but_unavailable_artifacts": [
+    "artifacts/bench/2026-07-09-moto-goodput-eightpair-64qam-r56-cp96-p16-amp013-balanced-v1.manifest.json",
+    "artifacts/bench/2026-07-16-pixel7a-faceup-ac-on-vol30-amp018-cp240-matched-descending-exec2.manifest.json",
+    "artifacts/bench/2026-07-16-pixel7a-faceup-ac-on-vol50-amp018-cp240-level-smoke-exec1.manifest.json",
+    "artifacts/bench/2026-07-16-pixel7a-faceup-ac-on-vol50-amp018-cp240-reverse-order-confirm-exec1.manifest.json",
+    "artifacts/bench/2026-07-16-pixel7a-faceup-ac-on-vol70-amp018-cp240-matched-ascending-exec1.manifest.json",
+    "artifacts/hil/2026-07-16-pixel7a-faceup-ac-on-level-ladder-v1/macbook-microphone-vol30-amp018-matched-descending-exec2.json",
+    "artifacts/hil/2026-07-16-pixel7a-faceup-ac-on-level-ladder-v1/macbook-microphone-vol50-amp018-reverse-order-confirm-exec1.json",
+    "artifacts/hil/2026-07-16-pixel7a-faceup-ac-on-level-ladder-v1/macbook-microphone-vol50-amp018-witness-exec1.json",
+    "artifacts/hil/2026-07-16-pixel7a-faceup-ac-on-level-ladder-v1/macbook-microphone-vol70-amp018-matched-ascending-exec1.json"
+  ],
+  "scanned_hw20k_summaries": [
+    "scratch/hw20k/data/adaptive.jsonl",
+    "scratch/hw20k/data/adaptive_demo.jsonl",
+    "scratch/hw20k/data/adaptive_demo_motog.jsonl",
+    "scratch/hw20k/data/baselines.json",
+    "scratch/hw20k/data/channel.json",
+    "scratch/hw20k/data/contact_vs_cloth.json",
+    "scratch/hw20k/data/desk_noncoherent.json",
+    "scratch/hw20k/data/env_sweep.jsonl",
+    "scratch/hw20k/data/freqresp/mac2pixel_dist_5cm_diag.json",
+    "scratch/hw20k/data/freqresp/mac2pixel_motog_palmrest.json",
+    "scratch/hw20k/data/freqresp/mac2pixel_palmrest_stand_fan.json",
+    "scratch/hw20k/data/freqresp/pixel2mac_motog_palmrest.json",
+    "scratch/hw20k/data/freqresp/pixel2mac_palmrest_stand_fan.json",
+    "scratch/hw20k/data/geometry.jsonl",
+    "scratch/hw20k/data/geometry_setup.json",
+    "scratch/hw20k/data/ios_campaign.jsonl",
+    "scratch/hw20k/data/ios_phase_coherence.json",
+    "scratch/hw20k/data/perbin_gain.json",
+    "scratch/hw20k/data/snr_a2m.json",
+    "scratch/hw20k/data/snr_m2a.json",
+    "scratch/hw20k/data/snr_macloop.json",
+    "scratch/hw20k/data/sweep.jsonl",
+    "scratch/hw20k/data/ultra_channel.json",
+    "scratch/hw20k/data/ultra_snr_a2m.json",
+    "scratch/hw20k/data/ultra_snr_m2a.json",
+    "scratch/hw20k/evidence/historical-metric-corrections-2026-07-17/results-ledger.json",
+    "scratch/hw20k/evidence/pixel7a-cyrinx2-2026-07-17/results-ledger.json",
+    "scratch/hw20k/evidence/pixel7a-faceup-volume50-v1/qualification.json",
+    "scratch/hw20k/evidence/pixel7a-faceup-volume50-v1/route-signature.json",
+    "scratch/hw20k/evidence/pixel7a-faceup-volume50-v1/target-provenance.json"
+  ],
+  "scanned_hw20k_summary_count": 30,
+  "schema": "cyrinx.rank11a.retained-corpus-audit.v1",
+  "scope": "git-tracked files in the isolated worktree only",
+  "source_revision": "61558c2",
+  "tracked_file_count": 351,
+  "tracked_numeric_array_files": [],
+  "tracked_recording_files": []
+}
