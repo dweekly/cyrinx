@@ -1,0 +1,154 @@
+{
+  "schema": "cyrinx.spike-8c-dfts-ofdm-preregistration.v1",
+  "frozen_at_utc": "2026-07-18T19:25:13Z",
+  "status": "frozen-before-candidate-outcome-inspection",
+  "scope": "offline simulation and deterministic replay only; no OTA and no Sources integration",
+  "hypothesis": "At the accepted Cyrinx 2 occupied band, payload schedule, coding rate, and equal digital peak, localized DFT-spread OFDM reduces the held-out 99.9th-percentile payload crest factor by at least 3 dB relative to conventional OFDM without regressing the coded room-response probe or the frozen digital spectral mask.",
+  "incumbent": {
+    "id": "cyrinx2-conventional-ofdm-cp96-p16-64qam-r23-sym64",
+    "mapping": "64-QAM data directly occupies every non-pilot used FFT bin; known QPSK pilots occupy physical used-bin positions 0,16,...,928",
+    "receiver": "two conventional full-band sync symbols estimate the per-bin channel; each payload symbol uses its physical comb pilots for one common complex correction before 64-QAM demapping"
+  },
+  "candidate": {
+    "id": "localized-dfts-ofdm-m935-unitary-v1",
+    "name_constraint": "localized DFT-spread OFDM; never label this candidate SC-FDE",
+    "logical_vector_length": 935,
+    "mapping": "form a 935-element logical vector in ascending allocation order, with QPSK pilots at logical positions 0,16,...,928 and the identical 64-QAM values at all other positions; apply numpy.fft.fft(vector,norm='ortho'); map its 935 outputs without permutation to contiguous physical FFT bins 47...981; Hermitian real IFFT remains 2048 points",
+    "receiver": "estimate and one-tap-equalize physical bins with the same two conventional sync symbols; apply numpy.fft.ifft(equalized,norm='ortho'); use recovered logical pilots for one common complex correction; demap the remaining logical positions",
+    "forbidden_changes": [
+      "no interleaved or distributed FDMA mapping",
+      "no alternate DFT length",
+      "no pilot redesign or timing-slope estimator added after results",
+      "no pre-equalization",
+      "no candidate-specific coding, CP, training, band, payload schedule, or data-bit selection"
+    ]
+  },
+  "phy": {
+    "sample_rate_hz": 48000,
+    "nfft": 2048,
+    "cp_samples": 96,
+    "f_lo_hz": 1100.0,
+    "f_hi_hz": 23000.0,
+    "bin_lo": 47,
+    "bin_hi": 981,
+    "used_bins": 935,
+    "pilot_every": 16,
+    "pilot_slots": 59,
+    "data_slots": 876,
+    "bits_per_data_slot": 6,
+    "code_rate": "2/3",
+    "data_symbols": 64,
+    "coded_capacity_bits": 336384,
+    "production_crc_blocks_per_frame": 107,
+    "production_payload_bytes_per_frame": 27392,
+    "chirp_samples_accounted": 4096,
+    "post_chirp_guard_samples_accounted": 2048,
+    "sync_symbols": 2,
+    "frame_samples_accounted": 147648,
+    "five_frame_gap_samples": 12000,
+    "five_frame_scheduled_span_samples": 786240,
+    "five_frame_perfect_recovery_ceiling_bps": 66891.33089133089
+  },
+  "pilots_and_training": {
+    "pilot_values": "existing modem.pilot_symbols with seed 0xBEEF",
+    "sync_values": "existing modem.sync_symbol_freq for which=0 and which=1",
+    "sync_waveform": "conventional OFDM for both arms, scaled once to digital peak 0.18 and therefore sample-identical between arms",
+    "pilot_accounting": "59 known QPSK values consume the same 59 of 935 logical/physical allocation slots in every payload symbol in both arms",
+    "timing_and_clock_model": "known symbol boundaries, no CFO, no SRO, and no timing drift; the frozen receiver estimates only a common complex residual per payload symbol",
+    "preamble_accounting": "the chirp and 2048-sample guard are included in schedule arithmetic but omitted from channel simulation because acquisition is not the hypothesis"
+  },
+  "normalization": {
+    "primary": "equal digital peak",
+    "peak": 0.18,
+    "payload_limiter": "apply a symmetric hard limit at 3.3 times each arm's own pre-limit payload RMS over all 64 symbols, then independently normalize each limited payload body to peak 0.18",
+    "crest_factor_primary": "20*log10(max(abs(x))/rms(x)) on the complete 64-symbol payload body including CP, before the 3.3-sigma limiter",
+    "whole_body_diagnostic": "also report sync-plus-payload and post-limiter crest factors",
+    "mean_power": "report signed mean, RMS, and mean-square value after equal-peak payload normalization",
+    "matched_rms": "not a deciding cell and not run OTA; derivable only as a labeled diagnostic"
+  },
+  "coded_probe": {
+    "scope_limit": "one independently CRC-protected 256-byte probe is spread across each otherwise full accepted-schedule frame; this is not a claim of decoding all 107 production blocks",
+    "payload": "256 deterministic random bytes followed by existing big-endian CRC32",
+    "encoder": "existing K=7 (171,133) convolutional code, six zero tail bits, then existing rate-2/3 puncture pattern [1,1,0,1]",
+    "placement": "punctured bit j occupies flattened symbol-major/data-slot-major/MSB-first position (offset + j*65537) mod 336384; gcd(65537,336384)=1; offset is the frame seed mod 336384; all other positions contain deterministic random bits",
+    "demapper": "max-log 64-QAM LLRs with variance estimated from that arm's known pilots and sync residuals only",
+    "decoder": "soft Viterbi, forced terminal state zero, followed by CRC32",
+    "interpretation": "CRC recovery is a paired coded probe of the waveform/channel, not production frame-wide goodput"
+  },
+  "randomization": {
+    "master_seed": 2026071808,
+    "frame_seed_derivation": "first 8 bytes, big-endian, of SHA256('cyrinx-spike-8c-v1\\0' + decimal master seed + '\\0' + cell id + '\\0' + decimal local frame index)",
+    "paired_inputs": "candidate and incumbent receive identical logical pilots, data labels, CRC-probe bits, and additive-noise samples",
+    "bootstrap_seed": 2026071809,
+    "frame_order": "cells execute in the listed order; local frame indices execute 0...999; arm calculations are incumbent then candidate but no adaptive decisions are permitted"
+  },
+  "cells": [
+    {"id": "awgn-snr18", "taps": [[0, 1.0]], "snr_db": 18.0, "provenance": "modelled identity channel"},
+    {"id": "awgn-snr26", "taps": [[0, 1.0]], "snr_db": 26.0, "provenance": "modelled identity channel"},
+    {"id": "golden-mic0-snr18", "taps": [[0, 1.0], [37, 0.45], [113, -0.22], [260, 0.12]], "snr_db": 18.0, "provenance": "Tests/Fixtures/golden deterministic RX_CHANNEL_TAPS; model fixture, not a measured RIR"},
+    {"id": "golden-mic0-snr26", "taps": [[0, 1.0], [37, 0.45], [113, -0.22], [260, 0.12]], "snr_db": 26.0, "provenance": "Tests/Fixtures/golden deterministic RX_CHANNEL_TAPS; model fixture, not a measured RIR"},
+    {"id": "golden-mic1-snr18", "taps": [[0, 1.0], [53, -0.38], [141, 0.19], [230, -0.09]], "snr_db": 18.0, "provenance": "Tests/Fixtures/golden deterministic RX2_CHANNEL_TAPS; model fixture, not a measured RIR"},
+    {"id": "golden-mic1-snr26", "taps": [[0, 1.0], [53, -0.38], [141, 0.19], [230, -0.09]], "snr_db": 26.0, "provenance": "Tests/Fixtures/golden deterministic RX2_CHANNEL_TAPS; model fixture, not a measured RIR"},
+    {"id": "model-short-snr18", "taps": [[0, 1.0], [19, 0.31], [57, -0.18], [91, 0.09]], "snr_db": 18.0, "provenance": "synthetic CP-bounded sparse response"},
+    {"id": "model-short-snr26", "taps": [[0, 1.0], [19, 0.31], [57, -0.18], [91, 0.09]], "snr_db": 26.0, "provenance": "synthetic CP-bounded sparse response"},
+    {"id": "model-long-snr18", "taps": [[0, 1.0], [71, 0.38], [173, -0.23], [347, 0.12]], "snr_db": 18.0, "provenance": "synthetic CP-exceeding sparse response"},
+    {"id": "model-long-snr26", "taps": [[0, 1.0], [71, 0.38], [173, -0.23], [347, 0.12]], "snr_db": 26.0, "provenance": "synthetic CP-exceeding sparse response"}
+  ],
+  "sample_count_and_split": {
+    "frames_per_cell": 1000,
+    "total_frames": 10000,
+    "training_local_indices": "0...199 inclusive",
+    "training_frames_total": 2000,
+    "held_out_local_indices": "200...999 inclusive",
+    "held_out_frames_total": 8000,
+    "deciding_data": "held-out only",
+    "retained_capture_availability": "no raw retained room PCM or measured RIR is tracked in this worktree; only the explicitly identified deterministic/modelled tap fixtures are admissible"
+  },
+  "noise": {
+    "definition": "for each paired frame, channel both equal-peak arms first; set Gaussian noise RMS from the incumbent payload receive RMS and the cell SNR; add the exact same sample-valued noise vector to both arms",
+    "formula": "noise_rms = incumbent_channelled_payload_rms / 10**(snr_db/20)",
+    "reason": "preserves the fixed-peak hypothesis instead of silently granting each arm equal received RMS"
+  },
+  "spectral_measurement": {
+    "input": "post-limiter, equal-peak first payload symbol including CP from every held-out frame",
+    "estimator": "accumulate squared magnitude of an 8192-point real FFT with a rectangular observation and normalize by total spectral energy",
+    "out_of_band": "absolute frequencies below 1100 Hz or above 23000 Hz",
+    "guard_peak": "maximum normalized bin power below 1000 Hz or above 23100 Hz",
+    "non_regression": "candidate out-of-band/in-band energy ratio may not exceed incumbent by more than 0.25 dB and candidate guard-peak level may not exceed incumbent by more than 1.0 dB"
+  },
+  "metrics": {
+    "primary": "held-out 99.9th-percentile pre-limiter payload crest-factor reduction in dB, incumbent minus candidate",
+    "reported": [
+      "training and held-out crest-factor quantiles",
+      "post-limiter and whole-body crest factor",
+      "signed mean, RMS, and mean-square power at fixed peak",
+      "coded-probe CRC recovery overall and by cell",
+      "payload EVM RMS median, p90, and p99 overall and by cell",
+      "hard coded-bit error rate before Viterbi",
+      "out-of-band/in-band energy and guard-peak spectral levels",
+      "Python prototype generation/receive wall time and candidate/incumbent ratio"
+    ]
+  },
+  "decision": {
+    "crest_factor_gate": "held-out q99.9 reduction >= 3.0 dB",
+    "coded_rir_gate": "on all held-out non-identity cells, the lower endpoint of a deterministic 20000-replicate cell-stratified paired bootstrap 95% interval for candidate-minus-incumbent CRC recovery is >= -0.005, and no individual RIR/SNR cell point difference is below -0.02",
+    "spectral_gate": "both frozen spectral non-regression limits pass",
+    "integrity_gate": "all deterministic unit/invariant tests pass, exactly 10000 frames finish, and no non-finite deciding metric occurs",
+    "proceed_ota": "permitted only if all four gates pass; permission means only that a separately preregistered bounded OTA screen may be designed, not that OTA ran or library integration is justified",
+    "stop": "if any gate fails, do not run OTA, redesign pilots, change mapping, or integrate; publish the failure and name the minimum next executable experiment"
+  },
+  "artifacts": [
+    "this preregistration JSON and its SHA256",
+    "deterministic implementation and tests",
+    "machine-readable held-out/training summary JSON",
+    "cell-level CSV without per-frame payload bytes",
+    "scientific report with exact command, code hash, runtime, limitations, and decision"
+  ],
+  "known_unmeasured_limits": [
+    "no speaker, microphone, OS dynamics/protection, clipping, THD, intermodulation, or acoustic SPL is modelled or measured",
+    "no measured retained room impulse response is available in the tracked checkout",
+    "known timing, no CFO/SRO, and oracle symbol boundaries make this less demanding than OTA acquisition/tracking",
+    "the one-block coded probe is not production frame-wide throughput",
+    "the Python compute ratio does not predict optimized C or mobile real-time cost"
+  ]
+}
