@@ -124,18 +124,9 @@ CYRINX_API cyrinx_status_t cyrinx_batch_decode(const cyrinx_profile_t *profile,
         }
     }
 
-    // Extract channel samples (full capture duration)
-    size_t primary_count = input->primary_count;
-    float *rx = (float *)malloc(primary_count * sizeof(float));
-    float *rx2 = NULL;
-    if (rx == NULL) {
-        return CYRINX_ERR_INTERNAL;
-    }
-
+    // Calculate the safe number of frames to extract without out-of-bounds reads
     size_t primary_stride = (input->channel_stride == 0) ? 1 : input->channel_stride;
-    for (size_t i = 0; i < primary_count; i++) {
-        rx[i] = input->primary_samples[i * primary_stride];
-    }
+    size_t num_frames = 0;
 
     int has_secondary = 0;
     if (input->channel_count >= 2) {
@@ -146,8 +137,32 @@ CYRINX_API cyrinx_status_t cyrinx_batch_decode(const cyrinx_profile_t *profile,
         }
     }
 
+    if (has_secondary && input->secondary_samples != NULL) {
+        size_t pf = input->primary_count / primary_stride;
+        size_t sf = input->secondary_count / primary_stride;
+        num_frames = (pf < sf) ? pf : sf;
+    } else if (has_secondary) {
+        if (input->primary_count > 1) {
+            num_frames = (input->primary_count - 1) / primary_stride;
+        } else {
+            num_frames = 0;
+        }
+    } else {
+        num_frames = input->primary_count / primary_stride;
+    }
+
+    float *rx = (float *)malloc(num_frames * sizeof(float));
+    float *rx2 = NULL;
+    if (rx == NULL) {
+        return CYRINX_ERR_INTERNAL;
+    }
+
+    for (size_t i = 0; i < num_frames; i++) {
+        rx[i] = input->primary_samples[i * primary_stride];
+    }
+
     if (has_secondary) {
-        rx2 = (float *)malloc(primary_count * sizeof(float));
+        rx2 = (float *)malloc(num_frames * sizeof(float));
         if (rx2 == NULL) {
             free(rx);
             return CYRINX_ERR_INTERNAL;
@@ -155,12 +170,14 @@ CYRINX_API cyrinx_status_t cyrinx_batch_decode(const cyrinx_profile_t *profile,
 
         const float *sec_ptr = input->secondary_samples;
         size_t secondary_stride = primary_stride;
+        size_t offset = 0;
         if (sec_ptr == NULL) {
-            sec_ptr = input->primary_samples + 1;
+            sec_ptr = input->primary_samples;
+            offset = 1;
         }
 
-        for (size_t i = 0; i < primary_count; i++) {
-            rx2[i] = sec_ptr[i * secondary_stride];
+        for (size_t i = 0; i < num_frames; i++) {
+            rx2[i] = sec_ptr[offset + i * secondary_stride];
         }
     }
 
@@ -176,8 +193,8 @@ CYRINX_API cyrinx_status_t cyrinx_batch_decode(const cyrinx_profile_t *profile,
     diag.abi_version = CYRINX_BULK_DIVERSITY_DIAGNOSTICS_ABI_VERSION;
 
     long decode_res = cyrinx_bulk_demodulate2_auto_v1_with_block_validity(
-        &cfg, rx, primary_count, rx2, rx2 ? primary_count : 0, out_payload, out_cap, &blocks_ok,
-        &blocks_total, &evm_rms, block_valid_mask, 256, &diag);
+        &cfg, rx, num_frames, rx2, rx2 ? num_frames : 0, out_payload, out_cap, &blocks_ok, &blocks_total,
+        &evm_rms, block_valid_mask, 256, &diag);
 
     free(rx);
     if (rx2) {
@@ -197,7 +214,7 @@ CYRINX_API cyrinx_status_t cyrinx_batch_decode(const cyrinx_profile_t *profile,
             out_result->blocks_ok = 0;
             out_result->blocks_total = geom.n_blocks;
             memset(out_result->block_valid_mask, 0, 256);
-            out_result->consumed_samples = primary_count;
+            out_result->consumed_samples = num_frames * primary_stride;
             out_result->produced_samples = 0;
             out_result->clipping_evidence = clipping_evidence;
             out_result->nonfinite_evidence = nonfinite_evidence;
@@ -228,7 +245,7 @@ CYRINX_API cyrinx_status_t cyrinx_batch_decode(const cyrinx_profile_t *profile,
         out_result->blocks_total = blocks_total;
         memcpy(out_result->block_valid_mask, block_valid_mask, 256);
 
-        out_result->consumed_samples = primary_count;
+        out_result->consumed_samples = num_frames * primary_stride;
         out_result->produced_samples = (size_t)decode_res;
         out_result->clipping_evidence = clipping_evidence;
         out_result->nonfinite_evidence = nonfinite_evidence;
@@ -303,9 +320,10 @@ CYRINX_API cyrinx_status_t cyrinx_batch_encode(const cyrinx_profile_t *profile, 
         out_result->evm_rms = 0.0;
         out_result->blocks_ok = geom.n_blocks;
         out_result->blocks_total = geom.n_blocks;
-        memset(out_result->block_valid_mask, 1, geom.n_blocks);
-        if (geom.n_blocks < 256) {
-            memset(out_result->block_valid_mask + geom.n_blocks, 0, 256 - geom.n_blocks);
+        size_t mask_len = (geom.n_blocks > 256) ? 256 : (size_t)geom.n_blocks;
+        memset(out_result->block_valid_mask, 1, mask_len);
+        if (mask_len < 256) {
+            memset(out_result->block_valid_mask + mask_len, 0, 256 - mask_len);
         }
         out_result->consumed_samples = 0;
         out_result->produced_samples = (size_t)samples_written;

@@ -44,49 +44,63 @@ static uint64_t cyrinx_fnv1a_64(const uint8_t *data, size_t len) {
     return hash;
 }
 
+static void write_uint32_be(uint8_t *buf, uint32_t val) {
+    buf[0] = (uint8_t)((val >> 24) & 0xFF);
+    buf[1] = (uint8_t)((val >> 16) & 0xFF);
+    buf[2] = (uint8_t)((val >> 8) & 0xFF);
+    buf[3] = (uint8_t)(val & 0xFF);
+}
+
+static void write_uint64_be(uint8_t *buf, uint64_t val) {
+    buf[0] = (uint8_t)((val >> 56) & 0xFF);
+    buf[1] = (uint8_t)((val >> 48) & 0xFF);
+    buf[2] = (uint8_t)((val >> 40) & 0xFF);
+    buf[3] = (uint8_t)((val >> 32) & 0xFF);
+    buf[4] = (uint8_t)((val >> 24) & 0xFF);
+    buf[5] = (uint8_t)((val >> 16) & 0xFF);
+    buf[6] = (uint8_t)((val >> 8) & 0xFF);
+    buf[7] = (uint8_t)(val & 0xFF);
+}
+
+static void write_double_be(uint8_t *buf, double val) {
+    union {
+        double d;
+        uint64_t u;
+    } u;
+    u.d = val;
+    write_uint64_be(buf, u.u);
+}
+
 static void serialize_profile_params(const cyrinx_profile_t *profile, uint8_t *buf) {
     size_t offset = 0;
 
-    memcpy(buf + offset, &profile->low_frequency_hz, 8);
+    write_double_be(buf + offset, profile->low_frequency_hz);
     offset += 8;
-    memcpy(buf + offset, &profile->high_frequency_hz, 8);
+    write_double_be(buf + offset, profile->high_frequency_hz);
     offset += 8;
 
-    uint32_t fft_size = profile->fft_size;
-    memcpy(buf + offset, &fft_size, 4);
+    write_uint32_be(buf + offset, profile->fft_size);
+    offset += 4;
+    write_uint32_be(buf + offset, profile->cyclic_prefix);
+    offset += 4;
+    write_uint32_be(buf + offset, profile->sample_rate);
+    offset += 4;
+    write_uint32_be(buf + offset, profile->pilot_every);
+    offset += 4;
+    write_uint32_be(buf + offset, profile->symbol_count);
+    offset += 4;
+    write_uint32_be(buf + offset, profile->modulation);
+    offset += 4;
+    write_uint32_be(buf + offset, profile->code_rate);
     offset += 4;
 
-    uint32_t cyclic_prefix = profile->cyclic_prefix;
-    memcpy(buf + offset, &cyclic_prefix, 4);
-    offset += 4;
-
-    uint32_t sample_rate = profile->sample_rate;
-    memcpy(buf + offset, &sample_rate, 4);
-    offset += 4;
-
-    uint32_t pilot_every = profile->pilot_every;
-    memcpy(buf + offset, &pilot_every, 4);
-    offset += 4;
-
-    uint32_t symbol_count = profile->symbol_count;
-    memcpy(buf + offset, &symbol_count, 4);
-    offset += 4;
-
-    uint32_t modulation = profile->modulation;
-    memcpy(buf + offset, &modulation, 4);
-    offset += 4;
-
-    uint32_t code_rate = profile->code_rate;
-    memcpy(buf + offset, &code_rate, 4);
-    offset += 4;
-
-    memcpy(buf + offset, &profile->amplitude, 8);
+    write_double_be(buf + offset, profile->amplitude);
     offset += 8;
-    memcpy(buf + offset, &profile->clip_sigma, 8);
+    write_double_be(buf + offset, profile->clip_sigma);
     offset += 8;
-    memcpy(buf + offset, &profile->chirp_f0, 8);
+    write_double_be(buf + offset, profile->chirp_f0);
     offset += 8;
-    memcpy(buf + offset, &profile->chirp_f1, 8);
+    write_double_be(buf + offset, profile->chirp_f1);
     offset += 8;
 }
 
@@ -211,6 +225,9 @@ int cyrinx_profile_get_by_index(size_t index, cyrinx_profile_t *out_profile) {
     if (out_profile == NULL) {
         return CYRINX_ERR_INVALID_ARGUMENT;
     }
+    if (!CYRINX_VALIDATE_ABI(out_profile, cyrinx_profile_t, CYRINX_PROFILE_ABI_VERSION)) {
+        return CYRINX_ERR_INVALID_ARGUMENT;
+    }
     size_t count = sizeof(g_profiles) / sizeof(g_profiles[0]);
     if (index >= count) {
         return CYRINX_ERR_INVALID_ARGUMENT;
@@ -244,12 +261,19 @@ int cyrinx_profile_get_by_index(size_t index, cyrinx_profile_t *out_profile) {
     /* Compute canonical content hash */
     cyrinx_profile_compute_hash(&p, p.hash);
 
-    *out_profile = p;
+    // Prefix-compatible write: copy up to caller's struct_size
+    size_t caller_size = out_profile->struct_size;
+    size_t copy_size = (caller_size < sizeof(cyrinx_profile_t)) ? caller_size : sizeof(cyrinx_profile_t);
+    memcpy(out_profile, &p, copy_size);
+    out_profile->struct_size = caller_size; // Restore caller's struct_size
     return CYRINX_OK;
 }
 
 int cyrinx_profile_get_by_id(uint32_t id, cyrinx_profile_t *out_profile) {
     if (out_profile == NULL) {
+        return CYRINX_ERR_INVALID_ARGUMENT;
+    }
+    if (!CYRINX_VALIDATE_ABI(out_profile, cyrinx_profile_t, CYRINX_PROFILE_ABI_VERSION)) {
         return CYRINX_ERR_INVALID_ARGUMENT;
     }
     size_t count = sizeof(g_profiles) / sizeof(g_profiles[0]);

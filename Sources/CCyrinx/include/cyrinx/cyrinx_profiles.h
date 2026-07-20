@@ -6,6 +6,18 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#ifndef CYRINX_API
+#if defined(_WIN32)
+#ifdef CCYRINX_EXPORTS
+#define CYRINX_API __declspec(dllexport)
+#else
+#define CYRINX_API __declspec(dllimport)
+#endif
+#else
+#define CYRINX_API __attribute__((visibility("default")))
+#endif
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -87,7 +99,7 @@ typedef struct cyrinx_profile {
  */
 
 /* Returns the total number of prepopulated profiles in the registry. */
-size_t cyrinx_profile_get_count(void);
+CYRINX_API size_t cyrinx_profile_get_count(void);
 
 /*
  * Retrieves a copy of a profile from the registry by its 0-based index.
@@ -97,7 +109,7 @@ size_t cyrinx_profile_get_count(void);
  * @return CYRINX_OK on success, CYRINX_ERR_INVALID_ARGUMENT if out_profile is NULL
  *         or index is out of bounds.
  */
-int cyrinx_profile_get_by_index(size_t index, cyrinx_profile_t *out_profile);
+CYRINX_API int cyrinx_profile_get_by_index(size_t index, cyrinx_profile_t *out_profile);
 
 /*
  * Retrieves a copy of a profile from the registry by its unique ID.
@@ -107,7 +119,7 @@ int cyrinx_profile_get_by_index(size_t index, cyrinx_profile_t *out_profile);
  * @return CYRINX_OK on success, CYRINX_ERR_INVALID_ARGUMENT if out_profile is NULL,
  *         or a status indicating the ID was not found.
  */
-int cyrinx_profile_get_by_id(uint32_t id, cyrinx_profile_t *out_profile);
+CYRINX_API int cyrinx_profile_get_by_id(uint32_t id, cyrinx_profile_t *out_profile);
 
 /*
  * Computes the canonical content hash from the configuration parameters of the profile.
@@ -116,7 +128,7 @@ int cyrinx_profile_get_by_id(uint32_t id, cyrinx_profile_t *out_profile);
  * @param out_hash A 32-byte buffer to receive the hash.
  * @return CYRINX_OK on success, or CYRINX_ERR_INVALID_ARGUMENT if profile or out_hash is NULL.
  */
-int cyrinx_profile_compute_hash(const cyrinx_profile_t *profile, uint8_t *out_hash);
+CYRINX_API int cyrinx_profile_compute_hash(const cyrinx_profile_t *profile, uint8_t *out_hash);
 
 /*
  * Validates a profile structure.
@@ -126,7 +138,7 @@ int cyrinx_profile_compute_hash(const cyrinx_profile_t *profile, uint8_t *out_ha
  * @param profile The profile structure to validate.
  * @return CYRINX_OK if valid, or appropriate error codes.
  */
-int cyrinx_profile_validate(const cyrinx_profile_t *profile);
+CYRINX_API int cyrinx_profile_validate(const cyrinx_profile_t *profile);
 
 #ifdef __cplusplus
 }
