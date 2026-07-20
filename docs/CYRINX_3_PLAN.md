@@ -1,6 +1,10 @@
 # Cyrinx 3.0 Delivery Plan
 
-Fresh as of 2026-07-19. Status: proposed execution decomposition.
+Fresh as of 2026-07-20. Status: proposed execution decomposition, revised per
+PR #69 review: Rank 2's 4x real-time gate now blocks at C3-09/C3-10, Rank 5 is
+split (C3-20a measurements / C3-20b self-characterization / C3-21 sounding),
+the bounded capacity-predictor spike is restored as C3-21a, and C3-16 requires
+physical over-the-air smoke transfers.
 
 This document turns the stack-ranked outcomes in
 [`ROADMAP.md`](../ROADMAP.md) into independently reviewable pull requests. The
@@ -182,12 +186,14 @@ C3-09 + C3-10 + C3-08
   +-> C3-14 Apple audio adapter ----+
   +-> C3-15 Android JNI/audio ------+-> C3-16 on-device parity and soak
 
+C3-08 -> C3-20a canonical measurements (may run parallel to Phases B-D)
+C3-20a -> C3-21a capacity-predictor spike (separately gated research)
+C3-14 + C3-15 + C3-20a -> C3-20b capabilities and self-characterization
+
 C3-12 + C3-13 -> C3-17 session engine -> C3-18 discovery
   -> C3-19 manual-profile messages
-     -> C3-20 capabilities/self-check (also needs C3-16)
-        -> C3-21 sounding/activation
-           -> C3-22 selective ARQ
-              -> C3-23 adaptation/recovery
+C3-18 + C3-20a + C3-20b -> C3-21 sounding/activation
+C3-19 + C3-21 -> C3-22 selective ARQ -> C3-23 adaptation/recovery
 
 C3-23 + C3-16
   +-> C3-24 Swift public API
@@ -445,10 +451,15 @@ every fixture, and a deliberate binding divergence fails CI.
 - Require exact ordered-block parity with batch decode for unmodified captures.
 - Add memory/high-water and correlation-history assertions.
 - Document which operations are real-time safe and which require the worker.
+- Measure sustained streaming-demodulation throughput on the qualified Mac
+  directly and on the Pixel 7a through the C3-07 NDK test runner, retaining
+  CPU and allocation traces (Roadmap Rank 2 gate).
 
 **Merge gate:** 1,000 continuously replayed frames produce no duplicate or
-missing delivery, memory remains bounded, and reacquisition meets the declared
-frame/time bound.
+missing delivery, memory remains bounded, reacquisition meets the declared
+frame/time bound, and streaming demodulation sustains at least 4x real time
+on both the qualified Mac and the Pixel 7a with retained CPU/allocation
+traces. C3-12 and C3-13 do not start until this performance gate holds.
 
 ### C3-10 — Add the queued streaming transmitter
 
@@ -470,6 +481,8 @@ before platform integration.
   sample, including one-sample buffers and split tail padding.
 - Test queue full, cancellation before/during render, reset, underrun, and route
   invalidation.
+- Measure render-path cost on the same Mac and Pixel 7a targets as C3-09 and
+  retain the traces; TX must fit inside the same 4x real-time budget.
 - Document producer/consumer ownership and backpressure.
 
 **Merge gate:** render chunking cannot alter emitted PCM or transfer state, and
@@ -609,6 +622,10 @@ the accepted path contains no Kotlin DSP decision.
 **Scope**
 
 - Run one captured input through on-device and host replay on each platform.
+- Complete at least one physical over-the-air smoke transfer per platform —
+  the Pixel 7a and one Apple mobile target at minimum — encoding, emitting,
+  capturing, and decoding acoustically on-device with no host DSP in the loop
+  (Roadmap Rank 3 outcome; replay parity and soak alone do not demonstrate it).
 - Exercise exact logical speaker and microphone selection where the OS exposes
   it, and record inability where it does not.
 - Run 30-minute simultaneous capture/playback soaks on the qualified Mac, Apple
@@ -625,9 +642,10 @@ the accepted path contains no Kotlin DSP decision.
   Pixel for the declared profile.
 - Add a platform capability/support table.
 
-**Merge gate:** each platform completes on-device encode/decode without host
-signal processing, and every soak ends without unexplained sample loss, dead
-route, or unreported overflow.
+**Merge gate:** each platform completes on-device encode/decode of a physical
+over-the-air smoke transfer — not only replayed PCM — without host signal
+processing, including the Pixel 7a and one Apple mobile target, and every soak
+ends without unexplained sample loss, dead route, or unreported overflow.
 
 ## Phase D — Session, discovery, negotiation, and reliability
 
@@ -704,9 +722,35 @@ failure without persistent collision or deadlock.
 complete, and a sample command-line consumer can transfer through the real bulk
 plane.
 
-### C3-20 — Add capabilities and local route self-characterization
+### C3-20a — Port canonical passive and active measurements to C
 
-**Depends on:** C3-19 and C3-16.
+**Depends on:** C3-08 only (Roadmap Spike 5a depends on Ranks 1 and 3, not on
+the session), so this may proceed in parallel with Phases B through D.
+
+**Scope**
+
+- Port passive room-tone analysis and the known-waveform sounder behind a
+  canonical C measurement API operating on caller-supplied PCM.
+- Estimate complex per-bin channel response, noise covariance, delay spread,
+  timing/CFO/SRO, pilot EVM, clipping, and nonlinear products.
+- Emit a same-session capacity report that records assumed bandwidth, power
+  constraint, active-bin mask, noise model, protocol overhead, and confidence;
+  never publish an unqualified single "Shannon limit."
+
+**Verification and documentation**
+
+- Recover known parameters from synthetic channels within fixture-specific
+  tolerances; match retained captures against the frozen Python oracle.
+- Prove estimates never consume payload decisions or expected bytes.
+- Document metric semantics in the result/metric reference.
+
+**Merge gate:** synthetic and retained-capture fixtures pass with declared
+tolerances and the API is exercised from C, Swift, and the test JNI binding.
+
+### C3-20b — Add capabilities and local route self-characterization
+
+**Depends on:** C3-14, C3-15, and C3-20a (not C3-19: self-characterization
+needs local audio adapters and measurements, not the message plane).
 
 **Scope**
 
@@ -732,13 +776,13 @@ realized local route has not verified.
 
 ### C3-21 — Integrate bidirectional sounding and profile activation
 
-**Depends on:** C3-20.
+**Depends on:** C3-18, C3-20a, and C3-20b; the physical demonstration also
+cites C3-16 evidence.
 
 **Scope**
 
-- Port passive noise and active known-waveform metrics needed by adaptation into
-  the canonical C measurement API.
-- Sound every verified A-to-B and B-to-A path independently and retain channel,
+- Drive the C3-20a measurement API over the live control session to sound every
+  verified A-to-B and B-to-A path independently and retain channel,
   noise, delay, timing/CFO/SRO, EVM, clipping, and confidence evidence.
 - Negotiate directional band, CP, MCS/FEC, diversity, control profile, and
   profile hash.
@@ -755,6 +799,37 @@ realized local route has not verified.
 
 **Merge gate:** both peers activate the same immutable directional profiles or
 recover through bootstrap without deadlock; no payload outcome enters sounding.
+
+### C3-21a — Bounded capacity-predictor spike
+
+**Depends on:** C3-20a. This is a bounded spike PR (plan rule 6): it changes no
+shipping default and C3-23 does not depend on it.
+
+**Scope**
+
+- Preregister and compute three quantities per sounded route: the
+  log-det/Shannon upper bound; bitwise generalized mutual information from
+  randomized, data-representative known QAM probes with representative PAPR and
+  actual LLRs; and the scheduled ceiling after CP, pilots, FEC, preamble, and
+  gaps.
+- Fit any probe-to-block-loss mapping on whole runs/devices and hold out a
+  preregistered minimum set of whole physical cells/devices.
+
+**Verification and documentation**
+
+- Retain manifests, seeds, per-cell predictions versus delivered goodput, and
+  the frozen promotion analysis.
+- Record the outcome in `docs/NEGATIVE_FINDINGS.md` if the predictor fails.
+
+**Merge gate (promotion thresholds, frozen before held-out data):** the
+predictor enters C3-23 adaptation only if median held-out goodput error is at
+most 15%, it selects a profile within 10% of the measured oracle in at least
+80% of held-out cells, and it never chooses below the declared recovery
+objective (initially 98%) when a qualifying profile exists — selecting below
+90% is a zero-tolerance catastrophic miss. If predictions remain more than 20%
+optimistic or held-out Spearman correlation with delivered goodput is below
+0.5, the calculation is retained as a descriptive bound only, and the spike
+stops rather than retuning indefinitely.
 
 ### C3-22 — Add selective ARQ and reliable message delivery
 
@@ -791,7 +866,9 @@ within bounds or terminate with an exact reason and no leaked session state.
 - Define a versioned replaceable policy with one conservative built-in default.
 - Select directional speaker/input, primary versus MRC, CP, pilot cadence,
   MCS/FEC, active mask, coherent tier, or non-coherent floor from causally prior
-  evidence.
+  evidence. The C3-21a predictor participates in these selections only if it
+  cleared its frozen promotion thresholds; otherwise its outputs remain
+  descriptive diagnostics.
 - Add hysteresis, hold times, confidence/age, lower-bound estimates, degradation,
   robust fallback, recovery, and resounding triggers.
 - Distinguish configured, scheduled, accepted-airtime, and application goodput.
@@ -1316,8 +1393,8 @@ No lower evidence class is relabeled as a higher class in documentation.
 | M1 Canonical parity | C3-05–C3-08 | C, Swift, JNI, KISS, and Accelerate agree on fixtures |
 | M2 Streaming PHY | C3-09–C3-13 | bounded continuous bootstrap/bulk processing and deterministic faults |
 | M3 On-device alpha | C3-14–C3-16 | Apple/Android decode locally and pass parity/soak gates |
-| M4 Manual session | C3-17–C3-20 | discovery plus honest best-effort messages and capabilities |
-| M5 Adaptive reliable beta | C3-21–C3-23 | sounding, activation, reliable delivery, fallback, link estimates |
+| M4 Manual session | C3-17–C3-20b | discovery plus honest best-effort messages and capabilities |
+| M5 Adaptive reliable beta | C3-21–C3-23 | sounding, activation, reliable delivery, fallback, link estimates (C3-21a promotes into adaptation only past its frozen thresholds) |
 | M6 Developer preview | C3-24–C3-32 | packaged SDK and chat sample work through public APIs |
 | M7 Release candidate | C3-33–C3-35 | held-out qualification freezes supported defaults and claims |
 
