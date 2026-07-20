@@ -1,0 +1,8 @@
+# Gradle build artifacts, local to Apps/Chat/android (mirrors the entries the
+# root .gitignore already carries for Apps/HIL/android/, which this session may
+# not edit -- see the C3-28 spec-stage report).
+.gradle/
+**/build/
+.idea/
+local.properties
+*.iml
