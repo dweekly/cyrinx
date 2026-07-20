@@ -2,6 +2,7 @@
 # root .gitignore already carries for Apps/HIL/android/, which this session may
 # not edit -- see the C3-28 spec-stage report).
 .gradle/
+.kotlin/
 **/build/
 .idea/
 local.properties

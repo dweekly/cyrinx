@@ -114,9 +114,15 @@ object ChatTraceJson {
         return sb.toString()
     }
 
+    /**
+     * Appends `"name": value` to [sb], matching CONTRACT.md section 4's pinned
+     * formatting verbatim: `": "` after keys, `", "` between fields, no other
+     * whitespace (see also the Swift `ChatTraceJSON` counterpart, which the
+     * committed golden traces are generated from).
+     */
     private fun appendField(sb: StringBuilder, name: String, valueJson: String, first: Boolean = false) {
-        if (!first) sb.append(',')
-        sb.append('"').append(name).append('"').append(':').append(valueJson)
+        if (!first) sb.append(", ")
+        sb.append('"').append(name).append('"').append(": ").append(valueJson)
     }
 
     /** Minimal JSON string escaping: the two mandatory escapes (`"`, `\`), the

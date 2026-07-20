@@ -10,12 +10,12 @@ connection state, link budget, peer loss and recovery) stays visible in the
 UI rather than getting absorbed into app-specific abstraction.
 
 This document, [`ENVELOPE.md`](ENVELOPE.md), [`CONTRACT.md`](CONTRACT.md),
-and the fixtures under `fixtures/` are the **specification and
-golden-fixture stage** of C3-28. The Swift package
-(`Apps/Chat/CyrinxChatKit`) and the Kotlin module (`Apps/Chat/android`)
-implementing this spec land in a later stage of the same PR track; they are
-not present in this commit. Test commands and directory-map entries for
-those paths below describe the target shape, not what exists today.
+and the fixtures under `fixtures/` are the **specification** of C3-28. The
+Swift package (`Apps/Chat/CyrinxChatKit`) and the Kotlin module
+(`Apps/Chat/android`) implement it in this same PR: both suites pass every
+envelope golden vector, and the committed `fixtures/traces/` goldens are
+generated from the Swift implementation and checked byte-identical from
+Kotlin.
 
 ## Security status — read this first
 
@@ -89,9 +89,9 @@ code does not change shape when that lands.
 | [`CONTRACT.md`](CONTRACT.md) | Platform-neutral app contracts (`ChatPeer`, `ChatEvent`, `ChatTransportClient`, ...), the simulated client, the six scenario scripts, the trace schema, and the accessibility-ID/launch-argument registry. Fresh as of 2026-07-19. | present |
 | `fixtures/chat-envelope-golden.json` | Committed golden vectors for the envelope v1 codec (19 vectors: 5 decode, 14 error). Diffed in review, not a build artifact — see `ENVELOPE.md` §9. | present |
 | `fixtures/tools/generate_golden.py` | Python-stdlib-only reference codec + fixture generator + `--self-test`. The third independent implementation of the codec, kept permanently as a diagnostic ("ship the spike"). | present |
-| `fixtures/traces/` | Golden JSON-lines traces for the `happyPair` and `peerLoss` scenarios (`CONTRACT.md` §4), generated from the Swift implementation in the verify stage and checked byte-identical from Kotlin. | not yet created — lands in the verify stage, after `CyrinxChatKit` exists |
-| `CyrinxChatKit/` | Standalone Swift package (Swift Testing tests). Must not depend on the Cyrinx SDK package. | not yet created — implementation stage |
-| `android/` | Gradle project, pure-JVM Kotlin module `chatkit` (JUnit tests), following `Apps/HIL/android`'s wrapper/toolchain conventions. Must not depend on Android APIs. | not yet created — implementation stage |
+| `fixtures/traces/` | Golden JSON-lines traces for the `happyPair` and `peerLoss` scenarios (`CONTRACT.md` §4), generated from the Swift implementation in the verify stage and checked byte-identical from Kotlin. | committed — seed 1; regenerate only together with a `CONTRACT.md` change |
+| `CyrinxChatKit/` | Standalone Swift package (Swift Testing tests). Must not depend on the Cyrinx SDK package. | implemented — `swift test --package-path Apps/Chat/CyrinxChatKit` |
+| `android/` | Gradle project, pure-JVM Kotlin module `chatkit` (JUnit tests), following `Apps/HIL/android`'s wrapper/toolchain conventions. Must not depend on Android APIs. | implemented — `cd Apps/Chat/android && ./gradlew :chatkit:test` |
 
 ## Test commands
 

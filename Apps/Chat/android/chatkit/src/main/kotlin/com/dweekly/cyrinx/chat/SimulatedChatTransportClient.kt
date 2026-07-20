@@ -13,8 +13,10 @@ import java.util.concurrent.CopyOnWriteArrayList
  * `(scenarioName, seed)`. ../../../CONTRACT.md section 2. Construct a paired A/B
  * instance via [SimulatedChatPair.create]; do not construct this class directly
  * (its constructor is internal specifically to force pairing through the factory,
- * which is what wires each instance's [peer] reference and shares one
- * [SplitMix64] PRNG instance between them).
+ * which is what wires each instance's [peer] reference, derives each client's
+ * simulated peer ID from a construction-time [SplitMix64] draw, and seeds each
+ * client's own independent message-ID [SplitMix64] stream per
+ * ../../../CONTRACT.md section 2's "Message-ID stream (pinned)").
  *
  * The six pinned scenario scripts (../../../CONTRACT.md section 3) are
  * transcribed directly in [connect] and [send] using the incremental delays in
@@ -37,7 +39,12 @@ class SimulatedChatTransportClient internal constructor(
     private val scenario: ChatScenario,
     private val scope: CoroutineScope,
     private val timeSource: VirtualTimeSource,
-    private val prng: SplitMix64,
+    /** This client's own independent message-ID [SplitMix64] stream, seeded at
+     * construction with `seed XOR roleTag` (see [SimulatedChatPair.create]'s
+     * `MESSAGE_ID_ROLE_TAG_A`/`MESSAGE_ID_ROLE_TAG_B`) -- NOT the shared
+     * construction-stream PRNG that draws the two clients' peer IDs, which ends
+     * at draw 2 per ../../../CONTRACT.md section 2. */
+    private val messageIdPrng: SplitMix64,
     /** Optional synchronous hook invoked once per emitted event, at the exact
      * moment of emission (same call stack as [ChatEventBus.emit]'s `build`
      * lambda) -- see [SimulatedChatPair.create]'s `recorder` parameter and
@@ -236,10 +243,11 @@ class SimulatedChatTransportClient internal constructor(
     }
 
     override suspend fun disconnect() {
-        // DECISION (not pinned by the brief): none of the six scenario scripts
-        // exercise a driver-initiated disconnect(), so this behavior is not
-        // checked against a CONTRACT.md table row. A user-initiated disconnect is
-        // modeled the same shape as the other `Disconnected` transitions.
+        // Pinned by ../../../CONTRACT.md section 2's "Behavior outside the six
+        // scenario tables (pinned)": none of the six scenario scripts exercise a
+        // driver-initiated disconnect(), but its shape is pinned there directly --
+        // disconnect() emits connectionChanged(disconnected, reason:
+        // "userInitiated").
         val reason = ChatReasonStrings.USER_INITIATED
         emit { seq -> ChatEvent.ConnectionChanged(seq, ChatConnectionState.Disconnected(reason)) }
     }
@@ -321,11 +329,11 @@ class SimulatedChatTransportClient internal constructor(
     }
 
     override suspend fun cancelSend(messageIdHex: String) {
-        // DECISION (not pinned by the brief): cancellation is not one of the six
-        // scenario scripts. This cancels the message's remaining scheduled
-        // transitions and, if it had not already reached a terminal status,
-        // reports it `failed(reason="cancelled")` -- a no-op for an unknown or
-        // already-terminal messageId.
+        // Pinned by ../../../CONTRACT.md section 2's "Behavior outside the six
+        // scenario tables (pinned)": cancelSend() cancels the message's remaining
+        // scheduled status transitions and emits
+        // messageStatusChanged(failed, failureReason: "cancelled"), unless the
+        // messageId is unknown or already terminal, in which case it is a no-op.
         if (messageIdHex in terminalMessageIds) return
         val job = pendingSendJobs.remove(messageIdHex) ?: return
         job.cancel()
@@ -373,15 +381,15 @@ class SimulatedChatTransportClient internal constructor(
         pendingSendJobs.remove(messageIdHex)
     }
 
-    /** 16-byte message ID, drawn from the pair's shared [SplitMix64] instance
-     * (continuing past the two peer-ID draws consumed at pair construction).
-     * ../../../CONTRACT.md section 3's preamble explicitly leaves message-ID
-     * generation "out of scope for this document to pin further" -- this is a
-     * DECISION (not pinned by the brief); see the C3-28 spec-stage report's
-     * `spec_issues` for the resulting cross-platform-byte-identity gap this
-     * leaves in the (not yet implemented) Swift codec's own message-ID choice. */
+    /** 16-byte message ID, drawn from this client's own independent
+     * [messageIdPrng] -- NOT the shared construction-stream PRNG that derives the
+     * two clients' peer IDs (that stream ends at draw 2 per ../../../CONTRACT.md
+     * section 2's "PRNG draw order contract"). Per section 2's "Message-ID stream
+     * (pinned)": each `send()` draws two consecutive u64 values from
+     * [messageIdPrng]; the 16-byte message ID is the big-endian serialization of
+     * the first draw followed by the big-endian serialization of the second. */
     private fun generateMessageId(): ByteArray =
-        prng.next().toBigEndianBytes() + prng.next().toBigEndianBytes()
+        messageIdPrng.next().toBigEndianBytes() + messageIdPrng.next().toBigEndianBytes()
 }
 
 /**
@@ -396,11 +404,28 @@ class SimulatedChatPair private constructor(
 ) {
     companion object {
         /**
-         * Draws 1 and 2 from a fresh [SplitMix64] seeded from `seed` become client
-         * A's and client B's simulated local peer IDs respectively (first 4 bytes
-         * of each 8-byte big-endian draw), per ../../../CONTRACT.md section 2's
-         * "PRNG draw order contract". The same [SplitMix64] instance is then
-         * shared by both clients for any further, scenario-triggered draws (see
+         * Big-endian u64 reading of the ASCII bytes `MSGIDA__`, XORed into `seed`
+         * to seed client A's independent message-ID [SplitMix64] stream. Pinned in
+         * ../../../CONTRACT.md section 2's "Message-ID stream (pinned)".
+         */
+        private const val MESSAGE_ID_ROLE_TAG_A: Long = 0x4D53474944415F5FL
+
+        /**
+         * Big-endian u64 reading of the ASCII bytes `MSGIDB__`, XORed into `seed`
+         * to seed client B's independent message-ID [SplitMix64] stream. Pinned in
+         * ../../../CONTRACT.md section 2's "Message-ID stream (pinned)".
+         */
+        private const val MESSAGE_ID_ROLE_TAG_B: Long = 0x4D53474944425F5FL
+
+        /**
+         * Draws 1 and 2 from a fresh, throwaway [SplitMix64] seeded from `seed`
+         * become client A's and client B's simulated local peer IDs respectively
+         * (first 4 bytes of each 8-byte big-endian draw), per
+         * ../../../CONTRACT.md section 2's "PRNG draw order contract" -- that
+         * stream ends at draw 2 and is discarded, never shared with either client.
+         * Each client then gets its OWN independent message-ID [SplitMix64],
+         * seeded with `seed XOR roleTag` per section 2's "Message-ID stream
+         * (pinned)" (see [MESSAGE_ID_ROLE_TAG_A]/[MESSAGE_ID_ROLE_TAG_B] and
          * [SimulatedChatTransportClient.generateMessageId]).
          */
         fun create(
@@ -412,17 +437,20 @@ class SimulatedChatPair private constructor(
              * they fire -- see [ChatTraceRecorder]. */
             recorder: ChatTraceRecorder? = null,
         ): SimulatedChatPair {
-            val prng = SplitMix64(seed)
-            val idA = prng.next().toBigEndianBytes().copyOfRange(0, 4)
-            val idB = prng.next().toBigEndianBytes().copyOfRange(0, 4)
+            val idPrng = SplitMix64(seed)
+            val idA = idPrng.next().toBigEndianBytes().copyOfRange(0, 4)
+            val idB = idPrng.next().toBigEndianBytes().copyOfRange(0, 4)
+
+            val messageIdPrngA = SplitMix64(seed xor MESSAGE_ID_ROLE_TAG_A)
+            val messageIdPrngB = SplitMix64(seed xor MESSAGE_ID_ROLE_TAG_B)
 
             val clientA =
                 SimulatedChatTransportClient(
-                    idA, 'A', scenario, scope, timeSource, prng, recorder?.sinkFor('A'),
+                    idA, 'A', scenario, scope, timeSource, messageIdPrngA, recorder?.sinkFor('A'),
                 )
             val clientB =
                 SimulatedChatTransportClient(
-                    idB, 'B', scenario, scope, timeSource, prng, recorder?.sinkFor('B'),
+                    idB, 'B', scenario, scope, timeSource, messageIdPrngB, recorder?.sinkFor('B'),
                 )
             clientA.peer = clientB
             clientB.peer = clientA

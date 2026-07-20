@@ -15,11 +15,22 @@ import Foundation
 /// **Concurrency note:** this type is a deliberately single-threaded
 /// discrete-event simulation (see `VirtualClock`'s documentation) driven by
 /// one sequential caller -- a scenario runner or a test -- never by
-/// concurrent tasks calling into the same pair simultaneously. `@unchecked
-/// Sendable` reflects that scope (a test/sample simulator, not a
-/// production concurrent transport), not an actual absence of shared
-/// mutable state.
-public final class SimulatedChatTransportClient: ChatTransportClient, @unchecked Sendable {
+/// concurrent tasks calling into the same pair simultaneously. It
+/// deliberately does NOT conform to `Sendable` (not even `@unchecked`): it
+/// holds genuinely unsynchronized mutable state (`connectionState`,
+/// `outgoingMessages`, `pendingSendTokens`, ...), and an `@unchecked
+/// Sendable` conformance would be a false promise that lets a future
+/// caller (e.g. a `@MainActor` UI model plus a background task) share one
+/// instance across concurrency domains without the compiler catching the
+/// resulting data race -- the opposite of what "single sequential caller"
+/// requires. Verified empirically (C3-28 review): removing the prior
+/// `@unchecked Sendable` conformance compiles clean under this package's
+/// default Swift 6 language mode (`swift-tools-version: 6.0`, no
+/// `swiftLanguageMode` override) with zero new warnings or errors, and
+/// every `swift test` case still passes -- nothing in this package or its
+/// tests actually crosses an actor-isolation boundary with an instance of
+/// this class, so the conformance was unused, not load-bearing.
+public final class SimulatedChatTransportClient: ChatTransportClient {
     /// ASCII "MSGIDA__" -- see the message-ID generator seeding note below.
     private static let messageIdSeedTagA: UInt64 = 0x4D53_4749_4441_5F5F
     /// ASCII "MSGIDB__" -- see the message-ID generator seeding note below.
@@ -189,15 +200,32 @@ public final class SimulatedChatTransportClient: ChatTransportClient, @unchecked
         return messageIdHex
     }
 
+    /// CONTRACT.md §2's "Behavior outside the six scenario tables
+    /// (pinned)": cancels the message's remaining scheduled status
+    /// transitions and emits `messageStatusChanged(failed, failureReason:
+    /// "cancelled")`, unless `messageIdHex` is unknown or already terminal
+    /// (`.delivered` or `.failed`), in which case this is a no-op.
     public func cancelSend(messageIdHex: String) async {
-        guard let tokens = pendingSendTokens.removeValue(forKey: messageIdHex) else { return }
-        for token in tokens {
-            clock.cancel(token)
+        guard let message = outgoingMessages[messageIdHex] else { return }
+        switch message.status {
+        case .delivered, .failed:
+            // Already terminal -- CONTRACT.md's no-op case. Note
+            // `pendingSendTokens` may still hold this messageIdHex's
+            // now-already-fired tokens (never proactively cleaned up once
+            // fired -- `VirtualClock.cancel(_:)` on a fired token is
+            // already a documented no-op), so the terminal-status check
+            // here, not merely "is the key still in `pendingSendTokens`,"
+            // is what makes this branch reachable at all.
+            return
+        case .queued, .transmitting:
+            break
         }
-        // DECISION (not pinned by CONTRACT.md): cancellation leaves the
-        // message's last-known status as-is and emits no further
-        // `messageStatusChanged` -- `ChatMessageDisplayStatus` (§1.5) has
-        // no "cancelled" case, so there is nothing further to emit.
+        if let tokens = pendingSendTokens.removeValue(forKey: messageIdHex) {
+            for token in tokens {
+                clock.cancel(token)
+            }
+        }
+        emitFailed(messageIdHex: messageIdHex, reason: "cancelled")
     }
 
     // MARK: - Discovery

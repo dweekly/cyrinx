@@ -61,6 +61,47 @@ class SimulatedChatTransportClientTest {
         assertNotEquals(idB1.toHexString(), idB2.toHexString())
     }
 
+    // -- Message-ID generation ------------------------------------------------------
+
+    /**
+     * Pins CONTRACT.md section 2's "Message-ID stream (pinned)": message IDs come
+     * from each client's OWN independent `SplitMix64(seed XOR roleTag)` stream,
+     * not the shared construction-stream PRNG that ends at draw 2 (the peer-ID
+     * draws). [expectedFirstMessageId] recomputes the expected bytes completely
+     * independently of [SimulatedChatPair]'s internals.
+     */
+    @Test
+    fun sendGeneratesMessageIdFromTheSendersOwnRoleTaggedStream() =
+        runTest {
+            val seed = 2024L
+            val pair = createChatPair(ChatScenario.HAPPY_PAIR, seed, null)
+            val (_, idB) = expectedPeerIds(seed)
+
+            pair.clientA.start()
+            pair.clientB.start()
+            advanceTimeBy(100)
+            runCurrent()
+            pair.clientA.connect(idB.toHexString())
+            advanceTimeBy(200)
+            runCurrent()
+            val msgHex = pair.clientA.send("hello")
+            settle()
+
+            assertEquals(expectedFirstMessageId(seed, 'A'), msgHex)
+        }
+
+    /**
+     * Two independent message-ID streams (one per client, seeded `seed XOR
+     * roleTag`) must not coincide, even though they share the same `seed` --
+     * this is the whole point of XORing in a distinct role tag per
+     * CONTRACT.md section 2.
+     */
+    @Test
+    fun clientAAndClientBMessageIdStreamsDiffer() {
+        val seed = 2024L
+        assertNotEquals(expectedFirstMessageId(seed, 'A'), expectedFirstMessageId(seed, 'B'))
+    }
+
     // -- Paired envelope-bytes exchange --------------------------------------------
 
     /**

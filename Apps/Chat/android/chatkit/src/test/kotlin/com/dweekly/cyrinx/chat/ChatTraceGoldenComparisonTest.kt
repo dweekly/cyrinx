@@ -19,21 +19,18 @@ import java.io.File
  * directory map): "generated from the Swift implementation in the verify stage
  * and checked byte-identical from Kotlin."
  *
- * ../fixtures/traces/ does not exist in this commit (README.md's directory map:
- * "not yet created -- lands in the verify stage, after CyrinxChatKit exists").
- * Every test in this class SKIPS via `org.junit.Assume.assumeTrue` when that
- * directory is absent, rather than failing, so this module's test suite stays
- * green before the verify stage populates the fixture.
+ * ../fixtures/traces/ is populated as of the verify stage (see README.md's
+ * directory map and CONTRACT.md section 4's "Golden trace fixtures (pinned)").
+ * Every test in this class SKIPS via `org.junit.Assume.assumeTrue` if that
+ * directory (or the specific golden file) is ever absent, rather than failing,
+ * so this module's test suite degrades gracefully instead of hard-failing in a
+ * checkout that predates the verify stage.
  *
- * DECISION (not pinned by the brief): neither CONTRACT.md nor README.md pins the
- * exact golden trace filenames or the seed used to generate them. This test
- * expects `../fixtures/traces/happyPair.jsonl` and `../fixtures/traces/peerLoss
- * .jsonl` (the scenario's own [ChatScenario.wireName] plus `.jsonl`), generated
- * with seed [GOLDEN_TRACE_SEED]. Whoever wires the verify stage's Swift trace
- * generation needs to either match this naming/seed choice or this test's
- * constants need to move to match whatever the Swift side actually picks --
- * flagged in the C3-28 spec-stage report's `spec_issues` as a genuine
- * cross-platform coordination gap this document leaves open.
+ * Pinned by ../../../CONTRACT.md section 4's "Golden trace fixtures (pinned)":
+ * the committed goldens are `fixtures/traces/happyPair.jsonl` and
+ * `fixtures/traces/peerLoss.jsonl`, generated with seed 1
+ * ([GOLDEN_TRACE_SEED]) by `CyrinxChatKit`'s `chat-trace-gen` executable and
+ * asserted byte-identical here.
  */
 class ChatTraceGoldenComparisonTest {
     private val goldenTracesDir = File("../fixtures/traces")

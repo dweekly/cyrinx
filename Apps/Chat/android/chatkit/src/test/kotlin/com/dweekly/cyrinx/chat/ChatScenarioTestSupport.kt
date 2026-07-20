@@ -84,3 +84,29 @@ fun expectedPeerIds(seed: Long): Pair<ByteArray, ByteArray> {
     val idB = prng.next().toBigEndianBytes().copyOfRange(0, 4)
     return idA to idB
 }
+
+/** The big-endian u64 reading of the ASCII bytes `MSGIDA__` (`role == 'A'`) or
+ * `MSGIDB__` (`role == 'B'`), computed byte-by-byte from the literal ASCII tag
+ * rather than a copy-pasted hex constant, so this helper cannot silently drift
+ * from ../../../CONTRACT.md section 2's "Message-ID stream (pinned)" wording
+ * even if [SimulatedChatPair]'s own `MESSAGE_ID_ROLE_TAG_A`/`_B` constants ever
+ * did. */
+private fun messageIdRoleTag(role: Char): Long {
+    val tag = if (role == 'A') "MSGIDA__" else "MSGIDB__"
+    var v = 0L
+    for (ch in tag) {
+        v = (v shl 8) or (ch.code.toLong() and 0xFF)
+    }
+    return v
+}
+
+/** Independently recomputes the message ID a client with the given `role`
+ * (`'A'` or `'B'`) produces for its FIRST `send()` call under `seed`, per
+ * ../../../CONTRACT.md section 2's "Message-ID stream (pinned)": a fresh
+ * [SplitMix64] seeded with `seed XOR roleTag`, two consecutive draws,
+ * big-endian-concatenated. Used by scenario tests to check the message-ID
+ * bytes themselves without depending on [SimulatedChatPair]'s internals. */
+fun expectedFirstMessageId(seed: Long, role: Char): String {
+    val prng = SplitMix64(seed xor messageIdRoleTag(role))
+    return (prng.next().toBigEndianBytes() + prng.next().toBigEndianBytes()).toHexString()
+}

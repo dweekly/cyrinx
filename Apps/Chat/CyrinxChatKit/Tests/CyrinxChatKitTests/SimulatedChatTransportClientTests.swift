@@ -60,7 +60,7 @@ struct SimulatedChatTransportClientTests {
         #expect(receivedMessages.first?.direction == .incoming)
     }
 
-    @Test("cancelSend stops all further status transitions and B never receives the message")
+    @Test("cancelSend stops further scripted transitions, emits failed(cancelled); B never receives it")
     func cancelSendStopsFurtherProgress() async throws {
         let (clientA, clientB, clock) = try await Self.connectedPair(seed: 55)
 
@@ -80,9 +80,14 @@ struct SimulatedChatTransportClientTests {
                 statusesForMessage.append(status)
             }
         }
-        // Only the initial `queued` (emitted synchronously inside send(),
-        // before cancellation) should ever be observed.
-        #expect(statusesForMessage == [.queued])
+        // CONTRACT.md §2's "Behavior outside the six scenario tables
+        // (pinned)": cancelSend emits messageStatusChanged(failed,
+        // failureReason: "cancelled") -- the initial `queued` (emitted
+        // synchronously inside send(), before cancellation) is followed by
+        // exactly that, and nothing further (no scripted `transmitting`/
+        // `delivered` reaches it, since cancelSend cancels those scheduled
+        // transitions).
+        #expect(statusesForMessage == [.queued, .failed(reason: "cancelled")])
 
         var receivedOnB = false
         for await event in clientB.events {
@@ -95,6 +100,80 @@ struct SimulatedChatTransportClientTests {
     func cancelSendOnUnknownIdIsNoOp() async throws {
         let (clientA, _, _) = try await Self.connectedPair(seed: 8)
         await clientA.cancelSend(messageIdHex: "deadbeef")  // never sent; must not crash or throw
+    }
+
+    @Test("cancelSend on an already-delivered messageIdHex is a no-op: no further status change")
+    func cancelSendOnAlreadyDeliveredIsNoOp() async throws {
+        let (clientA, clientB, clock) = try await Self.connectedPair(seed: 21)
+
+        clock.advance(toMs: 300)
+        let messageIdHex = try await clientA.send(body: "already-delivered")
+        // happyPair's send outcome: transmitting@+20, B receives@+80, A
+        // delivered@+100 relative to the send call -- advance well past
+        // `delivered` before cancelling.
+        clock.advance(toMs: 500)
+        await clientA.cancelSend(messageIdHex: messageIdHex)
+
+        clock.advance(toMs: 1000)
+        await clientA.stop()
+        await clientB.stop()
+
+        var statusesForMessage: [ChatMessageDisplayStatus] = []
+        for await event in clientA.events {
+            if case .messageStatusChanged(let idHex, let status) = event.kind, idHex == messageIdHex {
+                statusesForMessage.append(status)
+            }
+        }
+        // Terminal (`.delivered`) status must not be overwritten by a
+        // trailing `failed(cancelled)` -- CONTRACT.md's "unless the message
+        // ID is unknown or already terminal" no-op case.
+        #expect(statusesForMessage == [.queued, .transmitting, .delivered])
+    }
+
+    @Test("cancelSend on an already-failed messageIdHex is a no-op: no duplicate failed emission")
+    func cancelSendOnAlreadyFailedIsNoOp() async throws {
+        let (clientA, clientB, clock) = try await Self.connectedPair(scenario: .sendFailure, seed: 34)
+
+        clock.advance(toMs: 300)
+        let messageIdHex = try await clientA.send(body: "will-fail")
+        // sendFailure's outcome: transmitting@+20, failed(noAcknowledgment)@+130.
+        clock.advance(toMs: 500)
+        await clientA.cancelSend(messageIdHex: messageIdHex)
+
+        clock.advance(toMs: 1000)
+        await clientA.stop()
+        await clientB.stop()
+
+        var statusesForMessage: [ChatMessageDisplayStatus] = []
+        for await event in clientA.events {
+            if case .messageStatusChanged(let idHex, let status) = event.kind, idHex == messageIdHex {
+                statusesForMessage.append(status)
+            }
+        }
+        // The scripted `failed(noAcknowledgment)` must not be replaced or
+        // duplicated by a second `failed(cancelled)`.
+        #expect(statusesForMessage == [.queued, .transmitting, .failed(reason: "noAcknowledgment")])
+    }
+
+    @Test("disconnect() emits connectionChanged(disconnected, reason: \"userInitiated\")")
+    func disconnectEmitsUserInitiatedReason() async throws {
+        let (clientA, _, _) = try await Self.connectedPair(seed: 13)
+
+        await clientA.disconnect()
+        #expect(clientA.connectionState == .disconnected(reason: "userInitiated"))
+
+        await clientA.stop()
+        var connectionChanges: [ChatConnectionState] = []
+        for await event in clientA.events {
+            if case .connectionChanged(let state) = event.kind {
+                connectionChanges.append(state)
+            }
+        }
+        // connecting, connected (from connectedPair's setup), then this
+        // disconnect's disconnected(userInitiated) -- CONTRACT.md §2's
+        // pinned reason string for the not-scripted-by-any-of-the-six-
+        // scenarios disconnect() path.
+        #expect(connectionChanges.last == .disconnected(reason: "userInitiated"))
     }
 
     @Test("send while not connected throws notConnected")

@@ -21,7 +21,7 @@ class ChatTraceJsonTest {
                 event = ChatEvent.PeerFound(0, ChatPeer("b1a2c3d4".hexToByteArray(), 50)),
             )
         assertEquals(
-            """{"eventSeq":0,"virtualTimeMs":50,"client":"A","event":{"type":"peerFound","peer":{"idHex":"b1a2c3d4","displayName":"Peer-B1A2","discoveredAtMs":50}}}""",
+            """{"eventSeq": 0, "virtualTimeMs": 50, "client": "A", "event": {"type": "peerFound", "peer": {"idHex": "b1a2c3d4", "displayName": "Peer-B1A2", "discoveredAtMs": 50}}}""",
             ChatTraceJson.renderLine(entry),
         )
     }
@@ -31,7 +31,7 @@ class ChatTraceJsonTest {
         // The literal example line from CONTRACT.md section 4.
         val entry = ChatTraceEntry(1, 100, 'A', ChatEvent.ConnectionChanged(1, ChatConnectionState.Connecting))
         assertEquals(
-            """{"eventSeq":1,"virtualTimeMs":100,"client":"A","event":{"type":"connectionChanged","state":"connecting","reason":null}}""",
+            """{"eventSeq": 1, "virtualTimeMs": 100, "client": "A", "event": {"type": "connectionChanged", "state": "connecting", "reason": null}}""",
             ChatTraceJson.renderLine(entry),
         )
     }
@@ -46,7 +46,7 @@ class ChatTraceJsonTest {
                 ChatEvent.ConnectionChanged(3, ChatConnectionState.Disconnected("peerSilenceTimeout")),
             )
         assertEquals(
-            """{"eventSeq":3,"virtualTimeMs":500,"client":"A","event":{"type":"connectionChanged","state":"disconnected","reason":"peerSilenceTimeout"}}""",
+            """{"eventSeq": 3, "virtualTimeMs": 500, "client": "A", "event": {"type": "connectionChanged", "state": "disconnected", "reason": "peerSilenceTimeout"}}""",
             ChatTraceJson.renderLine(entry),
         )
     }
@@ -72,9 +72,9 @@ class ChatTraceJsonTest {
             )
         val expectedIdHex = ByteArray(16) { 0x11 }.toHexString()
         assertEquals(
-            """{"eventSeq":2,"virtualTimeMs":380,"client":"B","event":{"type":"messageReceived",""" +
-                """"message":{"idHex":"$expectedIdHex","direction":"incoming","body":"hello",""" +
-                """"senderPeerIdHex":"aabbccdd","sentAtWallClockMs":380,"status":"delivered"}}}""",
+            """{"eventSeq": 2, "virtualTimeMs": 380, "client": "B", "event": {"type": "messageReceived", """ +
+                """"message": {"idHex": "$expectedIdHex", "direction": "incoming", "body": "hello", """ +
+                """"senderPeerIdHex": "aabbccdd", "sentAtWallClockMs": 380, "status": "delivered"}}}""",
             ChatTraceJson.renderLine(entry),
         )
     }
@@ -89,8 +89,8 @@ class ChatTraceJsonTest {
                 ChatEvent.MessageStatusChanged(5, "deadbeef", ChatMessageDisplayStatus.Failed("noAcknowledgment")),
             )
         assertEquals(
-            """{"eventSeq":5,"virtualTimeMs":450,"client":"A","event":{"type":"messageStatusChanged",""" +
-                """"messageIdHex":"deadbeef","status":"failed","failureReason":"noAcknowledgment"}}""",
+            """{"eventSeq": 5, "virtualTimeMs": 450, "client": "A", "event": {"type": "messageStatusChanged", """ +
+                """"messageIdHex": "deadbeef", "status": "failed", "failureReason": "noAcknowledgment"}}""",
             ChatTraceJson.renderLine(entry),
         )
     }
@@ -99,8 +99,8 @@ class ChatTraceJsonTest {
     fun messageStatusChangedNonFailedHasNullFailureReason() {
         val entry = ChatTraceEntry(4, 300, 'A', ChatEvent.MessageStatusChanged(4, "deadbeef", ChatMessageDisplayStatus.Queued))
         assertEquals(
-            """{"eventSeq":4,"virtualTimeMs":300,"client":"A","event":{"type":"messageStatusChanged",""" +
-                """"messageIdHex":"deadbeef","status":"queued","failureReason":null}}""",
+            """{"eventSeq": 4, "virtualTimeMs": 300, "client": "A", "event": {"type": "messageStatusChanged", """ +
+                """"messageIdHex": "deadbeef", "status": "queued", "failureReason": null}}""",
             ChatTraceJson.renderLine(entry),
         )
     }
@@ -115,8 +115,8 @@ class ChatTraceJsonTest {
                 ChatEvent.LinkBudgetChanged(3, ChatLinkBudget(LinkBudgetClass.TEXT, null, null, 0.7, 0)),
             )
         assertEquals(
-            """{"eventSeq":3,"virtualTimeMs":200,"client":"A","event":{"type":"linkBudgetChanged",""" +
-                """"budget":{"classification":"text","txLowerBoundBps":null,"rxLowerBoundBps":null,"confidence":0.7,"ageMs":0}}}""",
+            """{"eventSeq": 3, "virtualTimeMs": 200, "client": "A", "event": {"type": "linkBudgetChanged", """ +
+                """"budget": {"classification": "text", "txLowerBoundBps": null, "rxLowerBoundBps": null, "confidence": 0.7, "ageMs": 0}}}""",
             ChatTraceJson.renderLine(entry),
         )
     }
@@ -131,8 +131,8 @@ class ChatTraceJsonTest {
                 ChatEvent.LinkBudgetChanged(0, ChatLinkBudget(LinkBudgetClass.BULK, 1000, 2000, 0.9, 5)),
             )
         assertEquals(
-            """{"eventSeq":0,"virtualTimeMs":0,"client":"A","event":{"type":"linkBudgetChanged",""" +
-                """"budget":{"classification":"bulk","txLowerBoundBps":1000,"rxLowerBoundBps":2000,"confidence":0.9,"ageMs":5}}}""",
+            """{"eventSeq": 0, "virtualTimeMs": 0, "client": "A", "event": {"type": "linkBudgetChanged", """ +
+                """"budget": {"classification": "bulk", "txLowerBoundBps": 1000, "rxLowerBoundBps": 2000, "confidence": 0.9, "ageMs": 5}}}""",
             ChatTraceJson.renderLine(entry),
         )
     }
@@ -141,7 +141,7 @@ class ChatTraceJsonTest {
     fun peerLostFieldOrder() {
         val entry = ChatTraceEntry(4, 510, 'A', ChatEvent.PeerLost(4, "b1a2c3d4", "peerSilenceTimeout"))
         assertEquals(
-            """{"eventSeq":4,"virtualTimeMs":510,"client":"A","event":{"type":"peerLost","peerIdHex":"b1a2c3d4","reason":"peerSilenceTimeout"}}""",
+            """{"eventSeq": 4, "virtualTimeMs": 510, "client": "A", "event": {"type": "peerLost", "peerIdHex": "b1a2c3d4", "reason": "peerSilenceTimeout"}}""",
             ChatTraceJson.renderLine(entry),
         )
     }
@@ -150,7 +150,7 @@ class ChatTraceJsonTest {
     fun clientFailedFieldOrder() {
         val entry = ChatTraceEntry(9, 999, 'A', ChatEvent.ClientFailed(9, "transportFault"))
         assertEquals(
-            """{"eventSeq":9,"virtualTimeMs":999,"client":"A","event":{"type":"clientFailed","reason":"transportFault"}}""",
+            """{"eventSeq": 9, "virtualTimeMs": 999, "client": "A", "event": {"type": "clientFailed", "reason": "transportFault"}}""",
             ChatTraceJson.renderLine(entry),
         )
     }
@@ -159,7 +159,7 @@ class ChatTraceJsonTest {
     fun stringEscapingHandlesQuotesBackslashesAndControlChars() {
         val entry = ChatTraceEntry(0, 0, 'A', ChatEvent.ClientFailed(0, "line1\nline2\t\"quoted\"\\backslash"))
         assertEquals(
-            """{"eventSeq":0,"virtualTimeMs":0,"client":"A","event":{"type":"clientFailed","reason":"line1\nline2\t\"quoted\"\\backslash"}}""",
+            """{"eventSeq": 0, "virtualTimeMs": 0, "client": "A", "event": {"type": "clientFailed", "reason": "line1\nline2\t\"quoted\"\\backslash"}}""",
             ChatTraceJson.renderLine(entry),
         )
     }
