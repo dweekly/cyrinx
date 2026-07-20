@@ -454,14 +454,50 @@ Deterministic, in-process, driven by `(scenarioName, seed)`. Requirements:
    the `idHex` of every sent message appearing in a trace.
 
    **Behavior outside the six scenario tables (pinned).**
-   `disconnect()` emits `connectionChanged(disconnected,
-   reason: "userInitiated")`. `cancelSend(messageIdHex:)` cancels the
-   message's remaining scheduled status transitions and emits
-   `messageStatusChanged(failed, failureReason: "cancelled")`, unless
-   the message ID is unknown or already terminal, in which case it is a
-   no-op. In every §3 scenario's `linkBudgetChanged` events,
-   `txLowerBoundBps` and `rxLowerBoundBps` are `null`: the tables pin
-   only classification, confidence, and ageMs numerically.
+   `cancelSend(messageIdHex:)` cancels the message's remaining scheduled
+   status transitions and emits `messageStatusChanged(failed,
+   failureReason: "cancelled")`, unless the message ID is unknown or
+   already terminal, in which case it is a no-op. In every §3 scenario's
+   `linkBudgetChanged` events, `txLowerBoundBps` and `rxLowerBoundBps`
+   are `null`: the tables pin only classification, confidence, and ageMs
+   numerically.
+
+   **Send precondition (pinned).** `send(body:)` is accepted only while
+   the connection state is `connected` or `degraded`; in any other state
+   it throws/raises the transport-misuse "not connected" error and emits
+   no event. A send accepted while `connected` or `degraded` follows the
+   happyPair delivery timeline unless a scenario table or a lifecycle
+   rule below overrides it. Identical on both platforms.
+
+   **Lifecycle cancellation (pinned).** Scheduled simulator work must
+   never outlive the state that scheduled it:
+
+   - `disconnect()` cancels every scheduled action for this client
+     (handshake steps, message status transitions, link-budget events),
+     then emits `messageStatusChanged(failed, failureReason:
+     "disconnected")` for each nonterminal outgoing message in send
+     order, then emits `connectionChanged(disconnected,
+     reason: "userInitiated")`. Nothing further fires afterward; a
+     repeat `disconnect()` is a no-op.
+   - `stop()` performs the same cancellation, emits
+     `messageStatusChanged(failed, failureReason: "stopped")` for each
+     nonterminal outgoing message in send order, emits
+     `connectionChanged(disconnected, reason: "stopped")` unless the
+     state is already `disconnected`, and then finishes the event
+     stream. No event of any kind may be observed after the stream
+     finishes, and previously scheduled actions must never fire after
+     `stop()`. A repeat `stop()` is a no-op.
+   - When a scenario script disconnects a client (for example
+     peerLoss's scripted `connectionChanged(disconnected, ...)`), every
+     nonterminal outgoing message on that client transitions to
+     `messageStatusChanged(failed, failureReason: "peerLost")`
+     immediately after the scripted disconnect event, in send order.
+     `connected`, `delivered`, or any other post-disconnect transition
+     for pre-disconnect work is a contract violation.
+
+   Both platforms must cover these rules with connect-then-disconnect
+   and send-then-stop tests, and the reason literals `"disconnected"`,
+   `"stopped"`, and `"peerLost"` are pinned exactly.
 
 ## 3. Scenario scripts
 
@@ -704,9 +740,12 @@ eventSeq, virtualTimeMs, client, event
 **Golden trace fixtures (pinned).** The committed goldens are
 `fixtures/traces/happyPair.jsonl` and `fixtures/traces/peerLoss.jsonl`,
 generated with **seed 1** by `CyrinxChatKit`'s `chat-trace-gen`
-executable and asserted byte-identical by the Kotlin suite's
-`ChatTraceGoldenComparisonTest`. Regeneration is permitted only together
-with a change to this document, and the diff is reviewed like source.
+executable. BOTH platforms assert their own generated traces
+byte-identical to these files (Kotlin's
+`ChatTraceGoldenComparisonTest` and a Swift twin), and both comparisons
+FAIL — never skip — when a fixture file is missing, because they are
+merge-gate evidence. Regeneration is permitted only together with a
+change to this document, and the diff is reviewed like source.
 
 **Known schema limitation.** `messageReceived.message` has no field for
 a failure reason alongside `status`; in every §3 scenario an incoming
