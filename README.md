@@ -35,6 +35,9 @@ Quiet, Google Nearby Messages, Chirp/LISNR, BatNet). The contribution here is
 the measured end-to-end result on this hardware pair, the diagnostic
 methodology, and the documented platform/physical-layer defect catalog.
 
+On AI Collaboration & Agent Attribution:
+Cyrinx is a research prototype developed through a human-directed multi-agent collaboration. The codebase, website, and scientific publications were designed, implemented, and audited by multiple AI coding and peer-review agents operating under human instruction. A detailed ledger specifying the contributions of each model era and the verification gates used can be found in [AI_DISCLOSURE.md](AI_DISCLOSURE.md).
+
 This repository currently provides:
 
 - A C core (`CCyrinx`) with a stable C ABI
@@ -333,6 +336,9 @@ swift run cyrinx-sim-bench --profile quiet --out artifacts/bench/sim-quiet.json
   (canonical C convergence, streaming/on-device transport, sounding and
   negotiation, app-facing events, held-out qualification, gated PHY research,
   and special acoustic modes).
+- [docs/CYRINX_3_PLAN.md](docs/CYRINX_3_PLAN.md) — the PR-sized Cyrinx 3.0
+  execution plan, including dependencies, test and documentation strategy, and
+  the Apple/Android chat sample.
 - [CHANGELOG.md](CHANGELOG.md) — validated milestone history.
 - [docs/PUBLICATION.md](docs/PUBLICATION.md) — the sequenced publication effort
   (public Apache-2.0 library, [cyrinx.org](https://cyrinx.org), arXiv paper),

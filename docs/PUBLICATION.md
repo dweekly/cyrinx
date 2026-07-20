@@ -284,7 +284,9 @@ assertions at the tiered tolerance above.
 - [x] **3.3** Add the **library-parity result** from PR 1.7 (the headline is
       now delivered by the published library, not only the Python harness).
 - [x] **3.4** Threats-to-validity + reproducibility blocks final; soften any
-      remaining over-broad claims (contact-range prototype framing).
+      remaining over-broad claims (contact-range prototype framing). Incorporate
+      the detailed agentic-engineering and critique attribution model defined in
+      [AI_DISCLOSURE.md](../AI_DISCLOSURE.md).
 - [ ] **3.5** arXiv prep: abstract, cs.NI/eess.SP category, author/affiliation
       (Primatech Paper Co LLC), endorsement check, license (CC BY 4.0 on
       arXiv). Post; link DOI/handle from site + README.
