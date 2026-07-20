@@ -441,6 +441,28 @@ Deterministic, in-process, driven by `(scenarioName, seed)`. Requirements:
    being exactly reproducible so a Swift-generated trace and a
    Kotlin-generated trace are byte-identical (§4's guarantee).
 
+   **Message-ID stream (pinned).** Message IDs are not drawn from the
+   construction stream above, which ends at draw 2. Each client owns an
+   independent message-ID `SplitMix64` seeded at construction with
+   `seed XOR roleTag`, where `roleTag` is the big-endian u64 reading of
+   the ASCII bytes `MSGIDA__` (`0x4D53_4749_4441_5F5F`) for client A and
+   `MSGIDB__` (`0x4D53_4749_4442_5F5F`) for client B. Each `send()`
+   draws two consecutive u64 values from that stream; the 16-byte
+   message ID is the big-endian serialization of the first draw followed
+   by the big-endian serialization of the second. This is pinned across
+   Swift and Kotlin because §4's byte-identical-trace guarantee covers
+   the `idHex` of every sent message appearing in a trace.
+
+   **Behavior outside the six scenario tables (pinned).**
+   `disconnect()` emits `connectionChanged(disconnected,
+   reason: "userInitiated")`. `cancelSend(messageIdHex:)` cancels the
+   message's remaining scheduled status transitions and emits
+   `messageStatusChanged(failed, failureReason: "cancelled")`, unless
+   the message ID is unknown or already terminal, in which case it is a
+   no-op. In every §3 scenario's `linkBudgetChanged` events,
+   `txLowerBoundBps` and `rxLowerBoundBps` are `null`: the tables pin
+   only classification, confidence, and ageMs numerically.
+
 ## 3. Scenario scripts
 
 Six scenarios, `happyPair`, `peerLoss`, `degradedThenRecovered`,
@@ -678,6 +700,20 @@ eventSeq, virtualTimeMs, client, event
 | `messageReceived` | `message: {idHex, direction, body, senderPeerIdHex, sentAtWallClockMs, status}` | `direction` is `"incoming"` or `"outgoing"`; `status` is the current `ChatMessageDisplayStatus` at receipt (normally `"delivered"` from the receiver's own point of view — receiving IS the receiver's delivery). |
 | `messageStatusChanged` | `messageIdHex, status, failureReason` | `status` is one of `"queued"`, `"transmitting"`, `"delivered"`, `"failed"`; `failureReason` is `null` except when `status == "failed"`. |
 | `clientFailed` | `reason` | |
+
+**Golden trace fixtures (pinned).** The committed goldens are
+`fixtures/traces/happyPair.jsonl` and `fixtures/traces/peerLoss.jsonl`,
+generated with **seed 1** by `CyrinxChatKit`'s `chat-trace-gen`
+executable and asserted byte-identical by the Kotlin suite's
+`ChatTraceGoldenComparisonTest`. Regeneration is permitted only together
+with a change to this document, and the diff is reviewed like source.
+
+**Known schema limitation.** `messageReceived.message` has no field for
+a failure reason alongside `status`; in every §3 scenario an incoming
+message carries status `"delivered"` (reception is the receiver's own
+delivery observation), so the gap is not exercised. A future
+receive-side failure status requires a versioned trace-schema change
+adding that field, not an in-place reinterpretation.
 
 ## 5. Accessibility identifiers and launch arguments
 
