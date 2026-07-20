@@ -5,9 +5,14 @@ Cyrinx 2 physical-layer result into a reusable acoustic transport library.
 Completed implementation and measurement history belongs in
 [CHANGELOG.md](CHANGELOG.md); the currently validated state is summarized in
 [README.md](README.md). Supporting plans and evidence live in
+[docs/CYRINX_3_PLAN.md](docs/CYRINX_3_PLAN.md),
 [docs/PUBLICATION.md](docs/PUBLICATION.md),
 [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md), and
 [docs/A1_AUTO_MRC.md](docs/A1_AUTO_MRC.md).
+
+`docs/CYRINX_3_PLAN.md` is the PR-sized execution decomposition for Ranks 1
+through 7. This roadmap remains authoritative for stack rank, research gates,
+and evidence standards.
 
 ## Cyrinx 2.0 measured state
 

@@ -118,7 +118,6 @@ struct cyrinx_session {
     uint32_t goodput_bytes_accumulator;
 };
 
-
 static uint64_t cyrinx_now_ms(void) {
 #if defined(_WIN32)
     return (uint64_t)GetTickCount64();
@@ -416,7 +415,7 @@ static void cyrinx_set_gear(cyrinx_session_t *session, cyrinx_gear_t next) {
         cyrinx_emit_event(session, CYRINX_EVENT_DISCOVERY);
     } else if (next == CYRINX_GEAR_G2_ROBUST) {
         cyrinx_emit_event(session, CYRINX_EVENT_DEGRADED);
-        
+
         /* Auto-broadcast our channel capacity handshake message! */
         uint8_t cap_payload[CYRINX_CAP_PAYLOAD_SECURE_BYTES];
         cap_payload[0] = 0xE1; // magic
@@ -432,7 +431,8 @@ static void cyrinx_set_gear(cyrinx_session_t *session, cyrinx_gear_t next) {
         memcpy(&cap_payload[10], session->config.notch_mask, CYRINX_NOTCH_MASK_BYTES);
         memcpy(&cap_payload[24], session->config.local_public_key, CYRINX_PUBLIC_KEY_BYTES);
         (void)cyrinx_send_internal(session, CYRINX_FRAME_DATA, session->next_tx_seq++, 0,
-                                   CYRINX_STREAM_CONTROL, 3u, 0u, cap_payload, CYRINX_CAP_PAYLOAD_SECURE_BYTES, false);
+                                   CYRINX_STREAM_CONTROL, 3u, 0u, cap_payload,
+                                   CYRINX_CAP_PAYLOAD_SECURE_BYTES, false);
 
     } else {
         cyrinx_emit_event(session, CYRINX_EVENT_LINKED);
@@ -965,7 +965,6 @@ int cyrinx_get_metrics(cyrinx_session_t *session, cyrinx_metrics_t *out) {
     return CYRINX_OK;
 }
 
-
 int cyrinx_set_arc_policy(cyrinx_session_t *session, const cyrinx_arc_policy_t *policy) {
     if (!session || !policy) {
         return CYRINX_ERR_INVALID_ARGUMENT;
@@ -1053,10 +1052,8 @@ int cyrinx_ingest_frame(cyrinx_session_t *session, const uint8_t *frame, size_t 
             session->peer_mics_count = payload[2];
             session->peer_speakers_count = payload[3];
             session->peer_device_signature = payload[4];
-            session->peer_max_buffer_capacity = ((uint32_t)payload[5] << 24) |
-                                                ((uint32_t)payload[6] << 16) |
-                                                ((uint32_t)payload[7] << 8)  |
-                                                (uint32_t)payload[8];
+            session->peer_max_buffer_capacity = ((uint32_t)payload[5] << 24) | ((uint32_t)payload[6] << 16) |
+                                                ((uint32_t)payload[7] << 8) | (uint32_t)payload[8];
             if (payload_len >= 24) {
                 memcpy(session->peer_notch_mask, &payload[10], CYRINX_NOTCH_MASK_BYTES);
             } else {
@@ -1067,7 +1064,7 @@ int cyrinx_ingest_frame(cyrinx_session_t *session, const uint8_t *frame, size_t 
             } else {
                 memset(session->peer_public_key, 0, CYRINX_PUBLIC_KEY_BYTES);
             }
-            
+
             /* Respond with our own capacities if peer initiated. */
             static uint64_t last_reply_ms = 0;
             uint64_t now = cyrinx_now_ms();
@@ -1087,10 +1084,10 @@ int cyrinx_ingest_frame(cyrinx_session_t *session, const uint8_t *frame, size_t 
                 memcpy(&cap_payload[10], session->config.notch_mask, CYRINX_NOTCH_MASK_BYTES);
                 memcpy(&cap_payload[24], session->config.local_public_key, CYRINX_PUBLIC_KEY_BYTES);
                 (void)cyrinx_send_internal(session, CYRINX_FRAME_DATA, session->next_tx_seq++, h.seq,
-                                           CYRINX_STREAM_CONTROL, 3u, 0u, cap_payload, CYRINX_CAP_PAYLOAD_SECURE_BYTES, false);
+                                           CYRINX_STREAM_CONTROL, 3u, 0u, cap_payload,
+                                           CYRINX_CAP_PAYLOAD_SECURE_BYTES, false);
             }
 
-            
             /* Immediate ACK */
             uint8_t ack_payload[CYRINX_ACK_REPORT_PAYLOAD_BYTES];
             cyrinx_encode_ack_report(&session->last_report, ack_payload);

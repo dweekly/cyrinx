@@ -1,8 +1,7 @@
 #ifndef CYRINX_H
 #define CYRINX_H
 
-#include <stddef.h>
-#include <stdint.h>
+#include "cyrinx_base.h"
 
 #if defined(_WIN32)
 #if defined(CYRINX_BUILD)
@@ -19,35 +18,6 @@ extern "C" {
 #endif
 
 typedef struct cyrinx_session cyrinx_session_t;
-
-/*
- * Core status codes returned by the C API.
- *
- * Use cyrinx_status_name / cyrinx_status_description to turn numeric return
- * values into user-facing diagnostics.
- */
-typedef enum {
-    /* Operation completed successfully. */
-    CYRINX_OK = 0,
-    /* One or more input arguments were invalid. */
-    CYRINX_ERR_INVALID_ARGUMENT = -1,
-    /* Session was not started before calling a runtime API. */
-    CYRINX_ERR_NOT_RUNNING = -2,
-    /* Caller-provided output buffer is too small for the requested data. */
-    CYRINX_ERR_BUFFER_TOO_SMALL = -3,
-    /* Operation timed out (for example, reliable send ACK timeout). */
-    CYRINX_ERR_TIMEOUT = -4,
-    /* Frame failed integrity checks (header CRC or payload CRC). */
-    CYRINX_ERR_CRC = -5,
-    /* Session is busy and cannot accept this request yet. */
-    CYRINX_ERR_BUSY = -6,
-    /* Feature or mode is not supported by this build/backend. */
-    CYRINX_ERR_UNSUPPORTED = -7,
-    /* API was called in the wrong state for the current operation. */
-    CYRINX_ERR_STATE = -8,
-    /* Unexpected internal failure. */
-    CYRINX_ERR_INTERNAL = -9
-} cyrinx_status_t;
 
 typedef enum { CYRINX_ROLE_MASTER = 0, CYRINX_ROLE_SLAVE = 1 } cyrinx_role_t;
 
@@ -100,11 +70,11 @@ typedef struct {
     uint8_t crc_fail;
 } cyrinx_channel_report_t;
 
-#define CYRINX_DEVICE_GENERIC     0x00
+#define CYRINX_DEVICE_GENERIC 0x00
 #define CYRINX_DEVICE_MACBOOK_PRO 0x01
-#define CYRINX_DEVICE_PIXEL_7A    0x02
-#define CYRINX_NOTCH_MASK_BYTES   14
-#define CYRINX_PUBLIC_KEY_BYTES   32
+#define CYRINX_DEVICE_PIXEL_7A 0x02
+#define CYRINX_NOTCH_MASK_BYTES 14
+#define CYRINX_PUBLIC_KEY_BYTES 32
 #define CYRINX_CAP_PAYLOAD_SECURE_BYTES 56
 
 typedef struct {
@@ -127,7 +97,6 @@ typedef struct {
     uint8_t peer_notch_mask[CYRINX_NOTCH_MASK_BYTES];
     uint8_t peer_public_key[CYRINX_PUBLIC_KEY_BYTES];
 } cyrinx_metrics_t;
-
 
 typedef struct {
     float up_g2_to_qpsk_snr_db;
@@ -197,7 +166,6 @@ typedef struct {
     uint8_t local_public_key[CYRINX_PUBLIC_KEY_BYTES];
 } cyrinx_config_t;
 
-
 /* Returns the semantic version string of the linked cyrinx core. */
 CYRINX_API const char *cyrinx_version(void);
 
@@ -262,6 +230,8 @@ CYRINX_API cyrinx_gear_t cyrinx_arc_select_gear(cyrinx_gear_t current, const cyr
                                                 uint8_t consecutive_crc_failures, uint8_t timeout_lost);
 
 #include "cyrinx_phy.h"
+#include "cyrinx_profiles.h"
+#include "cyrinx_batch.h"
 
 #ifdef __cplusplus
 }

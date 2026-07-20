@@ -10,53 +10,6 @@ private let CYRINX_SWIFT_ERR_TIMEOUT: Int32 = -4
 private let CYRINX_SWIFT_ERR_UNSUPPORTED: Int32 = -7
 private let CYRINX_SWIFT_ERR_INTERNAL: Int32 = -9
 
-/// Library error type that wraps C core status codes.
-public enum CyrinxError: Error, CustomStringConvertible, LocalizedError, Sendable {
-    /// Raw C status code returned by the transport core.
-    case status(Int32)
-
-    /// Numeric status value returned by the C API.
-    public var statusCode: Int32 {
-        switch self {
-        case .status(let code):
-            return code
-        }
-    }
-
-    /// Stable symbolic name for this status code (for example `CYRINX_ERR_TIMEOUT`).
-    public var statusName: String {
-        Cyrinx.statusName(for: statusCode)
-    }
-
-    /// Human-readable explanation for this status code.
-    public var statusDescription: String {
-        Cyrinx.statusDescription(for: statusCode)
-    }
-
-    public var description: String {
-        "cyrinx error \(statusCode) (\(statusName)): \(statusDescription)"
-    }
-
-    public var errorDescription: String? {
-        description
-    }
-
-    public var recoverySuggestion: String? {
-        switch statusCode {
-        case CYRINX_SWIFT_ERR_TIMEOUT:
-            return "Verify both peers are started and use best-effort probing before reliable send."
-        case CYRINX_SWIFT_ERR_INVALID_ARGUMENT:
-            return "Validate stream IDs, payload size, and configuration values."
-        case CYRINX_SWIFT_ERR_BUFFER_TOO_SMALL:
-            return "Increase receive buffer capacity and retry."
-        case CYRINX_SWIFT_ERR_UNSUPPORTED:
-            return "Use an appleAudioScaffold session for local audio diagnostics."
-        default:
-            return nil
-        }
-    }
-}
-
 /// Session role for the half-duplex ping-pong transport.
 public enum Role: CustomStringConvertible {
     /// Initiates discovery and starts the first transmission slot.

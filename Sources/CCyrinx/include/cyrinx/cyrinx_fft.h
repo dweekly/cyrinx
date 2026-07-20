@@ -28,8 +28,7 @@ cyrinx_irfft_plan *cyrinx_irfft_create(int nfft);
 
 /* Inverse real FFT, numpy.irfft semantics. freq_re/freq_im are the half-spectrum
  * (nfft/2+1 entries); time_out receives nfft real samples (1/nfft normalized). */
-void cyrinx_irfft(cyrinx_irfft_plan *plan, const double *freq_re,
-                  const double *freq_im, double *time_out);
+void cyrinx_irfft(cyrinx_irfft_plan *plan, const double *freq_re, const double *freq_im, double *time_out);
 
 void cyrinx_irfft_destroy(cyrinx_irfft_plan *plan);
 
@@ -40,8 +39,7 @@ cyrinx_rfft_plan *cyrinx_rfft_create(int nfft);
 
 /* time_in: nfft real samples; freq_re/freq_im receive the half-spectrum
  * (nfft/2+1 entries). Unnormalized, matching numpy.rfft. */
-void cyrinx_rfft(cyrinx_rfft_plan *plan, const double *time_in, double *freq_re,
-                 double *freq_im);
+void cyrinx_rfft(cyrinx_rfft_plan *plan, const double *time_in, double *freq_re, double *freq_im);
 
 void cyrinx_rfft_destroy(cyrinx_rfft_plan *plan);
 

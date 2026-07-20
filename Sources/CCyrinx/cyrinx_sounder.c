@@ -20,14 +20,11 @@ static const ladder_entry kLadder[] = {
     {CYRINX_TIER_BPSK, "BPSK", "1/2", 1, 4.0, CYRINX_SOUNDER_CP_CAP_MS},
 };
 
-cyrinx_mcs_recommendation cyrinx_sounder_recommend(double median_snr_db,
-                                                   double delay_spread_ms_15,
-                                                   int sr) {
+cyrinx_mcs_recommendation cyrinx_sounder_recommend(double median_snr_db, double delay_spread_ms_15, int sr) {
     cyrinx_mcs_recommendation r;
     const ladder_entry *chosen = NULL;
     for (size_t i = 0; i < sizeof(kLadder) / sizeof(kLadder[0]); ++i) {
-        if (median_snr_db >= kLadder[i].snr_min &&
-            delay_spread_ms_15 <= kLadder[i].ds_max) {
+        if (median_snr_db >= kLadder[i].snr_min && delay_spread_ms_15 <= kLadder[i].ds_max) {
             chosen = &kLadder[i];
             break;
         }
@@ -47,15 +44,15 @@ cyrinx_mcs_recommendation cyrinx_sounder_recommend(double median_snr_db,
     }
     /* CP covers the -15 dB delay spread + 25% headroom, clamped to [5 ms, cap]. */
     double cp_ms = delay_spread_ms_15 * 1.25;
-    if (cp_ms < 5.0) cp_ms = 5.0;
-    if (cp_ms > CYRINX_SOUNDER_CP_CAP_MS) cp_ms = CYRINX_SOUNDER_CP_CAP_MS;
+    if (cp_ms < 5.0)
+        cp_ms = 5.0;
+    if (cp_ms > CYRINX_SOUNDER_CP_CAP_MS)
+        cp_ms = CYRINX_SOUNDER_CP_CAP_MS;
     r.cp_ms = cp_ms;
     r.cp = (int)(cp_ms / 1000.0 * sr);
     r.nfft = (r.cp <= 1024) ? 2048 : 4096;
     r.advise_reposition =
-        (r.noncoherent && (median_snr_db < 6.0 || delay_spread_ms_15 > CYRINX_SOUNDER_CP_CAP_MS))
-            ? 1
-            : 0;
+        (r.noncoherent && (median_snr_db < 6.0 || delay_spread_ms_15 > CYRINX_SOUNDER_CP_CAP_MS)) ? 1 : 0;
     return r;
 }
 
@@ -63,8 +60,10 @@ void cyrinx_sounder_bit_loading(const double *snr_db, int n, uint8_t *bits_out) 
     for (int i = 0; i < n; ++i) {
         double s = snr_db[i];
         uint8_t b = (s >= 5.0) ? 2 : 0;
-        if (s >= 15.0) b = 4;
-        if (s >= 23.0) b = 6;
+        if (s >= 15.0)
+            b = 4;
+        if (s >= 23.0)
+            b = 6;
         bits_out[i] = b;
     }
 }

@@ -26,9 +26,11 @@ struct cyrinx_irfft_plan {
 };
 
 cyrinx_irfft_plan *cyrinx_irfft_create(int nfft) {
-    if (nfft <= 0 || (nfft & 1)) return NULL;
+    if (nfft <= 0 || (nfft & 1))
+        return NULL;
     cyrinx_irfft_plan *p = (cyrinx_irfft_plan *)calloc(1, sizeof(*p));
-    if (!p) return NULL;
+    if (!p)
+        return NULL;
     p->nfft = nfft;
     p->setup = vDSP_DFT_zop_CreateSetupD(NULL, (vDSP_Length)nfft, vDSP_DFT_INVERSE);
     p->ir = (double *)malloc((size_t)nfft * sizeof(double));
@@ -42,8 +44,7 @@ cyrinx_irfft_plan *cyrinx_irfft_create(int nfft) {
     return p;
 }
 
-void cyrinx_irfft(cyrinx_irfft_plan *plan, const double *freq_re,
-                  const double *freq_im, double *time_out) {
+void cyrinx_irfft(cyrinx_irfft_plan *plan, const double *freq_re, const double *freq_im, double *time_out) {
     const int n = plan->nfft, half = n / 2;
     for (int k = 0; k <= half; ++k) {
         plan->ir[k] = freq_re[k];
@@ -55,13 +56,19 @@ void cyrinx_irfft(cyrinx_irfft_plan *plan, const double *freq_re,
     }
     vDSP_DFT_ExecuteD(plan->setup, plan->ir, plan->ii, plan->or_, plan->oi);
     const double inv = 1.0 / (double)n; /* numpy.irfft 1/N */
-    for (int i = 0; i < n; ++i) time_out[i] = plan->or_[i] * inv;
+    for (int i = 0; i < n; ++i)
+        time_out[i] = plan->or_[i] * inv;
 }
 
 void cyrinx_irfft_destroy(cyrinx_irfft_plan *plan) {
-    if (!plan) return;
-    if (plan->setup) vDSP_DFT_DestroySetupD(plan->setup);
-    free(plan->ir); free(plan->ii); free(plan->or_); free(plan->oi);
+    if (!plan)
+        return;
+    if (plan->setup)
+        vDSP_DFT_DestroySetupD(plan->setup);
+    free(plan->ir);
+    free(plan->ii);
+    free(plan->or_);
+    free(plan->oi);
     free(plan);
 }
 
@@ -72,9 +79,11 @@ struct cyrinx_rfft_plan {
 };
 
 cyrinx_rfft_plan *cyrinx_rfft_create(int nfft) {
-    if (nfft <= 0 || (nfft & 1)) return NULL;
+    if (nfft <= 0 || (nfft & 1))
+        return NULL;
     cyrinx_rfft_plan *p = (cyrinx_rfft_plan *)calloc(1, sizeof(*p));
-    if (!p) return NULL;
+    if (!p)
+        return NULL;
     p->nfft = nfft;
     p->setup = vDSP_DFT_zop_CreateSetupD(NULL, (vDSP_Length)nfft, vDSP_DFT_FORWARD);
     p->ir = (double *)malloc((size_t)nfft * sizeof(double));
@@ -88,8 +97,7 @@ cyrinx_rfft_plan *cyrinx_rfft_create(int nfft) {
     return p;
 }
 
-void cyrinx_rfft(cyrinx_rfft_plan *plan, const double *time_in, double *freq_re,
-                 double *freq_im) {
+void cyrinx_rfft(cyrinx_rfft_plan *plan, const double *time_in, double *freq_re, double *freq_im) {
     const int n = plan->nfft, half = n / 2;
     for (int i = 0; i < n; ++i) {
         plan->ir[i] = time_in[i];
@@ -103,9 +111,14 @@ void cyrinx_rfft(cyrinx_rfft_plan *plan, const double *time_in, double *freq_re,
 }
 
 void cyrinx_rfft_destroy(cyrinx_rfft_plan *plan) {
-    if (!plan) return;
-    if (plan->setup) vDSP_DFT_DestroySetupD(plan->setup);
-    free(plan->ir); free(plan->ii); free(plan->or_); free(plan->oi);
+    if (!plan)
+        return;
+    if (plan->setup)
+        vDSP_DFT_DestroySetupD(plan->setup);
+    free(plan->ir);
+    free(plan->ii);
+    free(plan->or_);
+    free(plan->oi);
     free(plan);
 }
 
@@ -140,8 +153,7 @@ cyrinx_irfft_plan *cyrinx_irfft_create(int nfft) {
     return p;
 }
 
-void cyrinx_irfft(cyrinx_irfft_plan *plan, const double *freq_re,
-                  const double *freq_im, double *time_out) {
+void cyrinx_irfft(cyrinx_irfft_plan *plan, const double *freq_re, const double *freq_im, double *time_out) {
     const int half = plan->nfft / 2 + 1;
     for (int i = 0; i < half; ++i) {
         plan->freq[i].r = (kiss_fft_scalar)freq_re[i];
@@ -193,8 +205,7 @@ cyrinx_rfft_plan *cyrinx_rfft_create(int nfft) {
     return p;
 }
 
-void cyrinx_rfft(cyrinx_rfft_plan *plan, const double *time_in, double *freq_re,
-                 double *freq_im) {
+void cyrinx_rfft(cyrinx_rfft_plan *plan, const double *time_in, double *freq_re, double *freq_im) {
     for (int i = 0; i < plan->nfft; ++i) {
         plan->time[i] = (kiss_fft_scalar)time_in[i];
     }

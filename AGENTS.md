@@ -2,12 +2,12 @@
 
 ## Project Structure & Module Organization
 
-`Sources/Cyrinx` contains the Swift library, acoustic PHY, codecs, simulation, and Apple audio scaffolding. `Sources/CCyrinx` contains the C core and public headers under `Sources/CCyrinx/include/cyrinx`. `Tests/CyrinxTests` holds the XCTest suite. Runnable Swift Package examples live in `Examples/*`, with target names declared in `Package.swift`. Hardware-in-the-loop assets live under `Apps/HIL`, including the SwiftUI macOS/iOS harness, generated Xcode project inputs, and the Android HIL app under `Apps/HIL/android`. Automation scripts are in `scripts/`; generated build and benchmark outputs belong in `.build/` or `artifacts/`.
+`Sources/Cyrinx` contains the Swift library, acoustic PHY, codecs, simulation, and Apple audio scaffolding. `Sources/CCyrinx` contains the C core and public headers under `Sources/CCyrinx/include/cyrinx`. `Tests/CyrinxTests` holds the Swift Testing and existing XCTest suites. Runnable Swift Package examples live in `Examples/*`, with target names declared in `Package.swift`. Hardware-in-the-loop assets live under `Apps/HIL`, including the SwiftUI macOS/iOS harness, generated Xcode project inputs, and the Android HIL app under `Apps/HIL/android`. Automation scripts are in `scripts/`; generated build and benchmark outputs belong in `.build/` or `artifacts/`.
 
 ## Build, Test, and Development Commands
 
 - `swift build`: compile the Swift package, C target, and executable targets.
-- `swift test`: run the deterministic XCTest suite.
+- `swift test`: run the deterministic Swift Testing and XCTest suites.
 - `swift run cyrinx-example-loopback`: run the in-memory transport sample.
 - `swift run cyrinx-sim-bench --profile quiet --out artifacts/bench/sim-quiet.json`: write benchmark JSON.
 - `./scripts/format.sh`: apply Swift and C formatting.
@@ -23,7 +23,15 @@ Use four-space indentation and keep Swift/C lines near the configured 110-column
 
 ## Testing Guidelines
 
-Tests use XCTest and should be named `test...`. Add tests near the behavior changed, especially for framing, codecs, ARC state transitions, acoustic round trips, and C/Swift ABI boundaries. Prefer deterministic in-memory or generated-waveform tests over hardware-dependent checks. Run `swift test` for focused validation and `./scripts/check.sh` before opening a PR.
+Use Swift Testing (`@Test`, `#expect`, and `#require`) for new deterministic unit,
+contract, state-machine, and async integration tests. Keep XCTest for XCUITest,
+`XCTMetric` performance tests, snapshot tooling that requires it, and existing
+tests until they are deliberately migrated. Do not mix the two frameworks in
+one source file. Add tests near the behavior changed, especially for framing,
+codecs, ARC state transitions, acoustic round trips, and C/Swift ABI boundaries.
+Prefer deterministic in-memory or generated-waveform tests over
+hardware-dependent checks. Run `swift test` for focused validation and
+`./scripts/check.sh` before opening a PR.
 
 ## Commit & Pull Request Guidelines
 
@@ -37,5 +45,4 @@ Recent history uses short imperative commit subjects, for example `Add Android H
 
 - **Empirical and Analytical Tone**: Maintain a strictly professional, scientific, and empirical tone. Avoid flowery, boasting, or overconfident language (e.g., words like "historic", "flawlessly", "perfectly", "100% correct").
 - **Engineering-Focused Analysis**: Focus objectively on engineering data, physical measurements, and system constraints. Proactively document and detail what did not work or fell short of the ideal system behavior, providing precise postmortems with high granularity.
-
 
