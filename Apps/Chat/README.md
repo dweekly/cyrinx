@@ -59,9 +59,11 @@ No UI in this stage (SwiftUI/Compose UI lands in C3-29/C3-30). No live SDK
 adapter (C3-31 — this stage and C3-29/C3-30 build and test entirely
 against the simulated transport). No accounts, cloud sync, background
 delivery, push notifications, read receipts, typing indicators, contact
-identity, attachments, or encryption. No CI wiring — the `swift test` /
-`gradlew` commands below are not yet invoked by any workflow; that lands
-with the C3-02 CI baseline, a separate, concurrent PR track.
+identity, attachments, or encryption. CI for this lane runs as
+`.github/workflows/chat-c3-28.yml` (Python oracle self-test, Swift suite,
+Gradle `check` including the JVM-17 consumer compile), kept in its own
+workflow file so it cannot conflict with the repo-wide C3-02 CI baseline
+being developed on a separate PR track.
 
 ## Simulator-first development
 
@@ -95,28 +97,25 @@ code does not change shape when that lands.
 
 ## Test commands
 
-Once the implementation stage lands these are the canonical local commands
-(they will fail today — `CyrinxChatKit` and `android/` do not exist yet in
-this commit):
+Canonical local commands, from the repository root (all runnable in this
+commit; `gradlew check` also runs the `:consumer-compile-check` module,
+which compiles against the public API under a JVM-17 toolchain):
 
 ```console
 swift test --package-path Apps/Chat/CyrinxChatKit
-cd Apps/Chat/android && ./gradlew :chatkit:test
+cd Apps/Chat/android && ./gradlew check
 ```
 
-CI wiring for these commands is not part of this stage — it lands with the
-C3-02 continuous-integration baseline (a separate, concurrently developed
-PR track per `docs/CYRINX_3_PLAN.md`'s dependency map; C3-28 itself only
-"depends on C3-01" and may run while the core is being built).
-
-What **is** runnable today, from this commit, is the golden-fixture
-generator and its self-test:
+The golden-fixture generator's self-test (the third, Python, codec
+implementation — the cross-language oracle):
 
 ```console
-cd /Users/dew/dev/cyrinx-WORKTREE/c3-28-chat
 python3 -m venv .venv
 .venv/bin/python Apps/Chat/fixtures/tools/generate_golden.py --self-test
 ```
+
+All three run in CI on every change under `Apps/Chat/` via
+`.github/workflows/chat-c3-28.yml`.
 
 See `ENVELOPE.md` §9 for the full regeneration policy (regeneration is
 permitted only alongside a spec change, and the resulting JSON is
