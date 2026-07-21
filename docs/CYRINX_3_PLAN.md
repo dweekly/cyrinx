@@ -186,14 +186,17 @@ C3-09 + C3-10 + C3-08
   +-> C3-14 Apple audio adapter ----+
   +-> C3-15 Android JNI/audio ------+-> C3-16 on-device parity and soak
 
-C3-08 -> C3-20a canonical measurements (may run parallel to Phases B-D)
-C3-20a -> C3-21a capacity-predictor spike (separately gated research)
-C3-14 + C3-15 + C3-20a -> C3-20b capabilities and self-characterization
+C3-08 -> C3-20a canonical measurements (dev may parallel Phases B-D;
+                                        merging also requires C3-16)
+C3-20a -> C3-21a capacity-predictor spike (must complete; integrates
+                                           only past frozen thresholds)
+C3-14 + C3-15 + C3-16 + C3-20a -> C3-20b capabilities/self-characterization
 
 C3-12 + C3-13 -> C3-17 session engine -> C3-18 discovery
   -> C3-19 manual-profile messages
-C3-18 + C3-20a + C3-20b -> C3-21 sounding/activation
-C3-19 + C3-21 -> C3-22 selective ARQ -> C3-23 adaptation/recovery
+C3-18 + C3-19 + C3-20a + C3-20b -> C3-21 sounding/activation
+C3-19 + C3-21 -> C3-22 selective ARQ
+C3-21a + C3-22 -> C3-23 adaptation/recovery
 
 C3-23 + C3-16
   +-> C3-24 Swift public API
@@ -485,8 +488,10 @@ before platform integration.
   retain the traces; TX must fit inside the same 4x real-time budget.
 - Document producer/consumer ownership and backpressure.
 
-**Merge gate:** render chunking cannot alter emitted PCM or transfer state, and
-the callback path allocates neither heap objects nor log strings.
+**Merge gate:** render chunking cannot alter emitted PCM or transfer state, the
+callback path allocates neither heap objects nor log strings, and rendering
+sustains the same 4x real-time budget as C3-09 on the qualified Mac and the
+Pixel 7a with CPU and allocation traces retained.
 
 ### C3-11 — Select the canonical robust bootstrap bearer
 
@@ -724,8 +729,10 @@ plane.
 
 ### C3-20a — Port canonical passive and active measurements to C
 
-**Depends on:** C3-08 only (Roadmap Spike 5a depends on Ranks 1 and 3, not on
-the session), so this may proceed in parallel with Phases B through D.
+**Depends on:** C3-08 for development, so work may proceed in parallel with
+Phases B through D; merging additionally requires C3-16, because Roadmap
+Spike 5a depends on Ranks 1 AND 3 — measurement results are not declared
+complete on an audio path C3-16 has not proven on-device.
 
 **Scope**
 
@@ -745,12 +752,14 @@ the session), so this may proceed in parallel with Phases B through D.
 - Document metric semantics in the result/metric reference.
 
 **Merge gate:** synthetic and retained-capture fixtures pass with declared
-tolerances and the API is exercised from C, Swift, and the test JNI binding.
+tolerances, the API is exercised from C, Swift, and the test JNI binding, and
+C3-16's on-device parity/soak/OTA evidence has landed.
 
 ### C3-20b — Add capabilities and local route self-characterization
 
-**Depends on:** C3-14, C3-15, and C3-20a (not C3-19: self-characterization
-needs local audio adapters and measurements, not the message plane).
+**Depends on:** C3-14, C3-15, C3-16, and C3-20a (not C3-19:
+self-characterization needs local audio adapters and proven on-device routes,
+not the message plane).
 
 **Scope**
 
@@ -776,8 +785,10 @@ realized local route has not verified.
 
 ### C3-21 — Integrate bidirectional sounding and profile activation
 
-**Depends on:** C3-18, C3-20a, and C3-20b; the physical demonstration also
-cites C3-16 evidence.
+**Depends on:** C3-18, C3-19, C3-20a, and C3-20b (Roadmap: cross-device
+sounding and negotiated activation depend on Rank 4's control/message plane
+plus the promoted 5a/5b measurements; C3-16 arrives transitively through
+C3-20a/C3-20b).
 
 **Scope**
 
@@ -803,7 +814,10 @@ recover through bootstrap without deadlock; no payload outcome enters sounding.
 ### C3-21a — Bounded capacity-predictor spike
 
 **Depends on:** C3-20a. This is a bounded spike PR (plan rule 6): it changes no
-shipping default and C3-23 does not depend on it.
+shipping default. C3-23 depends on its COMPLETION — the frozen evaluation must
+run and record an outcome, including a negative one in
+`docs/NEGATIVE_FINDINGS.md`, before adaptation defaults freeze — but C3-23
+integrates the predictor only if it clears the promotion thresholds below.
 
 **Scope**
 
@@ -859,7 +873,9 @@ within bounds or terminate with an exact reason and no leaked session state.
 
 ### C3-23 — Close the adaptation and recovery loop
 
-**Depends on:** C3-21 and C3-22.
+**Depends on:** C3-21, C3-22, and completion of C3-21a (whose predictor is
+integrated only if promoted; a recorded negative outcome also satisfies the
+dependency).
 
 **Scope**
 

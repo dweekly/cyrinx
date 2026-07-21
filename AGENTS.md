@@ -2,12 +2,12 @@
 
 ## Project Structure & Module Organization
 
-`Sources/Cyrinx` contains the Swift library, acoustic PHY, codecs, simulation, and Apple audio scaffolding. `Sources/CCyrinx` contains the C core and public headers under `Sources/CCyrinx/include/cyrinx`. `Tests/CyrinxTests` holds the Swift Testing and existing XCTest suites. Runnable Swift Package examples live in `Examples/*`, with target names declared in `Package.swift`. Hardware-in-the-loop assets live under `Apps/HIL`, including the SwiftUI macOS/iOS harness, generated Xcode project inputs, and the Android HIL app under `Apps/HIL/android`. Automation scripts are in `scripts/`; generated build and benchmark outputs belong in `.build/` or `artifacts/`.
+`Sources/Cyrinx` contains the Swift library, acoustic PHY, codecs, simulation, and Apple audio scaffolding. `Sources/CCyrinx` contains the C core and public headers under `Sources/CCyrinx/include/cyrinx`. `Tests/CyrinxTests` holds the deterministic test suites. Runnable Swift Package examples live in `Examples/*`, with target names declared in `Package.swift`. Hardware-in-the-loop assets live under `Apps/HIL`, including the SwiftUI macOS/iOS harness, generated Xcode project inputs, and the Android HIL app under `Apps/HIL/android`. Automation scripts are in `scripts/`; generated build and benchmark outputs belong in `.build/` or `artifacts/`.
 
 ## Build, Test, and Development Commands
 
 - `swift build`: compile the Swift package, C target, and executable targets.
-- `swift test`: run the deterministic Swift Testing and XCTest suites.
+- `swift test`: run the deterministic test suites.
 - `swift run cyrinx-example-loopback`: run the in-memory transport sample.
 - `swift run cyrinx-sim-bench --profile quiet --out artifacts/bench/sim-quiet.json`: write benchmark JSON.
 - `./scripts/format.sh`: apply Swift and C formatting.
