@@ -167,20 +167,20 @@ parallel once their incoming dependency is complete.
 
 ```text
 C3-01 contracts
-  +-> C3-02 CI baseline ----------------------------------------------+
-  +-> C3-03 ABI foundation -> C3-04 profiles -> C3-05 batch contract  |
-  |                                             +-> C3-06 Swift v3     |
-  |                                             +-> C3-07 test JNI     |
-  |                                             +-> C3-08 conformance -+
+  +-> C3-02 CI baseline
+  +-> C3-03 ABI foundation -> C3-04 profiles -> C3-05 batch contract
+  |                                             +-> C3-06 Swift v3
+  |                                             +-> C3-07 test JNI
+  |   C3-05 + C3-06 + C3-07 -> C3-08 conformance
   |
   +-> C3-28 chat contract -> C3-29 Apple offline chat
                          \-> C3-30 Android offline chat
 
-C3-08 -> C3-09 streaming RX -> C3-10 queued TX
-                  |                 |
-                  +-> C3-11 bootstrap spike -> C3-12 bootstrap in C
-                  |                                  |
-                  +---------------------------------> C3-13 fault simulator
+C3-08 -> C3-09 streaming RX
+C3-08 -> C3-10 queued TX (parallel with C3-09)
+C3-09 -> C3-11 bootstrap spike
+C3-09 + C3-10 + C3-11 -> C3-12 bootstrap in C
+C3-09 + C3-10 + C3-12 -> C3-13 fault simulator
 
 C3-09 + C3-10 + C3-08
   +-> C3-14 Apple audio adapter ----+
@@ -193,7 +193,7 @@ C3-20a -> C3-21a capacity-predictor spike (must complete; integrates
 C3-14 + C3-15 + C3-16 + C3-20a -> C3-20b capabilities/self-characterization
 
 C3-12 + C3-13 -> C3-17 session engine -> C3-18 discovery
-  -> C3-19 manual-profile messages
+C3-18 + C3-16 -> C3-19 manual-profile messages
 C3-18 + C3-19 + C3-20a + C3-20b -> C3-21 sounding/activation
 C3-19 + C3-21 -> C3-22 selective ARQ
 C3-21a + C3-22 -> C3-23 adaptation/recovery
@@ -1341,7 +1341,8 @@ test executables and fuzz targets. Python remains restricted to
 
 ### Performance and safety gates
 
-- Streaming RX sustains at least 4x real time on the qualified Pixel and Mac.
+- Streaming RX and queued TX sustain at least 4x real time on the qualified
+  Pixel and Mac.
 - Audio callbacks allocate no heap memory, perform no FFT/correlation, invoke no
   application code, and emit no formatted log strings.
 - PCM, event, message, retry, and diagnostic buffers publish capacity and
