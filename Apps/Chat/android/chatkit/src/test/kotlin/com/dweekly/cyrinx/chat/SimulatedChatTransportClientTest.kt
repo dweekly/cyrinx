@@ -623,4 +623,202 @@ class SimulatedChatTransportClientTest {
                 }
             assertEquals(disconnectedIndex + 1, failedIndex)
         }
+
+    // -- Target ownership (../../../CONTRACT.md section 2's "Target ownership"
+    // bullet) -- a PR review demonstrated, with focused harnesses, that a
+    // receiver could observe events after its own disconnect() because
+    // scheduled effects were owned by the SCHEDULING client, not the TARGET
+    // client. These tests pin the fix. ------------------------------------
+
+    @Test
+    fun receiverDisconnectPreventsInboundMessageReceivedButNotSendersOwnStatuses() =
+        runTest {
+            val pair = createChatPair(ChatScenario.HAPPY_PAIR, 8L, null)
+            val (_, idB) = expectedPeerIds(8L)
+            val aEvents = collectEvents(pair.clientA)
+            val bEvents = collectEvents(pair.clientB)
+
+            pair.clientA.start()
+            pair.clientB.start()
+            advanceTimeBy(100)
+            runCurrent()
+            pair.clientA.connect(idB.toHexString())
+            advanceTimeBy(200)
+            runCurrent()
+            // t=300: queued. happyPair's own table: transmitting at t=320,
+            // delivered-to-B at t=380 (60ms after transmitting).
+            val msgHex = pair.clientA.send("late-for-b")
+            advanceTimeBy(30) // t=330: past transmitting, well before delivery.
+            runCurrent()
+
+            pair.clientB.disconnect()
+            settle()
+
+            assertTrue(
+                "B must never receive a message whose delivery was still in flight when B disconnected " +
+                    "-- CONTRACT.md section 2's receiver-side inbound cancellation",
+                bEvents.filterIsInstance<ChatEvent.MessageReceived>().isEmpty(),
+            )
+
+            // "The sender's own transfer statuses are unaffected by the
+            // receiver's disconnect -- the simulator models no delivery-failure
+            // backchannel." (CONTRACT.md section 2's "Target ownership" bullet).
+            val statuses =
+                aEvents.filterIsInstance<ChatEvent.MessageStatusChanged>()
+                    .filter { it.messageIdHex == msgHex }
+                    .map { it.status }
+            assertEquals(
+                listOf(
+                    ChatMessageDisplayStatus.Queued,
+                    ChatMessageDisplayStatus.Transmitting,
+                    ChatMessageDisplayStatus.Delivered,
+                ),
+                statuses,
+            )
+        }
+
+    @Test
+    fun passiveSideDisconnectMidHandshakeSuppressesItsOwnConnectedTransition() =
+        runTest {
+            val pair = createChatPair(ChatScenario.HAPPY_PAIR, 8L, null)
+            val (_, idB) = expectedPeerIds(8L)
+            val aEvents = collectEvents(pair.clientA)
+            val bEvents = collectEvents(pair.clientB)
+
+            pair.clientA.start()
+            pair.clientB.start()
+            advanceTimeBy(100)
+            runCurrent()
+            pair.clientA.connect(idB.toHexString())
+            // A's handshake schedules BOTH sides' connected transition for
+            // t=150 (CONNECTED_DELAY_MS=50 later). B (the passive side)
+            // disconnects mid-handshake, well before t=150.
+            advanceTimeBy(20) // t=120
+            runCurrent()
+
+            pair.clientB.disconnect()
+            settle()
+
+            assertEquals(
+                "B must never observe connectionChanged(connected) after its own disconnect(), " +
+                    "even though A's connect() scheduled that transition (passive-side handshake cancellation)",
+                listOf(ChatConnectionState.Disconnected(ChatReasonStrings.USER_INITIATED)),
+                bEvents.filterIsInstance<ChatEvent.ConnectionChanged>().map { it.state },
+            )
+
+            // A itself never disconnected -- ad hoc/out-of-table behavior
+            // CONTRACT.md does not pin either way -- so A's own side of the
+            // handshake still completes on A's own timeline.
+            assertTrue(
+                "sanity: A's own connected transition is unaffected by B's disconnect",
+                aEvents.filterIsInstance<ChatEvent.ConnectionChanged>().any { it.state == ChatConnectionState.Connected },
+            )
+        }
+
+    @Test
+    fun activeSideDisconnectMidHandshakeCancelsBothSidesConnectedTransition() =
+        runTest {
+            val pair = createChatPair(ChatScenario.HAPPY_PAIR, 8L, null)
+            val (_, idB) = expectedPeerIds(8L)
+            val aEvents = collectEvents(pair.clientA)
+            val bEvents = collectEvents(pair.clientB)
+
+            pair.clientA.start()
+            pair.clientB.start()
+            advanceTimeBy(100)
+            runCurrent()
+            pair.clientA.connect(idB.toHexString())
+            advanceTimeBy(20) // t=120, well before t=150's connected.
+            runCurrent()
+
+            pair.clientA.disconnect()
+            settle()
+
+            // A's own in-flight handshake job -- the SAME job that would have
+            // emitted B's connected transition too -- is cancelled outright by
+            // A's own disconnect(), so NEITHER side ever reaches `connected`.
+            assertEquals(
+                listOf(ChatConnectionState.Connecting, ChatConnectionState.Disconnected(ChatReasonStrings.USER_INITIATED)),
+                aEvents.filterIsInstance<ChatEvent.ConnectionChanged>().map { it.state },
+            )
+            assertTrue(
+                "B must never reach connected either -- the cancelled job was the only thing that would have emitted it",
+                bEvents.filterIsInstance<ChatEvent.ConnectionChanged>().none { it.state == ChatConnectionState.Connected },
+            )
+        }
+
+    // -- start() semantics (../../../CONTRACT.md section 2's pinned "start()
+    // semantics (pinned)" block) --------------------------------------------
+
+    @Test
+    fun startIsIdempotentAndDoesNotScheduleASecondPeerFound() =
+        runTest {
+            val pair = createChatPair(ChatScenario.HAPPY_PAIR, 8L, null)
+            val aEvents = collectEvents(pair.clientA)
+            val bEvents = collectEvents(pair.clientB)
+
+            pair.clientA.start()
+            pair.clientB.start()
+            pair.clientA.start() // repeat call: must be a no-op.
+            pair.clientB.start() // repeat call: must be a no-op.
+            settle()
+
+            assertEquals(1, aEvents.filterIsInstance<ChatEvent.PeerFound>().size)
+            assertEquals(1, bEvents.filterIsInstance<ChatEvent.PeerFound>().size)
+        }
+
+    @Test
+    fun discoveryIsArmedOnlyOnceBothClientsHaveStarted() =
+        runTest {
+            val pair = createChatPair(ChatScenario.HAPPY_PAIR, 8L, null)
+            val aEvents = collectEvents(pair.clientA)
+            val bEvents = collectEvents(pair.clientB)
+
+            pair.clientA.start()
+            // Far past PEER_FOUND_DELAY_MS -- if A's start() (wrongly) armed
+            // discovery on its own, this would already have fired.
+            advanceTimeBy(1_000)
+            runCurrent()
+
+            assertTrue(
+                "A alone must not discover anything until B also starts",
+                aEvents.filterIsInstance<ChatEvent.PeerFound>().isEmpty(),
+            )
+            assertTrue(bEvents.filterIsInstance<ChatEvent.PeerFound>().isEmpty())
+
+            pair.clientB.start()
+            settle()
+
+            val aFound = aEvents.filterIsInstance<ChatEvent.PeerFound>().single()
+            val bFound = bEvents.filterIsInstance<ChatEvent.PeerFound>().single()
+            // "the moment the second client starts, each client's peerFound is
+            // scheduled at its section 3 scenario offset relative to THAT
+            // moment" -- not relative to A's much-earlier start() call.
+            assertEquals(1_050L, aFound.peer.discoveredAtMs)
+            assertEquals(1_050L, bFound.peer.discoveredAtMs)
+        }
+
+    @Test
+    fun stoppedClientCannotBeRestarted() =
+        runTest {
+            val pair = createChatPair(ChatScenario.HAPPY_PAIR, 8L, null)
+            val aEvents = collectEvents(pair.clientA)
+            val bEvents = collectEvents(pair.clientB)
+
+            pair.clientA.stop() // stop before ever starting.
+            settle()
+
+            pair.clientA.start() // must be a no-op: "a stopped client cannot be restarted."
+            pair.clientB.start()
+            settle()
+
+            assertTrue(
+                "a stopped client's start() must schedule nothing",
+                aEvents.filterIsInstance<ChatEvent.PeerFound>().isEmpty(),
+            )
+            assertTrue(
+                "B's peer (A) never really started from B's perspective either, so B must not discover anything",
+                bEvents.filterIsInstance<ChatEvent.PeerFound>().isEmpty(),
+            )
+        }
 }

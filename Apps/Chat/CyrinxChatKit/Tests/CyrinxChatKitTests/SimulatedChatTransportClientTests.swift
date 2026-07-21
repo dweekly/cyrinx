@@ -3,36 +3,37 @@ import Testing
 
 @testable import CyrinxChatKit
 
+/// Drives a pair through start -> connect, matching the driver timing every
+/// one of CONTRACT.md §3's six tables share (connect at t=100, connected at
+/// t=150), leaving the clock at t=150. Callers advance further as needed
+/// for their own scenario. File-scope (not a member of either `@Suite`
+/// struct below) so both can share it without duplication.
+private func connectedPair(
+    scenario: ChatScenario = .happyPair,
+    seed: UInt64
+) async throws -> (
+    a: SimulatedChatTransportClient, b: SimulatedChatTransportClient, clock: VirtualClock
+) {
+    let clock = VirtualClock()
+    let (clientA, clientB) = SimulatedChatTransportClient.makePair(
+        scenario: scenario, seed: seed, clock: clock
+    )
+    try await clientA.start()
+    try await clientB.start()
+    clock.advance(toMs: 100)
+    try await clientA.connect(toPeer: clientB.localPeerId.hexString)
+    clock.advance(toMs: 150)
+    return (clientA, clientB, clock)
+}
+
 /// Direct, ad hoc (not tied to one of the six canonical scenario scripts)
 /// tests against `SimulatedChatTransportClient`'s public protocol surface:
 /// a real paired exchange with caller-supplied content, and cancellation.
 @Suite("Simulated transport client: paired exchange and cancellation")
 struct SimulatedChatTransportClientTests {
-    /// Drives a pair through start -> connect, matching the driver timing
-    /// every one of CONTRACT.md §3's six tables share (connect at t=100,
-    /// connected at t=150), leaving the clock at t=150. Callers advance
-    /// further as needed for their own scenario.
-    private static func connectedPair(
-        scenario: ChatScenario = .happyPair,
-        seed: UInt64
-    ) async throws -> (
-        a: SimulatedChatTransportClient, b: SimulatedChatTransportClient, clock: VirtualClock
-    ) {
-        let clock = VirtualClock()
-        let (clientA, clientB) = SimulatedChatTransportClient.makePair(
-            scenario: scenario, seed: seed, clock: clock
-        )
-        try await clientA.start()
-        try await clientB.start()
-        clock.advance(toMs: 100)
-        try await clientA.connect(toPeer: clientB.localPeerId.hexString)
-        clock.advance(toMs: 150)
-        return (clientA, clientB, clock)
-    }
-
     @Test("B receives exactly what A sent, through real encode/decode, for caller-supplied content")
     func pairedExchangeRoundTripsCallerSuppliedBody() async throws {
-        let (clientA, clientB, clock) = try await Self.connectedPair(seed: 7)
+        let (clientA, clientB, clock) = try await connectedPair(seed: 7)
 
         clock.advance(toMs: 300)
         let customBody = "Custom paired-exchange body: café 日本語 😀 \"quoted\" and\ttabbed"
@@ -62,7 +63,7 @@ struct SimulatedChatTransportClientTests {
 
     @Test("cancelSend stops further scripted transitions, emits failed(cancelled); B never receives it")
     func cancelSendStopsFurtherProgress() async throws {
-        let (clientA, clientB, clock) = try await Self.connectedPair(seed: 55)
+        let (clientA, clientB, clock) = try await connectedPair(seed: 55)
 
         clock.advance(toMs: 300)
         let messageIdHex = try await clientA.send(body: "cancel-me")
@@ -98,13 +99,13 @@ struct SimulatedChatTransportClientTests {
 
     @Test("cancelSend on an unknown messageIdHex is a harmless no-op")
     func cancelSendOnUnknownIdIsNoOp() async throws {
-        let (clientA, _, _) = try await Self.connectedPair(seed: 8)
+        let (clientA, _, _) = try await connectedPair(seed: 8)
         await clientA.cancelSend(messageIdHex: "deadbeef")  // never sent; must not crash or throw
     }
 
     @Test("cancelSend on an already-delivered messageIdHex is a no-op: no further status change")
     func cancelSendOnAlreadyDeliveredIsNoOp() async throws {
-        let (clientA, clientB, clock) = try await Self.connectedPair(seed: 21)
+        let (clientA, clientB, clock) = try await connectedPair(seed: 21)
 
         clock.advance(toMs: 300)
         let messageIdHex = try await clientA.send(body: "already-delivered")
@@ -132,7 +133,7 @@ struct SimulatedChatTransportClientTests {
 
     @Test("cancelSend on an already-failed messageIdHex is a no-op: no duplicate failed emission")
     func cancelSendOnAlreadyFailedIsNoOp() async throws {
-        let (clientA, clientB, clock) = try await Self.connectedPair(scenario: .sendFailure, seed: 34)
+        let (clientA, clientB, clock) = try await connectedPair(scenario: .sendFailure, seed: 34)
 
         clock.advance(toMs: 300)
         let messageIdHex = try await clientA.send(body: "will-fail")
@@ -157,7 +158,7 @@ struct SimulatedChatTransportClientTests {
 
     @Test("disconnect() emits connectionChanged(disconnected, reason: \"userInitiated\")")
     func disconnectEmitsUserInitiatedReason() async throws {
-        let (clientA, _, _) = try await Self.connectedPair(seed: 13)
+        let (clientA, _, _) = try await connectedPair(seed: 13)
 
         await clientA.disconnect()
         #expect(clientA.connectionState == .disconnected(reason: "userInitiated"))
@@ -206,7 +207,7 @@ struct SimulatedChatTransportClientTests {
 
     @Test("send is accepted while degraded (CONTRACT.md §2's Send precondition)")
     func sendAcceptedWhileDegraded() async throws {
-        let (clientA, _, clock) = try await Self.connectedPair(scenario: .degradedThenRecovered, seed: 65)
+        let (clientA, _, clock) = try await connectedPair(scenario: .degradedThenRecovered, seed: 65)
 
         // degradedThenRecovered's postConnectSteps (ChatScenario.swift):
         // linkBudget@+50, degraded@+250 relative to `connected` (t=150) --
@@ -273,7 +274,7 @@ struct SimulatedChatTransportClientTests {
 
     @Test("send-then-stop: nonterminal send terminalizes as failed(\"stopped\") before the stream finishes")
     func sendThenStopTerminalizesBeforeStreamFinishes() async throws {
-        let (clientA, clientB, clock) = try await Self.connectedPair(seed: 72)
+        let (clientA, clientB, clock) = try await connectedPair(seed: 72)
 
         clock.advance(toMs: 300)
         let messageIdHex = try await clientA.send(body: "stop-me")
@@ -317,7 +318,7 @@ struct SimulatedChatTransportClientTests {
 
     @Test("repeat stop() and disconnect() calls are no-ops")
     func repeatStopAndDisconnectAreNoOps() async throws {
-        let (clientA, clientB, _) = try await Self.connectedPair(seed: 73)
+        let (clientA, clientB, _) = try await connectedPair(seed: 73)
 
         await clientA.disconnect()
         await clientA.disconnect()  // repeat -- must not emit a second event
@@ -417,6 +418,272 @@ struct SimulatedChatTransportClientTests {
             if case .messageReceived = event.kind { receivedOnB = true }
         }
         #expect(!receivedOnB)
+    }
+}
+
+/// C3-28 lifecycle-ownership review fix: direct tests of CONTRACT.md §2's
+/// "Target ownership" bullet (a scheduled effect that mutates a client is
+/// owned by THAT client's own lifecycle, regardless of which client's call
+/// scheduled it) and "`start()` semantics (pinned)" block. Split out from
+/// `SimulatedChatTransportClientTests` above purely to keep each `@Suite`
+/// struct's body under swiftlint's `type_body_length` limit -- these tests
+/// are still ad hoc/out-of-table in exactly the same sense as that suite's
+/// (none of the six §3 scenario scripts exercise a receiver disconnecting
+/// mid-delivery or a passive-side handshake cancellation).
+@Suite("Simulated transport client: target ownership and start() semantics")
+struct TargetOwnershipAndStartSemanticsTests {
+    @Test(
+        """
+        receiver-disconnect-with-inbound-send: B.disconnect() between A.send() and scheduled delivery \
+        -- B emits nothing after its own disconnect; A's own transfer statuses are unaffected
+        """
+    )
+    func receiverDisconnectWithInboundSend() async throws {
+        // CONTRACT.md §2's "Target ownership" bullet, and the reviewer's
+        // concrete failure it names directly: B.disconnect() then A's
+        // already-scheduled delivery must NOT still emit messageReceived
+        // on B, even though it was A's send() that scheduled it.
+        let (clientA, clientB, clock) = try await connectedPair(seed: 91)
+
+        clock.advance(toMs: 300)
+        let messageIdHex = try await clientA.send(body: "will-be-orphaned")
+        // happyPair's send outcome: transmitting@+20 (=320), B receives@+80
+        // relative to transmitting (=400), A delivered@+100 relative to
+        // transmitting (=420). Disconnect B at 350 -- after `transmitting`
+        // has already fired on A, but well before B's scheduled delivery
+        // (400) or A's scheduled `delivered` (420) -- so both of those
+        // closures are still pending in the shared VirtualClock when B
+        // disconnects.
+        clock.advance(toMs: 350)
+        await clientB.disconnect()
+
+        // Advance well past both of those pending times; if the delivery
+        // token were still (incorrectly) owned only by A's own
+        // bookkeeping, B would observe messageReceived here despite its
+        // own disconnect.
+        clock.advance(toMs: 2000)
+        await clientA.stop()
+        await clientB.stop()
+
+        var receivedOnBAfterDisconnect = false
+        for await event in clientB.events {
+            if case .messageReceived = event.kind { receivedOnBAfterDisconnect = true }
+        }
+        #expect(!receivedOnBAfterDisconnect)
+
+        // CONTRACT.md's "The sender's own transfer statuses are unaffected
+        // by the receiver's disconnect" -- A's own queued/transmitting
+        // sequence must be exactly what happyPair's sendOutcome scripts,
+        // not truncated or altered by B's unrelated disconnect. (A never
+        // reaches `delivered` here because the simulator models no
+        // delivery-failure backchannel and this test's B disconnects
+        // before A's own scripted `delivered` fires -- but nothing about
+        // that firing is B's concern: A's `delivered` closure lives in A's
+        // own bookkeeping, untouched by B's disconnect.)
+        var statusesForMessage: [ChatMessageDisplayStatus] = []
+        for await event in clientA.events {
+            if case .messageStatusChanged(let idHex, let status) = event.kind, idHex == messageIdHex {
+                statusesForMessage.append(status)
+            }
+        }
+        #expect(statusesForMessage == [.queued, .transmitting, .delivered])
+    }
+
+    @Test(
+        """
+        passive-side handshake cancellation: B disconnects mid-handshake (scheduled by A.connect()) \
+        -- B never emits connectionChanged(connected); A's own view follows its scripted timeline
+        """
+    )
+    func passiveSideHandshakeCancellation() async throws {
+        // CONTRACT.md §2's "Target ownership" bullet: "a client never
+        // observes connectionChanged(connected) after its own
+        // disconnect()/stop(), even when the peer's connect() scheduled
+        // that transition (passive-side handshake cancellation)."
+        let clock = VirtualClock()
+        let (clientA, clientB) = SimulatedChatTransportClient.makePair(
+            scenario: .happyPair, seed: 92, clock: clock
+        )
+        try await clientA.start()
+        try await clientB.start()
+        clock.advance(toMs: 100)
+        try await clientA.connect(toPeer: clientB.localPeerId.hexString)
+        // `connect()` schedules `becomeConnected()` on BOTH sides for t=150
+        // (ChatSimTiming.connectHandshakeDelayMs); disconnect B here, at
+        // t=120, strictly before that handshake step has any chance to
+        // fire on either side.
+        clock.advance(toMs: 120)
+        await clientB.disconnect()
+
+        // Advance well past t=150; if B's own copy of `becomeConnected`
+        // were not cancelled by B's own disconnect (this is the passive
+        // side -- B never called connect() or disconnect() itself in the
+        // buggy scheduling), B would incorrectly transition to `connected`
+        // here.
+        clock.advance(toMs: 2000)
+        await clientA.stop()
+        await clientB.stop()
+
+        var bConnectionChanges: [ChatConnectionState] = []
+        for await event in clientB.events {
+            if case .connectionChanged(let state) = event.kind {
+                bConnectionChanges.append(state)
+            }
+        }
+        #expect(!bConnectionChanges.contains(.connected))
+        // B's only connectionChanged is its own disconnect(); `stop()`
+        // afterward sees B already disconnected and emits nothing further.
+        #expect(bConnectionChanges == [.disconnected(reason: "userInitiated")])
+
+        // A's own view follows its scripted timeline: A (the active side)
+        // never disconnected, so A's own `connecting` -> `connected`
+        // handshake proceeds exactly as happyPair's §3.1 pins it -- A's
+        // lifecycle is entirely independent of B's.
+        var aConnectionChanges: [ChatConnectionState] = []
+        for await event in clientA.events {
+            if case .connectionChanged(let state) = event.kind {
+                aConnectionChanges.append(state)
+            }
+        }
+        #expect(aConnectionChanges == [.connecting, .connected, .disconnected(reason: "stopped")])
+    }
+
+    @Test(
+        """
+        active-side handshake cancellation: A.connect() then A.disconnect() before the scripted \
+        connected transition -- A never emits connectionChanged(connected); B never sees it either
+        """
+    )
+    func activeSideHandshakeCancellation() async throws {
+        // Companion to `passiveSideHandshakeCancellation()` above --
+        // exercises the OTHER side of the same handshake-cancellation
+        // guarantee, with a name a Kotlin port can mirror directly:
+        // disconnecting the side that itself called `connect()`.
+        let clock = VirtualClock()
+        let (clientA, clientB) = SimulatedChatTransportClient.makePair(
+            scenario: .happyPair, seed: 93, clock: clock
+        )
+        try await clientA.start()
+        try await clientB.start()
+        clock.advance(toMs: 100)
+        try await clientA.connect(toPeer: clientB.localPeerId.hexString)
+        clock.advance(toMs: 120)
+        await clientA.disconnect()
+
+        clock.advance(toMs: 2000)
+        await clientA.stop()
+        await clientB.stop()
+
+        var aConnectionChanges: [ChatConnectionState] = []
+        for await event in clientA.events {
+            if case .connectionChanged(let state) = event.kind {
+                aConnectionChanges.append(state)
+            }
+        }
+        #expect(!aConnectionChanges.contains(.connected))
+        #expect(aConnectionChanges == [.connecting, .disconnected(reason: "userInitiated")])
+
+        // B's own copy of `becomeConnected` was scheduled by A's connect()
+        // call but is owned by B -- it is untouched by A's disconnect (a
+        // different client's lifecycle), so B still becomes `connected` on
+        // its own scripted timeline; this asserts that this test isolates
+        // the active side's own cancellation without accidentally relying
+        // on B also being cancelled.
+        var bConnectionChanges: [ChatConnectionState] = []
+        for await event in clientB.events {
+            if case .connectionChanged(let state) = event.kind {
+                bConnectionChanges.append(state)
+            }
+        }
+        #expect(bConnectionChanges == [.connected, .disconnected(reason: "stopped")])
+    }
+
+    @Test("start() idempotency and both-started discovery gating (CONTRACT.md §2's start() semantics)")
+    func startIdempotencyAndBothStartedGating() async throws {
+        // Parity test named so a Kotlin port can mirror it directly.
+        // CONTRACT.md §2's "start() semantics (pinned)": start() is
+        // idempotent (repeated calls change nothing, schedule nothing);
+        // "Discovery is armed only once BOTH clients of a pair have
+        // started; the moment the second client starts, each client's
+        // peerFound is scheduled at its §3 scenario offset relative to
+        // THAT moment" -- not relative to whichever client happened to
+        // start first.
+        let clock = VirtualClock()
+        let (clientA, clientB) = SimulatedChatTransportClient.makePair(
+            scenario: .happyPair, seed: 94, clock: clock
+        )
+
+        // Repeated, idempotent start() on A alone, well before B starts.
+        // If these wrongly scheduled discovery (instead of only the
+        // both-started guard doing so), peerFound would later report
+        // `discoveredAtMs` relative to t=0, not to B's start() below.
+        try await clientA.start()
+        try await clientA.start()
+        try await clientA.start()
+
+        clock.advance(toMs: 1000)
+        // B starts here, at t=1000 -- this is the moment discovery arms.
+        // A's three earlier start() calls must not have moved that
+        // moment earlier.
+        try await clientB.start()
+        try await clientB.start()  // also idempotent, after both have started
+
+        clock.advance(toMs: 1100)
+        await clientA.stop()
+        await clientB.stop()
+
+        var aDiscoveredAtMs: [Int64] = []
+        for await event in clientA.events {
+            if case .peerFound(let peer) = event.kind { aDiscoveredAtMs.append(peer.discoveredAtMs) }
+        }
+        var bDiscoveredAtMs: [Int64] = []
+        for await event in clientB.events {
+            if case .peerFound(let peer) = event.kind { bDiscoveredAtMs.append(peer.discoveredAtMs) }
+        }
+        // Exactly one peerFound per side (A's three redundant start()
+        // calls didn't duplicate it), each timestamped 50ms
+        // (ChatSimTiming.peerDiscoveryDelayMs) after B's start() at
+        // t=1000 -- not 50ms after A's very first start() at t=0, which
+        // is what a bug that armed discovery on the FIRST start() (rather
+        // than gating on both) would have produced instead.
+        #expect(aDiscoveredAtMs == [1050])
+        #expect(bDiscoveredAtMs == [1050])
+    }
+
+    @Test("stop() before start() leaves a client permanently unstartable: start() afterward is a no-op")
+    func stopBeforeStartPreventsLaterStart() async throws {
+        // CONTRACT.md §2's "start() semantics (pinned)": "A stopped client
+        // cannot be restarted." Exercises the edge case where stop() is
+        // called before start() ever ran (an unusual but legal call
+        // order): a subsequent start() must remain a no-op, never arming
+        // discovery.
+        let clock = VirtualClock()
+        let (clientA, clientB) = SimulatedChatTransportClient.makePair(
+            scenario: .happyPair, seed: 95, clock: clock
+        )
+        await clientA.stop()
+        try await clientA.start()  // must be a no-op: A was never started, but IS finished
+        try await clientB.start()
+
+        clock.advance(toMs: 2000)
+        await clientB.stop()
+
+        var aPeerFoundCount = 0
+        for await event in clientA.events {
+            if case .peerFound = event.kind { aPeerFoundCount += 1 }
+        }
+        // A's stream was already finished by the first stop() before any
+        // of this ran, so nothing -- not even a belated peerFound -- can
+        // appear on it.
+        #expect(aPeerFoundCount == 0)
+
+        var bPeerFoundCount = 0
+        for await event in clientB.events {
+            if case .peerFound = event.kind { bPeerFoundCount += 1 }
+        }
+        // B alone never satisfies "both clients started" (A never
+        // successfully started), so B never sees peerFound either.
+        #expect(bPeerFoundCount == 0)
     }
 }
 

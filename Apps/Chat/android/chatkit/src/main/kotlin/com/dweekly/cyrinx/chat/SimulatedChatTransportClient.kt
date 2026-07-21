@@ -9,6 +9,7 @@ import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Deterministic, in-process, paired [ChatTransportClient] driven by
@@ -92,8 +93,83 @@ class SimulatedChatTransportClient internal constructor(
      * too (see [ChatEventBus.emit]'s doc comment) -- this flag exists only to
      * make `stop()` ITSELF idempotent (skip re-running its cancellation/
      * terminalization work), not as a general "is this client stopped" gate the
-     * rest of this class needs to consult. */
+     * rest of this class needs to consult. Also consulted by [start] ("A
+     * stopped client cannot be restarted," ../../../CONTRACT.md section 2's
+     * pinned `start()` semantics). */
     private val stopped = AtomicBoolean(false)
+
+    /** Guards [start] so a repeat call is a no-op ("start() is idempotent:
+     * repeated calls change nothing and schedule nothing," pinned `start()`
+     * semantics). */
+    private val started = AtomicBoolean(false)
+
+    /** Guards discovery-arming so it happens at most once per pair, from
+     * whichever client's [start] call is the SECOND to observe the other
+     * already started -- see [start] and [armDiscoveryForBothClients]. Checked
+     * on BOTH sides (`!discoveryArmed && !other.discoveryArmed`), mirroring
+     * CyrinxChatKit's Swift `scheduleDiscoveryIfBothStarted()`'s
+     * `!discoveryScheduled && !peer.discoveryScheduled` double-check: this
+     * class shares that Swift type's single-sequential-caller design
+     * assumption (see the class doc comment), so this is defense-in-depth
+     * against a same-instant double-arm rather than a proof of thread safety
+     * under genuinely concurrent callers. */
+    private val discoveryArmed = AtomicBoolean(false)
+
+    /** Monotonically increasing per-client "lifecycle generation," advanced by
+     * [disconnect] and [stop] -- ../../../CONTRACT.md section 2's "Target
+     * ownership" bullet: "disconnect() and stop() advance the target client's
+     * lifecycle generation, and every effect is validated against its target's
+     * current generation at fire time; a stale effect is dropped silently."
+     *
+     * A peer-driven effect that will eventually mutate or emit on THIS client
+     * (e.g. the peer's `connect()` scheduling this client's own `connected`
+     * transition, or the peer's `send()` scheduling this client's own inbound
+     * `messageReceived`) captures [currentGeneration] at the moment it is
+     * scheduled and is re-validated against this client's CURRENT generation
+     * immediately before it actually fires, via [ifGenerationStillMatches]. A
+     * mismatch means this client's own [disconnect]/[stop] ran sometime
+     * between scheduling and firing, so the effect is stale and is silently
+     * dropped -- never observed by a consumer of [events], and never even
+     * reaching [emit]. This is what fixes the two target-ownership bugs a
+     * C3-28 PR review demonstrated with focused harnesses: a sender-owned
+     * delivery job that kept delivering `messageReceived` to a receiver after
+     * the RECEIVER's own `disconnect()` (the effect was owned by the sender's
+     * job, not validated against the receiver's own lifecycle), and a
+     * connect()-initiator job that unconditionally emitted the PASSIVE peer's
+     * `connected` transition even after that passive peer had itself
+     * disconnected mid-handshake.
+     *
+     * Starts at 0 and only ever increases -- once advanced, a captured
+     * generation value is never valid again, even if this client is somehow
+     * exercised again later (none of the six CONTRACT.md scenarios do this,
+     * but nothing prevents an ad hoc caller from invoking `disconnect()` more
+     * than once across this client's lifetime, so staleness must stay
+     * permanent rather than resettable). */
+    private val generation = AtomicLong(0L)
+
+    /** Snapshot of [generation], for a peer to capture at the moment it
+     * schedules an effect targeting this client -- see [generation]'s doc
+     * comment and [ifGenerationStillMatches]. */
+    internal fun currentGeneration(): Long = generation.get()
+
+    /**
+     * Runs [action] -- a peer-driven effect that mutates or emits on THIS
+     * client -- only if this client's [generation] is still exactly
+     * [expectedGeneration], i.e. neither [disconnect] nor [stop] has run on
+     * this client since the caller captured that generation at scheduling
+     * time. Otherwise [action] is not invoked at all (not even to build an
+     * event) -- ../../../CONTRACT.md section 2's "Target ownership" bullet:
+     * "a stale effect is dropped silently."
+     *
+     * Call this ON THE TARGET client -- e.g. `other.ifGenerationStillMatches
+     * (otherGenerationAtConnect) { other.emitFromPeer { ... } }` -- never on
+     * `self` for a self-owned effect: a client's own scheduled work is already
+     * correctly torn down by its own [disconnect]/[stop] via
+     * [cancelAndJoinBackgroundJobs] and needs no separate generation check.
+     */
+    internal fun ifGenerationStillMatches(expectedGeneration: Long, action: () -> Unit) {
+        if (generation.get() == expectedGeneration) action()
+    }
 
     /** Assigns `eventSeq`, offers the event to [eventBus], and -- if a
      * [traceSink] is attached -- records (eventSeq, current virtual time, event)
@@ -155,32 +231,128 @@ class SimulatedChatTransportClient internal constructor(
     private fun requirePeer(caller: String): SimulatedChatTransportClient =
         peer ?: throw ChatTransportError("$caller called on a client with no paired peer")
 
+    /**
+     * ../../../CONTRACT.md section 2's pinned `start()` semantics: idempotent
+     * (a repeat call changes nothing and schedules nothing, guarded by
+     * [started]); a stopped client cannot be restarted (guarded by [stopped]);
+     * and discovery is armed only once BOTH clients of a pair have started --
+     * "the moment the second client starts, each client's peerFound is
+     * scheduled at its section 3 scenario offset relative to that moment."
+     *
+     * Calls are sequential, never concurrent, in this class's documented
+     * single-sequential-caller usage (see the class doc comment), so whichever
+     * client's `start()` call is the SECOND one is the only one that ever
+     * observes `other.started == true` here -- that call is the one that arms
+     * discovery for BOTH clients via [armDiscoveryForBothClients]. The FIRST
+     * call simply records `started = true` and returns, having scheduled
+     * nothing, and waits for the peer's own `start()` to arm it.
+     */
     override suspend fun start() {
+        if (stopped.get()) return
+        if (!started.compareAndSet(false, true)) return
+
         val other = requirePeer("start()")
-        val job =
-            scope.launch {
-                delay(ChatScenarioTimings.PEER_FOUND_DELAY_MS)
-                val now = timeSource.nowMs()
-                emit { seq -> ChatEvent.PeerFound(seq, ChatPeer(other.idBytes, now)) }
-            }
-        backgroundJobs.add(job)
+        if (other.started.get() && !discoveryArmed.get() && !other.discoveryArmed.get()) {
+            discoveryArmed.set(true)
+            other.discoveryArmed.set(true)
+            armDiscoveryForBothClients(other)
+        }
     }
 
-    /** Cancels every scheduled action for this client -- every entry in
-     * [backgroundJobs] (handshake steps, message status transitions, link-budget
-     * events -- anything scheduled via `scope.launch` anywhere in this class,
-     * including every `send()` job, which is added to both this list and
-     * [pendingSendJobs]). ../../../CONTRACT.md section 2's "Lifecycle
+    /**
+     * Schedules `peerFound` for BOTH clients in the pair, [ChatScenarioTimings
+     * .PEER_FOUND_DELAY_MS] from the current virtual time -- called exactly
+     * once per pair, by whichever client's [start] call observes the other
+     * already started. `this` is that (second-to-start) client; [other] is the
+     * first.
+     */
+    private fun armDiscoveryForBothClients(other: SimulatedChatTransportClient) {
+        val clientA = if (label == 'A') this else other
+        val clientB = if (label == 'A') other else this
+        // CyrinxChatKit's Swift `scheduleDiscoveryIfBothStarted()`: "A's
+        // peerFound is always scheduled (and so always fires) before B's,
+        // regardless of which client's start() happened to trigger this" --
+        // every CONTRACT.md section 3 table lists A's peerFound (eventSeq 0)
+        // before B's (eventSeq 0) at the same virtual time, and
+        // kotlinx-coroutines-test resolves same-due-time tasks in scheduling
+        // order, so scheduling order here IS firing order.
+        scheduleDiscoveredPeerFound(target = clientA, discoveredPeer = clientB)
+        scheduleDiscoveredPeerFound(target = clientB, discoveredPeer = clientA)
+    }
+
+    /**
+     * Schedules [target]'s own `peerFound(discoveredPeer)` event. If [target]
+     * is `this` client, the job is a self-owned scheduled action (added to
+     * this client's own [backgroundJobs], so a later self [disconnect]/[stop]
+     * cancels it directly, like every other self-owned scheduled action).
+     * Otherwise [target] is the peer, and the effect is guarded by
+     * [ifGenerationStillMatches] against a generation captured from [target]
+     * right now -- ../../../CONTRACT.md section 2's "Target ownership" bullet
+     * -- so [target]'s own [disconnect]/[stop] between now and the delay
+     * elapsing silently drops a `peerFound` the target itself already tore
+     * down, rather than emitting it anyway.
+     */
+    private fun scheduleDiscoveredPeerFound(
+        target: SimulatedChatTransportClient,
+        discoveredPeer: SimulatedChatTransportClient,
+    ) {
+        val discoveredIdSnapshot = discoveredPeer.idBytes
+        if (target === this) {
+            val job =
+                scope.launch {
+                    delay(ChatScenarioTimings.PEER_FOUND_DELAY_MS)
+                    val now = timeSource.nowMs()
+                    emit { seq -> ChatEvent.PeerFound(seq, ChatPeer(discoveredIdSnapshot, now)) }
+                }
+            backgroundJobs.add(job)
+        } else {
+            val targetGenerationAtSchedule = target.currentGeneration()
+            val job =
+                scope.launch {
+                    delay(ChatScenarioTimings.PEER_FOUND_DELAY_MS)
+                    val now = timeSource.nowMs()
+                    target.ifGenerationStillMatches(targetGenerationAtSchedule) {
+                        target.emitFromPeer { seq -> ChatEvent.PeerFound(seq, ChatPeer(discoveredIdSnapshot, now)) }
+                    }
+                }
+            backgroundJobs.add(job)
+        }
+    }
+
+    /** Cancels AND JOINS every scheduled action for this client -- every entry
+     * in [backgroundJobs] (handshake steps, message status transitions,
+     * link-budget events -- anything scheduled via `scope.launch` anywhere in
+     * this class, including every `send()` job, which is added to both this
+     * list and [pendingSendJobs]). ../../../CONTRACT.md section 2's "Lifecycle
      * cancellation (pinned)": "Scheduled simulator work must never outlive the
-     * state that scheduled it." Shared by [disconnect] and [stop] only -- a
-     * scenario-scripted disconnect (see [failNonterminalOutgoingSends]'s call
-     * sites in [connect]) must NOT call this, since that codepath runs FROM
-     * WITHIN one of these same background jobs and cancelling it out from under
-     * itself would abort the rest of that scenario's own script (e.g. peerLoss's
-     * later `peerLost` events). */
-    private fun cancelBackgroundJobs() {
-        backgroundJobs.forEach { it.cancel() }
+     * state that scheduled it," and the "Quiescence before completion" bullet:
+     * "Implementations must cancel and join all in-flight work before
+     * completing/closing the event stream ... every emission either lands
+     * before the completion or its producer was already cancelled and
+     * joined."
+     *
+     * Every job is cancelled FIRST, then joined, rather than
+     * cancel-then-immediately-join one at a time: requesting every
+     * cancellation up front before waiting on any of them means a job that is
+     * itself mid-execution (e.g. between two back-to-back `emit()` calls with
+     * no suspension point in between) sees its own cancellation requested as
+     * early as possible, minimizing -- though, per ordinary cooperative
+     * cancellation, not eliminating the theoretical possibility of -- extra
+     * work happening before it actually stops. `join()` never throws for a
+     * cancelled job (unlike `Deferred.await`), so this needs no try/catch.
+     *
+     * Shared by [disconnect] and [stop] only -- a scenario-scripted disconnect
+     * (see [failNonterminalOutgoingSends]'s call sites in [connect]) must NOT
+     * call this, since that codepath runs FROM WITHIN one of these same
+     * background jobs and cancelling-and-joining it out from under itself
+     * would deadlock (a coroutine cannot join itself) or, at best, abort the
+     * rest of that scenario's own script (e.g. peerLoss's later `peerLost`
+     * events). */
+    private suspend fun cancelAndJoinBackgroundJobs() {
+        val jobs = backgroundJobs.toList()
         backgroundJobs.clear()
+        jobs.forEach { it.cancel() }
+        jobs.forEach { it.join() }
     }
 
     /**
@@ -192,8 +364,9 @@ class SimulatedChatTransportClient internal constructor(
      * (pinned)".
      *
      * Deliberately does NOT touch [backgroundJobs] or [connectionState] itself --
-     * callers own those separately: [disconnect]/[stop] call [cancelBackgroundJobs]
-     * themselves (this client's own background jobs), while a scripted disconnect
+     * callers own those separately: [disconnect]/[stop] call
+     * [cancelAndJoinBackgroundJobs] themselves (this client's own background
+     * jobs), while a scripted disconnect
      * must not (see that method's doc comment), and the connectionChanged event
      * that actually changes [connectionState] is a peer/caller-specific emission
      * this method has no opinion about the wording of.
@@ -220,8 +393,17 @@ class SimulatedChatTransportClient internal constructor(
     override suspend fun stop() {
         // "A repeat stop() is a no-op." (../../../CONTRACT.md section 2).
         if (!stopped.compareAndSet(false, true)) return
+        // "Target ownership": advance this client's own generation FIRST, so
+        // any peer-driven effect that checks it from here on (including ones
+        // whose scope.launch job we're about to cancel-and-join below) sees
+        // this client as stopped. ../../../CONTRACT.md section 2.
+        generation.incrementAndGet()
 
-        cancelBackgroundJobs()
+        // "Quiescence before completion": every one of this client's own
+        // in-flight background jobs is cancelled AND JOINED before anything
+        // below can reach eventBus.close() -- see cancelAndJoinBackgroundJobs's
+        // doc comment.
+        cancelAndJoinBackgroundJobs()
         failNonterminalOutgoingSends(ChatReasonStrings.STOPPED)
         // "emits connectionChanged(disconnected, reason: "stopped") unless the
         // state is already disconnected" (../../../CONTRACT.md section 2).
@@ -245,11 +427,25 @@ class SimulatedChatTransportClient internal constructor(
         emit { seq -> ChatEvent.ConnectionChanged(seq, ChatConnectionState.Connecting) }
 
         val selfIdHex = idBytes.toHexString()
+        // ../../../CONTRACT.md section 2's "Target ownership" bullet: every
+        // effect below that targets `other` (the passive peer) -- its own
+        // `connected` transition, and peerLoss's scripted `disconnected` /
+        // `failNonterminalOutgoingSends` / `peerLost` on `other` -- must be
+        // validated against OTHER's generation at fire time, not just fired
+        // unconditionally because THIS client's own job is still running. This
+        // is what fixes "disconnecting the passive peer mid-handshake cannot
+        // cancel A's job and B emits connected after its own disconnect": the
+        // generation is captured HERE, at connect() call time (before the
+        // handshake delay even starts), and re-checked immediately before each
+        // `other.` effect actually fires.
+        val otherGenerationAtConnect = other.currentGeneration()
         val job =
             scope.launch {
                 delay(ChatScenarioTimings.CONNECTED_DELAY_MS)
                 emit { seq -> ChatEvent.ConnectionChanged(seq, ChatConnectionState.Connected) }
-                other.emitFromPeer { seq -> ChatEvent.ConnectionChanged(seq, ChatConnectionState.Connected) }
+                other.ifGenerationStillMatches(otherGenerationAtConnect) {
+                    other.emitFromPeer { seq -> ChatEvent.ConnectionChanged(seq, ChatConnectionState.Connected) }
+                }
 
                 when (scenario) {
                     ChatScenario.HAPPY_PAIR -> {
@@ -284,12 +480,16 @@ class SimulatedChatTransportClient internal constructor(
                         // independent).
                         failNonterminalOutgoingSends(ChatReasonStrings.PEER_LOST)
 
-                        other.emitFromPeer { seq -> ChatEvent.ConnectionChanged(seq, ChatConnectionState.Disconnected(timeoutReason)) }
-                        other.failNonterminalOutgoingSends(ChatReasonStrings.PEER_LOST)
+                        other.ifGenerationStillMatches(otherGenerationAtConnect) {
+                            other.emitFromPeer { seq -> ChatEvent.ConnectionChanged(seq, ChatConnectionState.Disconnected(timeoutReason)) }
+                            other.failNonterminalOutgoingSends(ChatReasonStrings.PEER_LOST)
+                        }
 
                         delay(ChatScenarioTimings.PEER_LOSS_PEER_LOST_DELAY_MS)
                         emit { seq -> ChatEvent.PeerLost(seq, otherIdHex, timeoutReason) }
-                        other.emitFromPeer { seq -> ChatEvent.PeerLost(seq, selfIdHex, timeoutReason) }
+                        other.ifGenerationStillMatches(otherGenerationAtConnect) {
+                            other.emitFromPeer { seq -> ChatEvent.PeerLost(seq, selfIdHex, timeoutReason) }
+                        }
                     }
 
                     ChatScenario.DEGRADED_THEN_RECOVERED -> {
@@ -370,14 +570,17 @@ class SimulatedChatTransportClient internal constructor(
     override suspend fun disconnect() {
         // "a repeat disconnect() is a no-op." (../../../CONTRACT.md section 2). A
         // disconnect() called after stop() also lands here as a harmless
-        // first-and-only flip of this flag: cancelBackgroundJobs() has nothing
-        // left to cancel, failNonterminalOutgoingSends() has nothing left to
-        // terminalize, and the emit() below is silently dropped by the already-
-        // closed eventBus (see emit()'s doc comment) -- so no explicit `stopped`
-        // check is needed here for correctness.
+        // first-and-only flip of this flag: cancelAndJoinBackgroundJobs() has
+        // nothing left to cancel, failNonterminalOutgoingSends() has nothing
+        // left to terminalize, and the emit() below is silently dropped by the
+        // already-closed eventBus (see emit()'s doc comment) -- so no explicit
+        // `stopped` check is needed here for correctness.
         if (!disconnectedByUser.compareAndSet(false, true)) return
+        // "Target ownership": advance this client's own generation FIRST --
+        // same rationale as stop() above. ../../../CONTRACT.md section 2.
+        generation.incrementAndGet()
 
-        cancelBackgroundJobs()
+        cancelAndJoinBackgroundJobs()
         failNonterminalOutgoingSends(ChatReasonStrings.DISCONNECTED)
         emit { seq -> ChatEvent.ConnectionChanged(seq, ChatConnectionState.Disconnected(ChatReasonStrings.USER_INITIATED)) }
     }
@@ -415,6 +618,17 @@ class SimulatedChatTransportClient internal constructor(
         // (CONTRACT.md section 1.8).
         emitStatus(ChatMessageDisplayStatus.Queued)
 
+        // ../../../CONTRACT.md section 2's "Target ownership" bullet: "a
+        // client never emits messageReceived after its own disconnect()/
+        // stop(), even for a message the peer's send() had already scheduled
+        // (receiver-side inbound cancellation)." Captured HERE, at send() call
+        // time, and re-checked immediately before each `other.deliverEnvelope`
+        // call below fires -- this client's OWN transfer statuses
+        // (transmitting/delivered/failed, emitted via `emitStatus` above and
+        // below) are deliberately left UNGUARDED: "The sender's own transfer
+        // statuses are unaffected by the receiver's disconnect."
+        val otherGenerationAtSend = other.currentGeneration()
+
         val job =
             scope.launch {
                 delay(ChatScenarioTimings.TRANSMITTING_DELAY_MS)
@@ -429,13 +643,13 @@ class SimulatedChatTransportClient internal constructor(
 
                     ChatScenario.DUPLICATE_INCOMING -> {
                         delay(ChatScenarioTimings.DUPLICATE_DELIVER_DELAY_MS)
-                        other.deliverEnvelope(encoded)
+                        other.ifGenerationStillMatches(otherGenerationAtSend) { other.deliverEnvelope(encoded) }
 
                         // Fault-injected retransmit of the exact same bytes; B's
                         // messageId dedup in deliverEnvelope() suppresses it, so
                         // this produces no second messageReceived event.
                         delay(ChatScenarioTimings.DUPLICATE_REDELIVER_DELAY_MS)
-                        other.deliverEnvelope(encoded)
+                        other.ifGenerationStillMatches(otherGenerationAtSend) { other.deliverEnvelope(encoded) }
 
                         delay(ChatScenarioTimings.DUPLICATE_DELIVERED_DELAY_MS)
                         markTerminal(messageIdHex)
@@ -444,7 +658,7 @@ class SimulatedChatTransportClient internal constructor(
 
                     ChatScenario.SLOW_LINK -> {
                         delay(ChatScenarioTimings.SLOW_LINK_DELIVER_DELAY_MS)
-                        other.deliverEnvelope(encoded)
+                        other.ifGenerationStillMatches(otherGenerationAtSend) { other.deliverEnvelope(encoded) }
 
                         delay(ChatScenarioTimings.SLOW_LINK_DELIVERED_DELAY_MS)
                         markTerminal(messageIdHex)
@@ -465,7 +679,7 @@ class SimulatedChatTransportClient internal constructor(
                     // overrides it via failNonterminalOutgoingSends() above.
                     ChatScenario.HAPPY_PAIR, ChatScenario.PEER_LOSS, ChatScenario.DEGRADED_THEN_RECOVERED -> {
                         delay(ChatScenarioTimings.HAPPY_PAIR_DELIVER_DELAY_MS)
-                        other.deliverEnvelope(encoded)
+                        other.ifGenerationStillMatches(otherGenerationAtSend) { other.deliverEnvelope(encoded) }
 
                         delay(ChatScenarioTimings.HAPPY_PAIR_DELIVERED_DELAY_MS)
                         markTerminal(messageIdHex)

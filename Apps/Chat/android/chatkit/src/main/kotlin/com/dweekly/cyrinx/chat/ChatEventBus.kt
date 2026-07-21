@@ -39,8 +39,49 @@ class ChatEventBus {
     /** Guards [close] against double-closing the underlying [channel] (calling
      * `close()` on an already-closed `Channel` is itself harmless/idempotent, but
      * this flag is also consulted by [emit] to skip building and offering a new
-     * event at all once closed -- see [emit]'s doc comment). */
+     * event at all once closed -- see [emit]'s doc comment). Only ever read/written
+     * while holding [lock]; see that field's doc comment for why the flag alone
+     * (without the lock) was not enough. */
     private val closed = AtomicBoolean(false)
+
+    /**
+     * Serializes [emit]'s entire "check closed, build the event, trySend" sequence
+     * against [close] -- ../../../CONTRACT.md section 2's "Quiescence before
+     * completion" bullet: "every emission either lands before the completion or
+     * its producer was already cancelled and joined ... Losing an emission to a
+     * close race is a contract violation, not tolerated backpressure."
+     *
+     * Before this lock existed, [emit] read [closed], then called the caller-
+     * supplied `build` lambda, then called `channel.trySend` -- three separate
+     * steps with no atomicity between them. A concurrent [close] could run
+     * entirely in the gap between the `closed` read and the `trySend` call: it
+     * would see `closed` still false (racing ahead of [emit]'s check), close the
+     * underlying [channel], and then [emit]'s own `trySend` -- now against an
+     * already-closed channel -- would fail, making the unguarded
+     * `check(accepted)` throw `IllegalStateException`. A C3-28 PR review
+     * reproduced this deterministically by blocking INSIDE the `build` lambda on
+     * a real background thread while a second thread raced to call [close] (see
+     * ChatEventBusTest's `emitAndCloseCannotRaceEvenWhenBuildBlocks`).
+     *
+     * Wrapping [emit]'s full check-build-send sequence AND [close] in this one
+     * `synchronized` block eliminates the race entirely rather than merely
+     * avoiding the crash: at most one of {an [emit] call, a [close] call} is
+     * ever inside its own critical section at a time, so whichever one actually
+     * acquires the monitor first runs to completion before the other can even
+     * begin -- there is no longer any window in which [close] can observe
+     * `closed == false` while an [emit] call is itself past that same check.
+     * `synchronized` (a plain JVM intrinsic lock), not a suspend-friendly
+     * `Mutex`, because both [emit] and [close] are ordinary (non-`suspend`)
+     * functions, and the caller-supplied `build` lambda they wrap is expected to
+     * be synchronous, non-blocking event construction in every real call site in
+     * this module (see [SimulatedChatTransportClient.emit]) -- only the
+     * regression test above deliberately blocks inside it, and only to prove
+     * this lock actually serializes against [close] under that exact adversarial
+     * condition. The JVM intrinsic lock is reentrant, so a `build` lambda that
+     * (hypothetically) re-entered [emit] on the SAME thread would not deadlock
+     * against itself, though no call site here does this.
+     */
+    private val lock = Any()
 
     // capacity=EVENT_BUFFER_CAPACITY + onBufferOverflow=DROP_OLDEST is the literal
     // Kotlin realization CONTRACT.md section 1.7 names for the bounded,
@@ -59,7 +100,11 @@ class ChatEventBus {
      * bounded buffer. Never suspends and never fails: under `DROP_OLDEST`,
      * `trySend` always succeeds (it makes room by discarding the oldest buffered
      * event rather than rejecting the new one), which is exactly the "never by
-     * blocking the producer indefinitely" requirement in CONTRACT.md section 1.7.
+     * blocking the producer indefinitely" requirement in CONTRACT.md section 1.7
+     * -- `check(accepted)` below exists purely as a should-never-fire assertion of
+     * that guarantee (with [lock] serializing against [close], it genuinely never
+     * fires; see [lock]'s doc comment for the race it used to be reachable
+     * through).
      *
      * A silent no-op once [close] has been called: `build` is not even invoked, so
      * a caller relying on `emit`'s lambda for a side effect (as
@@ -69,10 +114,12 @@ class ChatEventBus {
      * after close.
      */
     fun emit(build: (eventSeq: Long) -> ChatEvent) {
-        if (closed.get()) return
-        val seq = nextEventSeq.getAndIncrement()
-        val accepted = channel.trySend(build(seq)).isSuccess
-        check(accepted) { "Channel.trySend unexpectedly failed under DROP_OLDEST" }
+        synchronized(lock) {
+            if (closed.get()) return
+            val seq = nextEventSeq.getAndIncrement()
+            val accepted = channel.trySend(build(seq)).isSuccess
+            check(accepted) { "Channel.trySend unexpectedly failed under DROP_OLDEST" }
+        }
     }
 
     /**
@@ -81,11 +128,14 @@ class ChatEventBus {
      * "Lifecycle cancellation (pinned)": `stop()` "finishes the event stream ...
      * No event of any kind may be observed after the stream finishes." Idempotent
      * (a repeat call is a no-op, matching `stop()`'s own "a repeat stop() is a
-     * no-op").
+     * no-op"). Serialized against [emit] via [lock] -- see that field's doc
+     * comment.
      */
     fun close() {
-        if (closed.compareAndSet(false, true)) {
-            channel.close()
+        synchronized(lock) {
+            if (closed.compareAndSet(false, true)) {
+                channel.close()
+            }
         }
     }
 

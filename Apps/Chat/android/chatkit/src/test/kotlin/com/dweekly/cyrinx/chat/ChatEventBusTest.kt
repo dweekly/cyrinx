@@ -4,12 +4,17 @@ package com.dweekly.cyrinx.chat
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 
 /**
  * [ChatEventBus]'s bounded-buffer, drop-oldest, `eventSeq`-gap-detectable policy,
@@ -131,5 +136,76 @@ class ChatEventBusTest {
         // if emit() ever suspended.
         repeat(ChatEventBus.EVENT_BUFFER_CAPACITY * 10) { bus.emit { seq -> peerLostEvent(seq) } }
         assertTrue(true)
+    }
+
+    // -- emit()/close() race (../../../CONTRACT.md section 2's "Quiescence
+    // before completion" bullet) ---------------------------------------------
+
+    /**
+     * Reviewer-reproduced regression: [ChatEventBus.emit]'s "check closed, build
+     * the event, trySend" sequence used to run OUTSIDE any lock, so a concurrent
+     * [ChatEventBus.close] could close the underlying channel in the gap between
+     * the closed-check and the `trySend`, making the (then-unguarded)
+     * `check(accepted)` throw. Reproduced deterministically here exactly the way
+     * the PR review did: block INSIDE the `build` lambda on a real background
+     * thread while a second real thread races to call `close()`.
+     *
+     * Deliberately NOT a `runTest`/virtual-time test -- `TestCoroutineScheduler`
+     * is single-threaded and cooperative, so it cannot exhibit this race at all;
+     * this needs two genuinely concurrent real threads, hence plain
+     * `java.lang.Thread` + `CountDownLatch` rather than coroutines. No
+     * wall-clock sleep anywhere: `CountDownLatch.await` blocks on a real signal,
+     * never a guessed duration. `closer` is not started until `buildEntered`
+     * fires, which -- given `emit()`'s lock now wraps `build` itself (see
+     * [ChatEventBus]'s `lock` doc comment) -- means the producer thread is
+     * PROVABLY already holding the lock by the time `close()` even attempts to
+     * acquire it, so this test's outcome (no exception, the in-flight emission
+     * lands) is deterministic given the fix, not merely "usually passes."
+     */
+    @Test
+    fun emitAndCloseCannotRaceEvenWhenBuildBlocks() {
+        val bus = ChatEventBus()
+        val buildEntered = CountDownLatch(1)
+        val releaseBuild = CountDownLatch(1)
+        var thrown: Throwable? = null
+
+        val producer =
+            thread(start = false) {
+                try {
+                    bus.emit { seq ->
+                        buildEntered.countDown()
+                        releaseBuild.await(10, TimeUnit.SECONDS)
+                        peerLostEvent(seq)
+                    }
+                } catch (t: Throwable) {
+                    thrown = t
+                }
+            }
+        producer.start()
+
+        assertTrue(
+            "producer must reach the blocking build() before we race close() against it",
+            buildEntered.await(10, TimeUnit.SECONDS),
+        )
+
+        // Started only after the producer is provably inside emit()'s locked
+        // section (blocked in `build`) -- close() must therefore block on the
+        // same lock rather than racing ahead of emit()'s closed-check.
+        val closer = thread(start = true) { bus.close() }
+
+        releaseBuild.countDown()
+
+        producer.join(10_000)
+        closer.join(10_000)
+
+        assertNull("emit() must never throw racing a concurrent close()", thrown)
+
+        val collected = mutableListOf<ChatEvent>()
+        runBlocking { bus.events.collect { collected.add(it) } }
+        assertEquals(
+            "the emission already in flight when close() raced it must still land, not be lost to the race",
+            listOf(0L),
+            collected.map { it.eventSeq },
+        )
     }
 }
