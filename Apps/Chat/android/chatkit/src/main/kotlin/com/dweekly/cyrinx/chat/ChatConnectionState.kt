@@ -48,4 +48,24 @@ object ChatReasonStrings {
      * scenarios), added here as the same kind of free-text reason value.
      * DECISION (not pinned by the brief). */
     const val CANCELLED: String = "cancelled"
+
+    /** `messageStatusChanged(failed, failureReason: "disconnected")` for every
+     * nonterminal outgoing message when [SimulatedChatTransportClient.disconnect]
+     * runs. Pinned exactly by ../../../CONTRACT.md section 2's "Lifecycle
+     * cancellation (pinned)". */
+    const val DISCONNECTED: String = "disconnected"
+
+    /** `messageStatusChanged(failed, failureReason: "stopped")` for every
+     * nonterminal outgoing message when [SimulatedChatTransportClient.stop] runs.
+     * Pinned exactly by ../../../CONTRACT.md section 2's "Lifecycle cancellation
+     * (pinned)". */
+    const val STOPPED: String = "stopped"
+
+    /** `messageStatusChanged(failed, failureReason: "peerLost")` for every
+     * nonterminal outgoing message immediately after a scenario-scripted
+     * disconnect (for example peerLoss's silence-timeout `connectionChanged
+     * (disconnected, ...)`). Pinned exactly by ../../../CONTRACT.md section 2's
+     * "Lifecycle cancellation (pinned)" -- distinct from [PEER_SILENCE_TIMEOUT],
+     * which is the *connection* state's reason string, not the message failure's. */
+    const val PEER_LOST: String = "peerLost"
 }

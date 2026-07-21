@@ -50,23 +50,33 @@ class ChatEventBusTest {
     }
 
     /**
-     * Drives the "producer emits faster than a slow-but-actively-subscribed
-     * consumer can drain" scenario CONTRACT.md section 1.7 describes: a
-     * collector must already be registered (suspended awaiting its next value)
-     * before the flood of `emit()` calls, matching how `MutableSharedFlow`'s
-     * `extraBufferCapacity` actually behaves (`replay = 0` means the buffer
-     * only smooths over an ALREADY-active-but-lagging subscriber, not a future
-     * one -- a collector that starts only after every emission has already
-     * happened sees nothing, since nothing is replayed to new subscribers).
-     * [ChatEventBus.emit] assigns `eventSeq` first regardless, which is what
-     * makes the drop show up as an `eventSeq` gap rather than a silent loss.
+     * Drives the "producer emits faster than a consumer can drain" scenario
+     * CONTRACT.md section 1.7 describes, floods BEFORE attaching any collector.
+     * [ChatEventBus] is backed by a `Channel` (see ChatEventBus.kt), whose
+     * buffer is producer-owned and persists independent of whether a consumer
+     * is attached -- unlike the `MutableSharedFlow(replay = 0)` this class used
+     * before, so this is no longer required for correctness, but it IS required
+     * to get a deterministic, contract-faithful outcome from this specific
+     * test: a `Channel` hands a value directly to an ALREADY-suspended receiver
+     * rather than routing it through the buffer at all (a receiver that isn't
+     * backlogged isn't a "drop" scenario in the first place), so flooding while
+     * a collector is already parked in `receive()` makes exactly one event (the
+     * very first) bypass the drop-oldest buffer entirely -- an artifact of
+     * there being an idle receiver at flood-start, not a violation of the
+     * bounded-buffer contract itself (a real consumer that is actually keeping
+     * up, which is what "a receiver is already waiting" means, was never going
+     * to have anything dropped on it). Flooding with zero attached collectors
+     * removes that fast path and leaves only the buffer's own capacity/
+     * drop-oldest policy to determine the outcome, which is what this test
+     * actually means to pin. [ChatEventBus.emit] assigns `eventSeq` first
+     * regardless, which is what makes the drop show up as an `eventSeq` gap
+     * rather than a silent loss.
      */
     private fun TestScope.collectWhileFlooding(bus: ChatEventBus, totalEmitted: Int): List<ChatEvent> {
+        repeat(totalEmitted) { bus.emit { seq -> peerLostEvent(seq) } }
         val collected = mutableListOf<ChatEvent>()
         val job = launch { bus.events.collect { collected.add(it) } }
-        runCurrent() // let the collector reach its first suspension point, registering it as a subscriber
-        repeat(totalEmitted) { bus.emit { seq -> peerLostEvent(seq) } }
-        runCurrent() // let the now-registered collector drain whatever the drop-oldest buffer retained
+        runCurrent() // drains everything still held in the buffer
         job.cancel()
         return collected
     }

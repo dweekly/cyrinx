@@ -51,6 +51,26 @@ public enum ChatScenarioRunner {
         }
 
         clock.advance(toMs: scenario.scriptEndMs)
+
+        // Detach the trace sink before this harness's own cleanup `stop()`
+        // calls below. CONTRACT.md §3's tables are the exact, complete
+        // pinned event list for each scenario -- no table has a `stop()`
+        // driver row -- but CONTRACT.md §2's Lifecycle cancellation section
+        // pins `stop()` itself to now emit real `ChatEvent`s whenever a
+        // client isn't already disconnected when it's called (a
+        // `connectionChanged(disconnected, reason: "stopped")`, plus any
+        // nonterminal-send terminalization): correct, tested behavior of
+        // `stop()` (see `SimulatedChatTransportClientTests`), but not part
+        // of any of the six pinned scenario timelines or of what
+        // `fixtures/traces/*.jsonl` pins. Every one of the six scenarios
+        // reaches `scriptEndMs` still `.connected` except `peerLoss`
+        // (already `.disconnected` autonomously by then), so without this
+        // detach, `stop()`'s own cleanup event(s) would leak into the
+        // recorded trace and both `ChatScenarioRunnerTests`'s pinned
+        // per-scenario event counts and the golden-trace fixtures below
+        // would go stale on every scenario but `peerLoss`.
+        clientA.traceSink = nil
+        clientB.traceSink = nil
         await clientA.stop()
         await clientB.stop()
 

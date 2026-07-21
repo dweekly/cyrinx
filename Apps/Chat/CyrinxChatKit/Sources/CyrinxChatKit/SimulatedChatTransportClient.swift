@@ -75,12 +75,41 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
     private(set) var started = false
     private var discoveryScheduled = false
     private var finished = false
+    /// Guards `disconnect()`'s own idempotency (CONTRACT.md §2's Lifecycle
+    /// cancellation: "a repeat `disconnect()` is a no-op"), independent of
+    /// `finished` (which guards `stop()`).
+    private var disconnectedByUser = false
     public private(set) var connectionState: ChatConnectionState = .disconnected(reason: nil)
     private(set) var discoveredPeer: ChatPeer?
 
     private var outgoingMessages: [String: ChatMessage] = [:]
     private var seenIncomingMessageIds: Set<String> = []
+    /// Scheduled `VirtualClock` tokens for each nonterminal outgoing
+    /// message's remaining status transitions, by `messageIdHex`. An entry
+    /// exists **iff** that message is currently nonterminal: `emitDelivered`
+    /// and `emitFailed` remove their message's entry the moment it reaches a
+    /// terminal status (the C3-28 review fix for this dictionary's prior
+    /// leak, where entries were never removed except via `cancelSend`), so
+    /// `pendingSendTokens.keys` is exactly the set of nonterminal outgoing
+    /// messages with outstanding scheduled work at any given moment.
     private var pendingSendTokens: [String: [Int]] = [:]
+    /// `messageIdHex`, in the order `send()` was called -- CONTRACT.md §2's
+    /// "in send order" clause for `stop()`, `disconnect()`, and a scenario's
+    /// scripted disconnect (peerLoss's "failed(peerLost)" clause). Never
+    /// pruned (it is this client's own small send history, bounded by
+    /// however many messages it ever sent -- not the same kind of unbounded
+    /// growth `pendingSendTokens` had).
+    private var sendOrder: [String] = []
+    /// Every `VirtualClock` token currently scheduled to affect *this*
+    /// client's own state or events -- handshake steps (`becomeConnected`,
+    /// `emitPeerFound`) and scenario-scripted post-connect steps
+    /// (`applyPostConnect`). NOT outgoing-message tokens, which live in
+    /// `pendingSendTokens` (message-send tokens are cancelled/terminalized
+    /// together as one unit by `cancelSend`/`terminalizeNonterminalSends`,
+    /// not individually here). Populated exclusively through
+    /// `scheduleOwned(atMs:_:)`, which also removes each token the moment it
+    /// fires, so this set only ever holds genuinely still-pending work.
+    private var pendingActionTokens: Set<Int> = []
 
     init(role: ChatClientRole, scenario: ChatScenario, seed: UInt64, clock: VirtualClock, localPeerId: Data) {
         self.role = role
@@ -130,9 +159,29 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
         scheduleDiscoveryIfBothStarted()
     }
 
+    /// CONTRACT.md §2's "Lifecycle cancellation (pinned)": cancels every
+    /// scheduled action for this client, terminalizes each nonterminal
+    /// outgoing message as `failed(reason: "stopped")` in send order, emits
+    /// `connectionChanged(disconnected, reason: "stopped")` unless already
+    /// disconnected, then finishes the event stream. No event of any kind
+    /// may be observed after the stream finishes, and previously scheduled
+    /// actions must never fire after `stop()` -- guaranteed here because
+    /// cancellation happens before any of the emissions below, and
+    /// `finished` (checked first, before any of this runs) makes a repeat
+    /// call a total no-op.
     public func stop() async {
         guard !finished else { return }
         finished = true
+        cancelAllScheduledActions()
+        terminalizeNonterminalSends(reason: "stopped")
+        if case .disconnected = connectionState {
+            // Already disconnected (e.g. via `disconnect()` or a scenario's
+            // scripted disconnect) -- CONTRACT.md's "unless the state is
+            // already disconnected" clause; no further connectionChanged.
+        } else {
+            connectionState = .disconnected(reason: "stopped")
+            emit(.connectionChanged(.disconnected(reason: "stopped")))
+        }
         emitter.finish()
     }
 
@@ -146,28 +195,51 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
         // CONTRACT.md's DECISION (§3.1): the passive side (B) transitions
         // disconnected -> connected directly, with no `connecting` state of
         // its own -- so only the caller (A) emits `.connecting` above; both
-        // sides get `becomeConnected()` scheduled below.
+        // sides get `becomeConnected()` scheduled below. Each side's token
+        // is registered via `scheduleOwned` called ON that side (not
+        // `clock.schedule` directly), so a later `stop()`/`disconnect()` on
+        // just one side of the pair only ever cancels that side's own copy
+        // of this handshake step (CONTRACT.md §2's "for this client"
+        // scoping).
         let connectedAtMs = clock.nowMs + ChatSimTiming.connectHandshakeDelayMs
-        clock.schedule(atMs: connectedAtMs) { [weak self] in self?.becomeConnected() }
+        scheduleOwned(atMs: connectedAtMs) { [weak self] in self?.becomeConnected() }
         if let peer {
-            clock.schedule(atMs: connectedAtMs) { [weak peer] in peer?.becomeConnected() }
+            peer.scheduleOwned(atMs: connectedAtMs) { [weak peer] in peer?.becomeConnected() }
         }
         scheduleScenarioPostConnect(connectedAtMs: connectedAtMs)
     }
 
+    /// CONTRACT.md §2's "Lifecycle cancellation (pinned)": cancels every
+    /// scheduled action for this client, terminalizes each nonterminal
+    /// outgoing message as `failed(reason: "disconnected")` in send order,
+    /// then emits `connectionChanged(disconnected, reason: "userInitiated")`.
+    /// A repeat call is a no-op (`disconnectedByUser`, guarded first).
+    ///
+    /// DECISION (not pinned by CONTRACT.md -- see its §1.2 note that the
+    /// `reason` vocabulary is free text, illustrated by a small fixed set
+    /// including "userInitiated"): none of the six scenarios call
+    /// `disconnect()` directly (peerLoss's disconnection is autonomous, not
+    /// driver-initiated), so `"userInitiated"` is this package's own choice
+    /// for the one connectionChanged reason CONTRACT.md doesn't script (the
+    /// `"disconnected"` *failure* reason on nonterminal sends, by contrast,
+    /// is pinned exactly).
     public func disconnect() async {
-        // DECISION (not pinned by CONTRACT.md -- see its §1.2 note that the
-        // `reason` vocabulary is free text, illustrated by a small fixed
-        // set including "userInitiated"): none of the six scenarios call
-        // `disconnect()` directly (peerLoss's disconnection is autonomous,
-        // not driver-initiated), so this reason is this package's own
-        // choice for the one case CONTRACT.md doesn't script.
+        guard !disconnectedByUser else { return }
+        disconnectedByUser = true
+        cancelAllScheduledActions()
+        terminalizeNonterminalSends(reason: "disconnected")
         connectionState = .disconnected(reason: "userInitiated")
         emit(.connectionChanged(.disconnected(reason: "userInitiated")))
     }
 
     public func send(body: String) async throws -> String {
-        guard connectionState == .connected else {
+        // CONTRACT.md §2's "Send precondition (pinned)": accepted only
+        // while `connected` or `degraded`; any other state throws the
+        // transport-misuse "not connected" error and emits no event.
+        switch connectionState {
+        case .connected, .degraded:
+            break
+        case .connecting, .disconnected:
             throw ChatSimulatedTransportError.notConnected
         }
         let bodyBytes = [UInt8](body.utf8)
@@ -192,6 +264,7 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
             status: .queued
         )
         outgoingMessages[messageIdHex] = message
+        sendOrder.append(messageIdHex)
         emit(.messageStatusChanged(messageIdHex: messageIdHex, status: .queued))
 
         scheduleSendOutcome(
@@ -209,13 +282,12 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
         guard let message = outgoingMessages[messageIdHex] else { return }
         switch message.status {
         case .delivered, .failed:
-            // Already terminal -- CONTRACT.md's no-op case. Note
-            // `pendingSendTokens` may still hold this messageIdHex's
-            // now-already-fired tokens (never proactively cleaned up once
-            // fired -- `VirtualClock.cancel(_:)` on a fired token is
-            // already a documented no-op), so the terminal-status check
-            // here, not merely "is the key still in `pendingSendTokens`,"
-            // is what makes this branch reachable at all.
+            // Already terminal -- CONTRACT.md's no-op case. `emitDelivered`/
+            // `emitFailed` remove `pendingSendTokens[messageIdHex]` the
+            // moment a message reaches either terminal status, so this
+            // status check (not merely "is the key still present in
+            // `pendingSendTokens`") is what makes this branch reachable at
+            // all -- see that dictionary's doc comment.
             return
         case .queued, .transmitting:
             break
@@ -228,6 +300,102 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
         emitFailed(messageIdHex: messageIdHex, reason: "cancelled")
     }
 
+    // MARK: - Lifecycle cancellation (CONTRACT.md §2, shared by stop()/disconnect())
+
+    /// Registers `action` (whose effects apply to *this* client's own state
+    /// or events, e.g. `self?.becomeConnected()` -- never `peer?...`) with
+    /// `clock` and remembers the token in `pendingActionTokens` so a later
+    /// `stop()`/`disconnect()` **on this same client** can cancel it before
+    /// it fires, and removes the token from that set the instant it does
+    /// fire (keeping the set bounded to genuinely still-pending work,
+    /// mirroring the `pendingSendTokens` leak fix above).
+    ///
+    /// Call sites that schedule an action affecting the OTHER client in the
+    /// pair must call this method ON that other client (e.g.
+    /// `peer.scheduleOwned(...)`), not on `self` -- see
+    /// `scheduleDiscoveryIfBothStarted()` and `scheduleScenarioPostConnect
+    /// (connectedAtMs:)`, each of which resolves the correct receiver
+    /// first. This is what makes CONTRACT.md §2's "cancels every scheduled
+    /// action for this client" scoped correctly per client even though a
+    /// single `connect()` call on one side schedules work for both.
+    @discardableResult
+    private func scheduleOwned(atMs dueAtMs: Int64, _ action: @escaping () -> Void) -> Int {
+        // `token` is captured by reference by the closure below (a `var`
+        // referenced from a nested closure defined in the same scope) --
+        // `clock.schedule` never invokes it synchronously, so by the time it
+        // does run, `token` already holds the value assigned immediately
+        // after `clock.schedule` returns.
+        var token = -1
+        token = clock.schedule(atMs: dueAtMs) { [weak self] in
+            self?.pendingActionTokens.remove(token)
+            action()
+        }
+        pendingActionTokens.insert(token)
+        return token
+    }
+
+    /// Cancels the underlying `VirtualClock` tokens for every currently
+    /// nonterminal outgoing message's remaining transitions
+    /// (`pendingSendTokens`), WITHOUT touching `pendingActionTokens`.
+    /// Factored out of `cancelAllScheduledActions()` so a scenario's
+    /// scripted disconnect (`applyPostConnect`'s `.connectionDisconnected`
+    /// case) can use it alone: that case must NOT cancel this same
+    /// client's other already-scheduled scenario steps (e.g. peerLoss's
+    /// own subsequent `.peerLost` postConnect step, scheduled 10ms after
+    /// the disconnect step in the very same `scheduleScenarioPostConnect`
+    /// call) the way `stop()`/`disconnect()` correctly do for themselves.
+    /// Cancelling here (rather than relying solely on `terminalizeNon
+    /// terminalSends`'s `emitFailed` calls to remove the dictionary
+    /// entries) is what prevents an already-scheduled `transmitting`/
+    /// `receive`/`delivered` closure from firing after this message has
+    /// gone terminal -- exactly the "connected, delivered, or any other
+    /// post-disconnect transition for pre-disconnect work is a contract
+    /// violation" case CONTRACT.md §2 calls out.
+    private func cancelPendingSendTokens() {
+        for tokens in pendingSendTokens.values {
+            for token in tokens {
+                clock.cancel(token)
+            }
+        }
+    }
+
+    /// Cancels every `VirtualClock` action currently scheduled to affect
+    /// this client: its own handshake/discovery/post-connect actions
+    /// (`pendingActionTokens`) and its own nonterminal outgoing messages'
+    /// remaining transitions (`pendingSendTokens`, via
+    /// `cancelPendingSendTokens()`). Shared by `stop()` and `disconnect()`
+    /// -- CONTRACT.md §2's "cancels every scheduled action for this
+    /// client," identical for both. Does not itself clear or terminalize
+    /// `pendingSendTokens`'s entries; callers follow this with
+    /// `terminalizeNonterminalSends(reason:)`, which does both as it
+    /// processes each message.
+    private func cancelAllScheduledActions() {
+        for token in pendingActionTokens {
+            clock.cancel(token)
+        }
+        pendingActionTokens.removeAll()
+        cancelPendingSendTokens()
+    }
+
+    /// Terminalizes every currently nonterminal outgoing message as
+    /// `.failed(reason:)`, in `sendOrder` -- shared by `stop()`,
+    /// `disconnect()`, and a scenario's scripted disconnect
+    /// (`applyPostConnect`'s `.connectionDisconnected` case, CONTRACT.md
+    /// §2's peerLoss "failed(peerLost)" clause). `pendingSendTokens.keys`
+    /// is exactly the set of nonterminal outgoing messages (see that
+    /// dictionary's doc comment), so filtering `sendOrder` by dictionary
+    /// membership both determines *which* messages qualify and preserves
+    /// send order for the ones that do; `emitFailed` removes each message's
+    /// `pendingSendTokens` entry as it terminalizes it. Callers are
+    /// responsible for cancelling the underlying clock tokens first (via
+    /// `cancelAllScheduledActions()` or `cancelPendingSendTokens()`) --
+    /// this method only emits and cleans up dictionary/status state.
+    private func terminalizeNonterminalSends(reason: String) {
+        for messageIdHex in sendOrder where pendingSendTokens[messageIdHex] != nil {
+            emitFailed(messageIdHex: messageIdHex, reason: reason)
+        }
+    }
+
     // MARK: - Discovery
 
     private func scheduleDiscoveryIfBothStarted() {
@@ -238,11 +406,14 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
         // A's peerFound is always scheduled (and so always fires) before
         // B's, regardless of which client's start() happened to trigger
         // this, matching every one of CONTRACT.md §3's tables (A eventSeq0
-        // then B eventSeq0, both at the same virtual time).
+        // then B eventSeq0, both at the same virtual time). Each token is
+        // registered on its own target client via `scheduleOwned` so a
+        // later per-client `stop()`/`disconnect()` cancels only that
+        // client's own copy.
         let (first, second): (SimulatedChatTransportClient, SimulatedChatTransportClient) =
             role == .a ? (self, peer) : (peer, self)
-        clock.schedule(atMs: dueAtMs) { [weak first] in first?.emitPeerFound() }
-        clock.schedule(atMs: dueAtMs) { [weak second] in second?.emitPeerFound() }
+        first.scheduleOwned(atMs: dueAtMs) { [weak first] in first?.emitPeerFound() }
+        second.scheduleOwned(atMs: dueAtMs) { [weak second] in second?.emitPeerFound() }
     }
 
     private func emitPeerFound() {
@@ -265,16 +436,24 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
             switch step.target {
             case .a:
                 let target = role == .a ? self : peer
-                clock.schedule(atMs: dueAtMs) { [weak target] in target?.applyPostConnect(step.template) }
+                target?.scheduleOwned(atMs: dueAtMs) { [weak target] in
+                    target?.applyPostConnect(step.template)
+                }
             case .b:
                 let target = role == .b ? self : peer
-                clock.schedule(atMs: dueAtMs) { [weak target] in target?.applyPostConnect(step.template) }
+                target?.scheduleOwned(atMs: dueAtMs) { [weak target] in
+                    target?.applyPostConnect(step.template)
+                }
             case .both:
                 guard let peer else { continue }
                 let (first, second): (SimulatedChatTransportClient, SimulatedChatTransportClient) =
                     role == .a ? (self, peer) : (peer, self)
-                clock.schedule(atMs: dueAtMs) { [weak first] in first?.applyPostConnect(step.template) }
-                clock.schedule(atMs: dueAtMs) { [weak second] in second?.applyPostConnect(step.template) }
+                first.scheduleOwned(atMs: dueAtMs) { [weak first] in
+                    first?.applyPostConnect(step.template)
+                }
+                second.scheduleOwned(atMs: dueAtMs) { [weak second] in
+                    second?.applyPostConnect(step.template)
+                }
             }
         }
     }
@@ -292,6 +471,27 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
         case .connectionDisconnected(let reason):
             connectionState = .disconnected(reason: reason)
             emit(.connectionChanged(.disconnected(reason: reason)))
+            // CONTRACT.md §2's third Lifecycle-cancellation bullet: "When a
+            // scenario script disconnects a client ... every nonterminal
+            // outgoing message on that client transitions to
+            // messageStatusChanged(failed, failureReason: "peerLost")
+            // immediately after the scripted disconnect event, in send
+            // order ... any other post-disconnect transition for
+            // pre-disconnect work is a contract violation." None of the six
+            // scenarios combine a scripted disconnect with an in-flight
+            // send (peerLoss, the only scenario using this template, never
+            // calls `send()`), so this is a no-op in canonical playback and
+            // only matters for ad hoc/future use -- verified directly by
+            // `SimulatedChatTransportClientTests`. `cancelPendingSendTokens`
+            // runs first so an already-scheduled `transmitting`/`receive`/
+            // `delivered` closure for one of these messages can never fire
+            // after this point (see that method's doc comment) --
+            // `cancelAllScheduledActions()` is deliberately NOT used here,
+            // since it would also cancel this same client's own later
+            // scenario-scripted steps (e.g. peerLoss's `.peerLost` step,
+            // due 10ms after this one).
+            cancelPendingSendTokens()
+            terminalizeNonterminalSends(reason: "peerLost")
         case .peerLost(let reason):
             guard let peer else { return }
             emit(.peerLost(peerIdHex: peer.localPeerId.hexString, reason: reason))
@@ -358,11 +558,26 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
 
     private func emitDelivered(messageIdHex: String) {
         outgoingMessages[messageIdHex]?.status = .delivered
+        // C3-28 review fix: remove this message's now-irrelevant
+        // `pendingSendTokens` entry the instant it goes terminal, rather
+        // than leaving it to accumulate forever -- see that dictionary's
+        // doc comment. Safe here: every `ChatSendOutcome` case schedules
+        // its `delivered` token to fire at or after every other token for
+        // the same message (see `ChatScenario.sendOutcome`'s per-case
+        // delta-ordering comments), so nothing scheduled for this message
+        // is still pending when this runs.
+        pendingSendTokens.removeValue(forKey: messageIdHex)
         emit(.messageStatusChanged(messageIdHex: messageIdHex, status: .delivered))
     }
 
     private func emitFailed(messageIdHex: String, reason: String) {
         outgoingMessages[messageIdHex]?.status = .failed(reason: reason)
+        // C3-28 review fix: same leak fix as `emitDelivered` above. Callers
+        // that got here via cancellation (`cancelSend`,
+        // `terminalizeNonterminalSends`) have typically already removed and
+        // cancelled this message's tokens themselves; `removeValue` is a
+        // harmless no-op in that case.
+        pendingSendTokens.removeValue(forKey: messageIdHex)
         emit(.messageStatusChanged(messageIdHex: messageIdHex, status: .failed(reason: reason)))
     }
 

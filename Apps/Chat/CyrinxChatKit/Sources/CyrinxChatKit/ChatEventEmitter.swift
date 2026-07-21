@@ -16,9 +16,19 @@
 /// Owned exclusively by one `SimulatedChatTransportClient` instance and
 /// only ever touched from that client's own (single-threaded, per
 /// `VirtualClock`'s documentation) call sequence -- never shared or raced
-/// across instances -- so `@unchecked Sendable` here does not paper over an
-/// actual concurrency hazard.
-final class ChatEventEmitter: @unchecked Sendable {
+/// across instances.
+///
+/// **Concurrency note (C3-28 review):** deliberately does NOT conform to
+/// `Sendable`, not even `@unchecked` -- `nextEventSeq` is genuinely
+/// unsynchronized mutable state, matching `SimulatedChatTransportClient`'s
+/// and `VirtualClock`'s own non-`Sendable` rationale (see their doc
+/// comments). Verified empirically: removing the prior `@unchecked
+/// Sendable` conformance compiles clean under this package's default Swift
+/// 6 language mode with zero new warnings or errors, and every `swift
+/// test` case still passes -- nothing in this package or its tests
+/// actually crosses an actor-isolation boundary with an instance of this
+/// class.
+final class ChatEventEmitter {
     /// The bound pinned by CONTRACT.md §1.7.
     static let bufferCapacity = 512
 

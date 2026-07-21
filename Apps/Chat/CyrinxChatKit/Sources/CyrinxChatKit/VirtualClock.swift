@@ -17,7 +17,23 @@
 /// type's documentation) -- `advance` must only ever be called from one
 /// task at a time, matching how every one of Apps/Chat/CONTRACT.md §3's six
 /// scenario scripts is itself a single sequential timeline.
-public final class VirtualClock: @unchecked Sendable {
+///
+/// **Concurrency note (C3-28 review):** deliberately does NOT conform to
+/// `Sendable`, not even `@unchecked` -- `scheduled`/`nowMs`/`nextSequence`/
+/// `nextToken` are genuinely unsynchronized mutable state, and every one of
+/// this package's callers (`SimulatedChatTransportClient`, itself
+/// non-`Sendable` for the identical reason -- see that type's doc comment)
+/// already confines a shared `VirtualClock` instance to one sequential
+/// caller. An `@unchecked Sendable` conformance here would be a false
+/// promise letting a future caller share an instance across concurrency
+/// domains without the compiler catching the resulting data race. Verified
+/// empirically: removing the prior `@unchecked Sendable` conformance
+/// compiles clean under this package's default Swift 6 language mode
+/// (`swift-tools-version: 6.0`, no `swiftLanguageMode` override) with zero
+/// new warnings or errors, and every `swift test` case still passes --
+/// nothing in this package or its tests actually crosses an actor-isolation
+/// boundary with an instance of this class.
+public final class VirtualClock {
     public private(set) var nowMs: Int64
 
     private struct ScheduledAction {

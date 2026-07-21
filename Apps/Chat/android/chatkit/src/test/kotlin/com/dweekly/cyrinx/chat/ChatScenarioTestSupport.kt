@@ -34,15 +34,17 @@ fun TestScope.createChatPair(
  * would otherwise make `runTest` fail as a leaked/un-awaited child job).
  *
  * Calls [kotlinx.coroutines.test.TestCoroutineScheduler.runCurrent] once before
- * returning so the collector reaches its first suspension point -- and is
- * therefore registered as an active `MutableSharedFlow` subscriber -- before the
- * caller does anything else. This matters because `ChatEventBus`'s underlying
- * `MutableSharedFlow` is configured with `replay = 0`
- * (see ChatEventBus.kt): its `extraBufferCapacity` buffer only smooths over an
- * ALREADY-registered-but-lagging subscriber, not a future one, so a collector
- * that only starts running after events have already been emitted would see
- * nothing (see ChatEventBusTest's `collectWhileFlooding` doc comment, where this
- * was first discovered).
+ * returning so the collector reaches its first suspension point before the
+ * caller does anything else. `ChatEventBus` is backed by a `Channel` (see
+ * ChatEventBus.kt), whose buffer is producer-owned and persists regardless of
+ * whether a consumer is attached -- unlike the `MutableSharedFlow(replay = 0)`
+ * this class used before, a collector that starts only after events have
+ * already been emitted still sees everything still held in the buffer. This
+ * early `runCurrent()` is therefore no longer strictly required for
+ * correctness, but is kept for determinism: it guarantees every test's
+ * collector is registered and pumping before the scenario driver proceeds,
+ * rather than depending on `advanceUntilIdle()`/`runCurrent()` calls later in
+ * the test to eventually catch it up.
  */
 fun TestScope.collectEvents(client: SimulatedChatTransportClient): List<ChatEvent> {
     val collected = mutableListOf<ChatEvent>()
@@ -55,18 +57,20 @@ fun TestScope.collectEvents(client: SimulatedChatTransportClient): List<ChatEven
  * `advanceUntilIdle()` alone was observed NOT to reliably guarantee that a
  * `backgroundScope`-launched `Flow` collector (as used by [collectEvents]) has
  * drained the very LAST event emitted during that call -- reproduced directly
- * while writing this suite (see the C3-28 spec-stage report's findings): a
- * `MutableSharedFlow.tryEmit` call that wakes a suspended collector can leave
- * that collector's actual resumption pending for one more scheduler pump, which
- * an immediately following `advanceUntilIdle()` does not always perform. The
- * root cause inside `kotlinx-coroutines-test`'s scheduler was not tracked down
- * further; empirically, one extra [runCurrent] after [advanceUntilIdle]
- * consistently surfaces the missing final event in every case this was
- * reproduced. Any test that inspects a list built by [collectEvents] after
- * driving time forward should call this instead of a bare `advanceUntilIdle()`.
- * (ChatScenarioExactTraceTest and ChatTraceGoldenComparisonTest capture events
- * synchronously via [ChatTraceRecorder] instead of a `Flow` collector, so they
- * are not subject to this and use this helper only for consistency.)
+ * while writing this suite (see the C3-28 spec-stage report's findings): the
+ * event bus's producer-side offer call (originally `MutableSharedFlow.tryEmit`,
+ * now `Channel.trySend` -- see ChatEventBus.kt) that wakes a suspended collector
+ * can leave that collector's actual resumption pending for one more scheduler
+ * pump, which an immediately following `advanceUntilIdle()` does not always
+ * perform. The root cause inside `kotlinx-coroutines-test`'s scheduler was not
+ * tracked down further; empirically, one extra [runCurrent] after
+ * [advanceUntilIdle] consistently surfaces the missing final event in every case
+ * this was reproduced. Any test that inspects a list built by [collectEvents]
+ * after driving time forward should call this instead of a bare
+ * `advanceUntilIdle()`. (ChatScenarioExactTraceTest and
+ * ChatTraceGoldenComparisonTest capture events synchronously via
+ * [ChatTraceRecorder] instead of a `Flow` collector, so they are not subject to
+ * this and use this helper only for consistency.)
  */
 suspend fun TestScope.settle() {
     advanceUntilIdle()

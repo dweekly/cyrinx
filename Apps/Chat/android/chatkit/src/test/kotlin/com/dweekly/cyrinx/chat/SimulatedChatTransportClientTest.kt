@@ -3,11 +3,13 @@
 package com.dweekly.cyrinx.chat
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -278,6 +280,54 @@ class SimulatedChatTransportClientTest {
             assertEquals(statusesBeforeCancel, statusesAfterCancel)
         }
 
+    // -- pendingSendJobs cleanup (regression coverage) ---------------------------
+
+    /**
+     * Regression coverage for [SimulatedChatTransportClient.markTerminal]'s
+     * `pendingSendJobs.remove(messageIdHex)` cleanup (../../../CONTRACT.md
+     * section 2's "Lifecycle cancellation (pinned)"): every terminal status
+     * transition -- whether delivered (the happyPair timeline, [markTerminal]'s
+     * call site inside `send()`) or failed/cancelled (via
+     * [SimulatedChatTransportClient.cancelSend]) -- must remove that message's
+     * job from the sender's own pending-send bookkeeping. No assertion on
+     * emitted [ChatEvent]s alone would catch a regression that stopped removing
+     * entries, since a leaked-but-otherwise-inert map entry is invisible from
+     * outside [SimulatedChatTransportClient] -- hence
+     * [SimulatedChatTransportClient.pendingSendJobCount], exposed for exactly
+     * this purpose.
+     */
+    @Test
+    fun pendingSendJobsIsEmptyAfterDeliveryAndAfterCancelSend() =
+        runTest {
+            val pair = createChatPair(ChatScenario.HAPPY_PAIR, 8L, null)
+            val (_, idB) = expectedPeerIds(8L)
+
+            pair.clientA.start()
+            pair.clientB.start()
+            advanceTimeBy(100)
+            runCurrent()
+            pair.clientA.connect(idB.toHexString())
+            advanceTimeBy(200)
+            runCurrent()
+
+            pair.clientA.send("first")
+            settle() // let it fully reach delivered.
+            assertEquals(
+                "a delivered message must not leave an entry behind in pendingSendJobs",
+                0,
+                pair.clientA.pendingSendJobCount,
+            )
+
+            val msg2Hex = pair.clientA.send("second")
+            pair.clientA.cancelSend(msg2Hex) // terminal transition: failed(cancelled).
+            settle()
+            assertEquals(
+                "cancelSend()'s own terminal transition must also clear pendingSendJobs",
+                0,
+                pair.clientA.pendingSendJobCount,
+            )
+        }
+
     // -- Transport-level errors -------------------------------------------------------
 
     @Test
@@ -310,5 +360,267 @@ class SimulatedChatTransportClientTest {
             val found = aEvents.filterIsInstance<ChatEvent.PeerFound>().single()
             assertEquals(ChatScenarioTimings.PEER_FOUND_DELAY_MS, found.peer.discoveredAtMs)
             assertEquals(pair.clientB.id.toHexString(), found.peer.id.toHexString())
+        }
+
+    // -- Send precondition (../../../CONTRACT.md section 2's "Send precondition
+    // (pinned)") --------------------------------------------------------------
+
+    @Test
+    fun sendWhileDisconnectedIsRejectedWithNoEvent() =
+        runTest {
+            // Deliberately never calls start()/connect(): SimulatedChatPair.create
+            // already wires the peer reference at construction, so send()'s own
+            // precondition check (state == Disconnected(null), the implicit
+            // initial state) is exercised in isolation, without a scheduled
+            // peerFound (or anything else) muddying the "no event at all"
+            // assertion below.
+            val pair = createChatPair(ChatScenario.HAPPY_PAIR, 8L, null)
+            val aEvents = collectEvents(pair.clientA)
+
+            var caught: ChatTransportError? = null
+            try {
+                pair.clientA.send("too-early")
+            } catch (e: ChatTransportError) {
+                caught = e
+            }
+            runCurrent()
+
+            assertTrue("send() before connect() must be rejected with a transport-misuse error", caught != null)
+            assertTrue("a rejected send() must emit no event at all", aEvents.isEmpty())
+        }
+
+    @Test
+    fun sendWhileDegradedIsAcceptedAndFollowsHappyPairTimeline() =
+        runTest {
+            // degradedThenRecovered never scripts a send() of its own
+            // (CONTRACT.md section 3.3); this pins the "Send precondition
+            // (pinned)" fallback: "a send accepted while connected or degraded
+            // follows the happyPair delivery timeline unless a scenario table
+            // ... overrides it."
+            val pair = createChatPair(ChatScenario.DEGRADED_THEN_RECOVERED, 8L, null)
+            val (_, idB) = expectedPeerIds(8L)
+            val aEvents = collectEvents(pair.clientA)
+            val bEvents = collectEvents(pair.clientB)
+
+            pair.clientA.start()
+            pair.clientB.start()
+            advanceTimeBy(100)
+            runCurrent()
+            pair.clientA.connect(idB.toHexString())
+            // degradedThenRecovered's own table: connected (t=150) -> degraded
+            // (t=400). Advance to just after degraded fires.
+            advanceTimeBy(300)
+            runCurrent()
+            assertEquals(
+                "sanity: the scripted degrade must have already happened before send() is attempted",
+                ChatConnectionState.Degraded,
+                aEvents.filterIsInstance<ChatEvent.ConnectionChanged>().last().state,
+            )
+
+            val msgHex = pair.clientA.send("degraded-send")
+            settle()
+
+            val received = bEvents.filterIsInstance<ChatEvent.MessageReceived>().single()
+            assertEquals("degraded-send", received.message.body)
+            assertEquals(msgHex, received.message.id.toHexString())
+
+            val statuses =
+                aEvents.filterIsInstance<ChatEvent.MessageStatusChanged>()
+                    .filter { it.messageIdHex == msgHex }
+                    .map { it.status }
+            assertEquals(
+                listOf(ChatMessageDisplayStatus.Queued, ChatMessageDisplayStatus.Transmitting, ChatMessageDisplayStatus.Delivered),
+                statuses,
+            )
+        }
+
+    // -- Lifecycle cancellation (../../../CONTRACT.md section 2's "Lifecycle
+    // cancellation (pinned)") ---------------------------------------------------
+
+    @Test
+    fun connectThenDisconnectCancelsScheduledWorkAndEmitsUserInitiatedDisconnect() =
+        runTest {
+            val pair = createChatPair(ChatScenario.HAPPY_PAIR, 8L, null)
+            val (_, idB) = expectedPeerIds(8L)
+            val aEvents = collectEvents(pair.clientA)
+
+            pair.clientA.start()
+            pair.clientB.start()
+            advanceTimeBy(100)
+            runCurrent()
+            pair.clientA.connect(idB.toHexString())
+            // t=150: connected just fired; happyPair's own linkBudgetChanged
+            // (scheduled 50ms later, for t=200) has not fired yet.
+            advanceTimeBy(50)
+            runCurrent()
+
+            pair.clientA.disconnect()
+            settle()
+
+            val connectionStates = aEvents.filterIsInstance<ChatEvent.ConnectionChanged>().map { it.state }
+            assertEquals(
+                listOf(
+                    ChatConnectionState.Connecting,
+                    ChatConnectionState.Connected,
+                    ChatConnectionState.Disconnected(ChatReasonStrings.USER_INITIATED),
+                ),
+                connectionStates,
+            )
+            // "Scheduled simulator work must never outlive the state that
+            // scheduled it": disconnect() must have cancelled the scenario's own
+            // still-pending linkBudgetChanged before it could fire.
+            assertTrue(
+                "disconnect() must cancel scheduled scenario work, not just stop future scheduling",
+                aEvents.filterIsInstance<ChatEvent.LinkBudgetChanged>().isEmpty(),
+            )
+        }
+
+    @Test
+    fun repeatDisconnectIsANoOp() =
+        runTest {
+            val pair = createChatPair(ChatScenario.HAPPY_PAIR, 8L, null)
+            val (_, idB) = expectedPeerIds(8L)
+            val aEvents = collectEvents(pair.clientA)
+
+            pair.clientA.start()
+            pair.clientB.start()
+            advanceTimeBy(100)
+            runCurrent()
+            pair.clientA.connect(idB.toHexString())
+            advanceTimeBy(50)
+            runCurrent()
+
+            pair.clientA.disconnect()
+            settle()
+            val countAfterFirstDisconnect = aEvents.size
+
+            pair.clientA.disconnect() // repeat call: must be a no-op.
+            settle()
+
+            assertEquals(countAfterFirstDisconnect, aEvents.size)
+        }
+
+    @Test
+    fun sendThenStopTerminalizesPendingSendAndCompletesEventsFlow() =
+        runTest {
+            val pair = createChatPair(ChatScenario.HAPPY_PAIR, 8L, null)
+            val (_, idB) = expectedPeerIds(8L)
+            val aEvents = mutableListOf<ChatEvent>()
+            // A bespoke collector (rather than collectEvents' backgroundScope
+            // helper) so this test can inspect the underlying Job's own
+            // completion state below -- it must complete BECAUSE the events
+            // Flow itself finished, not merely because backgroundScope tears it
+            // down at the end of the test.
+            val collectorJob = backgroundScope.launch { pair.clientA.events.collect { aEvents.add(it) } }
+            runCurrent()
+
+            pair.clientA.start()
+            pair.clientB.start()
+            advanceTimeBy(100)
+            runCurrent()
+            pair.clientA.connect(idB.toHexString())
+            advanceTimeBy(200)
+            runCurrent()
+            val msgHex = pair.clientA.send("stop-me")
+            // t=300: queued just fired. stop() before t=320's transmitting
+            // transition has a chance to fire.
+            pair.clientA.stop()
+            settle()
+
+            val statusesForMsg =
+                aEvents.filterIsInstance<ChatEvent.MessageStatusChanged>()
+                    .filter { it.messageIdHex == msgHex }
+                    .map { it.status }
+            assertEquals(
+                listOf(ChatMessageDisplayStatus.Queued, ChatMessageDisplayStatus.Failed(ChatReasonStrings.STOPPED)),
+                statusesForMsg,
+            )
+
+            val connectionStates = aEvents.filterIsInstance<ChatEvent.ConnectionChanged>().map { it.state }
+            assertEquals(
+                listOf(
+                    ChatConnectionState.Connecting,
+                    ChatConnectionState.Connected,
+                    ChatConnectionState.Disconnected(ChatReasonStrings.STOPPED),
+                ),
+                connectionStates,
+            )
+
+            // "No event of any kind may be observed after the stream finishes":
+            // the collector's own collect() call must have returned on its own
+            // (the Flow completed), not merely been left running until
+            // backgroundScope cancels it at test teardown.
+            assertTrue("events Flow must complete on its own once stop() finishes", collectorJob.isCompleted)
+            assertFalse("the Flow must complete normally, not because something cancelled it", collectorJob.isCancelled)
+        }
+
+    @Test
+    fun repeatStopIsANoOp() =
+        runTest {
+            val pair = createChatPair(ChatScenario.HAPPY_PAIR, 8L, null)
+            val aEvents = collectEvents(pair.clientA)
+            pair.clientA.start()
+            pair.clientB.start()
+            settle()
+
+            pair.clientA.stop()
+            settle()
+            val countAfterFirstStop = aEvents.size
+
+            pair.clientA.stop() // repeat call: must be a no-op.
+            settle()
+
+            assertEquals(countAfterFirstStop, aEvents.size)
+        }
+
+    @Test
+    fun peerLossScriptedDisconnectTerminalizesNonterminalSendAsPeerLostInSendOrder() =
+        runTest {
+            val pair = createChatPair(ChatScenario.PEER_LOSS, 8L, null)
+            val (_, idB) = expectedPeerIds(8L)
+            val aEvents = collectEvents(pair.clientA)
+            val bEvents = collectEvents(pair.clientB)
+
+            pair.clientA.start()
+            pair.clientB.start()
+            advanceTimeBy(100)
+            runCurrent()
+            pair.clientA.connect(idB.toHexString())
+            advanceTimeBy(50) // t=150: connected.
+            runCurrent()
+
+            // peerLoss's own silence timeout fires at t=500 (350ms after
+            // connected). Send late enough (t=490) that the message is still
+            // "queued" -- its own transmitting transition (t=490+20=510) has not
+            // fired yet -- when the scripted disconnect happens.
+            advanceTimeBy(340)
+            runCurrent()
+            val msgHex = pair.clientA.send("in-flight-at-timeout")
+            settle()
+
+            val statuses =
+                aEvents.filterIsInstance<ChatEvent.MessageStatusChanged>()
+                    .filter { it.messageIdHex == msgHex }
+                    .map { it.status }
+            assertEquals(
+                "the scripted disconnect must terminalize the still-queued send as failed(peerLost), " +
+                    "with no transmitting/delivered leftovers",
+                listOf(ChatMessageDisplayStatus.Queued, ChatMessageDisplayStatus.Failed(ChatReasonStrings.PEER_LOST)),
+                statuses,
+            )
+            assertTrue(
+                "B must never receive a message whose sender disconnected mid-flight",
+                bEvents.filterIsInstance<ChatEvent.MessageReceived>().isEmpty(),
+            )
+
+            // "immediately after the scripted disconnect event" (CONTRACT.md
+            // section 2).
+            val disconnectedIndex =
+                aEvents.indexOfFirst { it is ChatEvent.ConnectionChanged && it.state is ChatConnectionState.Disconnected }
+            val failedIndex =
+                aEvents.indexOfFirst {
+                    it is ChatEvent.MessageStatusChanged && it.messageIdHex == msgHex && it.status is ChatMessageDisplayStatus.Failed
+                }
+            assertEquals(disconnectedIndex + 1, failedIndex)
         }
 }

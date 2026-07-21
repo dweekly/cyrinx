@@ -5,8 +5,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
+import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Deterministic, in-process, paired [ChatTransportClient] driven by
@@ -30,8 +32,10 @@ import java.util.concurrent.CopyOnWriteArrayList
 class SimulatedChatTransportClient internal constructor(
     /** This client's own simulated transport peer ID (4 bytes, PRNG-derived per
      * ../../../CONTRACT.md section 2's "PRNG draw order contract"). The same value
-     * appears as `senderId` in envelopes this client sends. */
-    val id: ByteArray,
+     * appears as `senderId` in envelopes this client sends. Defensively copied on
+     * the way in and on the way out (every [id] read returns a fresh copy), same
+     * rationale as [ChatPeer.id]. */
+    id: ByteArray,
     /** `'A'` or `'B'` -- this pair's role label, used only for [ChatTraceEntry]
      * generation (../../../CONTRACT.md section 4's `client` trace field) and
      * diagnostics; never used for equality, lookup, or protocol behavior. */
@@ -52,20 +56,59 @@ class SimulatedChatTransportClient internal constructor(
      * rather than by subscribing to [events] after the fact. */
     private val traceSink: ((eventSeq: Long, virtualTimeMs: Long, event: ChatEvent) -> Unit)? = null,
 ) : ChatTransportClient {
+    private val idBytes: ByteArray = id.copyOf()
+
+    val id: ByteArray
+        get() = idBytes.copyOf()
+
     /** Set by [SimulatedChatPair.create] immediately after both instances are
      * constructed; non-null for the rest of this client's lifetime. */
     internal var peer: SimulatedChatTransportClient? = null
 
     private val eventBus = ChatEventBus()
 
+    /** This client's own view of its `ChatConnectionState`, updated by [emit]
+     * whenever a [ChatEvent.ConnectionChanged] is actually delivered to
+     * [eventBus] (self-driven via [emit] or peer-driven via [emitFromPeer], which
+     * routes through the same private [emit]) -- the source [send]'s precondition
+     * check (../../../CONTRACT.md section 2's "Send precondition (pinned)")
+     * consults. Starts `Disconnected(reason: null)`, matching this client's
+     * implicit initial state (../../../CONTRACT.md section 1.7: "No event is
+     * emitted for a client's implicit initial state"). Updated only when the
+     * underlying [eventBus] actually accepts the event (i.e. never after
+     * [ChatEventBus.close]), so this field also never drifts from "what a
+     * consumer of [events] could actually have observed." */
+    @Volatile
+    private var connectionState: ChatConnectionState = ChatConnectionState.Disconnected(null)
+
+    /** Guards [disconnect] so a repeat call is a no-op, per ../../../CONTRACT.md
+     * section 2's "Lifecycle cancellation (pinned)": "a repeat disconnect() is a
+     * no-op." */
+    private val disconnectedByUser = AtomicBoolean(false)
+
+    /** Guards [stop] so a repeat call is a no-op ("a repeat stop() is a no-op"),
+     * per the same pinned section. Once true, [eventBus] is also closed, which
+     * independently makes every OTHER method's attempted emissions silent no-ops
+     * too (see [ChatEventBus.emit]'s doc comment) -- this flag exists only to
+     * make `stop()` ITSELF idempotent (skip re-running its cancellation/
+     * terminalization work), not as a general "is this client stopped" gate the
+     * rest of this class needs to consult. */
+    private val stopped = AtomicBoolean(false)
+
     /** Assigns `eventSeq`, offers the event to [eventBus], and -- if a
      * [traceSink] is attached -- records (eventSeq, current virtual time, event)
      * synchronously in the same call, so trace timestamps can never drift from
      * true emission time regardless of when a [events] subscriber later drains
-     * the buffered flow. */
+     * the buffered flow. Also updates [connectionState] for a
+     * [ChatEvent.ConnectionChanged] payload -- see that field's doc comment.
+     * [ChatEventBus.emit] itself no-ops (without invoking this lambda at all)
+     * once [eventBus] is closed, so none of this runs after [stop]. */
     private fun emit(build: (eventSeq: Long) -> ChatEvent) {
         eventBus.emit { seq ->
             val event = build(seq)
+            if (event is ChatEvent.ConnectionChanged) {
+                connectionState = event.state
+            }
             traceSink?.invoke(seq, timeSource.nowMs(), event)
             event
         }
@@ -82,9 +125,28 @@ class SimulatedChatTransportClient internal constructor(
     private val terminalMessageIds = ConcurrentHashMap.newKeySet<String>()
 
     /** The background job for each in-flight `send()` call, by messageId hex, so
-     * [cancelSend] can cancel exactly that call's remaining scheduled
-     * transitions. */
-    private val pendingSendJobs = ConcurrentHashMap<String, Job>()
+     * [cancelSend] and [failNonterminalOutgoingSends] can cancel exactly that
+     * call's remaining scheduled transitions. A [LinkedHashMap] (synchronized for
+     * safe concurrent access) rather than a [ConcurrentHashMap] specifically
+     * because it must preserve SEND ORDER: ../../../CONTRACT.md section 2's
+     * "Lifecycle cancellation (pinned)" requires every nonterminal-outgoing-
+     * message termination (`disconnect()`, `stop()`, or a scripted disconnect) to
+     * fire "in send order," and [ConcurrentHashMap] has no defined iteration
+     * order. */
+    private val pendingSendJobs: MutableMap<String, Job> = Collections.synchronizedMap(LinkedHashMap())
+
+    /** Current size of [pendingSendJobs]. Exists solely for regression coverage
+     * of ../../../CONTRACT.md's lifecycle-cancellation cleanup: [markTerminal]
+     * removes a message's entry from [pendingSendJobs] on every terminal
+     * transition (delivered, failed, or cancelled), and no assertion on emitted
+     * [ChatEvent]s alone can distinguish "cleaned up" from "leaked but no longer
+     * scheduled" -- see SimulatedChatTransportClientTest's
+     * `pendingSendJobsIsEmptyAfterDeliveryAndAfterCancelSend`. Not part of the
+     * public [ChatTransportClient] surface; Kotlin `internal` visibility is
+     * module-wide, so this is reachable from this module's test source set
+     * without weakening [pendingSendJobs] itself past `private`. */
+    internal val pendingSendJobCount: Int
+        get() = synchronized(pendingSendJobs) { pendingSendJobs.size }
 
     private val backgroundJobs = CopyOnWriteArrayList<Job>()
 
@@ -99,21 +161,81 @@ class SimulatedChatTransportClient internal constructor(
             scope.launch {
                 delay(ChatScenarioTimings.PEER_FOUND_DELAY_MS)
                 val now = timeSource.nowMs()
-                emit { seq -> ChatEvent.PeerFound(seq, ChatPeer(other.id, now)) }
+                emit { seq -> ChatEvent.PeerFound(seq, ChatPeer(other.idBytes, now)) }
             }
         backgroundJobs.add(job)
     }
 
-    override suspend fun stop() {
+    /** Cancels every scheduled action for this client -- every entry in
+     * [backgroundJobs] (handshake steps, message status transitions, link-budget
+     * events -- anything scheduled via `scope.launch` anywhere in this class,
+     * including every `send()` job, which is added to both this list and
+     * [pendingSendJobs]). ../../../CONTRACT.md section 2's "Lifecycle
+     * cancellation (pinned)": "Scheduled simulator work must never outlive the
+     * state that scheduled it." Shared by [disconnect] and [stop] only -- a
+     * scenario-scripted disconnect (see [failNonterminalOutgoingSends]'s call
+     * sites in [connect]) must NOT call this, since that codepath runs FROM
+     * WITHIN one of these same background jobs and cancelling it out from under
+     * itself would abort the rest of that scenario's own script (e.g. peerLoss's
+     * later `peerLost` events). */
+    private fun cancelBackgroundJobs() {
         backgroundJobs.forEach { it.cancel() }
         backgroundJobs.clear()
-        pendingSendJobs.values.forEach { it.cancel() }
-        pendingSendJobs.clear()
+    }
+
+    /**
+     * Cancels this client's own pending, nonterminal `send()` jobs and emits
+     * `messageStatusChanged(failed, failureReason: reason)` for each, IN SEND
+     * ORDER -- the shared machinery behind [disconnect], [stop], and every
+     * scenario-scripted disconnect transition inside [connect] (e.g. peerLoss's
+     * silence timeout). ../../../CONTRACT.md section 2's "Lifecycle cancellation
+     * (pinned)".
+     *
+     * Deliberately does NOT touch [backgroundJobs] or [connectionState] itself --
+     * callers own those separately: [disconnect]/[stop] call [cancelBackgroundJobs]
+     * themselves (this client's own background jobs), while a scripted disconnect
+     * must not (see that method's doc comment), and the connectionChanged event
+     * that actually changes [connectionState] is a peer/caller-specific emission
+     * this method has no opinion about the wording of.
+     *
+     * Callable on `other` (as `other.failNonterminalOutgoingSends(...)`) exactly
+     * like [emitFromPeer] and [deliverEnvelope] -- internal (module-visible), not
+     * part of the public [ChatTransportClient] surface, but reachable
+     * cross-instance since Kotlin `internal` visibility is module-wide, not
+     * instance-scoped.
+     */
+    internal fun failNonterminalOutgoingSends(reason: String) {
+        val pendingInSendOrder: List<String>
+        synchronized(pendingSendJobs) {
+            pendingInSendOrder = pendingSendJobs.keys.toList()
+            pendingSendJobs.values.forEach { it.cancel() }
+            pendingSendJobs.clear()
+        }
+        for (messageIdHex in pendingInSendOrder) {
+            markTerminal(messageIdHex)
+            emit { seq -> ChatEvent.MessageStatusChanged(seq, messageIdHex, ChatMessageDisplayStatus.Failed(reason)) }
+        }
+    }
+
+    override suspend fun stop() {
+        // "A repeat stop() is a no-op." (../../../CONTRACT.md section 2).
+        if (!stopped.compareAndSet(false, true)) return
+
+        cancelBackgroundJobs()
+        failNonterminalOutgoingSends(ChatReasonStrings.STOPPED)
+        // "emits connectionChanged(disconnected, reason: "stopped") unless the
+        // state is already disconnected" (../../../CONTRACT.md section 2).
+        if (connectionState !is ChatConnectionState.Disconnected) {
+            emit { seq -> ChatEvent.ConnectionChanged(seq, ChatConnectionState.Disconnected(ChatReasonStrings.STOPPED)) }
+        }
+        // "then finishes the event stream" -- must be LAST: every emission above
+        // has to actually reach eventBus before it stops accepting new events.
+        eventBus.close()
     }
 
     override suspend fun connect(peerIdHex: String) {
         val other = requirePeer("connect()")
-        val otherIdHex = other.id.toHexString()
+        val otherIdHex = other.idBytes.toHexString()
         if (!peerIdHex.equals(otherIdHex, ignoreCase = true)) {
             throw ChatTransportError("connect(toPeer=$peerIdHex) does not match known peer $otherIdHex")
         }
@@ -122,7 +244,7 @@ class SimulatedChatTransportClient internal constructor(
         // call itself (ChatScenarioTimings.CONNECTING_DELAY_MS == 0).
         emit { seq -> ChatEvent.ConnectionChanged(seq, ChatConnectionState.Connecting) }
 
-        val selfIdHex = id.toHexString()
+        val selfIdHex = idBytes.toHexString()
         val job =
             scope.launch {
                 delay(ChatScenarioTimings.CONNECTED_DELAY_MS)
@@ -148,21 +270,24 @@ class SimulatedChatTransportClient internal constructor(
 
                     ChatScenario.PEER_LOSS -> {
                         delay(ChatScenarioTimings.PEER_LOSS_SILENCE_TIMEOUT_DELAY_MS)
-                        emit { seq ->
-                            ChatEvent.ConnectionChanged(
-                                seq,
-                                ChatConnectionState.Disconnected(ChatReasonStrings.PEER_SILENCE_TIMEOUT),
-                            )
-                        }
-                        other.emitFromPeer { seq ->
-                            ChatEvent.ConnectionChanged(
-                                seq,
-                                ChatConnectionState.Disconnected(ChatReasonStrings.PEER_SILENCE_TIMEOUT),
-                            )
-                        }
+                        val timeoutReason = ChatReasonStrings.PEER_SILENCE_TIMEOUT
+                        emit { seq -> ChatEvent.ConnectionChanged(seq, ChatConnectionState.Disconnected(timeoutReason)) }
+                        // "every nonterminal outgoing message on that client
+                        // transitions to messageStatusChanged(failed,
+                        // failureReason: "peerLost") immediately after the
+                        // scripted disconnect event" (../../../CONTRACT.md
+                        // section 2's "Lifecycle cancellation (pinned)") -- for
+                        // THIS client, right after THIS client's own disconnect
+                        // event above; the peer's own nonterminal sends get the
+                        // same treatment right after ITS own disconnect event
+                        // below, not here (each client's own eventSeq stream is
+                        // independent).
+                        failNonterminalOutgoingSends(ChatReasonStrings.PEER_LOST)
+
+                        other.emitFromPeer { seq -> ChatEvent.ConnectionChanged(seq, ChatConnectionState.Disconnected(timeoutReason)) }
+                        other.failNonterminalOutgoingSends(ChatReasonStrings.PEER_LOST)
 
                         delay(ChatScenarioTimings.PEER_LOSS_PEER_LOST_DELAY_MS)
-                        val timeoutReason = ChatReasonStrings.PEER_SILENCE_TIMEOUT
                         emit { seq -> ChatEvent.PeerLost(seq, otherIdHex, timeoutReason) }
                         other.emitFromPeer { seq -> ChatEvent.PeerLost(seq, selfIdHex, timeoutReason) }
                     }
@@ -243,23 +368,41 @@ class SimulatedChatTransportClient internal constructor(
     }
 
     override suspend fun disconnect() {
-        // Pinned by ../../../CONTRACT.md section 2's "Behavior outside the six
-        // scenario tables (pinned)": none of the six scenario scripts exercise a
-        // driver-initiated disconnect(), but its shape is pinned there directly --
-        // disconnect() emits connectionChanged(disconnected, reason:
-        // "userInitiated").
-        val reason = ChatReasonStrings.USER_INITIATED
-        emit { seq -> ChatEvent.ConnectionChanged(seq, ChatConnectionState.Disconnected(reason)) }
+        // "a repeat disconnect() is a no-op." (../../../CONTRACT.md section 2). A
+        // disconnect() called after stop() also lands here as a harmless
+        // first-and-only flip of this flag: cancelBackgroundJobs() has nothing
+        // left to cancel, failNonterminalOutgoingSends() has nothing left to
+        // terminalize, and the emit() below is silently dropped by the already-
+        // closed eventBus (see emit()'s doc comment) -- so no explicit `stopped`
+        // check is needed here for correctness.
+        if (!disconnectedByUser.compareAndSet(false, true)) return
+
+        cancelBackgroundJobs()
+        failNonterminalOutgoingSends(ChatReasonStrings.DISCONNECTED)
+        emit { seq -> ChatEvent.ConnectionChanged(seq, ChatConnectionState.Disconnected(ChatReasonStrings.USER_INITIATED)) }
     }
 
     override suspend fun send(body: String): String {
         val other = requirePeer("send()")
+
+        // "send(body:) is accepted only while the connection state is connected
+        // or degraded; in any other state it throws/raises the transport-misuse
+        // 'not connected' error and emits no event." (../../../CONTRACT.md
+        // section 2's "Send precondition (pinned)"). Checked FIRST, before
+        // drawing a message ID or touching the codec, so a rejected send has zero
+        // side effects -- not even consuming a PRNG draw that a subsequent,
+        // accepted send would otherwise have gotten.
+        val stateAtSend = connectionState
+        if (stateAtSend != ChatConnectionState.Connected && stateAtSend != ChatConnectionState.Degraded) {
+            throw ChatTransportError("send() rejected: not connected or degraded (state=$stateAtSend)")
+        }
+
         val messageId = generateMessageId()
         val messageIdHex = messageId.toHexString()
         // Encoding validates senderId/body bounds and UTF-8, throwing the matching
         // ChatEnvelopeError (e.g. oversizeBody) -- see ENVELOPE.md section 3.
         val envelope =
-            ChatEnvelope(ChatEnvelopeCodec.VERSION, ChatEnvelopeKind.TEXT, messageId, null, id, body)
+            ChatEnvelope(ChatEnvelopeCodec.VERSION, ChatEnvelopeKind.TEXT, messageId, null, idBytes, body)
         val encoded = ChatEnvelopeCodec.encode(envelope)
 
         fun emitStatus(status: ChatMessageDisplayStatus) {
@@ -278,15 +421,6 @@ class SimulatedChatTransportClient internal constructor(
                 emitStatus(ChatMessageDisplayStatus.Transmitting)
 
                 when (scenario) {
-                    ChatScenario.HAPPY_PAIR -> {
-                        delay(ChatScenarioTimings.HAPPY_PAIR_DELIVER_DELAY_MS)
-                        other.deliverEnvelope(encoded)
-
-                        delay(ChatScenarioTimings.HAPPY_PAIR_DELIVERED_DELAY_MS)
-                        markTerminal(messageIdHex)
-                        emitStatus(ChatMessageDisplayStatus.Delivered)
-                    }
-
                     ChatScenario.SEND_FAILURE -> {
                         delay(ChatScenarioTimings.SEND_FAILURE_FAILED_DELAY_MS)
                         markTerminal(messageIdHex)
@@ -317,9 +451,25 @@ class SimulatedChatTransportClient internal constructor(
                         emitStatus(ChatMessageDisplayStatus.Delivered)
                     }
 
-                    ChatScenario.PEER_LOSS, ChatScenario.DEGRADED_THEN_RECOVERED -> {
-                        // These two scenarios never call send() per CONTRACT.md
-                        // section 3.
+                    // happyPair's own table (../../../CONTRACT.md section 3.1),
+                    // AND the generic fallback the "Send precondition (pinned)"
+                    // text pins for any send() accepted while connected/degraded
+                    // with no scenario-specific script of its own: "follows the
+                    // happyPair delivery timeline unless a scenario table or a
+                    // lifecycle rule ... overrides it." peerLoss and
+                    // degradedThenRecovered never call send() in their own
+                    // CONTRACT.md tables, so an off-script send() during either
+                    // (e.g. this module's degraded-accepts-send regression test)
+                    // falls through to this same branch. A peerLoss scripted
+                    // disconnect firing before this timeline completes still
+                    // overrides it via failNonterminalOutgoingSends() above.
+                    ChatScenario.HAPPY_PAIR, ChatScenario.PEER_LOSS, ChatScenario.DEGRADED_THEN_RECOVERED -> {
+                        delay(ChatScenarioTimings.HAPPY_PAIR_DELIVER_DELAY_MS)
+                        other.deliverEnvelope(encoded)
+
+                        delay(ChatScenarioTimings.HAPPY_PAIR_DELIVERED_DELAY_MS)
+                        markTerminal(messageIdHex)
+                        emitStatus(ChatMessageDisplayStatus.Delivered)
                     }
                 }
             }

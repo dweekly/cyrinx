@@ -32,10 +32,15 @@ sealed class ChatMessageDisplayStatus {
 
 /**
  * A single chat message, incoming or outgoing. ../../../CONTRACT.md section 1.6.
+ *
+ * [id] is defensively copied on the way in and on the way out (every read returns
+ * a fresh copy), same rationale as [ChatPeer.id]: a mutable `ByteArray` exposed by
+ * reference would let a caller corrupt this instance's identity out from under
+ * equality/hashing/lookup.
  */
 class ChatMessage(
     /** Same value as the envelope's `messageId`. */
-    val id: ByteArray,
+    id: ByteArray,
     val direction: Direction,
     /** Decoded UTF-8 text. */
     val body: String,
@@ -46,6 +51,11 @@ class ChatMessage(
     val sentAtWallClockMs: Long,
     val status: ChatMessageDisplayStatus,
 ) {
+    private val idBytes: ByteArray = id.copyOf()
+
+    val id: ByteArray
+        get() = idBytes.copyOf()
+
     enum class Direction(val wireName: String) {
         INCOMING("incoming"),
         OUTGOING("outgoing"),
@@ -53,16 +63,16 @@ class ChatMessage(
 
     override fun equals(other: Any?): Boolean =
         other is ChatMessage &&
-            id.contentEquals(other.id) &&
+            idBytes.contentEquals(other.idBytes) &&
             direction == other.direction &&
             body == other.body &&
             senderPeerIdHex == other.senderPeerIdHex &&
             sentAtWallClockMs == other.sentAtWallClockMs &&
             status == other.status
 
-    override fun hashCode(): Int = id.contentHashCode()
+    override fun hashCode(): Int = idBytes.contentHashCode()
 
     override fun toString(): String =
-        "ChatMessage(id=${id.toHexString()}, direction=$direction, body.length=${body.length}, " +
+        "ChatMessage(id=${idBytes.toHexString()}, direction=$direction, body.length=${body.length}, " +
             "senderPeerIdHex=$senderPeerIdHex, sentAtWallClockMs=$sentAtWallClockMs, status=$status)"
 }

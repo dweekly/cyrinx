@@ -203,6 +203,221 @@ struct SimulatedChatTransportClientTests {
             try await clientA.connect(toPeer: "ffffffff")
         }
     }
+
+    @Test("send is accepted while degraded (CONTRACT.md §2's Send precondition)")
+    func sendAcceptedWhileDegraded() async throws {
+        let (clientA, _, clock) = try await Self.connectedPair(scenario: .degradedThenRecovered, seed: 65)
+
+        // degradedThenRecovered's postConnectSteps (ChatScenario.swift):
+        // linkBudget@+50, degraded@+250 relative to `connected` (t=150) --
+        // advance to t=410 so `connectionState == .degraded` before sending.
+        clock.advance(toMs: 410)
+        #expect(clientA.connectionState == .degraded)
+        let messageIdHex = try await clientA.send(body: "sent-while-degraded")
+        #expect(!messageIdHex.isEmpty)
+
+        clock.advance(toMs: 2000)
+        await clientA.stop()
+
+        var statusesForMessage: [ChatMessageDisplayStatus] = []
+        for await event in clientA.events {
+            if case .messageStatusChanged(let idHex, let status) = event.kind, idHex == messageIdHex {
+                statusesForMessage.append(status)
+            }
+        }
+        #expect(statusesForMessage.first == .queued)
+    }
+
+    @Test("connect-then-disconnect: no connected event after disconnect; scheduled handshake is cancelled")
+    func connectThenDisconnectCancelsScheduledHandshake() async throws {
+        let clock = VirtualClock()
+        let (clientA, clientB) = SimulatedChatTransportClient.makePair(
+            scenario: .happyPair, seed: 71, clock: clock
+        )
+        try await clientA.start()
+        try await clientB.start()
+        clock.advance(toMs: 100)
+        try await clientA.connect(toPeer: clientB.localPeerId.hexString)
+        // Disconnect immediately -- before the scripted `connected`
+        // transition (otherwise due 50ms later per
+        // ChatSimTiming.connectHandshakeDelayMs) has any chance to fire.
+        await clientA.disconnect()
+
+        // Advance well past every one of happyPair's pinned times; if the
+        // handshake step were NOT cancelled, `connected` (and the
+        // scenario's post-connect linkBudgetChanged) would appear here.
+        clock.advance(toMs: 2000)
+        await clientA.stop()
+        await clientB.stop()
+
+        var connectionChanges: [ChatConnectionState] = []
+        var sawLinkBudgetChanged = false
+        for await event in clientA.events {
+            switch event.kind {
+            case .connectionChanged(let state):
+                connectionChanges.append(state)
+            case .linkBudgetChanged:
+                sawLinkBudgetChanged = true
+            default:
+                break
+            }
+        }
+        // connecting (from connect()), then disconnected(userInitiated)
+        // (from disconnect()) -- CONTRACT.md §2's Lifecycle cancellation:
+        // disconnect() cancels the scheduled `becomeConnected` handshake
+        // step, so `.connected` must never appear, and stop() afterward
+        // sees state already disconnected so emits nothing further.
+        #expect(connectionChanges == [.connecting, .disconnected(reason: "userInitiated")])
+        #expect(!sawLinkBudgetChanged)
+    }
+
+    @Test("send-then-stop: nonterminal send terminalizes as failed(\"stopped\") before the stream finishes")
+    func sendThenStopTerminalizesBeforeStreamFinishes() async throws {
+        let (clientA, clientB, clock) = try await Self.connectedPair(seed: 72)
+
+        clock.advance(toMs: 300)
+        let messageIdHex = try await clientA.send(body: "stop-me")
+        // Stop immediately -- before the scripted transmitting/receive/
+        // delivered transitions (happyPair's sendOutcome, otherwise due at
+        // +20/+80/+100ms per ChatSimTiming/ChatScenario) have any chance to
+        // fire.
+        await clientA.stop()
+
+        // Advance well past every one of happyPair's pinned send-outcome
+        // times; if the scheduled transitions were NOT cancelled, this
+        // would surface `.transmitting`/`.delivered` below.
+        clock.advance(toMs: 2000)
+        await clientB.stop()
+
+        var statusesForMessage: [ChatMessageDisplayStatus] = []
+        var connectionChanges: [ChatConnectionState] = []
+        // Draining this stream to completion (the for-await loop ends only
+        // once `stop()`'s `emitter.finish()` runs) is itself part of what
+        // this test verifies: if `stop()` never finished the stream, this
+        // loop would hang instead of returning.
+        for await event in clientA.events {
+            switch event.kind {
+            case .messageStatusChanged(let idHex, let status) where idHex == messageIdHex:
+                statusesForMessage.append(status)
+            case .connectionChanged(let state):
+                connectionChanges.append(state)
+            default:
+                break
+            }
+        }
+        #expect(statusesForMessage == [.queued, .failed(reason: "stopped")])
+        #expect(connectionChanges.last == .disconnected(reason: "stopped"))
+
+        var receivedOnB = false
+        for await event in clientB.events {
+            if case .messageReceived = event.kind { receivedOnB = true }
+        }
+        #expect(!receivedOnB)
+    }
+
+    @Test("repeat stop() and disconnect() calls are no-ops")
+    func repeatStopAndDisconnectAreNoOps() async throws {
+        let (clientA, clientB, _) = try await Self.connectedPair(seed: 73)
+
+        await clientA.disconnect()
+        await clientA.disconnect()  // repeat -- must not emit a second event
+        await clientA.stop()
+        await clientA.stop()  // repeat -- must not finish the stream twice or crash
+        await clientB.stop()
+
+        var connectionChanges: [ChatConnectionState] = []
+        for await event in clientA.events {
+            if case .connectionChanged(let state) = event.kind {
+                connectionChanges.append(state)
+            }
+        }
+        // connecting, connected (connectedPair's setup), disconnected
+        // (userInitiated) from the FIRST disconnect() only -- the repeat
+        // disconnect() and both stop() calls contribute nothing further
+        // (stop() sees state already disconnected).
+        #expect(connectionChanges == [.connecting, .connected, .disconnected(reason: "userInitiated")])
+    }
+
+    @Test("stop() suppresses every previously scheduled scenario action -- none fire after stop")
+    func stopSuppressesPreviouslyScheduledActions() async throws {
+        let clock = VirtualClock()
+        let (clientA, clientB) = SimulatedChatTransportClient.makePair(
+            scenario: .degradedThenRecovered, seed: 74, clock: clock
+        )
+        try await clientA.start()
+        try await clientB.start()
+        clock.advance(toMs: 100)
+        try await clientA.connect(toPeer: clientB.localPeerId.hexString)
+        // `connected` fires at t=150; degradedThenRecovered's postConnect
+        // steps (linkBudget@+50, degraded@+250, ...) are all still
+        // scheduled ahead of that.
+        clock.advance(toMs: 150)
+        await clientA.stop()
+
+        // Comfortably past every one of degradedThenRecovered's pinned
+        // times (last pinned event at t=710, §3.3).
+        clock.advance(toMs: 5000)
+        await clientB.stop()
+
+        var kindsAfterStop: [ChatEvent.Kind] = []
+        for await event in clientA.events {
+            kindsAfterStop.append(event.kind)
+        }
+        let hasAnyPostConnectStep = kindsAfterStop.contains { kind in
+            if case .linkBudgetChanged = kind { return true }
+            if case .connectionChanged(.degraded) = kind { return true }
+            return false
+        }
+        #expect(!hasAnyPostConnectStep)
+    }
+
+    @Test("peerLoss's scripted disconnect terminalizes a nonterminal send as failed(\"peerLost\")")
+    func peerLossScriptedDisconnectTerminalizesNonterminalSend() async throws {
+        let clock = VirtualClock()
+        let (clientA, clientB) = SimulatedChatTransportClient.makePair(
+            scenario: .peerLoss, seed: 75, clock: clock
+        )
+        try await clientA.start()
+        try await clientB.start()
+        clock.advance(toMs: 100)
+        try await clientA.connect(toPeer: clientB.localPeerId.hexString)
+        clock.advance(toMs: 150)
+
+        // peerLoss's scripted disconnect fires at connected(150)+350=500
+        // (§3.2); happyPair-shaped sendOutcome would otherwise deliver this
+        // message at transmitting+80 -- send late enough (t=450) that
+        // `delivered` (450+20+80=550) would land AFTER the scripted
+        // disconnect at 500, so the message is still nonterminal
+        // (`.transmitting`) when the scripted disconnect fires.
+        clock.advance(toMs: 450)
+        let messageIdHex = try await clientA.send(body: "still-in-flight")
+
+        // Past peerLoss's full pinned timeline (last pinned event at
+        // t=510, §3.2) and well past where an uncancelled `delivered`
+        // would otherwise have fired (t=550).
+        clock.advance(toMs: 2000)
+        await clientA.stop()
+        await clientB.stop()
+
+        var statusesForMessage: [ChatMessageDisplayStatus] = []
+        for await event in clientA.events {
+            if case .messageStatusChanged(let idHex, let status) = event.kind, idHex == messageIdHex {
+                statusesForMessage.append(status)
+            }
+        }
+        // CONTRACT.md §2's third Lifecycle-cancellation bullet: exactly
+        // queued -> transmitting -> failed(peerLost), nothing further --
+        // never delivered, and not overwritten by stop()'s own
+        // failed(stopped) (the message is already terminal by the time
+        // stop() runs).
+        #expect(statusesForMessage == [.queued, .transmitting, .failed(reason: "peerLost")])
+
+        var receivedOnB = false
+        for await event in clientB.events {
+            if case .messageReceived = event.kind { receivedOnB = true }
+        }
+        #expect(!receivedOnB)
+    }
 }
 
 /// Direct tests of `ChatEventEmitter`'s bounded-buffer policy

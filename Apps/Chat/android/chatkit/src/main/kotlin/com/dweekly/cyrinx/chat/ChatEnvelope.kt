@@ -27,40 +27,58 @@ enum class ChatEnvelopeKind(val wireByte: Int, val wireName: String) {
  *
  * `ByteArray` properties use structural (content) equality/hashing here, matching
  * CONTRACT.md's `ChatPeer`/`ChatMessage` convention of comparing opaque-ID byte
- * arrays by content rather than reference.
+ * arrays by content rather than reference. Each is also defensively copied on the
+ * way in and on the way out (every read returns a fresh copy), same rationale as
+ * [ChatPeer.id]: a caller holding a reference to a constructor argument or a
+ * previously-read property must not be able to mutate this instance's identity
+ * out from under it (or, worse, out from under an already-encoded envelope's
+ * in-flight bytes).
  */
 class ChatEnvelope(
     val version: Int,
     val kind: ChatEnvelopeKind,
-    val messageId: ByteArray,
-    val replyToId: ByteArray?,
-    val senderId: ByteArray,
+    messageId: ByteArray,
+    replyToId: ByteArray?,
+    senderId: ByteArray,
     val body: String,
 ) {
+    private val messageIdBytes: ByteArray = messageId.copyOf()
+    private val replyToIdBytes: ByteArray? = replyToId?.copyOf()
+    private val senderIdBytes: ByteArray = senderId.copyOf()
+
+    val messageId: ByteArray
+        get() = messageIdBytes.copyOf()
+
+    val replyToId: ByteArray?
+        get() = replyToIdBytes?.copyOf()
+
+    val senderId: ByteArray
+        get() = senderIdBytes.copyOf()
+
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is ChatEnvelope) return false
         return version == other.version &&
             kind == other.kind &&
-            messageId.contentEquals(other.messageId) &&
-            nullableContentEquals(replyToId, other.replyToId) &&
-            senderId.contentEquals(other.senderId) &&
+            messageIdBytes.contentEquals(other.messageIdBytes) &&
+            nullableContentEquals(replyToIdBytes, other.replyToIdBytes) &&
+            senderIdBytes.contentEquals(other.senderIdBytes) &&
             body == other.body
     }
 
     override fun hashCode(): Int {
         var result = version
         result = 31 * result + kind.hashCode()
-        result = 31 * result + messageId.contentHashCode()
-        result = 31 * result + (replyToId?.contentHashCode() ?: 0)
-        result = 31 * result + senderId.contentHashCode()
+        result = 31 * result + messageIdBytes.contentHashCode()
+        result = 31 * result + (replyToIdBytes?.contentHashCode() ?: 0)
+        result = 31 * result + senderIdBytes.contentHashCode()
         result = 31 * result + body.hashCode()
         return result
     }
 
     override fun toString(): String =
-        "ChatEnvelope(version=$version, kind=$kind, messageId=${messageId.toHexString()}, " +
-            "replyToId=${replyToId?.toHexString()}, senderId=${senderId.toHexString()}, " +
+        "ChatEnvelope(version=$version, kind=$kind, messageId=${messageIdBytes.toHexString()}, " +
+            "replyToId=${replyToIdBytes?.toHexString()}, senderId=${senderIdBytes.toHexString()}, " +
             "body.length=${body.length})"
 }
 

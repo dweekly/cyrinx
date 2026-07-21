@@ -8,7 +8,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
-import org.junit.Assume.assumeTrue
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
@@ -19,18 +19,14 @@ import java.io.File
  * directory map): "generated from the Swift implementation in the verify stage
  * and checked byte-identical from Kotlin."
  *
- * ../fixtures/traces/ is populated as of the verify stage (see README.md's
- * directory map and CONTRACT.md section 4's "Golden trace fixtures (pinned)").
- * Every test in this class SKIPS via `org.junit.Assume.assumeTrue` if that
- * directory (or the specific golden file) is ever absent, rather than failing,
- * so this module's test suite degrades gracefully instead of hard-failing in a
- * checkout that predates the verify stage.
- *
- * Pinned by ../../../CONTRACT.md section 4's "Golden trace fixtures (pinned)":
- * the committed goldens are `fixtures/traces/happyPair.jsonl` and
- * `fixtures/traces/peerLoss.jsonl`, generated with seed 1
- * ([GOLDEN_TRACE_SEED]) by `CyrinxChatKit`'s `chat-trace-gen` executable and
- * asserted byte-identical here.
+ * Pinned by ../../../CONTRACT.md section 4's amended "Golden trace fixtures
+ * (pinned)": the committed goldens are `fixtures/traces/happyPair.jsonl` and
+ * `fixtures/traces/peerLoss.jsonl`, generated with seed 1 ([GOLDEN_TRACE_SEED])
+ * by `CyrinxChatKit`'s `chat-trace-gen` executable and asserted byte-identical
+ * here. Both comparisons are merge-gate evidence, so BOTH FAIL -- never skip --
+ * when a fixture file is missing (no `org.junit.Assume` anywhere in this class):
+ * a missing golden is treated the same as a mismatched one, not as "not
+ * applicable yet."
  */
 class ChatTraceGoldenComparisonTest {
     private val goldenTracesDir = File("../fixtures/traces")
@@ -38,9 +34,11 @@ class ChatTraceGoldenComparisonTest {
     /** Not pinned by the brief -- see this class's doc comment. */
     private val goldenTraceSeed = GOLDEN_TRACE_SEED
 
-    private fun assumeGoldenTracesDirPresent() {
-        assumeTrue(
-            "../fixtures/traces/ does not exist yet (lands in the verify stage; see README.md's directory map)",
+    private fun requireGoldenTracesDirPresent() {
+        assertTrue(
+            "${goldenTracesDir.path} does not exist -- golden trace fixtures are merge-gate " +
+                "evidence (CONTRACT.md section 4's amended \"Golden trace fixtures (pinned)\"); " +
+                "a missing fixture is a hard failure, not a skip",
             goldenTracesDir.isDirectory,
         )
     }
@@ -66,9 +64,9 @@ class ChatTraceGoldenComparisonTest {
 
     @Test
     fun happyPairTraceMatchesGoldenFile() = runTest {
-        assumeGoldenTracesDirPresent()
+        requireGoldenTracesDirPresent()
         val goldenFile = File(goldenTracesDir, "happyPair.jsonl")
-        assumeTrue("${goldenFile.path} not found", goldenFile.isFile)
+        assertTrue("${goldenFile.path} not found -- treated as a hard failure, not a skip", goldenFile.isFile)
 
         val actual = generateTrace(ChatScenario.HAPPY_PAIR)
         assertEquals(goldenFile.readText(), actual)
@@ -76,9 +74,9 @@ class ChatTraceGoldenComparisonTest {
 
     @Test
     fun peerLossTraceMatchesGoldenFile() = runTest {
-        assumeGoldenTracesDirPresent()
+        requireGoldenTracesDirPresent()
         val goldenFile = File(goldenTracesDir, "peerLoss.jsonl")
-        assumeTrue("${goldenFile.path} not found", goldenFile.isFile)
+        assertTrue("${goldenFile.path} not found -- treated as a hard failure, not a skip", goldenFile.isFile)
 
         val actual = generateTrace(ChatScenario.PEER_LOSS)
         assertEquals(goldenFile.readText(), actual)
