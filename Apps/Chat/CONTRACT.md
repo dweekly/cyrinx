@@ -479,6 +479,15 @@ Deterministic, in-process, driven by `(scenarioName, seed)`. Requirements:
      order, then emits `connectionChanged(disconnected,
      reason: "userInitiated")`. Nothing further fires afterward; a
      repeat `disconnect()` is a no-op.
+   - **`disconnect()` is terminal for the client instance.** After it,
+     `connect()` and `send()` on that client are rejected as transport
+     misuse; the only permitted subsequent call is `stop()`. No
+     peer-driven effect may target a terminal client REGARDLESS of when
+     the effect was scheduled — a terminal target drops the effect even
+     if the effect captured the target's post-disconnect generation, so
+     terminality, not generation equality alone, is the gate. Neither
+     the client's own `connect()` nor its peer's `connect()` can reopen
+     a terminal client.
    - `stop()` performs the same cancellation, emits
      `messageStatusChanged(failed, failureReason: "stopped")` for each
      nonterminal outgoing message in send order, emits
@@ -512,6 +521,19 @@ Deterministic, in-process, driven by `(scenarioName, seed)`. Requirements:
      transfer statuses are unaffected by the receiver's disconnect —
      the simulator models no delivery-failure backchannel, and §4's
      schema-limitation note applies.
+   - **Both endpoints live for connection establishment.** A
+     `connectionChanged(connected)` transition fires only if BOTH
+     endpoints of the pair are still non-terminal at fire time: either
+     endpoint's `disconnect()`/`stop()` before the transition fires
+     drops the transition on both sides. (Message delivery requires
+     only the receiving endpoint to be live, per the bullets above.)
+   - **Atomic validation.** Generation/terminality validation and the
+     target mutation it guards are atomic with respect to lifecycle
+     invalidation: under a caller-supplied concurrent scope,
+     implementations serialize check and mutation against
+     `disconnect()`/`stop()` (per-client lock, actor, or serial
+     dispatcher), so a validated effect can never interleave with an
+     invalidation between its check and its mutation.
    - **Quiescence before completion.** Implementations must cancel and
      join all in-flight work before completing/closing the event
      stream, so that an emission can never race stream completion:
@@ -527,9 +549,13 @@ Deterministic, in-process, driven by `(scenarioName, seed)`. Requirements:
    restarted.
 
    Both platforms must cover these rules with connect-then-disconnect,
-   send-then-stop, passive-side handshake-cancellation, and
-   receiver-disconnect-with-inbound-send tests, and the reason literals
-   `"disconnected"`, `"stopped"`, and `"peerLost"` are pinned exactly.
+   send-then-stop, passive-side handshake-cancellation,
+   receiver-disconnect-with-inbound-send,
+   disconnect-then-peer-connect (terminal target never reconnects),
+   send-to-terminal-receiver (scheduled after the disconnect), and
+   active-side-disconnect-mid-handshake (neither side connects) tests,
+   and the reason literals `"disconnected"`, `"stopped"`, and
+   `"peerLost"` are pinned exactly.
 
 ## 3. Scenario scripts
 
