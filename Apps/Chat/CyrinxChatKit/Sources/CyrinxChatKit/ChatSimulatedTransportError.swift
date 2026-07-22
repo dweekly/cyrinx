@@ -28,4 +28,23 @@ public enum ChatSimulatedTransportError: Error, Equatable, Sendable {
     /// terminal client is rejected (thrown to the caller) and schedules
     /// nothing on either side").
     case terminal
+    /// CONTRACT.md §2's "Command ownership (pinned)" bullet (C3-28
+    /// round-5 fix): "Public commands ... are owned by one caller at a
+    /// time ... implementations detect concurrent public-command entry
+    /// deterministically and reject it as the concurrent-command
+    /// transport-misuse error (thrown where the signature permits, a
+    /// documented deterministic trap otherwise)." Thrown by `start()`,
+    /// `connect()`, and `send()` (all three can throw) when a SECOND
+    /// public command tries to enter this same client instance's command
+    /// span while a FIRST one -- on any thread, including this one
+    /// re-entrantly -- is still inside its own span (`SimulatedChat
+    /// TransportClient`'s `commandLock`/`commandActive` guard, see that
+    /// type's "Command ownership enforcement" doc comment). `stop()`,
+    /// `disconnect()`, and `cancelSend(messageIdHex:)` cannot throw (the
+    /// `ChatTransportClient` protocol signature doesn't permit it), so
+    /// they report this same case via `SimulatedChatTransportClient
+    /// .misuseHandler` instead and return having done nothing -- the
+    /// "documented deterministic trap" the pin's parenthetical allows for
+    /// a non-throwing signature.
+    case concurrentCommand
 }

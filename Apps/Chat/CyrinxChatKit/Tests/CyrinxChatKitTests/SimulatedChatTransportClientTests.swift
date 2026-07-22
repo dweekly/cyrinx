@@ -7,8 +7,12 @@ import Testing
 /// one of CONTRACT.md §3's six tables share (connect at t=100, connected at
 /// t=150), leaving the clock at t=150. Callers advance further as needed
 /// for their own scenario. File-scope (not a member of either `@Suite`
-/// struct below) so both can share it without duplication.
-private func connectedPair(
+/// struct below) so both can share it without duplication. Deliberately
+/// NOT `private` (round 5): `SimulatedChatTransportClientCommandOwnershipTests`
+/// (a separate file) reuses this exact helper too -- widened to the
+/// default `internal` access rather than duplicated, per this repo's
+/// don't-repeat-yourself convention.
+func connectedPair(
     scenario: ChatScenario = .happyPair,
     seed: UInt64
 ) async throws -> (

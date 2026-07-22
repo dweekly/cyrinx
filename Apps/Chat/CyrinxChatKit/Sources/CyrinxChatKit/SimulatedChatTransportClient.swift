@@ -29,7 +29,62 @@ import Foundation
 /// `swiftLanguageMode` override) with zero new warnings or errors, and
 /// every `swift test` case still passes -- nothing in this package or its
 /// tests actually crosses an actor-isolation boundary with an instance of
-/// this class, so the conformance was unused, not load-bearing.
+/// this class, so the conformance was unused, not load-bearing. (Round 5
+/// deliberately introduces the one exception: see "Command ownership
+/// enforcement" below -- it does not cross a COMPILER-CHECKED
+/// actor-isolation boundary, since nothing here or in that round's tests
+/// gained `Sendable` conformance; it instead bypasses the checker
+/// entirely, on purpose, via a small `@unchecked Sendable` test-only
+/// wrapper, specifically to reach the real-multi-thread scenario the new
+/// guard below must defend against.)
+///
+/// **Command ownership enforcement (CONTRACT.md §2's pinned "Command
+/// ownership (pinned)" bullet, C3-28 round-5 fix).** The "Concurrency
+/// note" above describes this type's INTENDED usage -- one sequential
+/// caller, never concurrent entry. Round 5 tightens that from a merely
+/// documented expectation into an actively enforced one: `commandLock`
+/// (a plain `NSLock`) and the boolean it guards, `commandActive`,
+/// implement a per-INSTANCE, non-blocking try-lock that every one of the
+/// six public commands (`start()`, `connect()`, `send()`,
+/// `cancelSend(messageIdHex:)`, `disconnect()`, `stop()`) acquires via
+/// `tryEnterCommandSpan()` as its very first action and releases via
+/// `exitCommandSpan()` (in a `defer`, covering every return/throw path)
+/// as its very last. A command that finds the span already occupied -- a
+/// second public command entering while a first is still inside its own
+/// span, on any thread, including while the first is genuinely suspended
+/// mid-span (see `testOnlyAfterQueuedEmissionLatch` below) -- is REJECTED
+/// outright, never blocked-and-retried: `start()`/`connect()`/`send()`
+/// throw `ChatSimulatedTransportError.concurrentCommand` (their
+/// signatures permit it); `stop()`/`disconnect()`/
+/// `cancelSend(messageIdHex:)` cannot throw (`ChatTransportClient`'s
+/// protocol signature), so they instead invoke `misuseHandler` with that
+/// same case and return having done nothing -- the pin's "a documented
+/// deterministic trap otherwise." Either way, a rejected entrant never
+/// touches any other state (`connectionState`, `outgoingMessages`,
+/// `pendingSendTokens`, ...), so exactly one thread's command body is
+/// ever "inside the span" mutating this client's state at a time -- the
+/// pin's "instead of corrupting state." This is also why the check-then-
+/// set only needs `commandLock` held for the instant of the test-and-set
+/// itself (inside `tryEnterCommandSpan()`/`exitCommandSpan()`), never
+/// across the whole span or any `await` inside it (holding an `NSLock`
+/// across a suspension point is itself a correctness hazard -- POSIX
+/// mutex semantics do not guarantee a lock taken on one thread may be
+/// released on another, which an `async` function resumed on a different
+/// executor thread could otherwise do): once a command has WON entry, no
+/// OTHER command can be concurrently mutating anything for the lock to
+/// race against, by construction, so the span's own body needs no further
+/// synchronization. Message-ID draws and every other command-span
+/// mutation (the pin's own examples) therefore run inside the held span
+/// without needing separate synchronization of their own. Production
+/// callers must still honor the "Concurrency note" above and never
+/// actually rely on this guard as a supported way to share one instance
+/// across threads -- it exists to fail loudly and deterministically on
+/// caller misuse, not to make concurrent use safe or sanctioned.
+/// `SimulatedChatTransportClientCommandOwnershipTests` (round 5) is the
+/// one place in this package that deliberately violates the single-
+/// caller expectation, via a small `@unchecked Sendable` test-only
+/// wrapper, specifically to prove this guard traps the violation instead
+/// of corrupting state.
 ///
 /// **Atomic validation (CONTRACT.md §2's pinned "Atomic validation"
 /// bullet, C3-28 terminality review):** "Generation/terminality
@@ -55,7 +110,13 @@ import Foundation
 /// uninterrupted before any other call into this pair is possible, so the
 /// latch-style race the "Atomic validation" bullet guards against (a
 /// `disconnect()` landing between a validated effect's check and its
-/// mutation) cannot occur here, not merely "is made unlikely."
+/// mutation) cannot occur here, not merely "is made unlikely." Round 5's
+/// "Command ownership enforcement" below is what makes "single-
+/// sequential-caller by scope" an ENFORCED property rather than merely an
+/// assumed one -- a caller that violates it (two public commands entered
+/// concurrently) has the second rejected before it can touch anything,
+/// so this section's "cannot occur here" continues to hold even under
+/// caller misuse, not only under well-behaved single-caller use.
 ///
 /// **Linearized admission and registration (CONTRACT.md §2's pinned
 /// "Linearized admission and registration" bullet, C3-28 round-4 fix):**
@@ -97,7 +158,56 @@ import Foundation
 /// `scheduleDiscoveryIfBothStarted()`/`emitPeerFound()`'s registration and
 /// fire-time re-checks identically to how it already covered
 /// connect/send/disconnect before round 4 -- discovery-arming is a public
-/// command's admission-then-registration exactly like any other.
+/// command's admission-then-registration exactly like any other. Round
+/// 5's command-ownership guard (below) is the enforcement mechanism that
+/// now backstops this section's "synchronous code running on the one
+/// sequential caller" premise: a caller that tries to run two public
+/// commands concurrently no longer gets an undefined interleaving of
+/// admission and registration -- the second command is rejected before
+/// its own admission check even runs.
+///
+/// **Post-connect script admission (CONTRACT.md §2's pinned "Post-connect
+/// script admission" bullet, C3-28 round-5 fix):** "The §3 post-connect
+/// timeline ... is admitted only by a successful joint `connected`
+/// emission. If the handshake is dropped -- either endpoint terminal at
+/// fire time -- the remainder of the scenario script is cancelled on BOTH
+/// sides: no later scripted step fires, and in particular no later
+/// `connected` or `degraded` may appear on either client."
+/// `scheduleScenarioPostConnect(connectedAtMs:)` registers every one of a
+/// scenario's post-connect steps (`applyPostConnect(_:)`, scheduled via
+/// `scheduleOwned`) UNCONDITIONALLY at `connect()` time -- before it is
+/// known whether the joint handshake will actually complete, since that
+/// is only resolved later, at `connectedAtMs`, by `becomeConnected()`'s
+/// own "Both endpoints live" check. Per-client token cancellation alone
+/// (the existing `pendingActionTokens`/`cancelAllScheduledActions()`
+/// machinery) is NOT sufficient to close this gap: it only cancels a
+/// step in the bookkeeping of the client whose OWN `disconnect()`/
+/// `stop()` ran, but a step whose scenario target is the OTHER
+/// (non-disconnecting) endpoint was registered in THAT client's own
+/// bookkeeping and is untouched by a peer's disconnect. `isEstablished`
+/// closes this gap directly: set to `true` exactly once, inside
+/// `becomeConnected()`, at the moment THIS client's own copy of the
+/// joint-connected check passes (never reset -- a scenario's own later
+/// post-connect steps, e.g. `degradedThenRecovered`'s recovery mutation,
+/// must remain admitted once the handshake genuinely completed, even
+/// though `connectionState` itself cycles through `.degraded` and back to
+/// `.connected` in between). Every `applyPostConnect(_:)` invocation
+/// re-checks `isEstablished` (plus "both-live": `!isTerminal` on this
+/// client and its `peer`) at ITS OWN fire time, before touching `template`
+/// at all -- because every post-connect step's `deltaMs` is strictly
+/// positive across all six scenario tables (CONTRACT.md §3.1-3.6's
+/// smallest is `slowLink`'s 10 ms), `becomeConnected()`'s own scheduled
+/// fire time (`connectedAtMs`, `deltaMs` 0 relative to itself) always
+/// resolves `isEstablished` -- one way or the other -- strictly before any
+/// post-connect step's fire time is reached, so there is no ordering
+/// ambiguity to resolve here. None of the six canonical scenario scripts
+/// (`ChatScenarioRunner`) ever calls `disconnect()`/`stop()` before a
+/// scenario's own `scriptEndMs`, and the handshake always completes
+/// jointly in canonical playback, so `isEstablished` is always `true`
+/// well before any canonical post-connect step's fire time -- this fix
+/// changes nothing about the six pinned golden traces (§4's byte-
+/// identical guarantee), only the previously-unfixed dropped-handshake
+/// edge case a scenario script's OWN driver never exercises.
 public final class SimulatedChatTransportClient: ChatTransportClient {
     /// ASCII "MSGIDA__" -- see the message-ID generator seeding note below.
     private static let messageIdSeedTagA: UInt64 = 0x4D53_4749_4441_5F5F
@@ -121,6 +231,63 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
     /// independent `events` `AsyncStream`. Not part of the public
     /// `ChatTransportClient` contract.
     var traceSink: ((ChatClientRole, Int64, ChatEvent) -> Void)?
+
+    /// CONTRACT.md §2's "Command ownership (pinned)" bullet, C3-28 round-5
+    /// fix: the "documented deterministic trap" a non-throwing public
+    /// command (`stop()`, `disconnect()`, `cancelSend(messageIdHex:)`)
+    /// reports a rejected concurrent entry through, since its signature
+    /// cannot throw. `nil` by default (every non-test caller, and all six
+    /// canonical scenario scripts, never trip the guard at all, so this
+    /// never fires in ordinary use). May be invoked from a DIFFERENT
+    /// thread than whichever one is currently executing this client's
+    /// active command span -- that is the entire scenario this hook
+    /// exists to observe -- so a caller that sets it (only
+    /// `SimulatedChatTransportClientCommandOwnershipTests`, round 5) is
+    /// responsible for its own thread-safe handling of whatever it does
+    /// inside the closure; this class contributes nothing to make the
+    /// closure itself thread-safe beyond guaranteeing the call happens
+    /// after `tryEnterCommandSpan()` has already lost its race under
+    /// `commandLock`, so it's never invoked concurrently WITH ITSELF for
+    /// the same client (each rejection is its own, independently
+    /// serialized `tryEnterCommandSpan()` call).
+    var misuseHandler: ((ChatSimulatedTransportError) -> Void)?
+
+    /// Test-only hook (round-5 command-ownership review): when non-nil,
+    /// `send()` awaits this closure, passing the message's own
+    /// `messageIdHex`, immediately after emitting its initial `.queued`
+    /// status and before scheduling its outcome. This is the ONLY `await`
+    /// suspension point anywhere across this class's six public commands
+    /// -- deliberately introduced so `SimulatedChatTransportClient
+    /// CommandOwnershipTests` can pause a `send()` call provably mid-span
+    /// (past its message-ID draw and `.queued` emission, both already
+    /// inside the held command span -- see "Command ownership
+    /// enforcement" above) and drive a REAL concurrent second command
+    /// against the same client instance while the first has not yet
+    /// called `exitCommandSpan()`, proving the guard's span really does
+    /// stay open across a suspension and not merely across synchronous
+    /// code. `nil` (the default, used by every non-test caller and all
+    /// six canonical scenario scripts) makes `send()` behave exactly as
+    /// it did before round 5: no suspension, so nothing external can ever
+    /// observe this client mid-span in ordinary use, and the six pinned
+    /// golden traces (§4) are unaffected.
+    var testOnlyAfterQueuedEmissionLatch: ((String) async -> Void)?
+
+    /// CONTRACT.md §2's "Command ownership (pinned)" bullet, C3-28 round-5
+    /// fix: guards `commandActive`, the per-instance latch every public
+    /// command acquires (via `tryEnterCommandSpan()`) as its first action
+    /// and releases (via `exitCommandSpan()`) as its last -- see "Command
+    /// ownership enforcement" in this type's own doc comment for the full
+    /// design rationale, including why `commandLock` itself is only ever
+    /// held for the instant of a test-and-set, never across a command's
+    /// whole span or any `await` inside it.
+    private let commandLock = NSLock()
+    /// `true` for the entire duration of whichever public command
+    /// currently owns this client's command span (from its
+    /// `tryEnterCommandSpan()` call to its `exitCommandSpan()` call,
+    /// inclusive of any suspension in between -- see
+    /// `testOnlyAfterQueuedEmissionLatch` above). Always accessed only
+    /// while holding `commandLock`.
+    private var commandActive = false
 
     private let emitter = ChatEventEmitter()
     /// CONTRACT.md §2's "Message-ID stream (pinned)": each client owns an
@@ -181,6 +348,21 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
     /// reason (see `scheduleDelivery`'s doc comment), also stay registered
     /// in someone else's token bookkeeping.
     private(set) var lifecycleGeneration = 0
+    /// CONTRACT.md §2's "Post-connect script admission (pinned)" bullet,
+    /// C3-28 round-5 fix: set to `true` exactly once, inside
+    /// `becomeConnected()`, at the moment THIS client's own copy of the
+    /// joint "both endpoints live" check passes -- i.e. exactly when a
+    /// successful joint `connected` transition is about to be emitted on
+    /// this client. Never reset afterward (a scenario's later post-connect
+    /// steps, e.g. `degradedThenRecovered`'s recovery mutation, remain
+    /// admitted once the handshake genuinely completed, even after
+    /// `connectionState` itself later cycles through `.degraded`). See
+    /// this type's own "Post-connect script admission" doc-comment section
+    /// above for the full design rationale, including why checking this
+    /// flag at each post-connect step's own fire time (rather than only
+    /// once, e.g. inside `scheduleScenarioPostConnect`) is both necessary
+    /// and sufficient.
+    private(set) var isEstablished = false
     public private(set) var connectionState: ChatConnectionState = .disconnected(reason: nil)
     private(set) var discoveredPeer: ChatPeer?
 
@@ -253,6 +435,51 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
 
     public var events: AsyncStream<ChatEvent> { emitter.stream }
 
+    // MARK: - Command ownership (CONTRACT.md §2's "Command ownership (pinned)", C3-28 round-5)
+
+    /// Attempts to enter this client's command span on behalf of a public
+    /// command. Returns `true` when the caller now OWNS the span -- it
+    /// MUST call `exitCommandSpan()` exactly once on every path out
+    /// (typically via `defer`, immediately after a successful call to
+    /// this method) -- or `false` when another command is already active
+    /// on this same client instance, per CONTRACT.md §2's "Command
+    /// ownership (pinned)" bullet: the second entrant is rejected
+    /// outright, never blocked-and-retried. See this type's own "Command
+    /// ownership enforcement" doc-comment section for why `commandLock`
+    /// only needs to be held for the duration of this one test-and-set,
+    /// not across the span it guards.
+    private func tryEnterCommandSpan() -> Bool {
+        commandLock.lock()
+        defer { commandLock.unlock() }
+        guard !commandActive else { return false }
+        commandActive = true
+        return true
+    }
+
+    /// Releases the command span a prior, successful `tryEnterCommandSpan()`
+    /// call on this same client acquired. Every public command calls this
+    /// exactly once, via `defer`, immediately after entering successfully
+    /// -- covering every return and throw path out of the command's body.
+    private func exitCommandSpan() {
+        commandLock.lock()
+        defer { commandLock.unlock() }
+        commandActive = false
+    }
+
+    /// Records a rejected concurrent entry through `misuseHandler` (CONTRACT
+    /// .md §2's "documented deterministic trap" for the three non-throwing
+    /// public commands) and returns the same `ChatSimulatedTransportError
+    /// .concurrentCommand` case for the three throwing ones to `throw`
+    /// directly -- one shared implementation so every one of the six
+    /// public commands reports a rejected concurrent entry identically,
+    /// whether or not its own signature can throw.
+    @discardableResult
+    private func recordConcurrentCommandMisuse() -> ChatSimulatedTransportError {
+        let error = ChatSimulatedTransportError.concurrentCommand
+        misuseHandler?(error)
+        return error
+    }
+
     // MARK: - ChatTransportClient
 
     /// CONTRACT.md §2's "`start()` semantics (pinned)": idempotent --
@@ -280,6 +507,10 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
     /// `isTerminal` includes `finished`, so this still holds for the edge
     /// case of `stop()` being called before `start()` ever runs.
     public func start() async throws {
+        guard tryEnterCommandSpan() else {
+            throw recordConcurrentCommandMisuse()
+        }
+        defer { exitCommandSpan() }
         guard !isTerminal else {
             throw ChatSimulatedTransportError.terminal
         }
@@ -299,6 +530,11 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
     /// `finished` (checked first, before any of this runs) makes a repeat
     /// call a total no-op.
     public func stop() async {
+        guard tryEnterCommandSpan() else {
+            recordConcurrentCommandMisuse()
+            return
+        }
+        defer { exitCommandSpan() }
         guard !finished else { return }
         finished = true
         lifecycleGeneration += 1
@@ -316,6 +552,10 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
     }
 
     public func connect(toPeer idHex: String) async throws {
+        guard tryEnterCommandSpan() else {
+            throw recordConcurrentCommandMisuse()
+        }
+        defer { exitCommandSpan() }
         // CONTRACT.md §2's new pinned "disconnect() is terminal for the
         // client instance" bullet: a terminal client rejects connect()
         // outright, before touching any state -- the only call still
@@ -375,6 +615,11 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
     /// `"disconnected"` *failure* reason on nonterminal sends, by contrast,
     /// is pinned exactly).
     public func disconnect() async {
+        guard tryEnterCommandSpan() else {
+            recordConcurrentCommandMisuse()
+            return
+        }
+        defer { exitCommandSpan() }
         guard !disconnectedByUser else { return }
         disconnectedByUser = true
         lifecycleGeneration += 1
@@ -385,6 +630,10 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
     }
 
     public func send(body: String) async throws -> String {
+        guard tryEnterCommandSpan() else {
+            throw recordConcurrentCommandMisuse()
+        }
+        defer { exitCommandSpan() }
         // CONTRACT.md §2's new pinned "disconnect() is terminal for the
         // client instance" bullet: a terminal client rejects send()
         // outright. This is guaranteed equivalent to (but more direct
@@ -433,6 +682,12 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
         sendOrder.append(messageIdHex)
         emit(.messageStatusChanged(messageIdHex: messageIdHex, status: .queued))
 
+        // Test-only suspension point -- see `testOnlyAfterQueuedEmissionLatch`'s
+        // doc comment. `nil` (every non-test caller, all six canonical
+        // scenario scripts) makes this an immediate no-op with no actual
+        // suspension.
+        await testOnlyAfterQueuedEmissionLatch?(messageIdHex)
+
         scheduleSendOutcome(
             scenario.sendOutcome, messageIdHex: messageIdHex, encoded: encoded, sentAtMs: sentAtMs
         )
@@ -445,6 +700,11 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
     /// "cancelled")`, unless `messageIdHex` is unknown or already terminal
     /// (`.delivered` or `.failed`), in which case this is a no-op.
     public func cancelSend(messageIdHex: String) async {
+        guard tryEnterCommandSpan() else {
+            recordConcurrentCommandMisuse()
+            return
+        }
+        defer { exitCommandSpan() }
         guard let message = outgoingMessages[messageIdHex] else { return }
         switch message.status {
         case .delivered, .failed:
@@ -651,6 +911,17 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
     private func becomeConnected() {
         guard !isTerminal, let peer, !peer.isTerminal else { return }
         connectionState = .connected
+        // CONTRACT.md §2's "Post-connect script admission (pinned)" bullet,
+        // C3-28 round-5 fix: this IS "a successful joint connected
+        // emission" for this client -- the guard above just confirmed both
+        // endpoints are live, so latch `isEstablished` here, before the
+        // emission below, so every post-connect step's own fire-time check
+        // (`applyPostConnect(_:)`) sees it admitted from this point on. See
+        // this type's own "Post-connect script admission" doc-comment
+        // section for why this can never be observed still `false` by a
+        // post-connect step that SHOULD be admitted (every step's `deltaMs`
+        // is strictly positive, so this always resolves first).
+        isEstablished = true
         emit(.connectionChanged(.connected))
     }
 
@@ -682,7 +953,45 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
         }
     }
 
+    /// CONTRACT.md §2's "Post-connect script admission (pinned)" bullet,
+    /// C3-28 round-5 fix: `scheduleScenarioPostConnect(connectedAtMs:)`
+    /// registers every one of these unconditionally at `connect()` time,
+    /// before it is known whether the joint handshake will actually
+    /// complete -- so THIS method, running at each step's own fire time,
+    /// is where admission is actually decided: `isEstablished` (latched by
+    /// `becomeConnected()` the moment this client's own joint-connected
+    /// check passed) plus "both-live" (`!isTerminal` on this client and,
+    /// where `peer` is still resolvable, on `peer` too -- re-checked here
+    /// rather than assumed from admission time, matching every other
+    /// post-connect effect's own fire-time re-validation in this file). A
+    /// dropped handshake -- `isEstablished` still `false` when this fires
+    /// -- silently drops every step for this client, exactly matching
+    /// CONTRACT.md's "the remainder of the scenario script is cancelled
+    /// on BOTH sides" (each side's own copy of each step independently
+    /// makes this same check on itself). See this type's own "Post-connect
+    /// script admission" doc-comment section for the full design
+    /// rationale.
+    ///
+    /// Deliberately `peer?.isTerminal ?? false`, NOT `guard let peer` --
+    /// `peer` is `weak`, and most of the cases below (`.linkBudget`,
+    /// `.connectionDegraded`, `.connectionRecoveredConnected`,
+    /// `.connectionDisconnected`) only ever read/write THIS client's own
+    /// state, exactly as they did before round 5, with no need for a
+    /// still-live strong reference to `peer` at all -- a caller that lets
+    /// its own reference to the peer object drop (e.g. destructuring
+    /// `makePair`'s result and discarding the `b` it doesn't otherwise
+    /// need, as `SimulatedChatTransportClientTests.sendAcceptedWhileDegraded`
+    /// does) must not thereby lose THIS client's own scripted progression
+    /// -- ARC deallocation of an unretained peer is a Swift-specific
+    /// memory-lifetime artifact, not the CONTRACT's "either endpoint
+    /// terminal" (a peer that a real caller no longer holds a reference to
+    /// was never disconnect()ed/stop()ped, so treating a `nil` weak `peer`
+    /// as "terminal" here would reject on a condition CONTRACT.md never
+    /// describes). Only `.peerLost` actually needs a live `peer` to read
+    /// (`peer.localPeerId`), so it keeps its own explicit `guard let peer`
+    /// below, exactly as before round 5.
     private func applyPostConnect(_ template: ChatPostConnectStep.EventTemplate) {
+        guard isEstablished, !isTerminal, !(peer?.isTerminal ?? false) else { return }
         switch template {
         case .linkBudget(let budget):
             emit(.linkBudgetChanged(budget))
@@ -717,6 +1026,11 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
             cancelPendingSendTokens()
             terminalizeNonterminalSends(reason: "peerLost")
         case .peerLost(let reason):
+            // Unlike the other cases, this one actually needs to read
+            // `peer`'s own state (`localPeerId`) -- the top-level guard
+            // above deliberately does NOT bind a non-optional `peer` (see
+            // its doc comment), so this case keeps its own explicit
+            // unwrap, exactly as it did before round 5.
             guard let peer else { return }
             emit(.peerLost(peerIdHex: peer.localPeerId.hexString, reason: reason))
         }

@@ -48,16 +48,40 @@ import java.util.concurrent.atomic.AtomicLong
  *
  * **Linearized admission and registration (round-4 fresh pin, reviewer
  * probes Q1-Q3):** ../../../CONTRACT.md section 2's "Linearized admission
- * and registration" bullet states this plainly: "The simulator accepts
- * public commands from any thread under this rule" -- [start], [connect],
- * [send], [disconnect], and [stop] may all be invoked concurrently, from
- * different threads, against the same pair. [launchBackgroundJob] is the
- * shared mechanism that makes every public command's admission (its
- * terminality check) atomic with the registration of whatever work it
+ * and registration" bullet: every public command's admission (its
+ * terminality check) is atomic with the registration of whatever work it
  * spawns ([backgroundJobs], and -- via its `onAdmitted` callback --
  * [pendingSendJobs] for [send], or the synchronous `Connecting`/`Queued`
- * self-emission for [connect]/[send]): see that method's doc comment for
- * the TOCTOU hole this closes and how.
+ * self-emission for [connect]/[send]). [launchBackgroundJob] is the shared
+ * mechanism that makes this atomic: see that method's doc comment for the
+ * TOCTOU hole this closes and how. (Round-4 additionally treated `start()`,
+ * `connect()`, `send()`, `disconnect()`, and `stop()` as safe to invoke
+ * concurrently, from different threads, against the same pair -- round-5's
+ * "Command ownership" pin below supersedes that: this class's tests, e.g.
+ * SimulatedChatTransportClientTest's `disconnectFindsAndCancels...`/
+ * `disconnectTerminalizesASend...`, still use real, genuinely concurrent
+ * threads to exercise this linearized-admission machinery, but now via a
+ * concurrent [disconnect] racing an ALREADY-ADMITTED job's held dispatch --
+ * i.e. AFTER the admitting command's own [commandInFlight] span has
+ * already ended -- rather than via two public commands whose spans
+ * themselves overlap.)
+ *
+ * **Command ownership (round-5 fresh pin):** ../../../CONTRACT.md section
+ * 2's "Command ownership (pinned)" bullet: "Public commands ... are owned
+ * by one caller at a time: the owner ... invokes them strictly
+ * sequentially, never concurrently. This is an enforced model, not an
+ * honor rule." [commandInFlight] is a per-instance, non-blocking CAS guard
+ * every public command acquires at entry and is rejected outright
+ * (`ChatTransportError.concurrentCommand`, never queued/blocked to wait its
+ * turn) if it cannot: see [commandInFlight]'s own doc comment for exactly
+ * which portion of each command's body counts as its "serialized span," and
+ * why that is narrower than "the whole suspend-fun call" for [connect] and
+ * [send] specifically. This is a NEW, additional layer on top of --  not a
+ * replacement for -- [lifecycleLock]'s atomic-validation guarantee above:
+ * "Scheduled simulator work may still race a command internally; that
+ * interleaving is what the atomic-validation and linearized-admission
+ * bullets govern, and Kotlin retains its internal locks as defense in
+ * depth" (../../../CONTRACT.md section 2).
  */
 class SimulatedChatTransportClient internal constructor(
     /** This client's own simulated transport peer ID (4 bytes, PRNG-derived per
@@ -291,6 +315,126 @@ class SimulatedChatTransportClient internal constructor(
     internal fun isTerminal(): Boolean = terminal.get()
 
     /**
+     * ../../../CONTRACT.md section 2's round-5-pinned "Command ownership
+     * (pinned)" bullet: at most one public command's own serialized span may
+     * be in flight on THIS client instance at a time. `false` = free, `true`
+     * = a public command currently owns the span. Every public command
+     * ([start], [connect], [send], [cancelSend], [disconnect], [stop])
+     * CAS's this `false -> true` at its very first line; a call that loses
+     * the CAS is rejected immediately -- `ChatTransportError
+     * .concurrentCommand`, thrown before touching any other state -- rather
+     * than queued to wait its turn: "implementations detect concurrent
+     * public-command entry deterministically and reject it ... instead of
+     * corrupting state." This is a non-blocking try-lock, not a `Mutex`: a
+     * caller that violates the "one owner, sequential calls" contract gets a
+     * deterministic exception, not a silent wait.
+     *
+     * **Where each command releases it (its "serialized span"):**
+     * - [cancelSend]: the whole function -- it is fully synchronous already
+     *   (no `Job.start()`/`Job.join()` inside it), so "whole function" and
+     *   "synchronous mutation section" coincide exactly. Released in a
+     *   `finally`.
+     * - [disconnect] / [stop]: the whole function, INCLUDING the suspending
+     *   `jobs.forEach { it.join() }` wait -- these two are the only public
+     *   commands whose own body genuinely suspends, and nothing about
+     *   CONTRACT.md's pin narrows their span to exclude that wait. Released
+     *   in a `finally`.
+     * - [start]: the whole function. `armDiscoveryForBothClients` can call
+     *   [launchBackgroundJob] (via [scheduleDiscoveredPeerFound]) more than
+     *   once per `start()`, so there is no single "one admission, then
+     *   release early" point analogous to [connect]/[send] below; no
+     *   CONTRACT.md-pinned test races a concurrent command against a held
+     *   discovery-job dispatch, so the simpler whole-function span is used.
+     *   Released in a `finally`.
+     * - [connect] / [send]: released EARLY, inside [launchBackgroundJob]'s
+     *   `onAdmitted` callback -- i.e. still under [lifecycleLock], right
+     *   after that command's own message-ID draw (for [send]) and
+     *   registration/self-emission (`Connecting`/`Queued`) are already fully
+     *   committed, but BEFORE `Job.start()` is called. `Job.start()` is a
+     *   fire-and-forget dispatch request in every real dispatcher (it does
+     *   not itself suspend or block); the ONLY reason it can appear to block
+     *   the calling thread is a test's own instrumented dispatcher (see
+     *   `HoldingDispatcher` in SimulatedChatTransportClientTest) deliberately
+     *   pausing INSIDE `dispatch()` to reproduce a specific admission race
+     *   (reviewer probes Q2/Q3) -- that is a test-only artifice standing in
+     *   for ordinary (fast, non-blocking) dispatch latency, not a real
+     *   extension of the command's own logical work, so it must not be able
+     *   to hold a DIFFERENT public command (e.g. a concurrent [disconnect])
+     *   hostage on this SAME instance. "Message-ID draws and all other
+     *   command-span mutations execute inside the command's serialized
+     *   span" is satisfied because the draw and every mutation happen BEFORE
+     *   this early release, all still under [lifecycleLock] with no
+     *   suspension point in between.
+     *
+     * A separate primitive from [lifecycleLock]: [lifecycleLock] is
+     * per-effect (guards ONE `runIfLive`/`runIfBothLive` check-and-mutate
+     * critical section against invalidation) and is NEVER held across a
+     * suspension point; [commandInFlight] is per-COMMAND-INVOCATION (guards
+     * an entire public call, potentially spanning [disconnect]/[stop]'s
+     * `Job.join()` suspension) and answers a different question ("is
+     * another public command already running on this instance?" vs. "is
+     * this specific target still live?"). Both are held simultaneously
+     * during [launchBackgroundJob]'s admission critical section with no
+     * conflict, since [commandInFlight] is never itself acquired while
+     * already holding [lifecycleLock] from the OUTSIDE (only released from
+     * inside it).
+     */
+    private val commandInFlight = AtomicBoolean(false)
+
+    /**
+     * Releases [commandInFlight] EXACTLY ONCE for a single [connect]/[send]
+     * invocation, whichever of {the early release inside
+     * [launchBackgroundJob]'s `onAdmitted`, the late release in that
+     * command's own outer `finally`} reaches [releaseOnce] first -- the
+     * second call is a deliberate no-op.
+     *
+     * **The bug this fixes (round-5 fix pass, found via a genuinely
+     * concurrent 16-thread/500-send regression and confirmed with an
+     * isolated, `SimulatedChatTransportClient`-free repro before this fix
+     * landed):** [connect]/[send] used to call `commandInFlight.set(false)`
+     * unconditionally from BOTH the early site AND the outer `finally`,
+     * with no coordination between them. `AtomicBoolean.set(false)` has no
+     * notion of "am I still the owner" -- it just unconditionally stamps
+     * the value. Under real concurrent load the SECOND (late,
+     * "redundant-looking") call can land AFTER a DIFFERENT, LATER caller
+     * has already legitimately re-acquired [commandInFlight] using the
+     * FIRST (early) release's own `false` -- that late call then silently
+     * evicts the new legitimate owner mid-flight, letting a THIRD caller's
+     * `compareAndSet(false, true)` ALSO succeed while the second caller is
+     * still inside its own guarded span. For [send] specifically this
+     * showed up as two concurrent [generateMessageId] calls racing the same
+     * non-atomic [SplitMix64] `state` field, producing message IDs that
+     * matched NEITHER caller's expected draw -- silent, non-deterministic
+     * corruption of the pinned message-ID stream, not a crash, which is
+     * what made it easy to miss without a set-equality check across many
+     * genuinely concurrent callers. A double `set(false)` is a classic
+     * double-release bug on a bare flag; the fix is what this class
+     * provides -- release exactly once, ever, per acquisition.
+     *
+     * Constructed once per [connect]/[send] invocation (a fresh instance,
+     * never shared or reused across calls) and threaded through to the
+     * early-release call site by passing [releaseOnce] as a parameter into
+     * that command's `OwningCommandSpan` function. [released] is a plain
+     * (non-atomic) `Boolean` -- safe without further synchronization
+     * because both the early and late release sites run on the SAME
+     * calling thread, in the SAME synchronous call stack, with the early
+     * site always happening-before the late site in program order (there is
+     * no suspension point between them: [launchBackgroundJob]'s admission
+     * critical section, where the early release lives, is entirely
+     * synchronous, and [releaseOnce] itself never suspends).
+     */
+    private class SingleReleaseGuard(private val flag: AtomicBoolean) {
+        private var released = false
+
+        fun releaseOnce() {
+            if (!released) {
+                released = true
+                flag.set(false)
+            }
+        }
+    }
+
+    /**
      * Runs [action] -- a single-target peer-driven effect that mutates or
      * emits on THIS client -- ATOMICALLY with respect to this client's own
      * [disconnect]/[stop] invalidation: [action] runs if and only if, at the
@@ -345,6 +489,15 @@ class SimulatedChatTransportClient internal constructor(
      * order for the whole pair, not merely "consistent relative to the
      * caller" -- trivially deadlock-free even under callers racing from
      * both sides at once.
+     *
+     * Returns whether [action] actually ran -- [emitConnectedIfBothLive]
+     * propagates this as its own return value so [connect] can tell whether
+     * the joint `connected` transition it just tried to fire was admitted or
+     * dropped: ../../../CONTRACT.md section 2's "Post-connect script
+     * admission" bullet (round-5 fresh pin) gates the REST of that
+     * scenario's script on exactly this outcome. [scheduleDiscoveredPeerFound]
+     * ignores the return value -- a dropped `peerFound` has no further script
+     * to gate.
      */
     private fun runIfBothLive(
         clientA: SimulatedChatTransportClient,
@@ -352,17 +505,19 @@ class SimulatedChatTransportClient internal constructor(
         clientB: SimulatedChatTransportClient,
         clientBExpectedGeneration: Long,
         action: () -> Unit,
-    ) {
+    ): Boolean =
         synchronized(clientA.lifecycleLock) {
             synchronized(clientB.lifecycleLock) {
                 val aLive = !clientA.terminal.get() && clientA.generation.get() == clientAExpectedGeneration
                 val bLive = !clientB.terminal.get() && clientB.generation.get() == clientBExpectedGeneration
                 if (aLive && bLive) {
                     action()
+                    true
+                } else {
+                    false
                 }
             }
         }
-    }
 
     /** Assigns `eventSeq`, offers the event to [eventBus], and -- if a
      * [traceSink] is attached -- records (eventSeq, current virtual time, event)
@@ -542,19 +697,42 @@ class SimulatedChatTransportClient internal constructor(
      * now simply falls out of [terminal] being permanently true after
      * [stop] too (see [stopped]'s doc comment).
      *
-     * **Any-thread callers (round-4 fresh pin, reviewer probe Q1):** unlike
-     * round 3's assumption of single-sequential-caller usage, `start()` may
-     * now be invoked concurrently from different threads against the same
-     * pair -- see the class doc comment's "Linearized admission and
-     * registration" paragraph. [discoveryArmed]'s single-CAS-arbiter design
-     * (see that field's doc comment) is what makes "exactly one caller ever
-     * arms a given pair" hold even when both clients' `start()` calls race
-     * each other; [launchBackgroundJob]'s own admission check (reached via
+     * **Any-thread callers (round-4 fresh pin, reviewer probe Q1; narrowed by
+     * round-5's "Command ownership" pin):** `start()` may be invoked from any
+     * thread -- there is nothing thread-affine about this class -- but
+     * round-5 now rejects two calls to `start()` that genuinely OVERLAP on
+     * the SAME client instance (see [commandInFlight]). The scenario this
+     * paragraph originally documented -- `pair.clientA.start()` racing
+     * `pair.clientB.start()` -- is unaffected either way: those are two
+     * DIFFERENT instances, each with its own [commandInFlight], so nothing
+     * about round-5 changes how they race each other.
+     * [discoveryArmed]'s single-CAS-arbiter design (see that field's doc
+     * comment) is what makes "exactly one caller ever arms a given pair"
+     * hold even when both clients' `start()` calls race each other;
+     * [launchBackgroundJob]'s own admission check (reached via
      * [armDiscoveryForBothClients]) separately guards against a `start()`
      * that wins the arming race but then loses a race against its OWN
      * concurrent [disconnect]/[stop] before it finishes scheduling.
      */
     override suspend fun start() {
+        // ../../../CONTRACT.md section 2's round-5-pinned "Command ownership
+        // (pinned)" bullet -- see [commandInFlight]'s doc comment. Held for
+        // this method's ENTIRE body (released in the `finally` below): unlike
+        // [connect]/[send], [armDiscoveryForBothClients] can call
+        // [launchBackgroundJob] more than once per `start()`, so there is no
+        // single "one admission, then release early" point to hook an early
+        // release into.
+        if (!commandInFlight.compareAndSet(false, true)) {
+            throw ChatTransportError.concurrentCommand("start()")
+        }
+        try {
+            startOwningCommandSpan()
+        } finally {
+            commandInFlight.set(false)
+        }
+    }
+
+    private suspend fun startOwningCommandSpan() {
         if (terminal.get()) {
             throw ChatTransportError("start() rejected: this client is terminal (disconnect()/stop() already ran)")
         }
@@ -734,6 +912,23 @@ class SimulatedChatTransportClient internal constructor(
     }
 
     override suspend fun stop() {
+        // ../../../CONTRACT.md section 2's round-5-pinned "Command ownership
+        // (pinned)" bullet -- see [commandInFlight]'s doc comment. Held for
+        // this method's ENTIRE body, INCLUDING the suspending `job.join()`
+        // wait below (this method's own serialized span is what a concurrent
+        // caller must wait its OWN prior command out for -- there is no early
+        // "admission complete" point to release at, unlike [connect]/[send]).
+        if (!commandInFlight.compareAndSet(false, true)) {
+            throw ChatTransportError.concurrentCommand("stop()")
+        }
+        try {
+            stopOwningCommandSpan()
+        } finally {
+            commandInFlight.set(false)
+        }
+    }
+
+    private suspend fun stopOwningCommandSpan() {
         // "A repeat stop() is a no-op." (../../../CONTRACT.md section 2).
         if (!stopped.compareAndSet(false, true)) return
 
@@ -781,23 +976,57 @@ class SimulatedChatTransportClient internal constructor(
      * [selfExpectedGeneration]/[otherExpectedGeneration] are captured by the
      * caller at `connect()` call time, mirroring every other peer-driven
      * effect's schedule-time capture.
+     *
+     * Returns whether the joint `connected` transition actually fired.
+     * ../../../CONTRACT.md section 2's round-5-pinned "Post-connect script
+     * admission" bullet: "The section 3 post-connect timeline ... is
+     * admitted only by a successful joint `connected` emission. If the
+     * handshake is dropped ... the remainder of the scenario script is
+     * cancelled on BOTH sides." [connect]'s own caller uses this return
+     * value to gate every scenario-scripted step that follows -- see that
+     * call site.
      */
     private fun emitConnectedIfBothLive(
         other: SimulatedChatTransportClient,
         selfExpectedGeneration: Long,
         otherExpectedGeneration: Long,
-    ) {
+    ): Boolean {
         val clientA = if (label == 'A') this else other
         val clientB = if (label == 'A') other else this
         val clientAExpectedGeneration = if (label == 'A') selfExpectedGeneration else otherExpectedGeneration
         val clientBExpectedGeneration = if (label == 'A') otherExpectedGeneration else selfExpectedGeneration
-        runIfBothLive(clientA, clientAExpectedGeneration, clientB, clientBExpectedGeneration) {
+        return runIfBothLive(clientA, clientAExpectedGeneration, clientB, clientBExpectedGeneration) {
             emit { seq -> ChatEvent.ConnectionChanged(seq, ChatConnectionState.Connected) }
             other.emitFromPeer { seq -> ChatEvent.ConnectionChanged(seq, ChatConnectionState.Connected) }
         }
     }
 
     override suspend fun connect(peerIdHex: String) {
+        // ../../../CONTRACT.md section 2's round-5-pinned "Command ownership
+        // (pinned)" bullet: a genuinely concurrent public-command entry on
+        // THIS instance is rejected outright, deterministically -- never
+        // queued to wait its turn. Checked before every other validation
+        // below (including the terminal check), matching "detect concurrent
+        // public-command entry ... instead of corrupting state." See
+        // [commandInFlight]'s doc comment for exactly where this method
+        // releases it (EARLY -- inside launchBackgroundJob's `onAdmitted`
+        // callback below -- on the success path; only the `finally` here on
+        // any throw path above that point) -- and [SingleReleaseGuard]'s
+        // doc comment for why the early and late release sites must share
+        // ONE guard instance rather than each calling
+        // `commandInFlight.set(false)` unconditionally.
+        if (!commandInFlight.compareAndSet(false, true)) {
+            throw ChatTransportError.concurrentCommand("connect()")
+        }
+        val release = SingleReleaseGuard(commandInFlight)
+        try {
+            connectOwningCommandSpan(peerIdHex, release::releaseOnce)
+        } finally {
+            release.releaseOnce()
+        }
+    }
+
+    private suspend fun connectOwningCommandSpan(peerIdHex: String, releaseCommandInFlight: () -> Unit) {
         // ../../../CONTRACT.md section 2's new pinned "disconnect() is
         // terminal for the client instance" bullet: a terminal client
         // rejects connect() outright, before touching any state -- the only
@@ -863,13 +1092,36 @@ class SimulatedChatTransportClient internal constructor(
         // anything scheduled below) still fire afterward.
         launchBackgroundJob(
             caller = "connect()",
-            onAdmitted = { _ -> emit { seq -> ChatEvent.ConnectionChanged(seq, ChatConnectionState.Connecting) } },
+            onAdmitted = { _ ->
+                emit { seq -> ChatEvent.ConnectionChanged(seq, ChatConnectionState.Connecting) }
+                // [commandInFlight]'s doc comment: released HERE, still under
+                // launchBackgroundJob's lifecycleLock critical section (i.e.
+                // still atomically part of this command's serialized span,
+                // AFTER the Connecting self-emission above), rather than only
+                // in connect()'s outer `finally` -- so a concurrent
+                // disconnect()/stop() on this SAME instance is never rejected
+                // merely because Job.start() below has not physically
+                // returned yet (it can appear to block indefinitely under a
+                // test's instrumented dispatcher; see SimulatedChatTransportClientTest's
+                // `HoldingDispatcher`). Routed through [releaseCommandInFlight]
+                // (a [SingleReleaseGuard]), NOT a bare `commandInFlight.set
+                // (false)` -- see that class's doc comment for the
+                // double-release corruption this specifically prevents.
+                releaseCommandInFlight()
+            },
         ) {
             delay(ChatScenarioTimings.CONNECTED_DELAY_MS)
             // "Both endpoints live for connection establishment": fires on
             // BOTH sides, or NEITHER (reviewer probe P4) -- see
-            // emitConnectedIfBothLive's doc comment.
-            emitConnectedIfBothLive(other, selfGenerationAtConnect, otherGenerationAtConnect)
+            // emitConnectedIfBothLive's doc comment. Its Boolean return is
+            // ../../../CONTRACT.md section 2's round-5-pinned "Post-connect
+            // script admission" bullet: the scenario script below runs ONLY
+            // when the joint `connected` actually fired -- a dropped
+            // handshake (either endpoint terminal at fire time) cancels the
+            // remainder of the script on BOTH sides, so nothing scripted
+            // below may fire when this is false.
+            val jointConnectedEmitted = emitConnectedIfBothLive(other, selfGenerationAtConnect, otherGenerationAtConnect)
+            if (!jointConnectedEmitted) return@launchBackgroundJob
 
             when (scenario) {
                 ChatScenario.HAPPY_PAIR -> {
@@ -991,6 +1243,24 @@ class SimulatedChatTransportClient internal constructor(
     }
 
     override suspend fun disconnect() {
+        // ../../../CONTRACT.md section 2's round-5-pinned "Command ownership
+        // (pinned)" bullet -- see [commandInFlight]'s doc comment. Held for
+        // this method's ENTIRE body, INCLUDING the suspending `job.join()`
+        // wait below -- this is deliberately what lets
+        // SimulatedChatTransportClientTest's `disconnect...vs...` real-thread
+        // regression tests prove a concurrent [cancelSend]/[stop] is rejected
+        // while THIS call is genuinely still waiting on a held job.
+        if (!commandInFlight.compareAndSet(false, true)) {
+            throw ChatTransportError.concurrentCommand("disconnect()")
+        }
+        try {
+            disconnectOwningCommandSpan()
+        } finally {
+            commandInFlight.set(false)
+        }
+    }
+
+    private suspend fun disconnectOwningCommandSpan() {
         // "a repeat disconnect() is a no-op." (../../../CONTRACT.md section 2). A
         // disconnect() called after stop() also lands here as a harmless
         // first-and-only flip of this flag: markTerminalAndRequestCancellation()
@@ -1013,6 +1283,32 @@ class SimulatedChatTransportClient internal constructor(
     }
 
     override suspend fun send(body: String): String {
+        // ../../../CONTRACT.md section 2's round-5-pinned "Command ownership
+        // (pinned)" bullet: rejected deterministically, before touching any
+        // state (including the message-ID stream) -- see [commandInFlight]'s
+        // doc comment. "Message-ID draws ... execute inside the command's
+        // serialized span" is what this specifically protects: only ONE
+        // caller can ever be between this CAS and its own early release
+        // (below, in launchBackgroundJob's `onAdmitted`) at a time, so
+        // [generateMessageId]'s two draws can never interleave with another
+        // concurrent send()'s draws, even under many genuinely concurrent
+        // callers (SimulatedChatTransportClientTest's 16-thread/500-send
+        // regression) -- see [SingleReleaseGuard]'s doc comment for why the
+        // early and late release sites must share ONE guard instance rather
+        // than each calling `commandInFlight.set(false)` unconditionally
+        // (the exact bug that regression exists to catch).
+        if (!commandInFlight.compareAndSet(false, true)) {
+            throw ChatTransportError.concurrentCommand("send()")
+        }
+        val release = SingleReleaseGuard(commandInFlight)
+        try {
+            return sendOwningCommandSpan(body, release::releaseOnce)
+        } finally {
+            release.releaseOnce()
+        }
+    }
+
+    private suspend fun sendOwningCommandSpan(body: String, releaseCommandInFlight: () -> Unit): String {
         // ../../../CONTRACT.md section 2's new pinned "disconnect() is
         // terminal for the client instance" bullet: a terminal client
         // rejects send() outright, before touching any state -- the only
@@ -1088,6 +1384,22 @@ class SimulatedChatTransportClient internal constructor(
             onAdmitted = { job ->
                 pendingSendJobs[messageIdHex] = job
                 emitStatus(ChatMessageDisplayStatus.Queued)
+                // [commandInFlight]'s doc comment: released HERE (still under
+                // launchBackgroundJob's lifecycleLock, still atomically part
+                // of this command's serialized span, AFTER the message-ID
+                // draw above and the Queued self-emission/pendingSendJobs
+                // registration on this line), rather than only in send()'s
+                // outer `finally` -- mirrors connect()'s identical early
+                // release and the same rationale: Job.start() below is a
+                // fire-and-forget dispatch request that must never be able to
+                // hold a DIFFERENT public command (e.g. a concurrent
+                // disconnect()) hostage on this SAME instance merely because
+                // a test's instrumented dispatcher pauses inside it. Routed
+                // through [releaseCommandInFlight] (a [SingleReleaseGuard]),
+                // NOT a bare `commandInFlight.set(false)` -- see that
+                // class's doc comment for the double-release corruption
+                // this specifically prevents.
+                releaseCommandInFlight()
             },
         ) {
             delay(ChatScenarioTimings.TRANSMITTING_DELAY_MS)
@@ -1150,6 +1462,23 @@ class SimulatedChatTransportClient internal constructor(
     }
 
     override suspend fun cancelSend(messageIdHex: String) {
+        // ../../../CONTRACT.md section 2's round-5-pinned "Command ownership
+        // (pinned)" bullet -- see [commandInFlight]'s doc comment. Held for
+        // this method's ENTIRE body: it is already fully synchronous (no
+        // `Job.start()`/`Job.join()` inside it), so "whole function" and
+        // "this command's own synchronous mutation section" coincide exactly
+        // -- there is no early-release point to carve out.
+        if (!commandInFlight.compareAndSet(false, true)) {
+            throw ChatTransportError.concurrentCommand("cancelSend()")
+        }
+        try {
+            cancelSendOwningCommandSpan(messageIdHex)
+        } finally {
+            commandInFlight.set(false)
+        }
+    }
+
+    private fun cancelSendOwningCommandSpan(messageIdHex: String) {
         // Pinned by ../../../CONTRACT.md section 2's "Behavior outside the six
         // scenario tables (pinned)": cancelSend() cancels the message's remaining
         // scheduled status transitions and emits

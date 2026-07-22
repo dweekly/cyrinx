@@ -21,9 +21,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.CyclicBarrier
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
 import kotlin.coroutines.CoroutineContext
 
@@ -876,6 +878,80 @@ class SimulatedChatTransportClientTest {
             )
         }
 
+    /**
+     * Reviewer probe R3 (both platforms; this is the Kotlin-side
+     * regression): a dropped handshake must cancel the ENTIRE remainder of
+     * a scenario's own post-connect script, on BOTH sides, not merely the
+     * `connected` transition itself -- ../../../CONTRACT.md section 2's
+     * round-5-pinned "Post-connect script admission" bullet. Unlike
+     * [passiveSideDisconnectMidHandshakeSuppressesConnectedOnBothSides]
+     * above (which uses `happyPair`, whose only post-connect step is a
+     * single `linkBudgetChanged`), this uses `degradedThenRecovered`
+     * specifically because its own table (../../../CONTRACT.md section 3.3)
+     * has the richest post-connect script of any scenario -- text ->
+     * degraded -> controlOnly -> connected (again) -> text again, spanning
+     * t=200 through t=710 -- so "the WHOLE script is cancelled, not just the
+     * first step" is actually exercised, not merely asserted. B disconnects
+     * at t=120, well before the t=150 handshake fires; `settle()` then
+     * drives virtual time all the way through and past t=710 (idle), so
+     * every one of those later scripted steps has had its chance to fire
+     * and provably did not.
+     */
+    @Test
+    fun degradedThenRecoveredDroppedHandshakeCancelsWholeScriptOnBothSides() =
+        runTest {
+            val pair = createChatPair(ChatScenario.DEGRADED_THEN_RECOVERED, 8L, null)
+            val (_, idB) = expectedPeerIds(8L)
+            val aEvents = collectEvents(pair.clientA)
+            val bEvents = collectEvents(pair.clientB)
+
+            pair.clientA.start()
+            pair.clientB.start()
+            advanceTimeBy(100)
+            runCurrent()
+            pair.clientA.connect(idB.toHexString())
+            // The joint connected transition is scheduled for t=150
+            // (CONNECTED_DELAY_MS=50 after t=100's connect() call). B
+            // disconnects at t=120, well before it fires.
+            advanceTimeBy(20) // t=120
+            runCurrent()
+
+            pair.clientB.disconnect()
+            // Advance through the ENTIRE rest of degradedThenRecovered's own
+            // script and beyond (connected -> text -> degraded ->
+            // controlOnly -> connected again -> text again, ending at
+            // t=710) -- "Post-connect script admission" (round-5 fresh
+            // pin): none of it may fire on EITHER side once the joint
+            // connected handshake itself never happened.
+            settle()
+
+            assertEquals(
+                "A must never observe connected -- B (the OTHER endpoint) went terminal before the " +
+                    "joint handshake transition fired, dropping it (and the rest of the script) on " +
+                    "BOTH sides",
+                listOf(ChatConnectionState.Connecting),
+                aEvents.filterIsInstance<ChatEvent.ConnectionChanged>().map { it.state },
+            )
+            assertEquals(
+                "B's only connectionChanged is its own disconnect() -- it never reached connected " +
+                    "either, and no scripted step ever ran on B's side afterward",
+                listOf(ChatConnectionState.Disconnected(ChatReasonStrings.USER_INITIATED)),
+                bEvents.filterIsInstance<ChatEvent.ConnectionChanged>().map { it.state },
+            )
+            assertTrue(
+                "no scripted degraded/recovered step (t=400/t=700 in degradedThenRecovered's own " +
+                    "table) may fire on either side once the handshake itself was dropped",
+                (aEvents + bEvents).none {
+                    it is ChatEvent.ConnectionChanged && it.state == ChatConnectionState.Degraded
+                },
+            )
+            assertTrue(
+                "no scripted linkBudgetChanged step (t=200/410/710 in degradedThenRecovered's own " +
+                    "table) may fire on either side once the handshake itself was dropped",
+                (aEvents + bEvents).none { it is ChatEvent.LinkBudgetChanged },
+            )
+        }
+
     // -- start() semantics (../../../CONTRACT.md section 2's pinned "start()
     // semantics (pinned)" block) --------------------------------------------
 
@@ -1419,6 +1495,27 @@ class SimulatedChatTransportClientTest {
     // class's doc comment) rather than a `Flow` collector, so every
     // assertion below reflects EXACTLY what has been emitted so far with no
     // separate collector-thread draining/timing to reason about.
+    //
+    // Round-5 rework (both tests below): the ORIGINAL versions called
+    // `disconnect()` via `runBlocking` on the SAME thread that was about to
+    // assert on it. But `disconnect()` itself suspends on `Job.join()`,
+    // waiting for the HELD job -- which cannot actually complete until
+    // [HoldingDispatcher]'s `releaseLatch` counts down, and these tests only
+    // counted that latch down AFTER `disconnect()` had already returned: a
+    // circular wait broken only by [HoldingDispatcher]'s own internal
+    // 10-second `releaseLatch.await` timeout. That is a real
+    // timeout-as-control-flow bug, not a deliberate design choice -- a
+    // reviewer measured both tests at ~10 real seconds each. Both are
+    // reworked to run `disconnect()` on ITS OWN thread and poll (no
+    // wall-clock sleep -- [spinUntil], the same helper already used above)
+    // until that thread is OBSERVABLY parked inside `Job.join()`
+    // (`Thread.State.WAITING`) before releasing the hold, so each now
+    // resolves in native time. (Aside: with round-5's [commandInFlight]
+    // guard now in place, this ALSO exercises a second, NEW property for
+    // free: `connect()`/`send()` release [commandInFlight] early enough --
+    // see that field's doc comment -- that a concurrent `disconnect()` is
+    // never wrongly rejected merely because the admitting call's own
+    // `Job.start()` has not physically returned yet.)
 
     /**
      * Reviewer probe Q2: `connect()`'s handshake job is held at its first
@@ -1426,8 +1523,8 @@ class SimulatedChatTransportClientTest {
      * durably registered in `backgroundJobs`). A concurrent `disconnect()`
      * is run to completion while it is held -- it must find and cancel that
      * job. Only THEN is the hold released. Assertion: no event of any kind,
-     * on EITHER client, follows `disconnect()`'s own `Disconnected` event --
-     * in particular no `connectionChanged(connected)` and no
+     * on EITHER client, survives beyond `disconnect()`'s own `Disconnected`
+     * event -- in particular no `connectionChanged(connected)` and no
      * `linkBudgetChanged`, which the held job's body would otherwise have
      * gone on to emit had it ever run a single line.
      */
@@ -1487,22 +1584,54 @@ class SimulatedChatTransportClientTest {
                     .mapNotNull { (it.event as? ChatEvent.ConnectionChanged)?.state },
             )
 
-            runBlocking { pair.clientA.disconnect() }
-            val entriesRightAfterDisconnect = recorder.entries()
+            // connect()'s own commandInFlight span has ALREADY ended here
+            // (released early, inside launchBackgroundJob's onAdmitted,
+            // strictly before Job.start() -- see
+            // SimulatedChatTransportClient.commandInFlight's doc comment),
+            // so disconnect() is free to enter on a separate thread even
+            // though connectThread has not physically returned from
+            // connect() yet.
+            val disconnectThread =
+                thread(start = true) {
+                    runBlocking { pair.clientA.disconnect() }
+                }
+
+            // Poll (no wall-clock sleep) until disconnect() is OBSERVABLY
+            // parked waiting on the held job's Job.join() -- proving its own
+            // synchronous cancellation sweep (markTerminalAndRequestCancellation,
+            // which requests Job.cancel() on the held job) has ALREADY run.
+            // Empirically verified (temporary debug instrumentation, since
+            // reverted): a thread parked inside `runBlocking { ... }` on a
+            // suspending `Job.join()` reports `Thread.State.TIMED_WAITING`,
+            // never plain `WAITING` -- runBlocking's own event-loop park
+            // (`BlockingCoroutine.joinBlocking`) always calls
+            // `LockSupport.parkNanos(...)`, even with no delayed task
+            // pending (i.e. an effectively-infinite timeout), and the JVM's
+            // reported Thread.State reflects WHICH LockSupport method was
+            // called, not the actual duration -- so TIMED_WAITING is the
+            // correct (and only ever observed) signal here, not evidence of
+            // some other, unrelated wait. `BLOCKED` is kept alongside it for
+            // parity with this file's other lock-contention polls (e.g.
+            // disconnectCannotInterleaveWithAnInFlightValidatedEffect's
+            // `synchronized`-monitor contention), though it is not the state
+            // actually produced by this specific `runBlocking`/`Job.join()`
+            // combination.
+            spinUntil("disconnect() never entered its join-wait for the held job") {
+                disconnectThread.state == Thread.State.TIMED_WAITING ||
+                    disconnectThread.state == Thread.State.WAITING ||
+                    disconnectThread.state == Thread.State.BLOCKED
+            }
 
             releaseLatch.countDown()
             connectThread.join(10_000)
+            disconnectThread.join(10_000)
 
             assertEquals(
-                "nothing may fire, on either client, after disconnect() has returned -- the " +
+                "nothing may fire, on either client, once both threads have settled -- the " +
                     "handshake job was already atomically registered (its Job.start() had already " +
                     "been reached) when disconnect()'s sweep ran, but it had not yet executed a " +
                     "single line of its own body, so the sweep's cancellation must have prevented " +
                     "every one of its scheduled emissions, including linkBudgetChanged",
-                entriesRightAfterDisconnect,
-                recorder.entries(),
-            )
-            assertEquals(
                 listOf(ChatConnectionState.Connecting, ChatConnectionState.Disconnected(ChatReasonStrings.USER_INITIATED)),
                 recorder.entries().filter { it.client == 'A' }
                     .mapNotNull { (it.event as? ChatEvent.ConnectionChanged)?.state },
@@ -1602,25 +1731,63 @@ class SimulatedChatTransportClientTest {
                 pair.clientA.pendingSendJobCount,
             )
 
-            runBlocking { pair.clientA.disconnect() }
-            val entriesRightAfterDisconnect = recorder.entries()
+            // Round-5 rework: the ORIGINAL version called `disconnect()` via
+            // `runBlocking` directly on THIS thread, then counted
+            // `releaseLatch` down only AFTER that call returned -- but
+            // `disconnect()` itself suspends on `Job.join()` for the HELD
+            // job, which cannot actually complete until `releaseLatch`
+            // fires. That is a circular wait broken only by
+            // [HoldingDispatcher]'s own internal 10-second
+            // `releaseLatch.await` timeout -- a real timeout-as-control-flow
+            // bug (a reviewer measured this test at ~10 real seconds), not a
+            // deliberate design choice. Reworked exactly like Q2's sibling
+            // test above: run `disconnect()` on ITS OWN thread and poll (no
+            // wall-clock sleep) until that thread is OBSERVABLY parked
+            // inside `Job.join()` before releasing the hold, so this now
+            // resolves in native time.
+            val disconnectThread =
+                thread(start = true) {
+                    runBlocking { pair.clientA.disconnect() }
+                }
+            // See Q2's sibling spinUntil above for why TIMED_WAITING (not
+            // WAITING) is the state actually produced by a thread parked
+            // inside `runBlocking { ... Job.join() ... }`.
+            spinUntil("disconnect() never entered its join-wait for the held job") {
+                disconnectThread.state == Thread.State.TIMED_WAITING ||
+                    disconnectThread.state == Thread.State.WAITING ||
+                    disconnectThread.state == Thread.State.BLOCKED
+            }
+            // The held job's own cancellation was already REQUESTED
+            // (markTerminalAndRequestCancellation, which runs synchronously
+            // before the join-wait we just observed disconnect() enter) --
+            // but pendingSendJobs itself is only cleared by
+            // failNonterminalOutgoingSends, which runs AFTER that join-wait
+            // completes, so it still shows this message as pending at this
+            // exact instant. This is a genuine, meaningful mid-flight
+            // snapshot (unlike the entries-based "gap" check the original
+            // buggy version attempted, which is no longer expressible now
+            // that disconnect() provably cannot complete before the hold is
+            // released -- there is no gap left to observe).
             assertEquals(
-                "disconnect()'s own sweep must have already terminalized the message -- it can never " +
-                    "return leaving an admitted send sitting in pendingSendJobs",
-                0,
+                "sanity: the held job's cancellation has been requested, but disconnect() has not " +
+                    "yet run failNonterminalOutgoingSends (that happens AFTER the join-wait this " +
+                    "client is currently parked in) -- pendingSendJobs is cleared only once " +
+                    "disconnect() actually completes, right below",
+                1,
                 pair.clientA.pendingSendJobCount,
             )
 
             releaseLatch.countDown()
             sendThread.join(10_000)
+            disconnectThread.join(10_000)
 
             assertEquals(
-                "nothing may fire, on either client, after disconnect() has returned -- in particular " +
-                    "no transmitting/delivered for the held send, which never ran a single line of " +
-                    "its own body",
-                entriesRightAfterDisconnect,
-                recorder.entries(),
+                "disconnect()'s own sweep must have fully terminalized the message once it actually " +
+                    "completes -- it can never leave an admitted send sitting in pendingSendJobs",
+                0,
+                pair.clientA.pendingSendJobCount,
             )
+            assertTrue("A must be terminal once disconnect() actually completes", pair.clientA.isTerminal())
             assertEquals(
                 "the held send must be terminalized failed(\"disconnected\") by the sweep, never left " +
                     "pending and never allowed to progress past queued on its own",
@@ -1629,6 +1796,340 @@ class SimulatedChatTransportClientTest {
                     .mapNotNull { (it.event as? ChatEvent.MessageStatusChanged) }
                     .filter { it.messageIdHex == messageIdHex }
                     .map { it.status },
+            )
+        } finally {
+            scope.cancel()
+            executor.shutdown()
+        }
+    }
+
+    // -- Command ownership (round-5 fresh pin, reviewer probes R2/R3) -------
+    // ../../../CONTRACT.md section 2's round-5-pinned "Command ownership
+    // (pinned)" bullet: public commands are owned by one caller at a time,
+    // enforced (not honor-ruled) via SimulatedChatTransportClient's
+    // `commandInFlight` CAS guard -- a losing caller is rejected outright
+    // with `ChatTransportError.concurrentCommand`, never queued to wait its
+    // turn. The tests below are genuinely concurrent, real-thread
+    // reproductions (same rationale as the P3/Q2/Q3 tests above: a virtual,
+    // single-threaded `TestCoroutineScheduler` cannot exhibit a real
+    // interleaving race at all).
+
+    /**
+     * Reviewer probe R2: 16 real threads, each issuing 500 `send()` calls
+     * back-to-back through the PUBLIC API on the SAME connected client
+     * instance -- 8000 attempts total, hammering `commandInFlight`'s CAS as
+     * hard as a JVM thread pool reasonably can. Every single attempt must
+     * either succeed (returning a `messageIdHex`) or throw specifically the
+     * concurrent-command [ChatTransportError] -- never anything else, never
+     * silently corrupt or skip a draw. ../../../CONTRACT.md section 2's
+     * "Message-ID draws ... execute inside the command's serialized span":
+     * the set of message IDs actually returned by the SUCCESSFUL calls must
+     * be exactly the pinned per-role [SplitMix64] stream's first `N` draws
+     * (`N` = however many calls actually won the race) -- no duplicates (two
+     * winners would mean two callers interleaved inside the guarded span),
+     * no gaps or substitutions (a skipped or reordered draw would mean the
+     * stream was consumed out of order). Verified as a SET (matching
+     * [expectedMessageIdStreamPrefix]'s own "first N draws" framing) rather
+     * than by asserting each thread's own completion order matches draw
+     * order: `commandInFlight` is released EARLY inside
+     * `launchBackgroundJob`'s `onAdmitted` callback (see that field's doc
+     * comment), strictly before `Job.start()`, so two winners' OWN
+     * downstream `send()` returns can complete in either real-time order
+     * even though their DRAWS themselves can never interleave -- set
+     * equality is the invariant CONTRACT.md actually pins, not a specific
+     * cross-thread completion ordering this class makes no promise about.
+     */
+    @Test
+    fun concurrentSendCallsNeverCorruptThePinnedMessageIdStream() {
+        val threadCount = 16
+        val sendsPerThread = 500
+        val seed = 91L
+        val executor = Executors.newFixedThreadPool(threadCount)
+        val scope = CoroutineScope(executor.asCoroutineDispatcher() + Job())
+        try {
+            val pair = SimulatedChatPair.create(ChatScenario.HAPPY_PAIR, seed, scope, VirtualTimeSource { 0L })
+            val (_, idB) = expectedPeerIds(seed)
+
+            runBlocking {
+                pair.clientA.start()
+                pair.clientB.start()
+            }
+            spinUntil("discovery jobs never settled") {
+                pair.clientA.backgroundJobCount == 0 && pair.clientB.backgroundJobCount == 0
+            }
+            runBlocking { pair.clientA.connect(idB.toHexString()) }
+            spinUntil("connect()'s handshake job never settled") { pair.clientA.backgroundJobCount == 0 }
+
+            val successfulIds = Collections.synchronizedList(mutableListOf<String>())
+            val concurrentRejectionCount = AtomicInteger(0)
+            val unexpectedFailures = Collections.synchronizedList(mutableListOf<Throwable>())
+            // Every thread blocks here until all 16 are actually ready, so
+            // the CAS contention below is as genuinely simultaneous as the
+            // JVM scheduler allows, rather than trickling in one at a time.
+            val startBarrier = CyclicBarrier(threadCount)
+
+            val senderThreads =
+                (0 until threadCount).map { threadIndex ->
+                    thread(start = false, name = "r2-sender-$threadIndex") {
+                        startBarrier.await(10, TimeUnit.SECONDS)
+                        repeat(sendsPerThread) {
+                            try {
+                                val idHex = runBlocking { pair.clientA.send("r2-stress") }
+                                successfulIds.add(idHex)
+                            } catch (e: ChatTransportError) {
+                                if (e.isConcurrentCommand) {
+                                    concurrentRejectionCount.incrementAndGet()
+                                } else {
+                                    unexpectedFailures.add(e)
+                                }
+                            } catch (e: Throwable) {
+                                unexpectedFailures.add(e)
+                            }
+                        }
+                    }
+                }
+            senderThreads.forEach { it.start() }
+            senderThreads.forEach {
+                it.join(60_000)
+                assertFalse("sender thread ${it.name} did not finish within 60s", it.isAlive)
+            }
+
+            assertTrue(
+                "every send() attempt must fail ONLY with the concurrent-command error, never any " +
+                    "other exception (corruption, unexpected state): $unexpectedFailures",
+                unexpectedFailures.isEmpty(),
+            )
+            assertEquals(
+                "every one of the ${threadCount * sendsPerThread} attempts must be accounted for as " +
+                    "either a success or a concurrent-command rejection",
+                threadCount * sendsPerThread,
+                successfulIds.size + concurrentRejectionCount.get(),
+            )
+            assertTrue(
+                "commandInFlight contention across $threadCount real threads must have produced at " +
+                    "least one rejection -- otherwise this test is not actually exercising concurrent " +
+                    "entry at all",
+                concurrentRejectionCount.get() > 0,
+            )
+
+            val successList = successfulIds.toList()
+            assertEquals(
+                "no duplicate message IDs may ever appear among successful sends -- a duplicate would " +
+                    "mean two concurrent callers both drew (and both returned) the SAME two SplitMix64 " +
+                    "values, i.e. the guarded span let them interleave",
+                successList.size,
+                successList.toSet().size,
+            )
+
+            val expectedPrefix = expectedMessageIdStreamPrefix(seed, 'A', successList.size)
+            assertEquals(
+                "the successful sends' IDs must be EXACTLY the pinned message-ID stream's first N " +
+                    "draws (N = number of successes) -- no gaps (a draw silently skipped), no " +
+                    "substitutions (a draw from later/earlier in the stream than N would allow), and " +
+                    "no unexpected values (anything not drawn from this client's own role-tagged " +
+                    "SplitMix64 stream at all)",
+                expectedPrefix.toSet(),
+                successList.toSet(),
+            )
+        } finally {
+            scope.cancel()
+            executor.shutdown()
+        }
+    }
+
+    /**
+     * Sets up a connected pair whose `connect()` handshake job is held at
+     * its first dispatch (same technique as
+     * [disconnectFindsAndCancelsAConnectHandshakeJobHeldAtItsFirstDispatch]
+     * above), used by both concurrent-command-vs-`disconnect()` tests below
+     * to force a genuine, deterministic overlap: `disconnect()` is
+     * guaranteed to be durably parked inside its own `Job.join()` wait --
+     * i.e. still holding `commandInFlight` (only released in its own outer
+     * `finally`, AFTER that join completes) -- for as long as the caller
+     * likes, before releasing the hold. The specific job type held
+     * (`connect()`'s handshake, vs. Q3's `send()` job) is irrelevant to
+     * these two tests: `commandInFlight`'s CAS guard rejects a concurrent
+     * command BEFORE it ever inspects messageId/handshake-specific state,
+     * so any held job that keeps `disconnect()` parked on `Job.join()`
+     * demonstrates the same guarantee.
+     */
+    private fun setUpPairWithDisconnectParkedOnAHeldHandshakeJob(
+        seed: Long,
+        readyLatch: CountDownLatch,
+        releaseLatch: CountDownLatch,
+        holdingDispatcher: HoldingDispatcher,
+        scope: CoroutineScope,
+    ): SimulatedChatPair {
+        val pair = SimulatedChatPair.create(ChatScenario.HAPPY_PAIR, seed, scope, VirtualTimeSource { 0L })
+        val (_, idB) = expectedPeerIds(seed)
+
+        runBlocking {
+            pair.clientA.start()
+            pair.clientB.start()
+        }
+        spinUntil("discovery jobs never settled") {
+            pair.clientA.backgroundJobCount == 0 && pair.clientB.backgroundJobCount == 0
+        }
+
+        holdingDispatcher.armNextDispatch(readyLatch, releaseLatch)
+        val connectThread =
+            thread(start = false) {
+                runBlocking { pair.clientA.connect(idB.toHexString()) }
+            }
+        connectThread.start()
+        assertTrue(
+            "connect()'s handshake job must reach its first dispatch before we race disconnect() " +
+                "against it",
+            readyLatch.await(10, TimeUnit.SECONDS),
+        )
+        return pair
+    }
+
+    /**
+     * Reviewer probe (round-5 "Command ownership" pin, R2's sibling
+     * coverage for `cancelSend()`): `cancelSend()` invoked concurrently
+     * with an `disconnect()` that is genuinely, durably in flight on the
+     * SAME client instance (parked in its own `Job.join()` wait for a held
+     * job -- see [setUpPairWithDisconnectParkedOnAHeldHandshakeJob]) must be
+     * rejected deterministically with the concurrent-command error, never
+     * silently accepted or corrupting state.
+     */
+    @Test
+    fun cancelSendConcurrentWithAnInFlightDisconnectIsRejectedAsConcurrentCommand() {
+        val readyLatch = CountDownLatch(1)
+        val releaseLatch = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(4)
+        val holdingDispatcher = HoldingDispatcher(executor.asCoroutineDispatcher())
+        val scope = CoroutineScope(holdingDispatcher + Job())
+        try {
+            val pair =
+                setUpPairWithDisconnectParkedOnAHeldHandshakeJob(92L, readyLatch, releaseLatch, holdingDispatcher, scope)
+
+            val disconnectThread =
+                thread(start = true) {
+                    runBlocking { pair.clientA.disconnect() }
+                }
+            // See disconnectFindsAndCancelsAConnectHandshakeJobHeldAtItsFirstDispatch's
+            // spinUntil above for why TIMED_WAITING (not WAITING) is the
+            // state actually produced by a thread parked inside
+            // `runBlocking { ... Job.join() ... }`.
+            spinUntil("disconnect() never entered its join-wait for the held job") {
+                disconnectThread.state == Thread.State.TIMED_WAITING ||
+                    disconnectThread.state == Thread.State.WAITING ||
+                    disconnectThread.state == Thread.State.BLOCKED
+            }
+
+            // disconnect() has NOT released commandInFlight yet -- its own
+            // serialized span holds it across the WHOLE join() wait (see
+            // commandInFlight's doc comment) -- so a concurrent
+            // cancelSend() on this SAME instance, attempted right now, must
+            // be rejected deterministically. The messageId argument is
+            // irrelevant (any string, even an unknown one) since the
+            // concurrent-command guard is checked before any messageId
+            // lookup.
+            var caught: ChatTransportError? = null
+            try {
+                runBlocking { pair.clientA.cancelSend("irrelevant-messageid") }
+            } catch (e: ChatTransportError) {
+                caught = e
+            }
+            assertTrue("cancelSend() concurrent with an in-flight disconnect() must throw", caught != null)
+            assertTrue(
+                "...specifically the concurrent-command error, not some other ChatTransportError",
+                caught!!.isConcurrentCommand,
+            )
+
+            releaseLatch.countDown()
+            disconnectThread.join(10_000)
+            assertTrue("A must be terminal once disconnect() actually completes", pair.clientA.isTerminal())
+
+            // The rejected cancelSend() must not have taken effect: once
+            // disconnect() releases commandInFlight, a FRESH cancelSend()
+            // for a real (but by-now-terminal) messageId is simply the
+            // ordinary "unknown/no-op" behavior already covered by
+            // cancelSendOnUnknownMessageIdIsANoOp -- nothing here is left
+            // to assert beyond "disconnect() itself completed cleanly."
+        } finally {
+            scope.cancel()
+            executor.shutdown()
+        }
+    }
+
+    /**
+     * Reviewer probe (round-5 "Command ownership" pin, R2's sibling
+     * coverage for `stop()`): `stop()` invoked concurrently with an
+     * `disconnect()` that is genuinely, durably in flight on the SAME
+     * client instance must be rejected deterministically with the
+     * concurrent-command error -- then, once `disconnect()` has actually
+     * completed and released `commandInFlight`, a SECOND, non-concurrent
+     * `stop()` call is the ordinary "the only permitted subsequent call
+     * after disconnect() is stop()" path (../../../CONTRACT.md section 2's
+     * "disconnect() is terminal for the client instance" bullet) and must
+     * succeed, completing the event stream exactly like
+     * [stopAfterDisconnectCompletesTheEventsStreamCleanlyWithNoDuplicateDisconnectedEvent]
+     * already proves for the SEQUENTIAL (non-racing) case.
+     */
+    @Test
+    fun stopConcurrentWithAnInFlightDisconnectIsRejectedAsConcurrentCommandThenSucceedsAfterwards() {
+        val readyLatch = CountDownLatch(1)
+        val releaseLatch = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(4)
+        val holdingDispatcher = HoldingDispatcher(executor.asCoroutineDispatcher())
+        val scope = CoroutineScope(holdingDispatcher + Job())
+        try {
+            val pair =
+                setUpPairWithDisconnectParkedOnAHeldHandshakeJob(93L, readyLatch, releaseLatch, holdingDispatcher, scope)
+
+            val disconnectThread =
+                thread(start = true) {
+                    runBlocking { pair.clientA.disconnect() }
+                }
+            spinUntil("disconnect() never entered its join-wait for the held job") {
+                disconnectThread.state == Thread.State.TIMED_WAITING ||
+                    disconnectThread.state == Thread.State.WAITING ||
+                    disconnectThread.state == Thread.State.BLOCKED
+            }
+
+            // disconnect() still owns commandInFlight -- a concurrent
+            // stop() attempted right now, on this SAME instance, must be
+            // rejected deterministically.
+            var caught: ChatTransportError? = null
+            try {
+                runBlocking { pair.clientA.stop() }
+            } catch (e: ChatTransportError) {
+                caught = e
+            }
+            assertTrue("stop() concurrent with an in-flight disconnect() must throw", caught != null)
+            assertTrue(
+                "...specifically the concurrent-command error, not some other ChatTransportError",
+                caught!!.isConcurrentCommand,
+            )
+
+            releaseLatch.countDown()
+            disconnectThread.join(10_000)
+            assertTrue("A must be terminal once disconnect() actually completes", pair.clientA.isTerminal())
+
+            // NOW commandInFlight is free again (disconnect()'s own outer
+            // finally already released it) -- a real, non-concurrent
+            // stop() must succeed: "the only permitted subsequent call is
+            // stop()".
+            runBlocking { pair.clientA.stop() }
+            // Nothing has collected `events` until now, so this drains the
+            // WHOLE buffered channel -- including connect()'s own
+            // `Connecting` (emitted before the hold, per
+            // setUpPairWithDisconnectParkedOnAHeldHandshakeJob) and
+            // disconnect()'s own `Disconnected(userInitiated)`, both still
+            // sitting in the buffer from earlier in this test. The
+            // assertion is that stop() did NOT add a THIRD/duplicate
+            // connectionChanged on top of those two -- not that there are
+            // none at all.
+            val events = mutableListOf<ChatEvent>()
+            runBlocking { pair.clientA.events.collect { events.add(it) } }
+            assertEquals(
+                "stop() after disconnect() must not emit a second/duplicate connectionChanged(disconnected) " +
+                    "on top of connect()'s own Connecting and disconnect()'s own Disconnected(userInitiated)",
+                listOf(ChatConnectionState.Connecting, ChatConnectionState.Disconnected(ChatReasonStrings.USER_INITIATED)),
+                events.filterIsInstance<ChatEvent.ConnectionChanged>().map { it.state },
             )
         } finally {
             scope.cancel()

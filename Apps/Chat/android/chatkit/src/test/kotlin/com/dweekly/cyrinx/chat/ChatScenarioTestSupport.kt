@@ -114,3 +114,22 @@ fun expectedFirstMessageId(seed: Long, role: Char): String {
     val prng = SplitMix64(seed xor messageIdRoleTag(role))
     return (prng.next().toBigEndianBytes() + prng.next().toBigEndianBytes()).toHexString()
 }
+
+/**
+ * Independently recomputes the first [count] message IDs a client with the
+ * given `role` produces across [count] consecutive `send()` calls under
+ * `seed` -- the same per-role-tagged [SplitMix64] stream [expectedFirstMessageId]
+ * draws from, generalized to more than one message. Used by
+ * SimulatedChatTransportClientTest's command-ownership regression (many
+ * genuinely concurrent `send()` callers) to independently recompute the
+ * exact PREFIX of the pinned message-ID stream that CONTRACT.md section 2's
+ * round-5-pinned "Command ownership (pinned)" bullet guarantees a set of
+ * concurrent, but individually-admitted, `send()` calls can never
+ * interleave or skip within.
+ */
+fun expectedMessageIdStreamPrefix(seed: Long, role: Char, count: Int): List<String> {
+    val prng = SplitMix64(seed xor messageIdRoleTag(role))
+    return (0 until count).map {
+        (prng.next().toBigEndianBytes() + prng.next().toBigEndianBytes()).toHexString()
+    }
+}
