@@ -480,8 +480,8 @@ Deterministic, in-process, driven by `(scenarioName, seed)`. Requirements:
      reason: "userInitiated")`. Nothing further fires afterward; a
      repeat `disconnect()` is a no-op.
    - **`disconnect()` is terminal for the client instance.** After it,
-     `connect()` and `send()` on that client are rejected as transport
-     misuse; the only permitted subsequent call is `stop()`. No
+     `start()`, `connect()`, and `send()` on that client are rejected as
+     transport misuse; the only permitted subsequent call is `stop()`. No
      peer-driven effect may target a terminal client REGARDLESS of when
      the effect was scheduled — a terminal target drops the effect even
      if the effect captured the target's post-disconnect generation, so
@@ -534,6 +534,19 @@ Deterministic, in-process, driven by `(scenarioName, seed)`. Requirements:
      `disconnect()`/`stop()` (per-client lock, actor, or serial
      dispatcher), so a validated effect can never interleave with an
      invalidation between its check and its mutation.
+   - **Linearized admission and registration.** The same serialization
+     covers a public command's admission (its terminality check), the
+     registration of any work it spawns (background jobs, scheduled
+     tokens, pending-transfer bookkeeping), and lifecycle invalidation:
+     a command admitted before an invalidation registers its work where
+     the invalidation sweep will find it (or completes rejection before
+     the sweep); a command arriving after is rejected. No orphan may
+     survive the sweep — a `disconnect()` that returns has terminalized
+     every admitted nonterminal send and cancelled every admitted job,
+     and nothing (including `linkBudgetChanged`) fires afterward. The
+     simulator accepts public commands from any thread under this rule;
+     the live SDK's threading ownership is C3-01's to pin, not this
+     sample's.
    - **Quiescence before completion.** Implementations must cancel and
      join all in-flight work before completing/closing the event
      stream, so that an emission can never race stream completion:
@@ -542,11 +555,14 @@ Deterministic, in-process, driven by `(scenarioName, seed)`. Requirements:
      close race is a contract violation, not tolerated backpressure.
 
    **`start()` semantics (pinned).** `start()` is idempotent: repeated
-   calls change nothing and schedule nothing. Discovery is armed only
-   once BOTH clients of a pair have started; the moment the second
-   client starts, each client's `peerFound` is scheduled at its §3
-   scenario offset relative to that moment. A stopped client cannot be
-   restarted.
+   calls change nothing and schedule nothing. `start()` on a terminal
+   client is rejected as transport misuse and arms nothing on either
+   side. Discovery is armed only once BOTH clients of a pair have
+   started AND neither is terminal; the moment the second client
+   starts, each client's `peerFound` is scheduled at its §3 scenario
+   offset relative to that moment, and a scheduled `peerFound` is
+   dropped at fire time if either endpoint has become terminal. A
+   stopped client cannot be restarted.
 
    Both platforms must cover these rules with connect-then-disconnect,
    send-then-stop, passive-side handshake-cancellation,
