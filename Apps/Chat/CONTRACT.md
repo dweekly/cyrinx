@@ -462,6 +462,15 @@ Deterministic, in-process, driven by `(scenarioName, seed)`. Requirements:
    are `null`: the tables pin only classification, confidence, and ageMs
    numerically.
 
+   **Discovery precedes connection (pinned).** `connect(idHex)` is
+   valid only for a peer this client has observed via `peerFound`;
+   connecting to an unobserved or unknown `idHex` throws the
+   unknown-peer transport-misuse error and mutates nothing on either
+   side. Identical on both platforms. The simulator never invalidates a
+   discovery record afterward — not on `peerLost` (no §3 scenario ever
+   reconnects) — and the live transport's re-discovery rule is the
+   SDK's to define (C3-24), not this sample's.
+
    **Send precondition (pinned).** `send(body:)` is accepted only while
    the connection state is `connected` or `degraded`; in any other state
    it throws/raises the transport-misuse "not connected" error and emits

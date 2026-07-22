@@ -2,6 +2,7 @@
 
 package com.dweekly.cyrinx.chat
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -24,6 +25,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
+import kotlin.coroutines.CoroutineContext
 
 /**
  * Behavioral tests for [SimulatedChatTransportClient] / [SimulatedChatPair] not
@@ -358,6 +360,108 @@ class SimulatedChatTransportClientTest {
             }
             assertTrue(caught != null)
         }
+
+    /**
+     * ../../../CONTRACT.md section 2's "Discovery precedes connection (pinned)"
+     * bullet, C3-28 adversarial-review fix: "connect(idHex) is valid only for a
+     * peer this client has observed via peerFound ... connecting to an
+     * unobserved or unknown idHex throws the unknown-peer transport-misuse
+     * error and mutates nothing on either side." Both clients `start()`, but
+     * time is never advanced before the first `connect()` attempt, so
+     * clientA's own `peerFound` (and therefore its own `discoveredPeer`) has
+     * not fired yet even though clientB is a perfectly live, reachable peer
+     * with a real, correct id -- exactly the gap this fix closes (previously
+     * `connect()` validated `peerIdHex` against clientB's live identity
+     * directly, with no discovered-peer tracking at all, so this exact call
+     * would have wrongly succeeded).
+     *
+     * Asserts the rejected call mutates/emits nothing on EITHER side, then
+     * advances time so discovery actually fires and asserts the only events
+     * either client now has are the two `peerFound` events discovery itself
+     * produces -- nothing leaked from the earlier rejected `connect()` (no
+     * stray `connecting`/`connected`, no half-armed handshake).
+     */
+    @Test
+    fun connectBeforeDiscoveryThrowsAndMutatesNothingOnEitherSide() =
+        runTest {
+            val pair = createChatPair(ChatScenario.HAPPY_PAIR, 8L, null)
+            val (_, idB) = expectedPeerIds(8L)
+            val aEvents = collectEvents(pair.clientA)
+            val bEvents = collectEvents(pair.clientB)
+
+            pair.clientA.start()
+            pair.clientB.start()
+            // Deliberately do NOT advance time: peerFound is scheduled for
+            // ChatScenarioTimings.PEER_FOUND_DELAY_MS from here but has not
+            // fired yet, so clientA has not yet observed clientB via its own
+            // discoveredPeer.
+            runCurrent()
+
+            var caught: ChatTransportError? = null
+            try {
+                pair.clientA.connect(idB.toHexString())
+            } catch (e: ChatTransportError) {
+                caught = e
+            }
+            runCurrent()
+
+            assertTrue(
+                "connect() before this client's own peerFound must be rejected as transport misuse",
+                caught != null,
+            )
+            assertTrue("a rejected pre-discovery connect() must emit nothing on the caller", aEvents.isEmpty())
+            assertTrue("a rejected pre-discovery connect() must emit nothing on the target peer either", bEvents.isEmpty())
+
+            // Advance well past discovery (t=100, matching every CONTRACT.md
+            // table's own connect()-call column, comfortably beyond
+            // PEER_FOUND_DELAY_MS=50) and confirm the ONLY events produced are
+            // discovery's own two peerFound events -- nothing else leaked from
+            // the earlier rejected connect() attempt.
+            advanceTimeBy(100)
+            runCurrent()
+            assertEquals(
+                "the only event the caller should have after discovery is its own peerFound",
+                listOf(true),
+                aEvents.map { it is ChatEvent.PeerFound },
+            )
+            assertEquals(
+                "the only event the target peer should have after discovery is its own peerFound",
+                listOf(true),
+                bEvents.map { it is ChatEvent.PeerFound },
+            )
+
+            // The exact same connect() call must now succeed, proving the
+            // earlier rejection left no residual state on either side.
+            pair.clientA.connect(idB.toHexString())
+            settle()
+            assertTrue(
+                "connect() with the same idHex must succeed once discovery has actually happened",
+                aEvents.filterIsInstance<ChatEvent.ConnectionChanged>().any { it.state == ChatConnectionState.Connected } &&
+                    bEvents.filterIsInstance<ChatEvent.ConnectionChanged>().any { it.state == ChatConnectionState.Connected },
+            )
+        }
+
+    // CONTRACT.md section 2's "Discovery precedes connection (pinned)" bullet
+    // also reads "(and not subsequently lost)" -- i.e. its prose suggests a
+    // connect() after this client's own peerLost should also be rejected.
+    // There is deliberately no `connectAfterPeerLostThrows`-style test here:
+    // none of the six scripted scenarios (including peerLoss) ever call
+    // connect() a second time -- peerLoss's own script drives its scripted
+    // disconnect/peerLost entirely FROM WITHIN the one connect() call that
+    // already succeeded -- so this exact case is not reachable by driving a
+    // scenario script alone. Exercising it ad hoc (calling connect() again,
+    // by hand, after peerLoss's scripted peerLost fires) would additionally
+    // require deciding whether a SCRIPTED disconnect (as opposed to a real
+    // disconnect()/stop() call) should also clear `discoveredPeer` or flip
+    // `terminal` -- CyrinxChatKit's Swift reference implementation does
+    // neither (its own `discoveredPeer` is set exactly once, in
+    // `emitPeerFound()`, and never reset; a scripted disconnect does not
+    // touch it or `isTerminal`), so a same-shape ad hoc Kotlin test would
+    // currently observe the second connect() SUCCEED, not throw -- the
+    // opposite of the contract prose's "(and not subsequently lost)" clause.
+    // Rather than have Kotlin unilaterally diverge from Swift's actual
+    // behavior to chase that stricter reading, this is left as an open
+    // question for CONTRACT.md's authors (see this task's final report).
 
     @Test
     fun peerFoundCarriesTheDiscoveringClientsOwnVirtualDiscoveryTime() =
@@ -823,6 +927,16 @@ class SimulatedChatTransportClientTest {
             assertEquals(1_050L, bFound.peer.discoveredAtMs)
         }
 
+    /**
+     * "A stopped client cannot be restarted" (../../../CONTRACT.md section
+     * 2's pinned `start()` semantics) is now a REJECTION, not a silent
+     * no-op: round-4's fresh pin folds this case into "start() on a
+     * terminal client is rejected as transport misuse and arms nothing on
+     * either side" -- [stop] sets [SimulatedChatTransportClient.isTerminal]
+     * true exactly like [SimulatedChatTransportClient.disconnect] does, and
+     * `start()` now rejects any terminal client uniformly, whichever of the
+     * two made it terminal.
+     */
     @Test
     fun stoppedClientCannotBeRestarted() =
         runTest {
@@ -833,16 +947,72 @@ class SimulatedChatTransportClientTest {
             pair.clientA.stop() // stop before ever starting.
             settle()
 
-            pair.clientA.start() // must be a no-op: "a stopped client cannot be restarted."
+            var caught: ChatTransportError? = null
+            try {
+                pair.clientA.start() // must be rejected: "a stopped client cannot be restarted."
+            } catch (e: ChatTransportError) {
+                caught = e
+            }
             pair.clientB.start()
             settle()
 
             assertTrue(
-                "a stopped client's start() must schedule nothing",
+                "start() on an already-stopped client must be rejected as transport misuse",
+                caught != null,
+            )
+            assertTrue(
+                "a rejected start() must schedule nothing",
                 aEvents.filterIsInstance<ChatEvent.PeerFound>().isEmpty(),
             )
             assertTrue(
                 "B's peer (A) never really started from B's perspective either, so B must not discover anything",
+                bEvents.filterIsInstance<ChatEvent.PeerFound>().isEmpty(),
+            )
+        }
+
+    /**
+     * Reviewer probe Q1 (round-4 fresh pins, both platforms): `A.disconnect();
+     * A.start(); B.start(); advance` -> no `peerFound` on either client, and
+     * `A.start()` itself throws. Exercises both fresh pins at once:
+     * "start() on a terminal client is rejected as transport misuse and arms
+     * nothing on either side" (A's own `start()` throws, and -- checked
+     * BEFORE the [SimulatedChatTransportClient.start]'s `started` CAS --
+     * never flips A's own `started` flag either), and "Discovery is armed
+     * only once BOTH clients of a pair have started AND neither is
+     * terminal" (B's subsequent `start()` sees A as never-started, since
+     * A's own `start()` threw before ever recording it, so B does not arm
+     * discovery either, even though B itself is perfectly healthy).
+     */
+    @Test
+    fun disconnectThenStartRejectsAndArmsDiscoveryOnNeitherSide() =
+        runTest {
+            val pair = createChatPair(ChatScenario.HAPPY_PAIR, 8L, null)
+            val aEvents = collectEvents(pair.clientA)
+            val bEvents = collectEvents(pair.clientB)
+
+            pair.clientA.disconnect()
+            settle()
+
+            var caught: ChatTransportError? = null
+            try {
+                pair.clientA.start()
+            } catch (e: ChatTransportError) {
+                caught = e
+            }
+            pair.clientB.start()
+            settle()
+
+            assertTrue(
+                "start() on an already-disconnected (terminal) client must be rejected as transport misuse",
+                caught != null,
+            )
+            assertTrue(
+                "A's own start() must arm nothing, on either side",
+                aEvents.filterIsInstance<ChatEvent.PeerFound>().isEmpty(),
+            )
+            assertTrue(
+                "B's start() must not arm discovery either -- A never really started (its start() " +
+                    "threw before flipping the started flag), so B alone is not 'both started'",
                 bEvents.filterIsInstance<ChatEvent.PeerFound>().isEmpty(),
             )
         }
@@ -1227,5 +1397,313 @@ class SimulatedChatTransportClientTest {
             scope.cancel()
             executor.shutdown()
         }
+    }
+
+    // -- Linearized admission and registration (round-4 fresh pin, reviewer
+    // probes Q2/Q3) -- genuinely concurrent, real-thread reproductions of
+    // the exact TOCTOU hole a round-4 reviewer demonstrated in the
+    // PREVIOUS `launchBackgroundJob` design: a `disconnect()` that runs its
+    // entire sweep, seeing an empty registry, while the admitting call
+    // (`connect()`/`send()`) is paused -- via [HoldingDispatcher], not a
+    // guessed sleep -- at the exact moment its handshake/send job's `Job
+    // .start()` first attempts to dispatch. That pause point is AFTER this
+    // client's own terminal-admission check and its job's
+    // `backgroundJobs`/`pendingSendJobs` registration have ALREADY run
+    // (atomically, under `lifecycleLock`, per [launchBackgroundJob]'s doc
+    // comment) but BEFORE a single line of the job's own body has executed
+    // -- i.e. it reproduces the shape of the round-3 TOCTOU bug (a
+    // concurrent `disconnect()` racing a not-yet-run scheduled job) while
+    // proving the NEW design closes it: the job is always found (and
+    // cancelled/terminalized) by the sweep, never orphaned. Uses
+    // [ChatTraceRecorder] (a synchronous, in-call-stack sink -- see that
+    // class's doc comment) rather than a `Flow` collector, so every
+    // assertion below reflects EXACTLY what has been emitted so far with no
+    // separate collector-thread draining/timing to reason about.
+
+    /**
+     * Reviewer probe Q2: `connect()`'s handshake job is held at its first
+     * dispatch (AFTER `Connecting` has already fired and the job is already
+     * durably registered in `backgroundJobs`). A concurrent `disconnect()`
+     * is run to completion while it is held -- it must find and cancel that
+     * job. Only THEN is the hold released. Assertion: no event of any kind,
+     * on EITHER client, follows `disconnect()`'s own `Disconnected` event --
+     * in particular no `connectionChanged(connected)` and no
+     * `linkBudgetChanged`, which the held job's body would otherwise have
+     * gone on to emit had it ever run a single line.
+     */
+    @Test
+    fun disconnectFindsAndCancelsAConnectHandshakeJobHeldAtItsFirstDispatch() {
+        val readyLatch = CountDownLatch(1)
+        val releaseLatch = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(4)
+        val holdingDispatcher = HoldingDispatcher(executor.asCoroutineDispatcher())
+        val scope = CoroutineScope(holdingDispatcher + Job())
+        try {
+            val recorder = ChatTraceRecorder()
+            val pair = SimulatedChatPair.create(ChatScenario.HAPPY_PAIR, 8L, scope, VirtualTimeSource { 0L }, recorder)
+            val (_, idB) = expectedPeerIds(8L)
+
+            // Discover for real first -- dispatch is not yet armed to hold, so
+            // this proceeds at its ordinary (short) real-wall-clock pace.
+            // connect() now requires this client to have actually observed its
+            // peer via peerFound (CONTRACT.md section 2's "Discovery precedes
+            // connection (pinned)" bullet) before the handshake-hold below is
+            // even reachable -- previously connect() validated `peerIdHex`
+            // against the peer's live identity directly, with no
+            // discovered-peer tracking, so this setup phase was unnecessary.
+            runBlocking {
+                pair.clientA.start()
+                pair.clientB.start()
+            }
+            spinUntil("discovery jobs never settled") {
+                pair.clientA.backgroundJobCount == 0 && pair.clientB.backgroundJobCount == 0
+            }
+
+            // NOW arm the hold, so it catches connect()'s handshake job's
+            // first dispatch specifically, not any leftover dispatch from the
+            // discovery jobs above (already fully settled per the spin-wait).
+            holdingDispatcher.armNextDispatch(readyLatch, releaseLatch)
+
+            val connectThread =
+                thread(start = false) {
+                    runBlocking { pair.clientA.connect(idB.toHexString()) }
+                }
+            connectThread.start()
+
+            assertTrue(
+                "connect()'s handshake job must reach its first dispatch (Job.start()) before we " +
+                    "race disconnect() against it",
+                readyLatch.await(10, TimeUnit.SECONDS),
+            )
+            // onAdmitted() -- which emits Connecting -- always runs strictly
+            // BEFORE launchBackgroundJob calls Job.start(), on the SAME
+            // (connectThread) thread, so by the time readyLatch has fired,
+            // Connecting is guaranteed already recorded.
+            assertEquals(
+                "sanity: Connecting must have already fired (atomically admitted) before the job's " +
+                    "own dispatch could ever be reached",
+                listOf(ChatConnectionState.Connecting),
+                recorder.entries().filter { it.client == 'A' }
+                    .mapNotNull { (it.event as? ChatEvent.ConnectionChanged)?.state },
+            )
+
+            runBlocking { pair.clientA.disconnect() }
+            val entriesRightAfterDisconnect = recorder.entries()
+
+            releaseLatch.countDown()
+            connectThread.join(10_000)
+
+            assertEquals(
+                "nothing may fire, on either client, after disconnect() has returned -- the " +
+                    "handshake job was already atomically registered (its Job.start() had already " +
+                    "been reached) when disconnect()'s sweep ran, but it had not yet executed a " +
+                    "single line of its own body, so the sweep's cancellation must have prevented " +
+                    "every one of its scheduled emissions, including linkBudgetChanged",
+                entriesRightAfterDisconnect,
+                recorder.entries(),
+            )
+            assertEquals(
+                listOf(ChatConnectionState.Connecting, ChatConnectionState.Disconnected(ChatReasonStrings.USER_INITIATED)),
+                recorder.entries().filter { it.client == 'A' }
+                    .mapNotNull { (it.event as? ChatEvent.ConnectionChanged)?.state },
+            )
+            assertTrue(
+                "B must never observe connected either -- the handshake job that would have emitted " +
+                    "it on both sides was cancelled before it ran a single line",
+                recorder.entries().filter { it.client == 'B' }
+                    .none { (it.event as? ChatEvent.ConnectionChanged)?.state == ChatConnectionState.Connected },
+            )
+        } finally {
+            scope.cancel()
+            executor.shutdown()
+        }
+    }
+
+    /**
+     * Reviewer probe Q3: same shape as Q2, but for `send()`. The pair is
+     * first connected for real (an ordinary, un-held dispatch -- "under a
+     * real dispatcher it elapses in real (short) wall-clock time," per the
+     * class doc comment), then `send()`'s own background job is held at its
+     * first dispatch -- AFTER `Queued` has fired and the message is already
+     * durably registered in `pendingSendJobs` -- while a concurrent
+     * `disconnect()` races it. The message must end up terminalized
+     * `failed("disconnected")` by `disconnect()`'s own sweep
+     * (`failNonterminalOutgoingSends`) -- never left sitting in
+     * `pendingSendJobs` with no further status transition, and never
+     * progressing to `transmitting`/`delivered` once the hold is released.
+     */
+    @Test
+    fun disconnectTerminalizesASendJobHeldAtItsFirstDispatchNeverLeavingItPending() {
+        val readyLatch = CountDownLatch(1)
+        val releaseLatch = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(4)
+        val holdingDispatcher = HoldingDispatcher(executor.asCoroutineDispatcher())
+        val scope = CoroutineScope(holdingDispatcher + Job())
+        try {
+            val recorder = ChatTraceRecorder()
+            val pair = SimulatedChatPair.create(ChatScenario.HAPPY_PAIR, 8L, scope, VirtualTimeSource { 0L }, recorder)
+            val (_, idB) = expectedPeerIds(8L)
+
+            // Discover for real first -- dispatch is not yet armed to hold, so
+            // this proceeds at its ordinary (short) real-wall-clock pace.
+            // connect() now requires this client to have actually observed its
+            // peer via peerFound (CONTRACT.md section 2's "Discovery precedes
+            // connection (pinned)" bullet) before it can succeed at all.
+            runBlocking {
+                pair.clientA.start()
+                pair.clientB.start()
+            }
+            spinUntil("discovery jobs never settled") {
+                pair.clientA.backgroundJobCount == 0 && pair.clientB.backgroundJobCount == 0
+            }
+
+            // Connect for real first -- dispatch is not yet armed to hold,
+            // so this proceeds at its ordinary (short) real-wall-clock pace.
+            runBlocking { pair.clientA.connect(idB.toHexString()) }
+            spinUntil("connect()'s handshake job never settled") { pair.clientA.backgroundJobCount == 0 }
+            assertTrue(
+                "sanity: A must be connected before send() is exercised",
+                recorder.entries().any {
+                    it.client == 'A' && (it.event as? ChatEvent.ConnectionChanged)?.state == ChatConnectionState.Connected
+                },
+            )
+
+            // NOW arm the hold, so it catches send()'s job's first dispatch
+            // specifically, not any leftover dispatch from the connect()
+            // handshake job above (already fully settled per the spin-wait).
+            holdingDispatcher.armNextDispatch(readyLatch, releaseLatch)
+
+            // send() itself does not RETURN until launchBackgroundJob's
+            // Job.start() call does -- which is exactly what the held
+            // dispatch blocks -- so the calling thread is stuck inside
+            // send() itself at this point, not merely inside some
+            // fire-and-forget background job; messageIdHex is therefore
+            // independently recomputed (CONTRACT.md section 2's
+            // "Message-ID stream (pinned)", via the SAME helper
+            // ChatScenarioTestSupport's other message-ID tests use) rather
+            // than read off send()'s return value.
+            val messageIdHex = expectedFirstMessageId(8L, 'A')
+            val sendThread =
+                thread(start = false) {
+                    runBlocking { pair.clientA.send("held-by-dispatcher") }
+                }
+            sendThread.start()
+
+            assertTrue(
+                "send()'s background job must reach its first dispatch (Job.start()) before we " +
+                    "race disconnect() against it",
+                readyLatch.await(10, TimeUnit.SECONDS),
+            )
+            assertEquals(
+                "sanity: Queued must have already fired (atomically admitted, together with this " +
+                    "message's pendingSendJobs registration) before the job's own dispatch could " +
+                    "ever be reached",
+                1,
+                pair.clientA.pendingSendJobCount,
+            )
+
+            runBlocking { pair.clientA.disconnect() }
+            val entriesRightAfterDisconnect = recorder.entries()
+            assertEquals(
+                "disconnect()'s own sweep must have already terminalized the message -- it can never " +
+                    "return leaving an admitted send sitting in pendingSendJobs",
+                0,
+                pair.clientA.pendingSendJobCount,
+            )
+
+            releaseLatch.countDown()
+            sendThread.join(10_000)
+
+            assertEquals(
+                "nothing may fire, on either client, after disconnect() has returned -- in particular " +
+                    "no transmitting/delivered for the held send, which never ran a single line of " +
+                    "its own body",
+                entriesRightAfterDisconnect,
+                recorder.entries(),
+            )
+            assertEquals(
+                "the held send must be terminalized failed(\"disconnected\") by the sweep, never left " +
+                    "pending and never allowed to progress past queued on its own",
+                listOf(ChatMessageDisplayStatus.Queued, ChatMessageDisplayStatus.Failed(ChatReasonStrings.DISCONNECTED)),
+                recorder.entries().filter { it.client == 'A' }
+                    .mapNotNull { (it.event as? ChatEvent.MessageStatusChanged) }
+                    .filter { it.messageIdHex == messageIdHex }
+                    .map { it.status },
+            )
+        } finally {
+            scope.cancel()
+            executor.shutdown()
+        }
+    }
+}
+
+/**
+ * A [CoroutineDispatcher] wrapping [delegate] that can be armed, via
+ * [armNextDispatch], to block the calling thread's NEXT [dispatch] call --
+ * counting down [readyLatch] to signal "the dispatch attempt has begun,"
+ * then awaiting [releaseLatch] -- before delegating; every OTHER call
+ * (unarmed, or after the armed one has already fired once) passes straight
+ * through with no pause at all. Re-armable (a fresh pair of latches each
+ * time) so a single dispatcher/scope can be used across an initial
+ * (un-held) setup phase and then a specifically-held call later in the
+ * same test, without the FIRST dispatch ever attempted (e.g. an unrelated
+ * setup job's) accidentally consuming the hold meant for a LATER one.
+ *
+ * Used by the Q2/Q3 regression tests above to pause a
+ * [SimulatedChatTransportClient]'s `Job.start()` call (inside
+ * [SimulatedChatTransportClient.launchBackgroundJob]) at the exact moment
+ * its underlying coroutine would first be scheduled to run -- i.e. AFTER
+ * that job has already been atomically admitted into
+ * `backgroundJobs`/`pendingSendJobs` under `lifecycleLock`, but BEFORE a
+ * single line of its body executes -- so a concurrent `disconnect()`
+ * racing against the held dispatch can be proven to find (and cancel) the
+ * already-registered job, and the job's body can be proven to never run at
+ * all once released.
+ */
+private class HoldingDispatcher(
+    private val delegate: CoroutineDispatcher,
+) : CoroutineDispatcher() {
+    private val armed = AtomicBoolean(false)
+
+    @Volatile
+    private var readyLatch: CountDownLatch? = null
+
+    @Volatile
+    private var releaseLatch: CountDownLatch? = null
+
+    fun armNextDispatch(readyLatch: CountDownLatch, releaseLatch: CountDownLatch) {
+        this.readyLatch = readyLatch
+        this.releaseLatch = releaseLatch
+        armed.set(true)
+    }
+
+    override fun dispatch(context: CoroutineContext, block: Runnable) {
+        if (armed.compareAndSet(true, false)) {
+            readyLatch!!.countDown()
+            releaseLatch!!.await(10, TimeUnit.SECONDS)
+        }
+        delegate.dispatch(context, block)
+    }
+}
+
+/**
+ * Busy-polls (no wall-clock sleep -- [Thread.onSpinWait], matching this
+ * file's existing `disconnectThread.state != Thread.State.BLOCKED` polling
+ * idiom above) until [predicate] is true. Bounded by ELAPSED REAL TIME
+ * ([timeoutMs]), not an iteration count: unlike the lock-contention polls
+ * elsewhere in this file (which resolve at memory-access speed, so a huge
+ * fixed spin-count bound is a safe proxy for "effectively never"), this
+ * helper is also used to wait out a chain of the production code's own
+ * REAL `delay()` calls settling (tens of milliseconds under a real
+ * dispatcher -- see the class doc comment) -- a fixed spin-count bound
+ * checked with zero actual pausing between checks can exhaust itself in
+ * far less than that on a fast CPU and fail spuriously, which a
+ * wall-clock deadline does not.
+ */
+private fun spinUntil(description: String, timeoutMs: Long = 10_000, predicate: () -> Boolean) {
+    val deadlineNanos = System.nanoTime() + timeoutMs * 1_000_000
+    while (!predicate()) {
+        Thread.onSpinWait()
+        check(System.nanoTime() < deadlineNanos) { description }
     }
 }

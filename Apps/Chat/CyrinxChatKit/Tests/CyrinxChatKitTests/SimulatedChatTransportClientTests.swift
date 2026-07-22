@@ -674,19 +674,26 @@ struct TargetOwnershipAndStartSemanticsTests {
         #expect(bDiscoveredAtMs == [1050])
     }
 
-    @Test("stop() before start() leaves a client permanently unstartable: start() afterward is a no-op")
+    @Test("stop() before start() leaves a client permanently unstartable: start() afterward throws terminal")
     func stopBeforeStartPreventsLaterStart() async throws {
         // CONTRACT.md §2's "start() semantics (pinned)": "A stopped client
         // cannot be restarted." Exercises the edge case where stop() is
         // called before start() ever ran (an unusual but legal call
-        // order): a subsequent start() must remain a no-op, never arming
-        // discovery.
+        // order): a subsequent start() must reject outright and arm
+        // nothing. C3-28 round-4 fix: this now THROWS `.terminal` (a
+        // stop()-terminal client is terminal exactly like a
+        // disconnect()-terminal one) rather than silently no-opping, as
+        // it did before the guard was widened to check `isTerminal`.
         let clock = VirtualClock()
         let (clientA, clientB) = SimulatedChatTransportClient.makePair(
             scenario: .happyPair, seed: 95, clock: clock
         )
         await clientA.stop()
-        try await clientA.start()  // must be a no-op: A was never started, but IS finished
+        // A was never started, but IS finished (terminal) -- start() must
+        // throw, not silently no-op.
+        await #expect(throws: ChatSimulatedTransportError.terminal) {
+            try await clientA.start()
+        }
         try await clientB.start()
 
         clock.advance(toMs: 2000)
@@ -708,6 +715,68 @@ struct TargetOwnershipAndStartSemanticsTests {
         // B alone never satisfies "both clients started" (A never
         // successfully started), so B never sees peerFound either.
         #expect(bPeerFoundCount == 0)
+    }
+
+    @Test(
+        """
+        disconnect-then-own-restart: A.disconnect() before A ever starts, then A.start() throws \
+        terminal and arms nothing; B.start() afterward never sees "both started" and emits nothing \
+        peer-related either -- reviewer round-4 probe Q1
+        """
+    )
+    func disconnectThenOwnRestartRejectedAndArmsNothing() async throws {
+        // CONTRACT.md §2's three round-4 pins acting together: "start() on
+        // a terminal client is rejected as transport misuse and arms
+        // nothing on either side"; "Discovery is armed only once BOTH
+        // clients of a pair have started AND neither is terminal"; and "a
+        // scheduled peerFound is dropped at fire time if either endpoint
+        // has become terminal." Reviewer round-4 Q1 (both platforms):
+        // A.disconnect(); A.start(); B.start(); advance -> no peerFound on
+        // either client, A's start() throws.
+        //
+        // Before the round-4 fix, A.start() here wrongly succeeded (the
+        // prior guard only checked `!started, !finished`, and `disconnect
+        // ()` sets neither) -- setting `started = true` and letting B's
+        // later start() arm discovery on a pair where A was already
+        // terminal.
+        let clock = VirtualClock()
+        let (clientA, clientB) = SimulatedChatTransportClient.makePair(
+            scenario: .happyPair, seed: 110, clock: clock
+        )
+
+        await clientA.disconnect()
+
+        await #expect(throws: ChatSimulatedTransportError.terminal) {
+            try await clientA.start()
+        }
+        try await clientB.start()
+
+        // Advance well past where discovery would have armed
+        // (ChatSimTiming.peerDiscoveryDelayMs after B's start()) had A's
+        // rejected start() wrongly set `started = true`.
+        clock.advance(toMs: 5000)
+        await clientA.stop()
+        await clientB.stop()
+
+        var aEvents: [ChatEvent.Kind] = []
+        for await event in clientA.events { aEvents.append(event.kind) }
+        // A's only event ever is its own disconnect(); the rejected
+        // start() contributed nothing, and A's own stop() afterward finds
+        // it already disconnected -- no further connectionChanged, and no
+        // peerFound.
+        #expect(aEvents == [.connectionChanged(.disconnected(reason: "userInitiated"))])
+
+        var bEvents: [ChatEvent.Kind] = []
+        for await event in clientB.events { bEvents.append(event.kind) }
+        // B never satisfies "both clients started" (A's own start() was
+        // rejected), so B emits nothing peer-related at all -- not even a
+        // spurious peerFound. B's own connectionState starts (and stays)
+        // at its implicit initial `.disconnected(reason: nil)` -- B never
+        // connected or was disconnected -- so B's own stop() afterward
+        // finds it already disconnected (CONTRACT.md's "unless the state
+        // is already disconnected" clause) and emits nothing at all: no
+        // event of any kind appears on B's stream.
+        #expect(bEvents.isEmpty)
     }
 }
 

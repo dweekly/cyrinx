@@ -56,6 +56,48 @@ import Foundation
 /// latch-style race the "Atomic validation" bullet guards against (a
 /// `disconnect()` landing between a validated effect's check and its
 /// mutation) cannot occur here, not merely "is made unlikely."
+///
+/// **Linearized admission and registration (CONTRACT.md §2's pinned
+/// "Linearized admission and registration" bullet, C3-28 round-4 fix):**
+/// "The same serialization covers a public command's admission (its
+/// terminality check), the registration of any work it spawns
+/// (background jobs, scheduled tokens, pending-transfer bookkeeping), and
+/// lifecycle invalidation: a command admitted before an invalidation
+/// registers its work where the invalidation sweep will find it (or
+/// completes rejection before the sweep); a command arriving after is
+/// rejected. No orphan may survive the sweep -- a `disconnect()` that
+/// returns has terminalized every admitted nonterminal send and cancelled
+/// every admitted job, and nothing (including `linkBudgetChanged`) fires
+/// afterward." This is the same single-sequential-caller property as
+/// "Atomic validation" above, applied to a wider span of each call rather
+/// than just one check-then-mutate pair: on this platform, a public
+/// command's admission (its `!isTerminal` guard -- `start()`, `connect()`,
+/// `send()`), its registration of new work (e.g. `send()`'s
+/// `pendingSendTokens[messageIdHex, default: []].append(...)`,
+/// `scheduleOwned(atMs:_:)`'s `pendingActionTokens.insert(token)`), and a
+/// later `disconnect()`/`stop()`'s invalidation sweep
+/// (`cancelAllScheduledActions()` + `terminalizeNonterminalSends(...)`)
+/// are all synchronous code running on the one sequential caller -- there
+/// is no `await` (and so no suspension point letting another call
+/// interleave) between a public command's terminality check and its
+/// registration of the work that check admits, nor between
+/// `disconnect()`/`stop()`'s own terminality flip (`disconnectedByUser`/
+/// `finished = true`, the first statement of substance in each) and the
+/// sweep that immediately follows it in that same synchronous call. A
+/// command that observes `!isTerminal` therefore always finishes
+/// registering its work -- into `pendingSendTokens`, `pendingActionTokens`,
+/// or the `VirtualClock`'s own `scheduled` array -- before any later call,
+/// including a `disconnect()`/`stop()`, can run at all; so that later
+/// call's own sweep is guaranteed to find (and cancel/terminalize) it.
+/// There is no window in which a command's admission has succeeded but its
+/// registration is still pending when the sweep runs -- exactly the
+/// ordering "no orphan may survive the sweep" requires, and exactly why
+/// nothing (including `linkBudgetChanged`) can fire after `disconnect()`
+/// returns. This covers `start()`'s terminal guard and
+/// `scheduleDiscoveryIfBothStarted()`/`emitPeerFound()`'s registration and
+/// fire-time re-checks identically to how it already covered
+/// connect/send/disconnect before round 4 -- discovery-arming is a public
+/// command's admission-then-registration exactly like any other.
 public final class SimulatedChatTransportClient: ChatTransportClient {
     /// ASCII "MSGIDA__" -- see the message-ID generator seeding note below.
     private static let messageIdSeedTagA: UInt64 = 0x4D53_4749_4441_5F5F
@@ -214,17 +256,34 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
     // MARK: - ChatTransportClient
 
     /// CONTRACT.md §2's "`start()` semantics (pinned)": idempotent --
-    /// repeated calls change nothing and schedule nothing (`!started`
-    /// guard). Discovery is armed only once BOTH clients of a pair have
-    /// started (`scheduleDiscoveryIfBothStarted()`'s own `peer.started`
-    /// check). A stopped client cannot be restarted -- guarded here by
-    /// `!finished` too, not just `!started`, so the guarantee holds even
-    /// for the edge case of `stop()` being called before `start()` ever
-    /// runs (`started` would still be `false` in that case; without the
-    /// `!finished` half of this guard, a later `start()` would wrongly
-    /// arm discovery on an already-finished client).
+    /// repeated calls on an already-started, non-terminal client change
+    /// nothing and schedule nothing (`!started` guard). **C3-28 round-4
+    /// fix:** `start()` on a terminal client -- this client's own
+    /// `disconnect()` or `stop()` already ran -- is rejected as transport
+    /// misuse (throws `.terminal`) and arms nothing on either side; that
+    /// terminal check runs FIRST, ahead of the `started` idempotency
+    /// check, so it fires even when this client was never `started` in
+    /// the first place (`disconnect()` before any `start()` call is legal
+    /// -- CONTRACT.md never requires a client to have started before it
+    /// can be disconnected). Previously this guard only checked
+    /// `!started, !finished` -- `finished` covers `stop()` but NOT
+    /// `disconnect()` (which sets the separate `disconnectedByUser` flag),
+    /// so a disconnected-but-never-`stop()`ped client could wrongly
+    /// re-enter here, set `started = true`, and arm discovery once its
+    /// peer also started -- reviewer round-4 Q1 probe (both platforms):
+    /// `A.disconnect(); A.start(); B.start()` must throw on A's `start()`
+    /// and arm nothing (see `TargetOwnershipAndStartSemanticsTests
+    /// .disconnectThenOwnRestartRejectedAndArmsNothing`). Discovery is
+    /// armed only once BOTH clients of a pair have started AND NEITHER is
+    /// terminal (`scheduleDiscoveryIfBothStarted()`'s own guard, widened
+    /// in this same fix). A stopped client cannot be restarted --
+    /// `isTerminal` includes `finished`, so this still holds for the edge
+    /// case of `stop()` being called before `start()` ever runs.
     public func start() async throws {
-        guard !started, !finished else { return }
+        guard !isTerminal else {
+            throw ChatSimulatedTransportError.terminal
+        }
+        guard !started else { return }
         started = true
         scheduleDiscoveryIfBothStarted()
     }
@@ -505,8 +564,24 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
 
     // MARK: - Discovery
 
+    /// CONTRACT.md §2's "`start()` semantics (pinned)", C3-28 round-4 fix:
+    /// "Discovery is armed only once BOTH clients of a pair have started
+    /// AND neither is terminal." The `!isTerminal, !peer.isTerminal` half
+    /// of this guard is new in round 4. `start()`'s own terminal check
+    /// (above) covers `self` being terminal at the moment ITS `start()`
+    /// call runs, but not the case where `self` started successfully
+    /// while non-terminal and only became terminal afterward, with the
+    /// PEER's later `start()` the one that tries to arm discovery (e.g.
+    /// `A.start(); A.disconnect(); B.start()`): without this explicit
+    /// check, `peer.started` alone would still read `true` and discovery
+    /// would wrongly arm even though `peer` (A) is already gone.
+    /// Symmetric for `peer` being the one that went terminal after
+    /// starting.
     private func scheduleDiscoveryIfBothStarted() {
-        guard let peer, peer.started, !discoveryScheduled, !peer.discoveryScheduled else { return }
+        guard let peer,
+            !isTerminal, !peer.isTerminal,
+            peer.started, !discoveryScheduled, !peer.discoveryScheduled
+        else { return }
         discoveryScheduled = true
         peer.discoveryScheduled = true
         let dueAtMs = clock.nowMs + ChatSimTiming.peerDiscoveryDelayMs
@@ -516,15 +591,34 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
         // then B eventSeq0, both at the same virtual time). Each token is
         // registered on its own target client via `scheduleOwned` so a
         // later per-client `stop()`/`disconnect()` cancels only that
-        // client's own copy.
+        // client's own copy -- `emitPeerFound()`'s own fire-time guard
+        // (below) additionally covers the OTHER side going terminal after
+        // this point, which per-client token cancellation alone cannot
+        // catch.
         let (first, second): (SimulatedChatTransportClient, SimulatedChatTransportClient) =
             role == .a ? (self, peer) : (peer, self)
         first.scheduleOwned(atMs: dueAtMs) { [weak first] in first?.emitPeerFound() }
         second.scheduleOwned(atMs: dueAtMs) { [weak second] in second?.emitPeerFound() }
     }
 
+    /// CONTRACT.md §2's "`start()` semantics (pinned)", C3-28 round-4 fix:
+    /// "a scheduled `peerFound` is dropped at fire time if either endpoint
+    /// has become terminal." Mirrors `becomeConnected()`'s own two-sided
+    /// fire-time guard directly below it in this file, for the identical
+    /// structural reason: this closure is registered in its OWNING
+    /// client's own `pendingActionTokens` (via `scheduleOwned`), so that
+    /// client's own `disconnect()`/`stop()` already cancels its own copy
+    /// outright before it can fire -- but the PEER going terminal in the
+    /// interim does NOT touch this client's token bookkeeping at all, so
+    /// without this explicit `!peer.isTerminal` check, a client could
+    /// still emit `peerFound` describing a peer that is already gone by
+    /// fire time. (`!isTerminal` here is defense in depth for the
+    /// self-terminality case cancellation already prevents -- provably
+    /// always true whenever this closure actually runs, but stated
+    /// explicitly to match `becomeConnected()`'s symmetry and CONTRACT.md's
+    /// "either endpoint" wording directly.)
     private func emitPeerFound() {
-        guard let peer else { return }
+        guard !isTerminal, let peer, !peer.isTerminal else { return }
         let chatPeer = ChatPeer(id: peer.localPeerId, discoveredAtMs: clock.nowMs)
         discoveredPeer = chatPeer
         emit(.peerFound(chatPeer))
