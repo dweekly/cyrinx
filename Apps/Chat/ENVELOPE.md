@@ -5,8 +5,8 @@ not itself checked into this tree) and by
 [`docs/CYRINX_3_PLAN.md`](../../docs/CYRINX_3_PLAN.md) Phase F, "Chat message
 envelope." This document is authoritative for the wire layout; the Swift
 codec (`Apps/Chat/CyrinxChatKit`) and the Kotlin codec
-(`Apps/Chat/android/chatkit`) — both land in a later C3-28 implementation
-stage — must match it exactly, and both are checked against the golden
+(`Apps/Chat/android/chatkit`) — both committed alongside this document —
+must match it exactly, and both are checked against the golden
 vectors in [`fixtures/chat-envelope-golden.json`](fixtures/chat-envelope-golden.json),
 not against each other directly.
 

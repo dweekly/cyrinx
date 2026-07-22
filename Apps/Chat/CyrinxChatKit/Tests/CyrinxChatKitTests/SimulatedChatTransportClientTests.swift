@@ -492,14 +492,20 @@ struct TargetOwnershipAndStartSemanticsTests {
     @Test(
         """
         passive-side handshake cancellation: B disconnects mid-handshake (scheduled by A.connect()) \
-        -- B never emits connectionChanged(connected); A's own view follows its scripted timeline
+        -- B never emits connectionChanged(connected); A never connects either (both endpoints must \
+        be live)
         """
     )
     func passiveSideHandshakeCancellation() async throws {
         // CONTRACT.md §2's "Target ownership" bullet: "a client never
         // observes connectionChanged(connected) after its own
         // disconnect()/stop(), even when the peer's connect() scheduled
-        // that transition (passive-side handshake cancellation)."
+        // that transition (passive-side handshake cancellation)." Plus the
+        // new pinned "Both endpoints live for connection establishment"
+        // bullet (C3-28 terminality review): B going terminal before the
+        // scripted `connected` transition fires drops that transition on
+        // BOTH sides, not just B's -- so A's own copy must also decline to
+        // fire here, even though A itself never disconnected.
         let clock = VirtualClock()
         let (clientA, clientB) = SimulatedChatTransportClient.makePair(
             scenario: .happyPair, seed: 92, clock: clock
@@ -519,7 +525,9 @@ struct TargetOwnershipAndStartSemanticsTests {
         // were not cancelled by B's own disconnect (this is the passive
         // side -- B never called connect() or disconnect() itself in the
         // buggy scheduling), B would incorrectly transition to `connected`
-        // here.
+        // here -- and if A's own copy didn't also check B's terminality at
+        // fire time, A would incorrectly connect to a peer that is already
+        // gone.
         clock.advance(toMs: 2000)
         await clientA.stop()
         await clientB.stop()
@@ -535,30 +543,44 @@ struct TargetOwnershipAndStartSemanticsTests {
         // afterward sees B already disconnected and emits nothing further.
         #expect(bConnectionChanges == [.disconnected(reason: "userInitiated")])
 
-        // A's own view follows its scripted timeline: A (the active side)
-        // never disconnected, so A's own `connecting` -> `connected`
-        // handshake proceeds exactly as happyPair's §3.1 pins it -- A's
-        // lifecycle is entirely independent of B's.
+        // A never disconnected or stopped itself before B did, but "both
+        // endpoints live" means A's own `connecting` -> `connected` step
+        // is dropped too, since B (the far end) was already terminal at
+        // the moment that step would have fired: A never emits `connected`
+        // here. A's `stop()` afterward finds A still `.connecting` (not
+        // yet `.disconnected`), so it DOES emit its own
+        // `disconnected(reason: "stopped")` -- unlike B, which was already
+        // disconnected by the time its `stop()` ran.
         var aConnectionChanges: [ChatConnectionState] = []
         for await event in clientA.events {
             if case .connectionChanged(let state) = event.kind {
                 aConnectionChanges.append(state)
             }
         }
-        #expect(aConnectionChanges == [.connecting, .connected, .disconnected(reason: "stopped")])
+        #expect(!aConnectionChanges.contains(.connected))
+        #expect(aConnectionChanges == [.connecting, .disconnected(reason: "stopped")])
     }
 
     @Test(
         """
         active-side handshake cancellation: A.connect() then A.disconnect() before the scripted \
-        connected transition -- A never emits connectionChanged(connected); B never sees it either
+        connected transition -- A never emits connectionChanged(connected); B never connects either \
+        (both endpoints must be live)
         """
     )
     func activeSideHandshakeCancellation() async throws {
         // Companion to `passiveSideHandshakeCancellation()` above --
         // exercises the OTHER side of the same handshake-cancellation
         // guarantee, with a name a Kotlin port can mirror directly:
-        // disconnecting the side that itself called `connect()`.
+        // disconnecting the side that itself called `connect()`. Reviewer
+        // probe P4 (C3-28 terminality review): this flips the prior
+        // expectation here -- CONTRACT.md §2's new pinned "Both endpoints
+        // live for connection establishment" bullet means B's own copy of
+        // `becomeConnected`, though scheduled by A's connect() call and
+        // owned by B's own token bookkeeping (so untouched by A's
+        // disconnect() as far as cancellation goes), must ALSO check A's
+        // terminality at fire time and decline to fire -- B does NOT
+        // connect either, even though B itself never disconnected.
         let clock = VirtualClock()
         let (clientA, clientB) = SimulatedChatTransportClient.makePair(
             scenario: .happyPair, seed: 93, clock: clock
@@ -583,19 +605,21 @@ struct TargetOwnershipAndStartSemanticsTests {
         #expect(!aConnectionChanges.contains(.connected))
         #expect(aConnectionChanges == [.connecting, .disconnected(reason: "userInitiated")])
 
-        // B's own copy of `becomeConnected` was scheduled by A's connect()
-        // call but is owned by B -- it is untouched by A's disconnect (a
-        // different client's lifecycle), so B still becomes `connected` on
-        // its own scripted timeline; this asserts that this test isolates
-        // the active side's own cancellation without accidentally relying
-        // on B also being cancelled.
+        // B never connects: A (the far end) was already terminal at the
+        // moment B's own copy of `becomeConnected` would have fired, so
+        // "both endpoints live" drops it on B's side too. B's own
+        // `connectionState` therefore never leaves its initial
+        // `.disconnected(reason: nil)`, so B's own `stop()` sees it
+        // already disconnected and emits nothing further -- B's
+        // connectionChanged stream is empty.
         var bConnectionChanges: [ChatConnectionState] = []
         for await event in clientB.events {
             if case .connectionChanged(let state) = event.kind {
                 bConnectionChanges.append(state)
             }
         }
-        #expect(bConnectionChanges == [.connected, .disconnected(reason: "stopped")])
+        #expect(!bConnectionChanges.contains(.connected))
+        #expect(bConnectionChanges.isEmpty)
     }
 
     @Test("start() idempotency and both-started discovery gating (CONTRACT.md §2's start() semantics)")
@@ -684,6 +708,226 @@ struct TargetOwnershipAndStartSemanticsTests {
         // B alone never satisfies "both clients started" (A never
         // successfully started), so B never sees peerFound either.
         #expect(bPeerFoundCount == 0)
+    }
+}
+
+/// C3-28 terminality review: direct tests of CONTRACT.md §2's three new
+/// pinned bullets -- "`disconnect()` is terminal for the client instance,"
+/// "Both endpoints live for connection establishment" (see
+/// `activeSideHandshakeCancellation`/`passiveSideHandshakeCancellation`
+/// above, in `TargetOwnershipAndStartSemanticsTests`, for that bullet's
+/// coverage), and "Atomic validation" (satisfied structurally by this
+/// platform's single-sequential-caller scope -- see
+/// `SimulatedChatTransportClient`'s own "Atomic validation" doc comment;
+/// no test here exercises real concurrency, since none is possible in this
+/// scope). Split into its own `@Suite` for the same reason noted on
+/// `TargetOwnershipAndStartSemanticsTests` above -- keeping each struct's
+/// body under swiftlint's `type_body_length` limit.
+@Suite("Simulated transport client: terminality (disconnect() is terminal for the client instance)")
+struct TerminalityTests {
+    @Test(
+        """
+        disconnect-then-peer-connect: B.disconnect() before A ever connects -- A.connect(toPeer: B) \
+        throws terminal, schedules nothing on either side; B emits nothing after its own \
+        disconnected(userInitiated) -- reviewer probe P1
+        """
+    )
+    func disconnectThenPeerConnectRejected() async throws {
+        // CONTRACT.md §2's new pinned bullet: "a peer's connect() targeting
+        // a terminal client is rejected (thrown to the caller) and
+        // schedules nothing on either side ... Neither the client's own
+        // connect() nor its peer's connect() can reopen a terminal
+        // client."
+        let clock = VirtualClock()
+        let (clientA, clientB) = SimulatedChatTransportClient.makePair(
+            scenario: .happyPair, seed: 101, clock: clock
+        )
+        try await clientA.start()
+        try await clientB.start()
+        clock.advance(toMs: 50)  // peerFound fires on both sides
+        await clientB.disconnect()
+
+        await #expect(throws: ChatSimulatedTransportError.terminal) {
+            try await clientA.connect(toPeer: clientB.localPeerId.hexString)
+        }
+
+        // Advance well past where a successful handshake would otherwise
+        // have completed; if the rejected connect() had scheduled anything
+        // anyway, it would surface here.
+        clock.advance(toMs: 2000)
+        await clientA.stop()
+        await clientB.stop()
+
+        var bConnectionChanges: [ChatConnectionState] = []
+        for await event in clientB.events {
+            if case .connectionChanged(let state) = event.kind {
+                bConnectionChanges.append(state)
+            }
+        }
+        // B's only connectionChanged is its own disconnect(); A's rejected
+        // connect() attempt contributed nothing further, and B's own
+        // stop() afterward finds it already disconnected.
+        #expect(bConnectionChanges == [.disconnected(reason: "userInitiated")])
+
+        var aConnectionChanges: [ChatConnectionState] = []
+        for await event in clientA.events {
+            if case .connectionChanged(let state) = event.kind {
+                aConnectionChanges.append(state)
+            }
+        }
+        // A's connect() call threw before mutating any state -- A never
+        // even transitions through `connecting`, and A's own `stop()`
+        // afterward finds it still at its initial `.disconnected(reason:
+        // nil)`, so it too emits nothing.
+        #expect(aConnectionChanges.isEmpty)
+    }
+
+    @Test(
+        """
+        send scheduled after receiver's disconnect: connected pair, B.disconnect(), then A.send() -- B \
+        must not emit messageReceived even though the effect's captured generation matches at fire \
+        time (terminality, not generation equality alone, is the gate) -- reviewer probe P2
+        """
+    )
+    func sendScheduledAfterReceiverDisconnectNeverDelivers() async throws {
+        // CONTRACT.md §2's new pinned bullet: "No peer-driven effect may
+        // target a terminal client REGARDLESS of when the effect was
+        // scheduled ... a terminal target drops the effect even if the
+        // effect captured the target's post-disconnect generation." Here
+        // the delivery effect is scheduled by `send()` AFTER B is already
+        // terminal, so it captures B's already-bumped, post-disconnect
+        // `lifecycleGeneration` at schedule time -- that value never
+        // changes again (a client's generation only bumps on its own
+        // disconnect()/stop(), and B already used its one bump) -- so a
+        // generation-equality check alone would incorrectly still match at
+        // fire time. Only the explicit terminality check catches this.
+        let (clientA, clientB, clock) = try await connectedPair(seed: 106)
+
+        clock.advance(toMs: 200)
+        await clientB.disconnect()
+
+        // A's own connectionState is unaffected by B's disconnect
+        // (CONTRACT.md's "the sender's own transfer statuses are
+        // unaffected by the receiver's disconnect"), so A is still free to
+        // send() here.
+        clock.advance(toMs: 300)
+        let messageIdHex = try await clientA.send(body: "should-never-arrive")
+
+        clock.advance(toMs: 2000)
+        await clientA.stop()
+        await clientB.stop()
+
+        var receivedOnB = false
+        for await event in clientB.events {
+            if case .messageReceived = event.kind { receivedOnB = true }
+        }
+        #expect(!receivedOnB)
+
+        // A's own send outcome still plays out per happyPair's scripted
+        // sendOutcome, unaffected by its receiver being gone -- the
+        // simulator models no delivery-failure backchannel (CONTRACT.md's
+        // schema-limitation note).
+        var statusesForMessage: [ChatMessageDisplayStatus] = []
+        for await event in clientA.events {
+            if case .messageStatusChanged(let idHex, let status) = event.kind, idHex == messageIdHex {
+                statusesForMessage.append(status)
+            }
+        }
+        #expect(statusesForMessage == [.queued, .transmitting, .delivered])
+    }
+
+    @Test("connect() after this client's own disconnect() throws terminal and schedules nothing")
+    func connectAfterOwnDisconnectRejected() async throws {
+        // CONTRACT.md §2's new pinned bullet: "`disconnect()` is terminal
+        // for the client instance. After it, connect() and send() on that
+        // client are rejected as transport misuse; the only permitted
+        // subsequent call is stop()."
+        let clock = VirtualClock()
+        let (clientA, clientB) = SimulatedChatTransportClient.makePair(
+            scenario: .happyPair, seed: 107, clock: clock
+        )
+        try await clientA.start()
+        try await clientB.start()
+        clock.advance(toMs: 50)
+        await clientA.disconnect()
+
+        await #expect(throws: ChatSimulatedTransportError.terminal) {
+            try await clientA.connect(toPeer: clientB.localPeerId.hexString)
+        }
+
+        clock.advance(toMs: 2000)
+        await clientA.stop()
+        await clientB.stop()
+
+        var aConnectionChanges: [ChatConnectionState] = []
+        for await event in clientA.events {
+            if case .connectionChanged(let state) = event.kind {
+                aConnectionChanges.append(state)
+            }
+        }
+        // Only the original disconnect(); the rejected connect() attempt
+        // mutated nothing, and A's own stop() afterward finds it already
+        // disconnected.
+        #expect(aConnectionChanges == [.disconnected(reason: "userInitiated")])
+    }
+
+    @Test("send() after this client's own disconnect() throws terminal and emits no event")
+    func sendAfterOwnDisconnectRejected() async throws {
+        // Companion to `connectAfterOwnDisconnectRejected()` above, for
+        // send() rather than connect() -- CONTRACT.md §2's same "terminal
+        // for the client instance" bullet.
+        let (clientA, clientB, _) = try await connectedPair(seed: 108)
+        await clientA.disconnect()
+
+        await #expect(throws: ChatSimulatedTransportError.terminal) {
+            _ = try await clientA.send(body: "should not send")
+        }
+
+        await clientA.stop()
+        await clientB.stop()
+
+        var statusChangeCount = 0
+        for await event in clientA.events {
+            if case .messageStatusChanged = event.kind { statusChangeCount += 1 }
+        }
+        // The rejected send() never reached the point of assigning a
+        // messageId or emitting `queued` -- no messageStatusChanged event
+        // of any kind appears.
+        #expect(statusChangeCount == 0)
+    }
+
+    @Test(
+        """
+        stop() after disconnect() still finishes the event stream cleanly, with no duplicate \
+        connectionChanged
+        """
+    )
+    func stopAfterDisconnectFinishesStreamCleanly() async throws {
+        // CONTRACT.md §2's "the only permitted subsequent call is stop()"
+        // clause -- stop() after disconnect() must remain well-behaved:
+        // no crash, no re-run of cancellation/emission logic disconnect()
+        // already performed, and the stream still finishes.
+        let (clientA, clientB, _) = try await connectedPair(seed: 109)
+        await clientA.disconnect()
+        await clientA.stop()
+
+        var connectionChanges: [ChatConnectionState] = []
+        // Draining this stream to completion is itself part of what this
+        // test verifies: if stop() never finished the stream, this loop
+        // would hang instead of returning.
+        for await event in clientA.events {
+            if case .connectionChanged(let state) = event.kind {
+                connectionChanges.append(state)
+            }
+        }
+        // connecting, connected (connectedPair's setup), then exactly ONE
+        // disconnected(userInitiated) from disconnect() -- stop()
+        // afterward finds A already disconnected (CONTRACT.md's "unless
+        // the state is already disconnected" clause) and emits nothing
+        // further, so no second disconnectedreason appears.
+        #expect(connectionChanges == [.connecting, .connected, .disconnected(reason: "userInitiated")])
+
+        await clientB.stop()
     }
 }
 

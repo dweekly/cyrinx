@@ -19,4 +19,13 @@ public enum ChatSimulatedTransportError: Error, Equatable, Sendable {
     /// `.connected` nor `.degraded` -- CONTRACT.md §2's "Send precondition
     /// (pinned)": accepted only in those two states.
     case notConnected
+    /// CONTRACT.md §2's "Lifecycle cancellation (pinned)" bullet
+    /// "`disconnect()` is terminal for the client instance": thrown by
+    /// `connect()`/`send()` when THIS client is terminal (its own
+    /// `disconnect()` or `stop()` already ran -- the only call still
+    /// permitted afterward is `stop()` itself), and by `connect()` when
+    /// its `toPeer:` TARGET is terminal ("a peer's connect() targeting a
+    /// terminal client is rejected (thrown to the caller) and schedules
+    /// nothing on either side").
+    case terminal
 }

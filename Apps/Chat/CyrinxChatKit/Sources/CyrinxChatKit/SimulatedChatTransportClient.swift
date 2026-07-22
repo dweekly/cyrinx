@@ -30,6 +30,32 @@ import Foundation
 /// every `swift test` case still passes -- nothing in this package or its
 /// tests actually crosses an actor-isolation boundary with an instance of
 /// this class, so the conformance was unused, not load-bearing.
+///
+/// **Atomic validation (CONTRACT.md §2's pinned "Atomic validation"
+/// bullet, C3-28 terminality review):** "Generation/terminality
+/// validation and the target mutation it guards are atomic with respect
+/// to lifecycle invalidation: under a caller-supplied concurrent scope,
+/// implementations serialize check and mutation against
+/// `disconnect()`/`stop()` invalidation (per-client lock, actor, or
+/// serial dispatcher), so a validated effect can never interleave with an
+/// invalidation between its check and its mutation." On this platform
+/// that requirement is satisfied structurally, not by adding a lock,
+/// actor, or serial dispatcher: as the "Concurrency note" above
+/// documents, this type (and the `VirtualClock` it schedules against) is
+/// single-sequential-caller by scope -- there is no concurrent scope in
+/// which a `disconnect()`/`stop()` call could run *between* a
+/// check-then-mutate pair's check and its mutation, because nothing else
+/// runs at all until that pair's synchronous call stack returns to the
+/// one sequential caller. Concretely, every check-then-mutate pair in
+/// this file -- `scheduleDelivery(atMs:encoded:)`'s
+/// `peer.isTerminal`/`peer.lifecycleGeneration` check immediately
+/// followed by `peer.receiveEnvelope(encoded)`, and `becomeConnected()`'s
+/// `isTerminal`/`peer.isTerminal` check immediately followed by the
+/// `connectionState` mutation and emission -- runs to completion
+/// uninterrupted before any other call into this pair is possible, so the
+/// latch-style race the "Atomic validation" bullet guards against (a
+/// `disconnect()` landing between a validated effect's check and its
+/// mutation) cannot occur here, not merely "is made unlikely."
 public final class SimulatedChatTransportClient: ChatTransportClient {
     /// ASCII "MSGIDA__" -- see the message-ID generator seeding note below.
     private static let messageIdSeedTagA: UInt64 = 0x4D53_4749_4441_5F5F
@@ -81,6 +107,22 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
     /// cancellation: "a repeat `disconnect()` is a no-op"), independent of
     /// `finished` (which guards `stop()`).
     private var disconnectedByUser = false
+    /// CONTRACT.md §2's new pinned bullet "`disconnect()` is terminal for
+    /// the client instance," C3-28 terminality review: true once this
+    /// client's own `disconnect()` or `stop()` has run. Deliberately a
+    /// plain boolean check over `disconnectedByUser`/`finished`, NOT a
+    /// comparison against `lifecycleGeneration` -- the reviewer's P2 probe
+    /// is exactly the case where a generation-equality check alone is
+    /// insufficient: an effect scheduled AFTER this client already went
+    /// terminal captures that already-bumped generation value at schedule
+    /// time, so it would still match at fire time even though the client
+    /// is terminal (see `scheduleDelivery(atMs:encoded:)`'s guard, which
+    /// checks both). `connect()`/`send()` reject outright when `self` is
+    /// terminal, `connect()` also rejects when its `toPeer:` TARGET is
+    /// terminal, and `becomeConnected()` checks both this client and its
+    /// peer at fire time ("Both endpoints live for connection
+    /// establishment").
+    var isTerminal: Bool { disconnectedByUser || finished }
     /// CONTRACT.md §2's "Target ownership": bumped once by this client's
     /// own `disconnect()` and once by its own `stop()` (never by the
     /// peer's). An effect that mutates THIS client but was scheduled by a
@@ -215,8 +257,27 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
     }
 
     public func connect(toPeer idHex: String) async throws {
+        // CONTRACT.md §2's new pinned "disconnect() is terminal for the
+        // client instance" bullet: a terminal client rejects connect()
+        // outright, before touching any state -- the only call still
+        // permitted on it is stop(). Checked first, ahead of the
+        // `discoveredPeer` validation below, since this is about the
+        // CALLER's own validity, independent of what it's trying to do.
+        guard !isTerminal else {
+            throw ChatSimulatedTransportError.terminal
+        }
         guard let discoveredPeer, discoveredPeer.id.hexString == idHex.lowercased() else {
             throw ChatSimulatedTransportError.unknownPeer
+        }
+        // CONTRACT.md §2's new pinned bullet, continued: "a peer's
+        // connect() targeting a terminal client is rejected (thrown to
+        // the caller) and schedules nothing on either side." Checked
+        // before any state mutation/emission below (mirroring how
+        // `unknownPeer` above also rejects before touching state) so a
+        // rejected connect() leaves BOTH clients exactly as it found
+        // them -- reviewer probe P1 (disconnect-then-peer-connect).
+        guard let peer, !peer.isTerminal else {
+            throw ChatSimulatedTransportError.terminal
         }
         connectionState = .connecting
         emit(.connectionChanged(.connecting))
@@ -230,11 +291,13 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
         // just one side of the pair only ever cancels that side's own copy
         // of this handshake step (CONTRACT.md §2's "for this client"
         // scoping).
+        // `peer` here is the non-optional local bound by this method's own
+        // `guard let peer, !peer.isTerminal else { throw ... }` above (not
+        // `self.peer` again) -- already known live, so no further optional
+        // unwrap is needed before scheduling its copy of the handshake step.
         let connectedAtMs = clock.nowMs + ChatSimTiming.connectHandshakeDelayMs
         scheduleOwned(atMs: connectedAtMs) { [weak self] in self?.becomeConnected() }
-        if let peer {
-            peer.scheduleOwned(atMs: connectedAtMs) { [weak peer] in peer?.becomeConnected() }
-        }
+        peer.scheduleOwned(atMs: connectedAtMs) { [weak peer] in peer?.becomeConnected() }
         scheduleScenarioPostConnect(connectedAtMs: connectedAtMs)
     }
 
@@ -263,6 +326,20 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
     }
 
     public func send(body: String) async throws -> String {
+        // CONTRACT.md §2's new pinned "disconnect() is terminal for the
+        // client instance" bullet: a terminal client rejects send()
+        // outright. This is guaranteed equivalent to (but more direct
+        // than) the `connectionState` check just below in every reachable
+        // state -- a terminal client's `connectionState` is always
+        // `.disconnected`, since `disconnect()`/`stop()` set it there and
+        // `becomeConnected()`'s "Both endpoints live" check (below) is
+        // the only other writer of `.connected` and itself refuses to run
+        // for a terminal client -- but stating it explicitly here matches
+        // CONTRACT.md's wording directly rather than leaning on that
+        // invariant implicitly.
+        guard !isTerminal else {
+            throw ChatSimulatedTransportError.terminal
+        }
         // CONTRACT.md §2's "Send precondition (pinned)": accepted only
         // while `connected` or `degraded`; any other state throws the
         // transport-misuse "not connected" error and emits no event.
@@ -455,7 +532,30 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
 
     // MARK: - Connect handshake and scenario-scripted post-connect behavior
 
+    /// CONTRACT.md §2's new pinned "Both endpoints live for connection
+    /// establishment" bullet (C3-28 terminality review): "A
+    /// connectionChanged(connected) transition fires only if BOTH
+    /// endpoints of the pair are still non-terminal at fire time: either
+    /// endpoint's disconnect()/stop() before the transition fires drops
+    /// the transition on both sides."
+    ///
+    /// `connect()` schedules one copy of this method per side, each
+    /// registered via `scheduleOwned` in that side's OWN
+    /// `pendingActionTokens` -- so if THIS client itself goes terminal
+    /// before its own copy's fire time, `cancelAllScheduledActions()`
+    /// already removes that copy from the `VirtualClock` outright and it
+    /// never runs at all (`!isTerminal` below is checked anyway, for
+    /// directness rather than leaning on that as an invisible invariant).
+    /// The case that check-by-cancellation can NOT catch is the PEER
+    /// going terminal: the peer's own `disconnect()`/`stop()` only
+    /// cancels tokens in the PEER's own bookkeeping, never this client's,
+    /// so without the explicit `peer.isTerminal` check here, this
+    /// client's own copy of the handshake step would still fire on
+    /// schedule even though the far end already disconnected
+    /// mid-handshake -- reviewer probe P4 (active-side disconnect mid-
+    /// handshake: neither side ever emits `connected`).
     private func becomeConnected() {
+        guard !isTerminal, let peer, !peer.isTerminal else { return }
         connectionState = .connected
         emit(.connectionChanged(.connected))
     }
@@ -607,14 +707,39 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
     /// `SimulatedChatTransportClientTests`. The two mechanisms are
     /// independent and either firing first is sufficient to suppress the
     /// delivery: the sender cancelling the underlying `VirtualClock`
-    /// token outright, or the receiver's generation check catching it at
-    /// fire time.
+    /// token outright, or the receiver's terminality/generation check
+    /// catching it at fire time.
+    ///
+    /// **Terminality, not generation equality alone, is the gate (C3-28
+    /// terminality review, reviewer probe P2).** CONTRACT.md §2's
+    /// "disconnect() is terminal for the client instance" bullet: "No
+    /// peer-driven effect may target a terminal client REGARDLESS of when
+    /// the effect was scheduled -- a terminal target drops the effect
+    /// even if the effect captured the target's post-disconnect
+    /// generation, so terminality, not generation equality alone, is the
+    /// gate." Concretely: if `peer` is already terminal at the moment
+    /// THIS method runs (e.g. the sender calls `send()` after the
+    /// receiver already `disconnect()`d), `targetGenerationAtSchedule`
+    /// below captures the peer's already-bumped, POST-disconnect
+    /// generation -- which never changes again, since a client's
+    /// generation only bumps on its OWN `disconnect()`/`stop()`, and this
+    /// peer already used its one such bump. A generation-equality check
+    /// alone would therefore still match at fire time and incorrectly
+    /// deliver. The explicit `!peer.isTerminal` check below is what
+    /// actually catches this case; the generation check remains
+    /// alongside it per CONTRACT.md's "in addition to generation"
+    /// phrasing, catching the (currently only theoretical, since nothing
+    /// else bumps generation) case of a target that went terminal and
+    /// somehow became non-terminal again with a new generation.
     @discardableResult
     private func scheduleDelivery(atMs dueAtMs: Int64, encoded: Data) -> Int? {
         guard let peer else { return nil }
         let targetGenerationAtSchedule = peer.lifecycleGeneration
         return clock.schedule(atMs: dueAtMs) { [weak peer] in
-            guard let peer, peer.lifecycleGeneration == targetGenerationAtSchedule else { return }
+            guard let peer,
+                !peer.isTerminal,
+                peer.lifecycleGeneration == targetGenerationAtSchedule
+            else { return }
             peer.receiveEnvelope(encoded)
         }
     }

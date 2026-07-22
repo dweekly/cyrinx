@@ -2,8 +2,13 @@
 
 package com.dweekly.cyrinx.chat
 
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runCurrent
@@ -13,6 +18,12 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.concurrent.thread
 
 /**
  * Behavioral tests for [SimulatedChatTransportClient] / [SimulatedChatPair] not
@@ -677,8 +688,17 @@ class SimulatedChatTransportClientTest {
             )
         }
 
+    /**
+     * CONTRACT.md section 2's new pinned "Both endpoints live for connection
+     * establishment" bullet flips this test's expectation from what it used
+     * to pin: a `connectionChanged(connected)` transition now fires only if
+     * BOTH endpoints are still non-terminal at fire time, so B (the passive
+     * side) disconnecting mid-handshake now drops the transition on BOTH
+     * sides -- A's own `connected` is suppressed too, not just B's mirrored
+     * copy.
+     */
     @Test
-    fun passiveSideDisconnectMidHandshakeSuppressesItsOwnConnectedTransition() =
+    fun passiveSideDisconnectMidHandshakeSuppressesConnectedOnBothSides() =
         runTest {
             val pair = createChatPair(ChatScenario.HAPPY_PAIR, 8L, null)
             val (_, idB) = expectedPeerIds(8L)
@@ -706,12 +726,17 @@ class SimulatedChatTransportClientTest {
                 bEvents.filterIsInstance<ChatEvent.ConnectionChanged>().map { it.state },
             )
 
-            // A itself never disconnected -- ad hoc/out-of-table behavior
-            // CONTRACT.md does not pin either way -- so A's own side of the
-            // handshake still completes on A's own timeline.
-            assertTrue(
-                "sanity: A's own connected transition is unaffected by B's disconnect",
-                aEvents.filterIsInstance<ChatEvent.ConnectionChanged>().any { it.state == ChatConnectionState.Connected },
+            // CONTRACT.md's "Both endpoints live for connection establishment"
+            // bullet: "either endpoint's disconnect()/stop() before the
+            // transition fires drops the transition on BOTH sides." A itself
+            // never disconnected, but B (the OTHER endpoint) did, so A's own
+            // side of the handshake must ALSO never reach connected.
+            assertEquals(
+                "A must never observe connectionChanged(connected) either, once its peer B " +
+                    "went terminal before the joint handshake transition fired -- CONTRACT.md's " +
+                    "\"Both endpoints live\" bullet, reviewer probe P4",
+                listOf(ChatConnectionState.Connecting),
+                aEvents.filterIsInstance<ChatEvent.ConnectionChanged>().map { it.state },
             )
         }
 
@@ -821,4 +846,386 @@ class SimulatedChatTransportClientTest {
                 bEvents.filterIsInstance<ChatEvent.PeerFound>().isEmpty(),
             )
         }
+
+    // -- Terminality (C3-28 terminality review, ../../../CONTRACT.md section
+    // 2's new pinned "disconnect() is terminal for the client instance" /
+    // "Both endpoints live for connection establishment" / "Atomic
+    // validation" bullets) --------------------------------------------------
+
+    /**
+     * Reviewer probe P1 / CONTRACT.md's required "disconnect-then-peer-connect
+     * (terminal target never reconnects)" test: once B has disconnected, A's
+     * connect() targeting B must be rejected outright (a transport-misuse
+     * throw, per "a peer's connect() targeting a terminal client throws and
+     * schedules nothing on either side"), and B must never emit anything at
+     * all after its own disconnected(userInitiated) -- not even as a result of
+     * a connect() attempt scheduled entirely AFTER B was already terminal.
+     */
+    @Test
+    fun disconnectThenPeerConnectRejectsAndBEmitsNothingAfterDisconnect() =
+        runTest {
+            val pair = createChatPair(ChatScenario.HAPPY_PAIR, 8L, null)
+            val (_, idB) = expectedPeerIds(8L)
+            val bEvents = collectEvents(pair.clientB)
+
+            pair.clientA.start()
+            pair.clientB.start()
+            settle()
+
+            pair.clientB.disconnect()
+            settle()
+            val bEventsAfterDisconnect = bEvents.toList()
+
+            var caught: ChatTransportError? = null
+            try {
+                pair.clientA.connect(idB.toHexString())
+            } catch (e: ChatTransportError) {
+                caught = e
+            }
+            settle()
+
+            assertTrue(
+                "A.connect() targeting an already-terminal B must be rejected as transport misuse",
+                caught != null,
+            )
+            assertEquals(
+                "B must emit nothing at all after its own disconnected(userInitiated), even from a " +
+                    "peer's connect() attempt scheduled entirely AFTER B went terminal -- terminality, " +
+                    "not generation equality alone, is the gate",
+                bEventsAfterDisconnect,
+                bEvents,
+            )
+            assertEquals(
+                listOf(ChatConnectionState.Disconnected(ChatReasonStrings.USER_INITIATED)),
+                bEvents.filterIsInstance<ChatEvent.ConnectionChanged>().map { it.state },
+            )
+        }
+
+    /**
+     * Reviewer probe P2: connect the pair normally, then B disconnects, then A
+     * calls send(). The scheduled delivery effect targeting B captures B's
+     * ALREADY-terminal (post-disconnect) generation at schedule time -- a
+     * generation-equality-only check would wrongly treat that as still valid,
+     * since nothing bumps B's generation again before the effect fires. B
+     * must still receive nothing; A's own transfer statuses proceed exactly
+     * as they would have if B had never disconnected (CONTRACT.md: "The
+     * sender's own transfer statuses are unaffected by the receiver's
+     * disconnect").
+     */
+    @Test
+    fun sendToAlreadyTerminalReceiverDeliversNothingButSendersOwnStatusesProceed() =
+        runTest {
+            val pair = createChatPair(ChatScenario.HAPPY_PAIR, 8L, null)
+            val (_, idB) = expectedPeerIds(8L)
+            val aEvents = collectEvents(pair.clientA)
+            val bEvents = collectEvents(pair.clientB)
+
+            pair.clientA.start()
+            pair.clientB.start()
+            advanceTimeBy(100)
+            runCurrent()
+            pair.clientA.connect(idB.toHexString())
+            advanceTimeBy(200)
+            runCurrent()
+
+            pair.clientB.disconnect()
+            settle()
+
+            val msgHex = pair.clientA.send("b-already-gone")
+            settle()
+
+            assertTrue(
+                "B must never receive a message sent to it after B already went terminal",
+                bEvents.filterIsInstance<ChatEvent.MessageReceived>().isEmpty(),
+            )
+            val statuses =
+                aEvents.filterIsInstance<ChatEvent.MessageStatusChanged>()
+                    .filter { it.messageIdHex == msgHex }
+                    .map { it.status }
+            assertEquals(
+                "A's own transfer statuses proceed unaffected by B's earlier disconnect -- the " +
+                    "simulator models no delivery-failure backchannel",
+                listOf(
+                    ChatMessageDisplayStatus.Queued,
+                    ChatMessageDisplayStatus.Transmitting,
+                    ChatMessageDisplayStatus.Delivered,
+                ),
+                statuses,
+            )
+        }
+
+    @Test
+    fun connectAfterOwnDisconnectIsRejected() =
+        runTest {
+            val pair = createChatPair(ChatScenario.HAPPY_PAIR, 8L, null)
+            val (_, idB) = expectedPeerIds(8L)
+
+            pair.clientA.start()
+            pair.clientB.start()
+            settle()
+
+            pair.clientA.disconnect()
+            settle()
+
+            var caught: ChatTransportError? = null
+            try {
+                pair.clientA.connect(idB.toHexString())
+            } catch (e: ChatTransportError) {
+                caught = e
+            }
+            assertTrue(
+                "connect() on an already-disconnected client must be rejected as transport misuse",
+                caught != null,
+            )
+        }
+
+    @Test
+    fun sendAfterOwnDisconnectIsRejected() =
+        runTest {
+            val pair = createChatPair(ChatScenario.HAPPY_PAIR, 8L, null)
+            val (_, idB) = expectedPeerIds(8L)
+
+            pair.clientA.start()
+            pair.clientB.start()
+            advanceTimeBy(100)
+            runCurrent()
+            pair.clientA.connect(idB.toHexString())
+            advanceTimeBy(200)
+            runCurrent()
+
+            pair.clientA.disconnect()
+            settle()
+
+            var caught: ChatTransportError? = null
+            try {
+                pair.clientA.send("too-late")
+            } catch (e: ChatTransportError) {
+                caught = e
+            }
+            assertTrue(
+                "send() on an already-disconnected client must be rejected as transport misuse",
+                caught != null,
+            )
+        }
+
+    @Test
+    fun stopAfterDisconnectCompletesTheEventsStreamCleanlyWithNoDuplicateDisconnectedEvent() =
+        runTest {
+            val pair = createChatPair(ChatScenario.HAPPY_PAIR, 8L, null)
+            val aEvents = mutableListOf<ChatEvent>()
+            val collectorJob = backgroundScope.launch { pair.clientA.events.collect { aEvents.add(it) } }
+            runCurrent()
+
+            pair.clientA.start()
+            pair.clientB.start()
+            settle()
+
+            pair.clientA.disconnect()
+            settle()
+            val eventsAfterDisconnect = aEvents.toList()
+
+            pair.clientA.stop()
+            settle()
+
+            assertEquals(
+                "stop() after disconnect() must not emit a second connectionChanged(disconnected) " +
+                    "-- the state is already disconnected",
+                eventsAfterDisconnect,
+                aEvents,
+            )
+            assertTrue(
+                "events Flow must complete cleanly once stop() finishes, even after a prior disconnect()",
+                collectorJob.isCompleted,
+            )
+            assertFalse(
+                "the Flow must complete normally, not because something cancelled it",
+                collectorJob.isCancelled,
+            )
+        }
+
+    /**
+     * backgroundJobs-leak regression coverage (C3-28 terminality review): every
+     * scheduled job (discovery, connect() handshake, send()) must remove
+     * itself from [SimulatedChatTransportClient.backgroundJobCount]'s backing
+     * list the moment it completes, so a long-lived client's bookkeeping stays
+     * bounded by jobs CURRENTLY in flight rather than growing by one entry per
+     * call for the client's entire lifetime.
+     */
+    @Test
+    fun backgroundJobsDoesNotGrowAfterEachCompletedSend() =
+        runTest {
+            val pair = createChatPair(ChatScenario.HAPPY_PAIR, 8L, null)
+            val (_, idB) = expectedPeerIds(8L)
+
+            pair.clientA.start()
+            pair.clientB.start()
+            advanceTimeBy(100)
+            runCurrent()
+            pair.clientA.connect(idB.toHexString())
+            advanceTimeBy(200)
+            runCurrent()
+            settle()
+            assertEquals(
+                "the discovery + connect handshake jobs must have removed themselves once complete",
+                0,
+                pair.clientA.backgroundJobCount,
+            )
+
+            pair.clientA.send("first")
+            settle()
+            assertEquals(0, pair.clientA.backgroundJobCount)
+
+            pair.clientA.send("second")
+            settle()
+            assertEquals(
+                "a long-lived session's backgroundJobs registry must not grow per completed send -- " +
+                    "each job must remove itself on completion",
+                0,
+                pair.clientA.backgroundJobCount,
+            )
+        }
+
+    // -- Atomic validation under genuine concurrency (reviewer probe P3) ----
+    // Deliberately real (non-virtual) threads: kotlinx-coroutines-test's
+    // TestCoroutineScheduler is single-threaded and cooperative, so it cannot
+    // exhibit an interleaving race at all -- every other test in this class
+    // runs under that virtual scheduler and could not, by construction, catch
+    // a regression in SimulatedChatTransportClient's locking. No wall-clock
+    // sleep anywhere in either test below: every wait is on a real signal
+    // (CountDownLatch, Thread.join, or polling the real Thread.State), never a
+    // guessed duration -- matching ChatEventBusTest's
+    // `emitAndCloseCannotRaceEvenWhenBuildBlocks` precedent for the same kind
+    // of lock-race regression test in this module.
+
+    /**
+     * A peer-driven effect captures a target's generation as "valid" (mirroring
+     * how connect()/send() capture `otherGenerationAt...` at schedule time),
+     * is then PAUSED before it reaches its atomic check-and-mutate call,
+     * disconnect() runs to completion on a genuinely concurrent thread while
+     * it is paused, and only THEN is the effect allowed to proceed. It must
+     * not mutate.
+     */
+    @Test
+    fun disconnectWinsRaceAgainstAnEffectPausedBeforeItsAtomicCheck() {
+        val executor = Executors.newFixedThreadPool(4)
+        val scope = CoroutineScope(executor.asCoroutineDispatcher() + Job())
+        try {
+            val pair = SimulatedChatPair.create(ChatScenario.HAPPY_PAIR, 40L, scope, VirtualTimeSource { 0L })
+
+            // Captured "at schedule time," mirroring otherGenerationAtConnect/
+            // otherGenerationAtSend -- BEFORE B goes terminal.
+            val capturedGeneration = pair.clientB.currentGeneration()
+            val mutated = AtomicBoolean(false)
+            val readyToProceed = CountDownLatch(1)
+            val effectDone = CountDownLatch(1)
+
+            val effectThread =
+                thread(start = false) {
+                    readyToProceed.await(10, TimeUnit.SECONDS)
+                    pair.clientB.runIfLive(capturedGeneration) { mutated.set(true) }
+                    effectDone.countDown()
+                }
+            effectThread.start()
+
+            // B disconnects to completion WHILE the effect thread is parked
+            // before its atomic check -- exactly the scheduling a real
+            // dispatcher could produce, forced deterministic here via the
+            // latch rather than left to chance.
+            runBlocking { pair.clientB.disconnect() }
+            readyToProceed.countDown()
+
+            assertTrue(effectDone.await(10, TimeUnit.SECONDS))
+            effectThread.join(10_000)
+
+            assertFalse(
+                "a peer-driven effect whose generation was captured before disconnect() must still " +
+                    "be rejected at fire time once disconnect() has already marked the target terminal " +
+                    "-- terminality, not generation equality alone, is the gate",
+                mutated.get(),
+            )
+        } finally {
+            scope.cancel()
+            executor.shutdown()
+        }
+    }
+
+    /**
+     * The complementary direction: proves disconnect()'s own invalidation
+     * genuinely CANNOT interleave with an already-in-flight validated effect
+     * -- it must wait for the effect's atomic action to finish before its own
+     * critical section (marking terminal, bumping generation) can run, the
+     * same lock-ordering guarantee ChatEventBusTest's
+     * `emitAndCloseCannotRaceEvenWhenBuildBlocks` proves for [ChatEventBus]'s
+     * own lock. "Is disconnect() still blocked" is proven by polling the real
+     * `Thread.State` (`BLOCKED` is reachable only by genuinely contending for
+     * a monitor another thread currently holds) -- never by timing.
+     */
+    @Test
+    fun disconnectCannotInterleaveWithAnInFlightValidatedEffect() {
+        val executor = Executors.newFixedThreadPool(4)
+        val scope = CoroutineScope(executor.asCoroutineDispatcher() + Job())
+        try {
+            val pair = SimulatedChatPair.create(ChatScenario.HAPPY_PAIR, 41L, scope, VirtualTimeSource { 0L })
+
+            val capturedGeneration = pair.clientB.currentGeneration()
+            val order = Collections.synchronizedList(mutableListOf<String>())
+            val actionEntered = CountDownLatch(1)
+            val releaseAction = CountDownLatch(1)
+
+            val effectThread =
+                thread(start = false) {
+                    pair.clientB.runIfLive(capturedGeneration) {
+                        order.add("effect-start")
+                        actionEntered.countDown()
+                        releaseAction.await(10, TimeUnit.SECONDS)
+                        order.add("effect-end")
+                    }
+                }
+            effectThread.start()
+            assertTrue(
+                "the effect must reach its locked action before we race disconnect() against it",
+                actionEntered.await(10, TimeUnit.SECONDS),
+            )
+
+            val disconnectThread =
+                thread(start = true) {
+                    runBlocking { pair.clientB.disconnect() }
+                    order.add("disconnect-end")
+                }
+
+            // Poll (no wall-clock sleep) until disconnect() is OBSERVABLY
+            // blocked trying to enter the same monitor the in-flight effect
+            // is holding.
+            var spins = 0
+            while (disconnectThread.state != Thread.State.BLOCKED && disconnectThread.isAlive) {
+                Thread.onSpinWait()
+                spins++
+                check(spins < 50_000_000) {
+                    "disconnect() thread never entered BLOCKED state contending for lifecycleLock"
+                }
+            }
+            assertEquals(
+                "disconnect() must be genuinely blocked on the same lock the in-flight effect " +
+                    "holds, not merely 'not yet scheduled'",
+                Thread.State.BLOCKED,
+                disconnectThread.state,
+            )
+            assertEquals(listOf("effect-start"), order.toList())
+
+            releaseAction.countDown()
+            effectThread.join(10_000)
+            disconnectThread.join(10_000)
+
+            assertEquals(
+                "the in-flight effect's action must run to completion BEFORE disconnect()'s own " +
+                    "invalidation can proceed -- they can never interleave",
+                listOf("effect-start", "effect-end", "disconnect-end"),
+                order.toList(),
+            )
+            assertTrue("B must be terminal once disconnect() actually completes", pair.clientB.isTerminal())
+        } finally {
+            scope.cancel()
+            executor.shutdown()
+        }
+    }
 }
