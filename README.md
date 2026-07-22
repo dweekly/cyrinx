@@ -333,6 +333,9 @@ swift run cyrinx-sim-bench --profile quiet --out artifacts/bench/sim-quiet.json
   (canonical C convergence, streaming/on-device transport, sounding and
   negotiation, app-facing events, held-out qualification, gated PHY research,
   and special acoustic modes).
+- [docs/CYRINX_3_PLAN.md](docs/CYRINX_3_PLAN.md) — the PR-sized Cyrinx 3.0
+  execution plan, including dependencies, test and documentation strategy, and
+  the Apple/Android chat sample.
 - [CHANGELOG.md](CHANGELOG.md) — validated milestone history.
 - [docs/PUBLICATION.md](docs/PUBLICATION.md) — the sequenced publication effort
   (public Apache-2.0 library, [cyrinx.org](https://cyrinx.org), arXiv paper),
