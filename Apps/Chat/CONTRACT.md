@@ -536,6 +536,14 @@ Deterministic, in-process, driven by `(scenarioName, seed)`. Requirements:
      endpoint's `disconnect()`/`stop()` before the transition fires
      drops the transition on both sides. (Message delivery requires
      only the receiving endpoint to be live, per the bullets above.)
+   - **Post-connect script admission.** The §3 post-connect timeline
+     (degraded/recovered transitions, scripted disconnects and peer
+     loss, scripted link-budget changes) is admitted only by a
+     successful joint `connected` emission. If the handshake is
+     dropped — either endpoint terminal at fire time — the remainder
+     of the scenario script is cancelled on BOTH sides: no later
+     scripted step fires, and in particular no later `connected` or
+     `degraded` may appear on either client.
    - **Atomic validation.** Generation/terminality validation and the
      target mutation it guards are atomic with respect to lifecycle
      invalidation: under a caller-supplied concurrent scope,
@@ -552,10 +560,23 @@ Deterministic, in-process, driven by `(scenarioName, seed)`. Requirements:
      the sweep); a command arriving after is rejected. No orphan may
      survive the sweep — a `disconnect()` that returns has terminalized
      every admitted nonterminal send and cancelled every admitted job,
-     and nothing (including `linkBudgetChanged`) fires afterward. The
-     simulator accepts public commands from any thread under this rule;
-     the live SDK's threading ownership is C3-01's to pin, not this
-     sample's.
+     and nothing (including `linkBudgetChanged`) fires afterward.
+   - **Command ownership (pinned).** Public commands (`start()`,
+     `connect()`, `send()`, `cancelSend()`, `disconnect()`, `stop()`)
+     are owned by one caller at a time: the owner — an app's main-actor
+     model, a view-model scope, or a test — invokes them strictly
+     sequentially, never concurrently. This is an enforced model, not
+     an honor rule: implementations detect concurrent public-command
+     entry deterministically and reject it as the concurrent-command
+     transport-misuse error (thrown where the signature permits, a
+     documented deterministic trap otherwise) instead of corrupting
+     state. Message-ID draws and all other command-span mutations
+     execute inside the command's serialized span. Scheduled simulator
+     work may still race a command internally; that interleaving is
+     what the atomic-validation and linearized-admission bullets
+     govern, and Kotlin retains its internal locks as defense in
+     depth. The live SDK's threading ownership remains C3-01's to pin,
+     not this sample's.
    - **Quiescence before completion.** Implementations must cancel and
      join all in-flight work before completing/closing the event
      stream, so that an emission can never race stream completion:
