@@ -12,7 +12,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.Timeout
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
@@ -24,6 +26,9 @@ import kotlin.concurrent.thread
  * "write small test programs to validate a hypothesis" convention.
  */
 class ChatEventBusTest {
+    @get:Rule
+    val testTimeout: Timeout = Timeout.seconds(30)
+
     private fun peerLostEvent(seq: Long): ChatEvent = ChatEvent.PeerLost(seq, "deadbeef", "test")
 
     @Test
@@ -205,6 +210,8 @@ class ChatEventBusTest {
 
         producer.join(10_000)
         closer.join(10_000)
+        assertFalse("producer thread did not finish within 10s", producer.isAlive)
+        assertFalse("closer thread did not finish within 10s", closer.isAlive)
 
         assertFalse(
             "releaseBuild latch must be signaled well within 10s -- a hit deadline here means the " +

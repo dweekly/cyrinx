@@ -292,11 +292,12 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
     /// sets it (only `SimulatedChatTransportClientCommandOwnershipTests`,
     /// round 5) is responsible for its own thread-safe handling of whatever
     /// it does inside the closure; this class contributes nothing to make
-    /// the closure itself thread-safe beyond guaranteeing the call happens
+    /// the closure itself thread-safe beyond guaranteeing each call happens
     /// after `tryEnterCommandSpan()` has already lost its race under
-    /// `commandLock`, so it's never invoked concurrently WITH ITSELF for
-    /// the same client (each rejection is its own, independently
-    /// serialized `tryEnterCommandSpan()` call).
+    /// `commandLock`. The lock is released before the closure runs, so
+    /// multiple rejected entrants MAY invoke this handler concurrently for
+    /// the same client. A test that installs it must synchronize all state
+    /// the closure reads or mutates.
     var misuseHandler: ((ChatSimulatedTransportError) -> Void)?
 
     /// Test-only hook (round-5 command-ownership review): when non-nil,

@@ -20,7 +20,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.Timeout
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.CyclicBarrier
@@ -38,6 +40,9 @@ import kotlin.coroutines.CoroutineContext
  * `eventSeq` monotonicity, and `cancelSend`.
  */
 class SimulatedChatTransportClientTest {
+    @get:Rule
+    val testTimeout: Timeout = Timeout.seconds(90)
+
     // -- Scenario determinism -----------------------------------------------------
 
     @Test
@@ -1499,6 +1504,7 @@ class SimulatedChatTransportClientTest {
 
             assertTrue(effectDone.await(10, TimeUnit.SECONDS))
             effectThread.join(10_000)
+            assertFalse("effect thread did not finish within 10s", effectThread.isAlive)
 
             assertTrue(
                 "readyToProceed latch must be signaled well within 10s -- a hit deadline here is a " +
@@ -1587,6 +1593,8 @@ class SimulatedChatTransportClientTest {
             releaseAction.countDown()
             effectThread.join(10_000)
             disconnectThread.join(10_000)
+            assertFalse("effect thread did not finish within 10s", effectThread.isAlive)
+            assertFalse("disconnect thread did not finish within 10s", disconnectThread.isAlive)
 
             assertTrue(
                 "releaseAction latch must be signaled well within 10s -- a hit deadline here is a " +
@@ -1629,21 +1637,53 @@ class SimulatedChatTransportClientTest {
     //
     // Round-6 rework (both tests below): CONTRACT.md section 2's round-6
     // fresh "Command ownership" pin now holds [commandInFlight] for the
-    // COMPLETE `connect()`/`send()` call and moves `Job.start()` to run only
-    // AFTER that release (see SimulatedChatTransportClient.commandInFlight's
-    // and .launchBackgroundJob's doc comments) -- so `connect()`/`send()`
-    // now fully RETURN almost immediately (their handshake/send job's
-    // `Job.start()` call is a fast, non-blocking dispatch, exactly like a
-    // real dispatcher): "send()/connect() fully returns, the job body is
-    // held on the dispatcher thread." [HoldingDispatcher] was reworked to
-    // match -- it now pauses the job's BODY on the delegate executor's own
-    // worker thread, not the calling thread's `dispatch()` call -- so these
-    // two tests no longer need a SEPARATE thread for `connect()`/`send()`
-    // itself: both run to completion directly on the test's own thread, and
+    // COMPLETE `connect()`/`send()` call, including `Job.start()` (see
+    // SimulatedChatTransportClient.commandInFlight's and
+    // .launchBackgroundJob's doc comments). In these tests specifically,
+    // [HoldingDispatcher] captures the
+    // job's Runnable before submitting it to the delegate executor. It
+    // blocks neither the calling thread nor a coroutine worker, so these two
+    // tests no longer need a SEPARATE thread for `connect()`/`send()` itself:
+    // both run to completion directly on the test's own thread, and
     // only `disconnect()` -- which races the still-held job body, not
     // `connect()`/`send()`'s own span -- needs its own thread (to poll its
     // `Job.join()` park state before releasing the hold, exactly as round-5
     // already did for `disconnect()`).
+
+    @Test
+    fun holdingDispatcherDoesNotOccupyTheDelegateWorkerWhileARunnableIsHeld() {
+        val executor = Executors.newSingleThreadExecutor()
+        val holdingDispatcher = HoldingDispatcher(executor.asCoroutineDispatcher())
+        val scope = CoroutineScope(holdingDispatcher + Job())
+        try {
+            val firstRan = CountDownLatch(1)
+            val secondRan = CountDownLatch(1)
+            val heldDispatch = holdingDispatcher.armNextDispatch()
+
+            scope.launch { firstRan.countDown() }
+            heldDispatch.awaitCaptured("the armed runnable was not captured within 10s")
+
+            // A one-thread delegate is intentional. If the hold blocked
+            // inside that worker (the old implementation), this unarmed
+            // second runnable could not run until the first was released.
+            scope.launch { secondRan.countDown() }
+            assertTrue(
+                "holding one runnable must not consume the delegate's only worker",
+                secondRan.await(10, TimeUnit.SECONDS),
+            )
+            assertEquals("the captured first runnable must still be held", 1L, firstRan.count)
+
+            heldDispatch.release()
+            assertTrue(
+                "the released first runnable did not run within 10s",
+                firstRan.await(10, TimeUnit.SECONDS),
+            )
+        } finally {
+            holdingDispatcher.releaseAll()
+            scope.cancel()
+            executor.shutdown()
+        }
+    }
 
     /**
      * Reviewer probe Q2: `connect()`'s handshake job's body is held at its
@@ -1660,8 +1700,6 @@ class SimulatedChatTransportClientTest {
      */
     @Test
     fun disconnectFindsAndCancelsAConnectHandshakeJobHeldAtItsFirstDispatch() {
-        val readyLatch = CountDownLatch(1)
-        val releaseLatch = CountDownLatch(1)
         val executor = Executors.newFixedThreadPool(4)
         val holdingDispatcher = HoldingDispatcher(executor.asCoroutineDispatcher())
         val scope = CoroutineScope(holdingDispatcher + Job())
@@ -1690,22 +1728,21 @@ class SimulatedChatTransportClientTest {
             // body at its first line specifically, not any leftover dispatch
             // from the discovery jobs above (already fully settled per the
             // spin-wait).
-            holdingDispatcher.armNextDispatch(readyLatch, releaseLatch)
+            val heldDispatch = holdingDispatcher.armNextDispatch()
 
-            // Round-6: this now fully returns almost immediately -- see this
-            // section's own doc comment above -- so no separate thread is
-            // needed for connect() itself.
+            // This test's capturing dispatcher makes Job.start() return
+            // promptly while command ownership remains held through it, so no
+            // separate thread is needed for connect() itself.
             runBlocking { pair.clientA.connect(idB.toHexString()) }
 
-            assertTrue(
+            heldDispatch.awaitCaptured(
                 "connect()'s handshake job's body must reach its held first line before we race " +
                     "disconnect() against it",
-                readyLatch.await(10, TimeUnit.SECONDS),
             )
             // onAdmitted() -- which emits Connecting -- always runs strictly
             // BEFORE connect() releases commandInFlight and starts the job,
             // so by the time connect() has even returned (let alone by the
-            // time readyLatch has fired), Connecting is guaranteed already
+            // time the held dispatch is captured), Connecting is guaranteed already
             // recorded.
             assertEquals(
                 "sanity: Connecting must have already fired (atomically admitted) before connect() " +
@@ -1720,7 +1757,7 @@ class SimulatedChatTransportClientTest {
             // .commandInFlight's doc comment) -- disconnect() below is a
             // plain SEQUENTIAL call on this same client, not racing
             // connect()'s own span at all. What it races is the job's BODY,
-            // still held open on its own worker thread.
+            // whose Runnable is still captured before delegate submission.
             val disconnectThread =
                 thread(start = true) {
                     runBlocking { pair.clientA.disconnect() }
@@ -1752,8 +1789,9 @@ class SimulatedChatTransportClientTest {
                     disconnectThread.state == Thread.State.BLOCKED
             }
 
-            releaseLatch.countDown()
+            heldDispatch.release()
             disconnectThread.join(10_000)
+            assertFalse("disconnect thread did not finish within 10s", disconnectThread.isAlive)
 
             assertEquals(
                 "nothing may fire, on either client, once both threads have settled -- the " +
@@ -1772,6 +1810,7 @@ class SimulatedChatTransportClientTest {
                     .none { (it.event as? ChatEvent.ConnectionChanged)?.state == ChatConnectionState.Connected },
             )
         } finally {
+            holdingDispatcher.releaseAll()
             scope.cancel()
             executor.shutdown()
         }
@@ -1793,8 +1832,6 @@ class SimulatedChatTransportClientTest {
      */
     @Test
     fun disconnectTerminalizesASendJobHeldAtItsFirstDispatchNeverLeavingItPending() {
-        val readyLatch = CountDownLatch(1)
-        val releaseLatch = CountDownLatch(1)
         val executor = Executors.newFixedThreadPool(4)
         val holdingDispatcher = HoldingDispatcher(executor.asCoroutineDispatcher())
         val scope = CoroutineScope(holdingDispatcher + Job())
@@ -1831,15 +1868,13 @@ class SimulatedChatTransportClientTest {
             // first line specifically, not any leftover dispatch from the
             // connect() handshake job above (already fully settled per the
             // spin-wait).
-            holdingDispatcher.armNextDispatch(readyLatch, releaseLatch)
+            val heldDispatch = holdingDispatcher.armNextDispatch()
 
-            // Round-6: send() now fully RETURNS almost immediately -- its
-            // background job's `Job.start()` call is a fast, non-blocking
-            // dispatch (see this section's own doc comment above); only the
-            // job's BODY, once actually run on a worker thread, is held. So
-            // this direct call, on the test's own thread, completes well
-            // before the held job's body ever reaches its first line, and
-            // messageIdHex can simply be read off its return value.
+            // This test's capturing dispatcher makes send()'s Job.start()
+            // return promptly while command ownership remains held through
+            // it. The Runnable is captured before delegate submission, so
+            // this direct call completes before the held job body executes
+            // its first line and messageIdHex can be read from its return.
             val messageIdHex = runBlocking { pair.clientA.send("held-by-dispatcher") }
             assertEquals(
                 "sanity: send()'s returned messageIdHex must match the pinned per-role message-ID " +
@@ -1848,10 +1883,9 @@ class SimulatedChatTransportClientTest {
                 messageIdHex,
             )
 
-            assertTrue(
+            heldDispatch.awaitCaptured(
                 "send()'s background job's body must reach its held first line before we race " +
                     "disconnect() against it",
-                readyLatch.await(10, TimeUnit.SECONDS),
             )
             assertEquals(
                 "sanity: Queued must have already fired (atomically admitted, together with this " +
@@ -1898,8 +1932,9 @@ class SimulatedChatTransportClientTest {
                 pair.clientA.pendingSendJobCount,
             )
 
-            releaseLatch.countDown()
+            heldDispatch.release()
             disconnectThread.join(10_000)
+            assertFalse("disconnect thread did not finish within 10s", disconnectThread.isAlive)
 
             assertEquals(
                 "disconnect()'s own sweep must have fully terminalized the message once it actually " +
@@ -1918,6 +1953,7 @@ class SimulatedChatTransportClientTest {
                     .map { it.status },
             )
         } finally {
+            holdingDispatcher.releaseAll()
             scope.cancel()
             executor.shutdown()
         }
@@ -1958,8 +1994,6 @@ class SimulatedChatTransportClientTest {
      */
     @Test
     fun disconnectCompletesItsTailEvenWhenTheCallersCoroutineIsCancelledMidJoin() {
-        val readyLatch = CountDownLatch(1)
-        val releaseLatch = CountDownLatch(1)
         val executor = Executors.newFixedThreadPool(4)
         val holdingDispatcher = HoldingDispatcher(executor.asCoroutineDispatcher())
         val scope = CoroutineScope(holdingDispatcher + Job())
@@ -1984,12 +2018,11 @@ class SimulatedChatTransportClientTest {
             // durably registered in pendingSendJobs, but its background
             // job's body is paused before it can ever reach
             // transmitting/delivered.
-            holdingDispatcher.armNextDispatch(readyLatch, releaseLatch)
+            val heldDispatch = holdingDispatcher.armNextDispatch()
             val messageIdHex = runBlocking { pair.clientA.send("held-for-cancellation-probe") }
-            assertTrue(
+            heldDispatch.awaitCaptured(
                 "send()'s background job's body must reach its held first line before we exercise " +
                     "the cancellation probe",
-                readyLatch.await(10, TimeUnit.SECONDS),
             )
             assertEquals(1, pair.clientA.pendingSendJobCount)
 
@@ -2015,7 +2048,7 @@ class SimulatedChatTransportClientTest {
 
             // Release the held send -- disconnect()'s NonCancellable tail
             // can now actually finish joining it.
-            releaseLatch.countDown()
+            heldDispatch.release()
 
             // Job.join() never throws for a cancelled Job (unlike
             // Deferred.await()); withTimeout makes this a bounded,
@@ -2059,6 +2092,7 @@ class SimulatedChatTransportClientTest {
             runBlocking { pair.clientA.disconnect() }
             assertEquals(0, pair.clientA.pendingSendJobCount)
         } finally {
+            holdingDispatcher.releaseAll()
             scope.cancel()
             executor.shutdown()
             callerScope.cancel()
@@ -2074,8 +2108,6 @@ class SimulatedChatTransportClientTest {
      */
     @Test
     fun stopCompletesItsTailEvenWhenTheCallersCoroutineIsCancelledMidJoin() {
-        val readyLatch = CountDownLatch(1)
-        val releaseLatch = CountDownLatch(1)
         val executor = Executors.newFixedThreadPool(4)
         val holdingDispatcher = HoldingDispatcher(executor.asCoroutineDispatcher())
         val scope = CoroutineScope(holdingDispatcher + Job())
@@ -2096,12 +2128,11 @@ class SimulatedChatTransportClientTest {
             runBlocking { pair.clientA.connect(idB.toHexString()) }
             spinUntil("connect()'s handshake job never settled") { pair.clientA.backgroundJobCount == 0 }
 
-            holdingDispatcher.armNextDispatch(readyLatch, releaseLatch)
+            val heldDispatch = holdingDispatcher.armNextDispatch()
             val messageIdHex = runBlocking { pair.clientA.send("held-for-cancellation-probe") }
-            assertTrue(
+            heldDispatch.awaitCaptured(
                 "send()'s background job's body must reach its held first line before we exercise " +
                     "the cancellation probe",
-                readyLatch.await(10, TimeUnit.SECONDS),
             )
             assertEquals(1, pair.clientA.pendingSendJobCount)
 
@@ -2113,7 +2144,7 @@ class SimulatedChatTransportClientTest {
             stopCallerJob.cancel()
             assertTrue("stop()'s caller Job must reflect its own cancel request", stopCallerJob.isCancelled)
 
-            releaseLatch.countDown()
+            heldDispatch.release()
             runBlocking { withTimeout(10_000) { stopCallerJob.join() } }
 
             assertEquals(
@@ -2160,6 +2191,7 @@ class SimulatedChatTransportClientTest {
             runBlocking { pair.clientA.stop() }
             assertEquals(0, pair.clientA.pendingSendJobCount)
         } finally {
+            holdingDispatcher.releaseAll()
             scope.cancel()
             executor.shutdown()
             callerScope.cancel()
@@ -2255,8 +2287,9 @@ class SimulatedChatTransportClientTest {
 
             releaseLatch.countDown()
             winnerThread.join(10_000)
-            // The winner's send() call itself has already returned (per
-            // round-6's full-call span, released before job.start()), but
+            assertFalse("winning send thread did not finish within 10s", winnerThread.isAlive)
+            // The winner's send() call itself has already returned (its
+            // full-call span included Job.start()), but
             // its background job's queued->transmitting->delivered
             // transitions still need real wall-clock time to run under this
             // REAL dispatcher (see the class doc comment) -- wait for them
@@ -2352,6 +2385,7 @@ class SimulatedChatTransportClientTest {
 
             releaseLatch.countDown()
             winnerThread.join(10_000)
+            assertFalse("winning send thread did not finish within 10s", winnerThread.isAlive)
             spinUntil("winner's send job never settled") { pair.clientA.pendingSendJobCount == 0 }
 
             val winnerMessageIdHex = expectedFirstMessageId(98L, 'A')
@@ -2528,16 +2562,15 @@ class SimulatedChatTransportClientTest {
      * rejects a concurrent command BEFORE it ever inspects
      * messageId/handshake-specific state, so any held job that keeps
      * `disconnect()` parked on `Job.join()` demonstrates the same
-     * guarantee. `connect()` itself (round-6: a fast, non-blocking call)
-     * runs directly on this thread rather than needing a thread of its own.
+     * guarantee. This test's capturing dispatcher makes `connect()`'s
+     * Job.start() return promptly while command ownership remains held
+     * through it, so it can run directly on this thread.
      */
     private fun setUpPairWithDisconnectParkedOnAHeldHandshakeJob(
         seed: Long,
-        readyLatch: CountDownLatch,
-        releaseLatch: CountDownLatch,
         holdingDispatcher: HoldingDispatcher,
         scope: CoroutineScope,
-    ): SimulatedChatPair {
+    ): Pair<SimulatedChatPair, HeldDispatch> {
         val pair = SimulatedChatPair.create(ChatScenario.HAPPY_PAIR, seed, scope, VirtualTimeSource { 0L })
         val (_, idB) = expectedPeerIds(seed)
 
@@ -2549,14 +2582,13 @@ class SimulatedChatTransportClientTest {
             pair.clientA.backgroundJobCount == 0 && pair.clientB.backgroundJobCount == 0
         }
 
-        holdingDispatcher.armNextDispatch(readyLatch, releaseLatch)
+        val heldDispatch = holdingDispatcher.armNextDispatch()
         runBlocking { pair.clientA.connect(idB.toHexString()) }
-        assertTrue(
+        heldDispatch.awaitCaptured(
             "connect()'s handshake job's body must reach its held first line before we race " +
                 "disconnect() against it",
-            readyLatch.await(10, TimeUnit.SECONDS),
         )
-        return pair
+        return pair to heldDispatch
     }
 
     /**
@@ -2570,14 +2602,12 @@ class SimulatedChatTransportClientTest {
      */
     @Test
     fun cancelSendConcurrentWithAnInFlightDisconnectIsRejectedAsConcurrentCommand() {
-        val readyLatch = CountDownLatch(1)
-        val releaseLatch = CountDownLatch(1)
         val executor = Executors.newFixedThreadPool(4)
         val holdingDispatcher = HoldingDispatcher(executor.asCoroutineDispatcher())
         val scope = CoroutineScope(holdingDispatcher + Job())
         try {
-            val pair =
-                setUpPairWithDisconnectParkedOnAHeldHandshakeJob(92L, readyLatch, releaseLatch, holdingDispatcher, scope)
+            val (pair, heldDispatch) =
+                setUpPairWithDisconnectParkedOnAHeldHandshakeJob(92L, holdingDispatcher, scope)
 
             val disconnectThread =
                 thread(start = true) {
@@ -2613,8 +2643,9 @@ class SimulatedChatTransportClientTest {
                 caught!!.isConcurrentCommand,
             )
 
-            releaseLatch.countDown()
+            heldDispatch.release()
             disconnectThread.join(10_000)
+            assertFalse("disconnect thread did not finish within 10s", disconnectThread.isAlive)
             assertTrue("A must be terminal once disconnect() actually completes", pair.clientA.isTerminal())
 
             // The rejected cancelSend() must not have taken effect: once
@@ -2624,6 +2655,7 @@ class SimulatedChatTransportClientTest {
             // cancelSendOnUnknownMessageIdIsANoOp -- nothing here is left
             // to assert beyond "disconnect() itself completed cleanly."
         } finally {
+            holdingDispatcher.releaseAll()
             scope.cancel()
             executor.shutdown()
         }
@@ -2645,14 +2677,12 @@ class SimulatedChatTransportClientTest {
      */
     @Test
     fun stopConcurrentWithAnInFlightDisconnectIsRejectedAsConcurrentCommandThenSucceedsAfterwards() {
-        val readyLatch = CountDownLatch(1)
-        val releaseLatch = CountDownLatch(1)
         val executor = Executors.newFixedThreadPool(4)
         val holdingDispatcher = HoldingDispatcher(executor.asCoroutineDispatcher())
         val scope = CoroutineScope(holdingDispatcher + Job())
         try {
-            val pair =
-                setUpPairWithDisconnectParkedOnAHeldHandshakeJob(93L, readyLatch, releaseLatch, holdingDispatcher, scope)
+            val (pair, heldDispatch) =
+                setUpPairWithDisconnectParkedOnAHeldHandshakeJob(93L, holdingDispatcher, scope)
 
             val disconnectThread =
                 thread(start = true) {
@@ -2679,8 +2709,9 @@ class SimulatedChatTransportClientTest {
                 caught!!.isConcurrentCommand,
             )
 
-            releaseLatch.countDown()
+            heldDispatch.release()
             disconnectThread.join(10_000)
+            assertFalse("disconnect thread did not finish within 10s", disconnectThread.isAlive)
             assertTrue("A must be terminal once disconnect() actually completes", pair.clientA.isTerminal())
 
             // NOW commandInFlight is free again (disconnect()'s own outer
@@ -2706,6 +2737,7 @@ class SimulatedChatTransportClientTest {
                 events.filterIsInstance<ChatEvent.ConnectionChanged>().map { it.state },
             )
         } finally {
+            holdingDispatcher.releaseAll()
             scope.cancel()
             executor.shutdown()
         }
@@ -2713,93 +2745,105 @@ class SimulatedChatTransportClientTest {
 }
 
 /**
- * A [CoroutineDispatcher] wrapping [delegate] that can be armed, via
- * [armNextDispatch], to pause the NEXT job body [dispatch]ed through it --
- * counting down [readyLatch] to signal "that job's body has begun running
- * and is now paused," then blocking (on the DELEGATE's own worker thread,
- * not the calling thread -- see the round-6 rework note below) until
- * [releaseLatch] counts down, before finally running the real `block`.
- * Every OTHER call (unarmed, or after the armed one has already fired once)
- * passes straight through with no pause at all. Re-armable (a fresh pair of
- * latches each time) so a single dispatcher/scope can be used across an
- * initial (un-held) setup phase and then a specifically-held call later in
- * the same test, without the FIRST dispatch ever attempted (e.g. an
- * unrelated setup job's) accidentally consuming the hold meant for a LATER
- * one.
+ * A [CoroutineDispatcher] that can capture the next dispatched [Runnable]
+ * before forwarding it to [delegate]. Capturing is synchronous and
+ * non-blocking: no coroutine-executor worker waits on a [CountDownLatch].
+ * The owning test waits, with an asserted deadline, for [HeldDispatch] to
+ * report capture and later calls [HeldDispatch.release] to submit the
+ * runnable. Unarmed dispatches pass straight through.
  *
- * **Round-6 rework.** The original (round-5) version blocked [dispatch]
- * ITSELF -- i.e. the calling thread's own `Job.start()` call -- via a raw
- * `releaseLatch.await()` right there in [dispatch]'s body, before ever
- * delegating. That was a deliberate stand-in for "ordinary dispatch
- * latency" back when [launchBackgroundJob] still called `Job.start()`
- * synchronously INSIDE a command's own guarded span, so pausing the
- * dispatch call was how those tests proved a concurrent `disconnect()`
- * could still be admitted while that span was propping the calling thread
- * open. Round-6 changes the production contract itself
- * (../../../CONTRACT.md section 2's "Command ownership (pinned)" bullet,
- * round-6 fresh pin): `Job.start()` is now ALWAYS called strictly AFTER a
- * command's own `commandInFlight` release, and per the pin, "starting
- * scheduled work inside the span must never synchronously execute or trap
- * that work's body on the caller's thread" -- so `dispatch()` itself must
- * behave like an ordinary, fast, non-blocking dispatch call, exactly as it
- * does under a real executor-backed dispatcher in production. This
- * dispatcher now honors that: [dispatch] always delegates immediately
- * (never blocks the CALLING thread), and the pause instead happens INSIDE
- * the wrapped `Runnable` -- i.e. on whichever worker thread the delegate
- * executor actually runs the job's body on -- so a `connect()`/`send()`
- * call can "fully return" to its own caller almost immediately while the
- * job's body itself sits paused on a separate thread, exactly matching
- * ../../../CONTRACT.md section 2's round-6-pinned "Q2/Q3... send()/
- * connect() fully returns, the job body is held on the dispatcher thread"
- * shape (see this file's `SimulatedChatTransportClientTest` doc comment
- * near the Q2/Q3 tests for how their coordination changed to match).
+ * [releaseAll] is an idempotent failure-path cleanup used from each test's
+ * `finally` block. It prevents a failed assertion or JUnit timeout from
+ * leaving a captured coroutine permanently undispatched.
  */
 private class HoldingDispatcher(
     private val delegate: CoroutineDispatcher,
 ) : CoroutineDispatcher() {
-    private val armed = AtomicBoolean(false)
+    private val lock = Any()
+    private var armedDispatch: HeldDispatch? = null
+    private val allHeldDispatches = mutableSetOf<HeldDispatch>()
 
-    @Volatile
-    private var readyLatch: CountDownLatch? = null
-
-    @Volatile
-    private var releaseLatch: CountDownLatch? = null
-
-    fun armNextDispatch(readyLatch: CountDownLatch, releaseLatch: CountDownLatch) {
-        this.readyLatch = readyLatch
-        this.releaseLatch = releaseLatch
-        armed.set(true)
-    }
+    fun armNextDispatch(): HeldDispatch =
+        synchronized(lock) {
+            check(armedDispatch == null) { "a dispatch is already armed" }
+            HeldDispatch(delegate).also {
+                armedDispatch = it
+                allHeldDispatches.add(it)
+            }
+        }
 
     override fun dispatch(context: CoroutineContext, block: Runnable) {
-        if (armed.compareAndSet(true, false)) {
-            val ready = readyLatch!!
-            val release = releaseLatch!!
-            delegate.dispatch(
-                context,
-                Runnable {
-                    ready.countDown()
-                    // Fail-closed (round-6 item 3): a hit deadline here means
-                    // the test's own release path never fired -- that MUST
-                    // fail the test, not silently fall through and let the
-                    // job's body run anyway as though nothing were wrong
-                    // (which is exactly what happened when this result was
-                    // previously ignored: a timeout looked identical to a
-                    // real release, making the timeout-as-pass-signal a
-                    // fail-OPEN bug CONTRACT.md's "Virtual time only"
-                    // concurrency-probe exception explicitly forbids: "every
-                    // bounded wait's result is asserted, so a hit deadline
-                    // FAILS the test").
-                    check(release.await(10, TimeUnit.SECONDS)) {
-                        "HoldingDispatcher's releaseLatch was never counted down within 10s -- " +
-                            "the test that armed this hold must release it before its own bounded wait"
-                    }
-                    block.run()
-                },
-            )
-        } else {
+        val heldDispatch =
+            synchronized(lock) {
+                armedDispatch.also { armedDispatch = null }
+            }
+        if (heldDispatch == null) {
             delegate.dispatch(context, block)
+        } else {
+            heldDispatch.capture(context, block)
         }
+    }
+
+    fun releaseAll() {
+        val heldDispatches =
+            synchronized(lock) {
+                armedDispatch = null
+                allHeldDispatches.toList().also { allHeldDispatches.clear() }
+            }
+        heldDispatches.forEach { it.release() }
+    }
+}
+
+private class HeldDispatch(
+    private val delegate: CoroutineDispatcher,
+) {
+    private data class CapturedDispatch(
+        val context: CoroutineContext,
+        val block: Runnable,
+    )
+
+    private val lock = Any()
+    private val capturedSignal = CountDownLatch(1)
+    private var wasCaptured = false
+    private var wasReleased = false
+    private var capturedDispatch: CapturedDispatch? = null
+
+    fun awaitCaptured(description: String) {
+        assertTrue(description, capturedSignal.await(10, TimeUnit.SECONDS))
+    }
+
+    fun release() {
+        val dispatch =
+            synchronized(lock) {
+                if (wasReleased) {
+                    null
+                } else {
+                    wasReleased = true
+                    capturedDispatch.also { capturedDispatch = null }
+                }
+            }
+        dispatch?.submit()
+    }
+
+    fun capture(context: CoroutineContext, block: Runnable) {
+        val captured = CapturedDispatch(context, block)
+        val dispatchImmediately =
+            synchronized(lock) {
+                check(!wasCaptured) { "a held dispatch may capture only one runnable" }
+                wasCaptured = true
+                if (wasReleased) {
+                    captured
+                } else {
+                    capturedDispatch = captured
+                    null
+                }
+            }
+        capturedSignal.countDown()
+        dispatchImmediately?.submit()
+    }
+
+    private fun CapturedDispatch.submit() {
+        delegate.dispatch(context, block)
     }
 }
 
