@@ -391,11 +391,22 @@ Deterministic, in-process, driven by `(scenarioName, seed)`. Requirements:
    same chat envelopes in tests without importing the live Cyrinx SDK."
    The simulated transport is a courier for envelope bytes, not a shortcut
    that skips the codec.
-3. **Virtual time only.** A `VirtualClock` starts at `0` ms.
-   Swift: `clock.advance(byMs:)`. Kotlin: the coroutine test dispatcher's
-   virtual time (`kotlinx-coroutines-test`'s `TestCoroutineScheduler`,
-   driven via `runTest { ... advanceTimeBy(...) ... }` or equivalent). No
-   test anywhere sleeps on wall-clock time.
+3. **Virtual time only (scenario/timeline tests).** A `VirtualClock`
+   starts at `0` ms. Swift: `clock.advance(byMs:)`. Kotlin: the
+   coroutine test dispatcher's virtual time (`kotlinx-coroutines-test`'s
+   `TestCoroutineScheduler`, driven via
+   `runTest { ... advanceTimeBy(...) ... }` or equivalent). No test
+   anywhere sleeps on wall-clock time. **Concurrency-probe exception:**
+   tests whose subject is the command-ownership guard, lifecycle
+   invalidation races, or cancellation safety necessarily use real
+   dispatchers, real threads, and bounded real-time coordination
+   primitives (latches, thread-state polling, spin-wait with
+   deadline). Such probes must (a) never use timeout expiry as the
+   pass signal — every bounded wait's result is asserted, so a hit
+   deadline FAILS the test; (b) never block a cooperative/async
+   executor's threads on synchronous primitives; and (c) carry a
+   per-test time limit so a regression fails fast instead of hanging
+   a runner.
 4. **Seeded PRNG: SplitMix64.** Public-domain reference algorithm
    (Vigna, `splitmix64.c`, <http://prng.di.unimi.it/splitmix64.c>; also
    the generator from Steele, Lea & Flood, "Fast Splittable Pseudorandom
@@ -570,13 +581,36 @@ Deterministic, in-process, driven by `(scenarioName, seed)`. Requirements:
      entry deterministically and reject it as the concurrent-command
      transport-misuse error (thrown where the signature permits, a
      documented deterministic trap otherwise) instead of corrupting
-     state. Message-ID draws and all other command-span mutations
+     state. Ownership spans the COMPLETE public call — from entry to
+     the call's return to its caller, across any internal suspension —
+     identically on both platforms: a sequence rejected on one platform
+     is rejected on the other. Starting scheduled work inside the span
+     must never synchronously execute (or trap on) that work's body on
+     the caller's thread; the work's first dispatch happens outside the
+     span. Message-ID draws and all other command-span mutations
      execute inside the command's serialized span. Scheduled simulator
      work may still race a command internally; that interleaving is
      what the atomic-validation and linearized-admission bullets
      govern, and Kotlin retains its internal locks as defense in
      depth. The live SDK's threading ownership remains C3-01's to pin,
      not this sample's.
+   - **Cancellation-safe terminal completion.** Once a terminal
+     command (`disconnect()`/`stop()`) commits its invalidation (flag,
+     generation), the remainder — awaiting admitted work, terminalizing
+     nonterminal sends, the terminal emission, stream completion —
+     completes even if the CALLER of the terminal command is cancelled
+     mid-call: implementations run that tail in a non-cancellable
+     region (or make it a repeatable completion operation that any
+     later call finishes). A committed invalidation whose tail never
+     runs is a contract violation.
+   - **Post-admission script locality.** Once the joint `connected`
+     emission succeeds, each client's post-connect scripted steps are
+     that client's OWN local timeline: they are validated against the
+     owning client's terminality/generation only, not re-checked
+     against the peer. A peer's later disconnect cancels the peer's own
+     work and terminalizes in-flight deliveries per the bullets above;
+     it does not retroactively cancel the other side's admitted local
+     script (there is no liveness backchannel in the simulator).
    - **Quiescence before completion.** Implementations must cancel and
      join all in-flight work before completing/closing the event
      stream, so that an emission can never race stream completion:
