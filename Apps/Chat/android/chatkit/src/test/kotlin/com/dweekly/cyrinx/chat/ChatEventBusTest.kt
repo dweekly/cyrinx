@@ -9,6 +9,7 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -168,13 +169,20 @@ class ChatEventBusTest {
         val buildEntered = CountDownLatch(1)
         val releaseBuild = CountDownLatch(1)
         var thrown: Throwable? = null
+        // Fail-closed: a hit deadline on this latch must FAIL the test, not
+        // silently let `build` fall through as if it had been released --
+        // captured separately from `thrown` so a timeout here is reported as
+        // a stalled test harness, not misattributed to emit() itself.
+        var releaseBuildAwaitTimedOut = false
 
         val producer =
             thread(start = false) {
                 try {
                     bus.emit { seq ->
                         buildEntered.countDown()
-                        releaseBuild.await(10, TimeUnit.SECONDS)
+                        if (!releaseBuild.await(10, TimeUnit.SECONDS)) {
+                            releaseBuildAwaitTimedOut = true
+                        }
                         peerLostEvent(seq)
                     }
                 } catch (t: Throwable) {
@@ -198,6 +206,11 @@ class ChatEventBusTest {
         producer.join(10_000)
         closer.join(10_000)
 
+        assertFalse(
+            "releaseBuild latch must be signaled well within 10s -- a hit deadline here means the " +
+                "test harness itself stalled, not a finding about emit()",
+            releaseBuildAwaitTimedOut,
+        )
         assertNull("emit() must never throw racing a concurrent close()", thrown)
 
         val collected = mutableListOf<ChatEvent>()

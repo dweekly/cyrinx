@@ -12,8 +12,11 @@ import Testing
 /// `disconnect()`, `stop()`) must reject a second, concurrent entrant
 /// deterministically instead of corrupting state -- these tests drive that
 /// concurrency for real (both via structured-concurrency `Task`s racing a
-/// deliberately suspended `send()`, and via genuine OS threads through
-/// `DispatchQueue.concurrentPerform`) rather than merely asserting the
+/// deliberately suspended `send()`, and via genuine, directly-owned OS
+/// threads -- `runConcurrentlyOnDedicatedThreads` below, `Foundation.Thread`
+/// under the hood, round 6's replacement for the original
+/// `DispatchQueue.concurrentPerform`-based approach; see that function's own
+/// doc comment for why) rather than merely asserting the
 /// single-sequential-caller behavior every other test in this package
 /// already exercises.
 ///
@@ -29,7 +32,52 @@ import Testing
 /// the opposite, it exists to reach the one place in this package where
 /// concurrent access is deliberately exercised, specifically to prove the
 /// guard rejects it.
-@Suite("Simulated transport client: command ownership (concurrent public-command entry)")
+///
+/// **C3-28 round-6 CI-deadlock fix.** The round-5 harness (below, prior to
+/// this round) drove its "real OS threads" probes via
+/// `DispatchQueue.concurrentPerform` and blocked EVERY racer's calling
+/// thread on a `DispatchSemaphore.wait()` (`runAsyncAndWait`); its
+/// `beginLatchedSend` helper additionally blocked ITS OWN caller -- this
+/// suite's `@Test` `async` function bodies, themselves `Task`s on Swift's
+/// cooperative pool -- on a second `DispatchSemaphore.wait()`.
+/// `DispatchQueue.concurrentPerform`'s worker threads, and Swift
+/// concurrency's own cooperative-pool worker threads, are drawn from the
+/// SAME underlying, core-count-bounded thread budget on Darwin; blocking
+/// threads from that shared budget while `async` work that needs the same
+/// budget to make progress is still outstanding is a classic thread-pool
+/// starvation deadlock, and it gets categorically worse on a low-core CI
+/// runner (a smaller budget to begin with) multiplied by this suite's five
+/// `@Test` functions running in parallel by Swift Testing's own default
+/// (each opening its own 2-16 blocked racer threads independently). GitHub
+/// killed both Swift CI jobs at their 6-hour cap. This round rewrites the
+/// harness (bottom of this file) so NO cooperative-executor thread ever
+/// blocks on a synchronous primitive: `AsyncLatchGate` is now a plain
+/// `actor` offering only `async`, continuation-based suspension (no
+/// `DispatchSemaphore` at all), and the "real OS threads" probes now run
+/// via `runConcurrentlyOnDedicatedThreads`, which creates genuine,
+/// directly-owned `Foundation.Thread`s -- NOT drawn from
+/// `DispatchQueue.concurrentPerform`'s shared pool -- and bridges their
+/// completion back to this suite's `async` test bodies through a
+/// `DispatchGroup` + a single `CheckedContinuation`, never a blocking
+/// `.wait()`. It remains safe for code running on one of THOSE dedicated
+/// threads (never on the cooperative pool) to block on a
+/// `DispatchSemaphore` bridging to a child `Task`, which is what
+/// `runAsyncAndWait` (kept, but re-scoped to dedicated-thread callers only)
+/// still does. Every test below also now carries `.timeLimit(.minutes(1))`
+/// -- Swift Testing's `TimeLimitTrait.Duration` only exposes `.minutes(_:)`
+/// (`seconds`/`milliseconds`/`microseconds`/`nanoseconds` are all marked
+/// `unavailable` with "Time limit must be specified in minutes," verified
+/// directly against this toolchain's installed `Testing.framework`
+/// `.swiftinterface`), so one minute is the finest bound this API actually
+/// allows -- a hard backstop, in addition to (not instead of) the harness
+/// rewrite above that is meant to prevent a hang from happening at all. The
+/// suite itself also now carries `.serialized`, removing "five async cases
+/// running in parallel" as a multiplier on however many dedicated threads
+/// are briefly alive at once.
+@Suite(
+    "Simulated transport client: command ownership (concurrent public-command entry)",
+    .serialized
+)
 struct SimulatedChatTransportClientCommandOwnershipTests {
     /// ASCII "MSGIDA__" -- CONTRACT.md §2's "Message-ID stream (pinned)"
     /// role tag for client A, transcribed from the contract document
@@ -49,7 +97,8 @@ struct SimulatedChatTransportClientCommandOwnershipTests {
         (send(), which entered its command span first) then resumes and completes its ordinary, \
         uninterrupted queued -> transmitting -> delivered lifecycle once released -- proving the \
         span really does stay open across a genuine suspension, not merely across synchronous code.
-        """
+        """,
+        .timeLimit(.minutes(1))
     )
     func r1LatchedSendSpanSurvivesSuspensionAndTrapsConcurrentDisconnect() async throws {
         let (clientA, clientB, clock) = try await connectedPair(seed: 300)
@@ -57,7 +106,7 @@ struct SimulatedChatTransportClientCommandOwnershipTests {
 
         let box = UncheckedSendableClientBox(client: clientA)
         // A plain array capture is safe here (unlike the
-        // DispatchQueue.concurrentPerform-based probes below, which use
+        // runConcurrentlyOnDedicatedThreads-based probes below, which use
         // `LockedBox`): this test drives exactly one concurrent attempt
         // from one other Task, not many parallel ones, and
         // `misuseHandler`'s only call happens strictly before this
@@ -67,7 +116,7 @@ struct SimulatedChatTransportClientCommandOwnershipTests {
         var misuseErrors: [ChatSimulatedTransportError] = []
         clientA.misuseHandler = { misuseErrors.append($0) }
 
-        let (winner, release) = beginLatchedSend(on: box, body: "latched-r1")
+        let (winner, release) = await beginLatchedSend(on: box, body: "latched-r1")
 
         // send() is now suspended INSIDE its own command span (past its
         // message-ID draw and .queued emission, per
@@ -78,7 +127,7 @@ struct SimulatedChatTransportClientCommandOwnershipTests {
         #expect(clientA.connectionState == .connected)
         #expect(misuseErrors == [.concurrentCommand])
 
-        release()
+        await release()
         let messageIdHex = try await winner.value
 
         clock.advance(toMs: 2000)
@@ -121,7 +170,8 @@ struct SimulatedChatTransportClientCommandOwnershipTests {
         draw from the per-role message-ID stream, CONTRACT.md §2's pinned formula -- and no \
         racer's rejected attempt leaves any trace in the event stream: "at most the serialized \
         winner draws IDs."
-        """
+        """,
+        .timeLimit(.minutes(1))
     )
     func realConcurrentSendVsSendFromMultipleOSThreadsPreservesMessageIdStream() async throws {
         let seed: UInt64 = 301
@@ -129,11 +179,11 @@ struct SimulatedChatTransportClientCommandOwnershipTests {
         clock.advance(toMs: 300)
 
         let box = UncheckedSendableClientBox(client: clientA)
-        let (winner, release) = beginLatchedSend(on: box, body: "winner")
+        let (winner, release) = await beginLatchedSend(on: box, body: "winner")
 
         let racerCount = 16
         let outcomes = LockedBox<[RacerOutcome]>([])
-        DispatchQueue.concurrentPerform(iterations: racerCount) { index in
+        await runConcurrentlyOnDedicatedThreads(count: racerCount) { index in
             runAsyncAndWait {
                 do {
                     let messageIdHex = try await box.client.send(body: "racer-\(index)")
@@ -148,12 +198,13 @@ struct SimulatedChatTransportClientCommandOwnershipTests {
 
         // All 16 racers ran (and were rejected) strictly while the
         // winner's span was still held -- `release()` only happens now,
-        // after `concurrentPerform` has returned every iteration.
+        // after `runConcurrentlyOnDedicatedThreads` has returned every
+        // iteration.
         let allOutcomes = outcomes.withLock { $0 }
         #expect(allOutcomes.count == racerCount)
         #expect(allOutcomes.allSatisfy { $0 == .rejected(.concurrentCommand) })
 
-        release()
+        await release()
         let winnerMessageIdHex = try await winner.value
 
         clock.advance(toMs: 2000)
@@ -198,7 +249,8 @@ struct SimulatedChatTransportClientCommandOwnershipTests {
         touches connectionState or emits connectionChanged -- and the winner's send completes its \
         ordinary lifecycle once released, exactly as if the 16 concurrent disconnect() calls had \
         never happened at all.
-        """
+        """,
+        .timeLimit(.minutes(1))
     )
     func realConcurrentSendVsDisconnectFromMultipleOSThreadsTrapsEveryAttempt() async throws {
         let (clientA, clientB, clock) = try await connectedPair(scenario: .happyPair, seed: 302)
@@ -216,10 +268,10 @@ struct SimulatedChatTransportClientCommandOwnershipTests {
             misuseErrors.withLock { $0.append(error) }
         }
 
-        let (winner, release) = beginLatchedSend(on: box, body: "winner")
+        let (winner, release) = await beginLatchedSend(on: box, body: "winner")
 
         let racerCount = 16
-        DispatchQueue.concurrentPerform(iterations: racerCount) { _ in
+        await runConcurrentlyOnDedicatedThreads(count: racerCount) { _ in
             runAsyncAndWait {
                 await box.client.disconnect()
             }
@@ -233,7 +285,7 @@ struct SimulatedChatTransportClientCommandOwnershipTests {
         #expect(clientA.connectionState == .connected)
         #expect(misuseErrors.withLock { $0 } == Array(repeating: .concurrentCommand, count: racerCount))
 
-        release()
+        await release()
         let winnerMessageIdHex = try await winner.value
 
         clock.advance(toMs: 2000)
@@ -268,7 +320,8 @@ struct SimulatedChatTransportClientCommandOwnershipTests {
         cancelSend() is rejected outright via misuseHandler before it ever looks up \
         outgoingMessages, so cancelSend()'s own CONTRACT.md-pinned "cancelled" outcome never \
         applies -- the winner's send completes normally, unaffected.
-        """
+        """,
+        .timeLimit(.minutes(1))
     )
     func concurrentCancelSendDuringInFlightSendIsTrapped() async throws {
         let (clientA, clientB, clock) = try await connectedPair(seed: 303)
@@ -278,7 +331,7 @@ struct SimulatedChatTransportClientCommandOwnershipTests {
         var misuseErrors: [ChatSimulatedTransportError] = []
         clientA.misuseHandler = { misuseErrors.append($0) }
 
-        let (winner, release) = beginLatchedSend(on: box, body: "latched-cancel")
+        let (winner, release) = await beginLatchedSend(on: box, body: "latched-cancel")
 
         // Any messageIdHex works here -- the guard rejects at the very top
         // of cancelSend(), before it ever consults `outgoingMessages`, so
@@ -286,7 +339,7 @@ struct SimulatedChatTransportClientCommandOwnershipTests {
         await box.client.cancelSend(messageIdHex: "deadbeefdeadbeefdeadbeefdeadbeef")
         #expect(misuseErrors == [.concurrentCommand])
 
-        release()
+        await release()
         let winnerMessageIdHex = try await winner.value
 
         clock.advance(toMs: 2000)
@@ -305,11 +358,13 @@ struct SimulatedChatTransportClientCommandOwnershipTests {
     @Test(
         """
         disconnect() and stop() overlapping each other -- both racing a single held-open send() \
-        span, fired from two real OS threads via DispatchQueue.concurrentPerform (round-5 task \
-        item (c)) -- are EACH independently trapped by the same guard: neither disconnects/stops \
+        span, fired from two real, dedicated OS threads via runConcurrentlyOnDedicatedThreads \
+        (round-5 task item (c), round-6 dedicated-thread rewrite) -- are EACH independently \
+        trapped by the same guard: neither disconnects/stops \
         the client, the event stream is not finished, and the winner's send completes its \
         ordinary lifecycle once released.
-        """
+        """,
+        .timeLimit(.minutes(1))
     )
     func concurrentDisconnectAndStopOverlappingAgainstInFlightSendAreBothTrapped() async throws {
         let (clientA, clientB, clock) = try await connectedPair(seed: 304)
@@ -321,9 +376,9 @@ struct SimulatedChatTransportClientCommandOwnershipTests {
             misuseErrors.withLock { $0.append(error) }
         }
 
-        let (winner, release) = beginLatchedSend(on: box, body: "latched-overlap")
+        let (winner, release) = await beginLatchedSend(on: box, body: "latched-overlap")
 
-        DispatchQueue.concurrentPerform(iterations: 2) { index in
+        await runConcurrentlyOnDedicatedThreads(count: 2) { index in
             runAsyncAndWait {
                 if index == 0 {
                     await box.client.disconnect()
@@ -339,7 +394,7 @@ struct SimulatedChatTransportClientCommandOwnershipTests {
         #expect(clientA.connectionState == .connected)
         #expect(misuseErrors.withLock { $0 } == [.concurrentCommand, .concurrentCommand])
 
-        release()
+        await release()
         let winnerMessageIdHex = try await winner.value
 
         clock.advance(toMs: 2000)
@@ -363,7 +418,7 @@ struct SimulatedChatTransportClientCommandOwnershipTests {
     }
 }
 
-// MARK: - Round-5 concurrency test harness
+// MARK: - Round-6 concurrency test harness (async-only; no cooperative-pool blocking)
 
 /// One racer's outcome from a concurrent `send()` attempt against an
 /// already-occupied command span -- `Equatable` so the real-multithread
@@ -391,7 +446,7 @@ private struct UncheckedSendableClientBox: @unchecked Sendable {
 /// mirrors `SimulatedChatTransportClient`'s own `commandLock`/
 /// `commandActive` pattern. Used by the real-multithread probes above to
 /// accumulate results (rejected-call counts, captured outcomes) from
-/// `DispatchQueue.concurrentPerform`'s parallel closures without a data
+/// `runConcurrentlyOnDedicatedThreads`'s parallel closures without a data
 /// race.
 private final class LockedBox<Value>: @unchecked Sendable {
     private let lock = NSLock()
@@ -409,15 +464,66 @@ private final class LockedBox<Value>: @unchecked Sendable {
     }
 }
 
+/// **C3-28 round 6:** runs `work` once per index in `0..<count`, each on
+/// its OWN, directly-created `Foundation.Thread` -- deliberately NOT
+/// `DispatchQueue.global()`/`.concurrentPerform`, whose worker threads are
+/// drawn from libdispatch's shared, QoS-capped "workqueue" thread pool, the
+/// SAME underlying, core-count-bounded budget Swift's cooperative
+/// concurrency executor also schedules `async` work onto by default. The
+/// round-5 harness combined `DispatchQueue.concurrentPerform` with each
+/// iteration blocking on a `DispatchSemaphore` (`runAsyncAndWait` below) --
+/// so every blocked racer thread ALSO counted against that shared budget.
+/// On a low-core CI runner (a small budget to begin with), multiplied by up
+/// to 16 racers per test and up to five `@Test` functions in this suite
+/// running in parallel (Swift Testing's own default), that budget could be
+/// exhausted entirely: no threads left for the `Task`s the racers were
+/// themselves waiting on to ever run, deadlocking the whole test binary
+/// (GitHub killed both Swift CI jobs at their 6-hour cap). A directly
+/// created `Thread` is a plain OS thread requested straight from the
+/// kernel, entirely outside libdispatch's workqueue pool -- blocking one of
+/// THESE threads never reduces the cooperative pool's available capacity,
+/// no matter how many run at once. Completion is bridged back to this
+/// `async` function via a `DispatchGroup` + a single `CheckedContinuation`
+/// -- never a blocking `.wait()` -- so awaiting this function doesn't block
+/// a cooperative-executor thread either; this suite's `@Test` bodies
+/// genuinely suspend here, yielding their own thread back to the pool for
+/// other work (including the racers' own child `Task`s) to use.
+private func runConcurrentlyOnDedicatedThreads(
+    count: Int, _ work: @escaping @Sendable (Int) -> Void
+) async {
+    let group = DispatchGroup()
+    for index in 0..<count {
+        group.enter()
+        let thread = Thread {
+            work(index)
+            group.leave()
+        }
+        // Detached; default QoS and stack size are ample -- each thread
+        // does one small, bounded amount of synchronous bridging work
+        // (`runAsyncAndWait` below) and exits.
+        thread.start()
+    }
+    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+        group.notify(queue: .global()) {
+            continuation.resume()
+        }
+    }
+}
+
 /// Blocks the CALLING thread until `body` -- run as a new, unstructured
-/// `Task` on Swift's cooperative pool -- completes. Lets a
-/// `DispatchQueue.concurrentPerform` closure (synchronous, running on a
-/// real GCD worker thread, not Swift's cooperative pool) drive a genuinely
-/// concurrent `async` call into a shared client and wait for its result
-/// before that `concurrentPerform` iteration returns -- this is what makes
-/// "16 real OS threads" above actually mean sixteen real OS threads each
-/// making a real concurrent call, not sixteen `Task`s cooperatively
-/// interleaved on however many threads Swift's own pool happens to have.
+/// `Task` on Swift's cooperative pool -- completes. **Safe to call ONLY
+/// from a thread that is NOT itself part of the cooperative pool or
+/// libdispatch's shared workqueue pool** -- i.e. one of the dedicated
+/// `Thread`s `runConcurrentlyOnDedicatedThreads` above creates. This is
+/// what makes the "real OS threads" probes above actually mean genuinely
+/// concurrent calls arriving from outside Swift's own scheduling domain,
+/// without that blocking ever competing with the cooperative pool for
+/// worker-thread capacity. **C3-28 round 6:** this helper itself is
+/// unchanged from round 5 -- the bug was never this function blocking,
+/// it was WHERE it used to be called from (`DispatchQueue.concurrentPerform`
+/// closures, whose worker threads DO share the cooperative pool's budget;
+/// see `runConcurrentlyOnDedicatedThreads`'s own doc comment). Calling it
+/// from a dedicated `Thread` instead removes that hazard entirely.
 private func runAsyncAndWait(_ body: @escaping @Sendable () async -> Void) {
     let semaphore = DispatchSemaphore(value: 0)
     Task {
@@ -427,82 +533,100 @@ private func runAsyncAndWait(_ body: @escaping @Sendable () async -> Void) {
     semaphore.wait()
 }
 
-/// Test-only, race-free, `async`-context-safe one-shot gate: an `await`ed
-/// suspension that a DIFFERENT context resumes later by calling
-/// `release()` (or which resolves immediately if `release()` already ran
-/// first). Used in place of a raw `DispatchSemaphore.wait()` inside the
-/// `async` `testOnlyAfterQueuedEmissionLatch` closure `beginLatchedSend`
-/// installs below -- this SDK marks `DispatchSemaphore.wait()` unavailable
-/// from asynchronous contexts specifically to stop code from blocking a
-/// thread Swift's cooperative pool still considers available for other
-/// work; a `CheckedContinuation`-based suspension is the pool-friendly way
-/// to pause an `async` closure until an external event fires.
-/// `enteredSemaphore` (a plain, synchronous-context-only
-/// `DispatchSemaphore` -- fine to `.wait()` on from `beginLatchedSend`'s
-/// own non-`async` body) is signalled only once this gate is truly ready
-/// to be released -- continuation stored, or the already-released fast
-/// path -- closing what would otherwise be a "lost wakeup" race between
-/// signalling "entered" and a caller immediately calling `release()`.
-private final class AsyncLatchGate: @unchecked Sendable {
-    private let lock = NSLock()
+/// Test-only, race-free, fully `async` gate combining two roles for
+/// `beginLatchedSend` below: (1) lets the racing `send()` call signal "I
+/// have entered my latch, suspended mid-span" to whoever is awaiting
+/// `waitUntilEntered()`, and (2) suspends that `send()` call until
+/// `release()` runs (or resolves immediately if `release()` already ran
+/// first).
+///
+/// **C3-28 round-6 rewrite -- this is the fix for the OTHER half of the CI
+/// deadlock.** An `actor`, not an `NSLock`-guarded class: actor isolation
+/// serializes every method here for free, so there is no manual locking to
+/// get wrong. More importantly, NEITHER side of this gate ever calls
+/// `DispatchSemaphore.wait()` anymore. The round-5 version's
+/// `waitForRelease(afterSignaling:)` signalled an `enteredSemaphore` that
+/// `beginLatchedSend`'s own (synchronous) body then `.wait()`ed on --
+/// meaning `beginLatchedSend`'s CALLER (always one of this suite's `@Test`
+/// `async` function bodies, itself a `Task` running on the cooperative
+/// pool) blocked a cooperative-pool thread while waiting for ANOTHER `Task`
+/// (the racing `send()`'s own `winner` `Task`, needing a cooperative-pool
+/// thread to even start running) to make progress -- precisely the
+/// thread-pool starvation pattern this whole fix pass eliminates, and it
+/// did not need `DispatchQueue.concurrentPerform` at all to bite: with
+/// enough of this suite's five `@Test` functions running in parallel, each
+/// blocking its own thread this way, a small enough cooperative pool (a
+/// low-core CI runner) could still exhaust itself with zero racer threads
+/// in the picture. `waitUntilEntered()` below replaces that blocking wait
+/// with a `CheckedContinuation` suspension: the calling `Task` genuinely
+/// suspends -- yielding its thread back to the pool -- rather than holding
+/// one hostage.
+private actor AsyncLatchGate {
     private var isReleased = false
-    private var continuation: CheckedContinuation<Void, Never>?
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+    private var hasEntered = false
+    private var enteredContinuation: CheckedContinuation<Void, Never>?
 
-    /// `withCheckedContinuation`'s `body` parameter is a plain,
-    /// SYNCHRONOUS closure (not `async`) -- its entire design point, so
-    /// `NSLock.lock()`/`.unlock()` (unavailable from asynchronous contexts
-    /// in this SDK) are fine to call directly inside it, unlike at
-    /// `waitForRelease`'s own top level.
-    func waitForRelease(afterSignaling enteredSemaphore: DispatchSemaphore) async {
+    /// Called by the racing `send()` itself (from inside
+    /// `testOnlyAfterQueuedEmissionLatch`), already past its message-ID
+    /// draw and `.queued` emission, both still inside the held command span
+    /// (see `SimulatedChatTransportClient.tryEnterCommandSpan()`'s doc
+    /// comment): signals "entered" to whoever is awaiting
+    /// `waitUntilEntered()` below, then suspends until `release()` runs (or
+    /// returns immediately if `release()` already ran first).
+    func waitForRelease() async {
+        if let enteredContinuation {
+            self.enteredContinuation = nil
+            enteredContinuation.resume()
+        } else {
+            hasEntered = true
+        }
+        guard !isReleased else { return }
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            lock.lock()
-            if isReleased {
-                lock.unlock()
-                continuation.resume()
-                enteredSemaphore.signal()
-                return
-            }
-            self.continuation = continuation
-            lock.unlock()
-            enteredSemaphore.signal()
+            releaseContinuation = continuation
         }
     }
 
-    /// Plain, non-`async` function -- `NSLock.lock()`/`.unlock()` here are
-    /// in a synchronous context regardless of whichever (possibly `async`)
-    /// caller invokes this, exactly like `SimulatedChatTransportClient`'s
-    /// own `tryEnterCommandSpan()`/`exitCommandSpan()` pattern.
+    /// Awaited by `beginLatchedSend`'s caller: suspends -- never blocks --
+    /// until the racing `send()` has actually reached `waitForRelease()`
+    /// above (or returns immediately if it already has). Every racer a
+    /// caller runs after this returns is therefore GUARANTEED to observe
+    /// `commandActive == true` on the client, eliminating any timing
+    /// flakiness (CONTRACT.md's "no wall-clock sleeps and no
+    /// timeout-as-control-flow": this never sleeps or times out; it
+    /// suspends only on a signal from the exact event it is waiting for).
+    func waitUntilEntered() async {
+        guard !hasEntered else { return }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            enteredContinuation = continuation
+        }
+    }
+
     func release() {
-        lock.lock()
         isReleased = true
-        let continuationToResume = continuation
-        continuation = nil
-        lock.unlock()
-        continuationToResume?.resume()
+        let continuation = releaseContinuation
+        releaseContinuation = nil
+        continuation?.resume()
     }
 }
 
 /// Shared harness for every probe above: begins a `send()` call on
 /// `box.client` that suspends -- after emitting `.queued`, before
-/// `scheduleSendOutcome` -- via `testOnlyAfterQueuedEmissionLatch`, blocks
-/// the caller until that suspension is confirmed entered, and returns the
-/// still-in-flight `Task` plus a closure to release the latch. Every racer
-/// closure a caller runs between this function returning and calling the
-/// returned `release` closure is therefore GUARANTEED to observe
-/// `commandActive == true` on the client -- eliminating any timing
-/// flakiness from the tests above (CONTRACT.md's "no wall-clock sleeps and
-/// no timeout-as-control-flow": this harness never sleeps or times out; it
-/// blocks/suspends only on signals from the exact events it is waiting
-/// for).
+/// `scheduleSendOutcome` -- via `testOnlyAfterQueuedEmissionLatch`, `await`s
+/// (never blocks) until that suspension is confirmed entered, and returns
+/// the still-in-flight `Task` plus an `async` closure to release the latch.
+/// **C3-28 round 6:** now `async` itself -- previously synchronous,
+/// blocking its caller's thread on a `DispatchSemaphore` (see
+/// `AsyncLatchGate`'s own doc comment for why that was the other half of
+/// this file's CI-deadlock fix).
 private func beginLatchedSend(
     on box: UncheckedSendableClientBox, body: String
-) -> (winner: Task<String, Error>, release: () -> Void) {
-    let enteredSemaphore = DispatchSemaphore(value: 0)
+) async -> (winner: Task<String, Error>, release: @Sendable () async -> Void) {
     let gate = AsyncLatchGate()
     box.client.testOnlyAfterQueuedEmissionLatch = { _ in
-        await gate.waitForRelease(afterSignaling: enteredSemaphore)
+        await gate.waitForRelease()
     }
     let winner = Task { try await box.client.send(body: body) }
-    enteredSemaphore.wait()
-    return (winner, { gate.release() })
+    await gate.waitUntilEntered()
+    return (winner, { await gate.release() })
 }

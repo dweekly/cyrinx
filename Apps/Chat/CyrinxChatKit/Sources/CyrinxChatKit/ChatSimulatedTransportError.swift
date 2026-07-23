@@ -42,9 +42,14 @@ public enum ChatSimulatedTransportError: Error, Equatable, Sendable {
     /// type's "Command ownership enforcement" doc comment). `stop()`,
     /// `disconnect()`, and `cancelSend(messageIdHex:)` cannot throw (the
     /// `ChatTransportClient` protocol signature doesn't permit it), so
-    /// they report this same case via `SimulatedChatTransportClient
-    /// .misuseHandler` instead and return having done nothing -- the
-    /// "documented deterministic trap" the pin's parenthetical allows for
-    /// a non-throwing signature.
+    /// they report this same case through
+    /// `SimulatedChatTransportClient.trapConcurrentCommandMisuse()`
+    /// instead and return having done nothing -- **C3-28 round 6:** by
+    /// default (`misuseHandler == nil`, every production caller) that is a
+    /// `preconditionFailure` -- the "documented deterministic trap" the
+    /// pin's parenthetical allows for a non-throwing signature -- not a
+    /// silent no-op; `misuseHandler`, when installed, is a test-only
+    /// escape hatch that substitutes for the trap so this same case can be
+    /// observed without crashing the test process.
     case concurrentCommand
 }

@@ -8,6 +8,12 @@ import Testing
 /// is admitted only by a successful joint `connected` emission; a dropped
 /// handshake cancels the remainder of the scenario script on BOTH sides,
 /// no matter which side (or neither) ends up terminal.
+///
+/// C3-28 round-6 fix pass adds the companion case, CONTRACT.md §2's
+/// "Post-admission script locality" bullet: once ADMITTED (the handshake
+/// DID complete jointly), a client's remaining post-connect script is its
+/// own local timeline, validated against its own terminality/generation
+/// only -- a peer's LATER disconnect must not retroactively cancel it.
 @Suite("Simulated transport client: post-connect script admission (dropped handshake)")
 struct PostConnectScriptAdmissionTests {
     @Test(
@@ -99,5 +105,90 @@ struct PostConnectScriptAdmissionTests {
         #expect(bConnectionChanges == [.disconnected(reason: "userInitiated")])
         #expect(!bConnectionChanges.contains(.connected))
         #expect(!bConnectionChanges.contains(.degraded))
+    }
+
+    @Test(
+        """
+        Round-6 reviewer regression: post-admission script locality (CONTRACT.md §2's \
+        "Post-admission script locality" bullet). degradedThenRecovered, A.connect() at t=100 -- \
+        joint `connected` succeeds on BOTH sides at t=150 -- then B.disconnect() at t=180, \
+        STRICTLY AFTER admission. A's own remaining post-connect script (linkBudget@200, \
+        degraded@400, linkBudget@410, connectionRecoveredConnected@700, linkBudget@710 -- none of \
+        which read or mutate B at all) is A's OWN local timeline once admitted and must run to \
+        completion untouched by B's later disconnect: there is no liveness backchannel in the \
+        simulator, and B's disconnect only cancels B's own scheduled work. B, by contrast, emits \
+        nothing after its own disconnect.
+        """
+    )
+    func postAdmissionScriptIsOwningClientsLocalTimelineUnaffectedByLaterPeerDisconnect() async throws {
+        let clock = VirtualClock()
+        let (clientA, clientB) = SimulatedChatTransportClient.makePair(
+            scenario: .degradedThenRecovered, seed: 202, clock: clock
+        )
+        try await clientA.start()
+        try await clientB.start()
+        clock.advance(toMs: 100)
+        try await clientA.connect(toPeer: clientB.localPeerId.hexString)
+        // Joint `connected` fires on both sides at t=150
+        // (ChatSimTiming.connectHandshakeDelayMs) -- this IS admission.
+        clock.advance(toMs: 150)
+        #expect(clientA.connectionState == .connected)
+        #expect(clientB.connectionState == .connected)
+
+        // B disconnects strictly AFTER admission -- the very case
+        // "Post-admission script locality" pins: this must NOT
+        // retroactively cancel A's already-admitted local script, since
+        // none of A's remaining steps read or mutate B.
+        clock.advance(toMs: 180)
+        await clientB.disconnect()
+
+        // Advance through and past degradedThenRecovered's entire pinned
+        // timeline (last event at t=710 relative to connect; scriptEndMs
+        // is 800).
+        clock.advance(toMs: ChatScenario.degradedThenRecovered.scriptEndMs)
+        await clientA.stop()
+        await clientB.stop()
+
+        var aConnectionChanges: [ChatConnectionState] = []
+        var aLinkBudgetCount = 0
+        for await event in clientA.events {
+            switch event.kind {
+            case .connectionChanged(let state):
+                aConnectionChanges.append(state)
+            case .linkBudgetChanged:
+                aLinkBudgetCount += 1
+            default:
+                break
+            }
+        }
+        // connecting (connect()), connected (t=150 admission), degraded
+        // (t=400), connected again (recovered, t=700), then A's own
+        // stop()-at-teardown emits disconnected(reason: "stopped") -- B's
+        // t=180 disconnect never appears in this list at all.
+        #expect(
+            aConnectionChanges == [
+                .connecting, .connected, .degraded, .connected, .disconnected(reason: "stopped"),
+            ]
+        )
+        // All three of degradedThenRecovered's pinned linkBudgetChanged
+        // steps (@200, @410, @710) survived B's later disconnect.
+        #expect(aLinkBudgetCount == 3)
+
+        var bEventsAfterOwnDisconnect: [ChatEvent] = []
+        var bSawOwnDisconnect = false
+        for await event in clientB.events {
+            if bSawOwnDisconnect {
+                bEventsAfterOwnDisconnect.append(event)
+            }
+            if case .connectionChanged(.disconnected(reason: "userInitiated")) = event.kind {
+                bSawOwnDisconnect = true
+            }
+        }
+        #expect(bSawOwnDisconnect)
+        // B's own stop() at teardown finds it already disconnected and
+        // emits nothing further (CONTRACT.md's "unless the state is
+        // already disconnected" clause) -- B truly emits nothing after its
+        // own disconnect.
+        #expect(bEventsAfterOwnDisconnect.isEmpty)
     }
 }
