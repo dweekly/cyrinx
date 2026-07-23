@@ -63,8 +63,8 @@ import java.util.concurrent.atomic.AtomicLong
  * SimulatedChatTransportClientTest's `disconnectFindsAndCancels...`/
  * `disconnectTerminalizesASend...`, still use real, genuinely concurrent
  * threads to exercise this linearized-admission machinery, now via a
- * concurrent [disconnect] racing an ALREADY-ADMITTED job that is held mid-
- * execution on the dispatcher's own worker thread -- see
+ * concurrent [disconnect] racing an ALREADY-ADMITTED job whose Runnable is
+ * held before execution and before delegate submission -- see
  * `HoldingDispatcher`'s round-6 rework in SimulatedChatTransportClientTest
  * -- strictly AFTER the admitting command's own call has already fully
  * returned to its caller, per round-6's full-call span below, rather than
@@ -81,10 +81,9 @@ import java.util.concurrent.atomic.AtomicLong
  * command acquires at entry and is rejected outright
  * (`ChatTransportError.concurrentCommand`, never queued/blocked to wait its
  * turn) if it cannot: see [commandInFlight]'s own doc comment for exactly
- * where every command releases it (as of round-6, uniformly: its own outer
- * `finally`, covering the WHOLE function, for every one of the six public
- * commands -- round-5 had narrowed [connect]/[send]'s span to release
- * early, which round-6 reverses; see that field's doc comment for why).
+ * where every command releases it (uniformly: its own outer `finally`,
+ * covering the WHOLE function, including any synchronous [Job.start]
+ * operation, for every one of the six public commands).
  * This is a NEW, additional layer on top of -- not a replacement for --
  * [lifecycleLock]'s atomic-validation guarantee above: "Scheduled simulator
  * work may still race a command internally; that interleaving is what the
@@ -159,17 +158,9 @@ class SimulatedChatTransportClient internal constructor(
      * built and emitted -- so a caller that has observed `peerFound` (via
      * [events]) is guaranteed [connect] already accepts the corresponding
      * `idHex`, and a [connect] call racing a not-yet-fired `peerFound` is
-     * guaranteed to be rejected. Mirrors CyrinxChatKit's Swift twin's own
-     * `discoveredPeer` field exactly, including that a scripted `peerLost`
-     * (the `PEER_LOSS` scenario's own internal script, not a real
-     * [disconnect]/[stop]) does NOT clear it back to `null` -- Swift's
-     * reference implementation never does either, so this field, once set,
-     * stays set for the rest of this client's lifetime. (CONTRACT.md's own
-     * prose above also says "and not subsequently lost," which the Swift
-     * reference implementation does not actually enforce; matching Swift's
-     * shape here keeps both platforms identical rather than introducing a new
-     * cross-platform divergence to chase a stricter reading of the prose --
-     * see this class's test suite for the open question this leaves.)
+     * guaranteed to be rejected. Per CONTRACT.md's pinned reconnect policy,
+     * scripted `peerLost` does not invalidate discovery; this field remains set
+     * for the rest of the client instance's lifetime, matching the Swift twin.
      *
      * `@Volatile` because it is written under [lifecycleLock] (via
      * [runIfBothLive], from [scheduleDiscoveredPeerFound]) but read directly,
@@ -311,7 +302,14 @@ class SimulatedChatTransportClient internal constructor(
      * fire time only") -- every block synchronized on this lock in this
      * class is plain, synchronous code. A plain JVM intrinsic monitor
      * (`synchronized`), matching [ChatEventBus.lock]'s own precedent and
-     * rationale in this module. */
+     * rationale in this module.
+     *
+     * Lock ordering is fixed: operations spanning a pair take A's lifecycle
+     * lock, then B's; an individual lifecycle section may then use this
+     * client's [pendingSendJobs] monitor and finally emit through the event
+     * bus. No path holds the pending-send or event-bus lock while acquiring a
+     * lifecycle lock, and no suspension occurs while any lifecycle lock is
+     * held. */
     private val lifecycleLock = Any()
 
     /** Snapshot of [generation], for a peer to capture at the moment it
@@ -338,55 +336,32 @@ class SimulatedChatTransportClient internal constructor(
      * caller that violates the "one owner, sequential calls" contract gets a
      * deterministic exception, not a silent wait.
      *
-     * **Round-6 fresh pin -- full-call span, identically on both
-     * platforms.** Every public command now releases [commandInFlight] in
-     * ONE place only: its own outer `finally`, covering every return/throw
-     * path, with NOTHING else released early anywhere -- "Ownership spans
-     * the COMPLETE public call -- from entry to the call's return to its
-     * caller, across any internal suspension -- identically on both
-     * platforms: a sequence rejected on one platform is rejected on the
-     * other." Round-5 special-cased [connect]/[send] to release EARLY,
-     * inside [launchBackgroundJob]'s `onAdmitted` callback, specifically so
-     * `Job.start()`'s call a few lines later (which can appear to block the
-     * calling thread under a test's instrumented dispatcher -- see
-     * `HoldingDispatcher` in SimulatedChatTransportClientTest) could never
-     * hold a DIFFERENT public command hostage. That early release was itself
-     * the bug: it let a genuinely concurrent second command be ADMITTED
-     * while [connect]/[send]'s own call had not yet returned to ITS caller
-     * -- an overlap CyrinxChatKit's Swift twin (whose `commandLock`/
-     * `commandActive` guard is held for the whole `async` function, and
-     * whose analogous "schedule the deferred work" step,
-     * `scheduleOwned(atMs:)`, is a plain synchronous append to a virtual
-     * clock's queue with no dispatch concept to race) rejects outright.
-     * Kotlin now matches that by construction rather than by narrowing the
-     * span around a dispatch call: see [launchBackgroundJob]'s doc comment
-     * for how `Job.start()` moved OUT of that method entirely -- every
-     * caller below now gets back an un-started [Job] (or list of jobs) from
-     * its own `OwningCommandSpan` helper, still fully inside the `try` this
-     * field guards, and starts it only AFTER the `finally` has already run:
+     * **Full-call span, identically on both platforms.** Every public command
+     * releases [commandInFlight] in ONE place only: its own outer `finally`,
+     * covering every return/throw path, with NOTHING released early --
+     * "Ownership spans the COMPLETE public call -- from entry to the call's
+     * return to its caller, across any internal suspension -- identically on
+     * both platforms: a sequence rejected on one platform is rejected on the
+     * other." In particular, [Job.start] is inside that `try`. A caller-
+     * supplied dispatcher may execute `dispatch()` synchronously and may even
+     * block there; releasing ownership before `start()` would expose a real,
+     * observable tail in which another public command could be admitted while
+     * the first call's thread had not returned. The required shape is:
      *
      * ```kotlin
      * if (!commandInFlight.compareAndSet(false, true)) throw ...
-     * val job: Job
      * try {
-     *     job = xOwningCommandSpan(...)   // admits + registers; never starts
+     *     val job = xOwningCommandSpan(...) // admits + registers
+     *     job.start()                       // still owned through return
      * } finally {
-     *     commandInFlight.set(false)      // the ONLY release site, on every path
+     *     commandInFlight.set(false)        // the ONLY release site
      * }
-     * job.start()                          // strictly outside the guarded span
      * ```
      *
-     * This satisfies CONTRACT.md's OWN two requirements at once, which the
-     * round-5 design could not: "ownership spans the complete public call ...
-     * identically on both platforms" (there is now exactly one release site,
-     * covering the whole function, exactly like [disconnect]/[stop]/[start]/
-     * [cancelSend] always did) AND "starting scheduled work inside the span
-     * must never synchronously execute or trap that work's body on the
-     * caller's thread; the work's first dispatch happens outside the span"
-     * (the `job.start()` call above is textually and temporally after this
-     * flag is already `false`, so a slow or adversarial `dispatch()`
-     * implementation delays only THIS command's own return to ITS caller,
-     * never a DIFFERENT command's admission on this same instance).
+     * [CoroutineStart.LAZY] still ensures admission and durable registration
+     * happen before work can run. The contract deliberately treats synchronous
+     * dispatch latency as part of the public call rather than weakening the
+     * observable complete-call ownership boundary.
      *
      * A separate primitive from [lifecycleLock]: [lifecycleLock] is
      * per-effect (guards ONE `runIfLive`/`runIfBothLive` check-and-mutate
@@ -419,15 +394,11 @@ class SimulatedChatTransportClient internal constructor(
      * through -- terminality, not generation equality alone, is the gate.
      * Otherwise [action] is not invoked at all (not even to build an event).
      *
-     * Call this ON THE TARGET client -- e.g. `other.runIfLive
-     * (otherGenerationAtSend) { other.deliverEnvelope(encoded) }` -- never on
-     * `self` for a self-owned effect: a client's own scheduled work is already
-     * correctly torn down by its own [disconnect]/[stop] via
-     * [markTerminalAndRequestCancellation]'s cancellation sweep. (A job that
-     * lives in the TARGET's own [backgroundJobs] -- e.g. one admitted via
-     * [launchOwnedBackgroundJobIfLive] -- needs no [runIfLive] re-check of
-     * its own at all: the target's own cancellation sweep already finds it
-     * directly. See that method's doc comment.)
+     * Call this on the effect's target. Self-owned scheduled effects use
+     * [runScheduledSelfEffectIfLive], which adds the same validation plus a
+     * deterministic pre-validation test seam. Cancellation remains useful for
+     * quiescence, but fire-time validation is what closes the race for a
+     * coroutine already resumed past its last suspension point.
      *
      * [action] MUST be synchronous and non-suspending (every call site in
      * this class is) -- see [lifecycleLock]'s doc comment on lock scope.
@@ -436,6 +407,27 @@ class SimulatedChatTransportClient internal constructor(
         synchronized(lifecycleLock) {
             if (!terminal.get() && generation.get() == expectedGeneration) {
                 action()
+            }
+        }
+    }
+
+    /**
+     * Fire-time gate for a scheduled effect owned by this client. The test hook
+     * runs before lock acquisition so a regression can hold a coroutine after
+     * its delay has resumed, race an actual lifecycle invalidation, and prove
+     * the validation below—not cooperative cancellation—drops the effect.
+     */
+    private suspend fun runScheduledSelfEffectIfLive(
+        expectedGeneration: Long,
+        action: () -> Unit,
+    ): Boolean {
+        testOnlyBeforeScheduledSelfEffectValidation?.invoke()
+        return synchronized(lifecycleLock) {
+            if (!terminal.get() && generation.get() == expectedGeneration) {
+                action()
+                true
+            } else {
+                false
             }
         }
     }
@@ -588,6 +580,29 @@ class SimulatedChatTransportClient internal constructor(
      */
     internal var testOnlyAfterQueuedEmissionLatch: (suspend (messageIdHex: String) -> Unit)? = null
 
+    /**
+     * Test-only hooks used by the real-thread lifecycle linearization
+     * regressions. The admission hook is synchronous because it runs while
+     * [lifecycleLock] is held; its test invokes send from a dedicated OS thread.
+     * Fire-time hooks are suspending and run before lock acquisition, allowing
+     * tests to use non-blocking coroutine gates without occupying dispatcher
+     * workers. Production pair construction never assigns them.
+     */
+    @Volatile
+    internal var testOnlyInsideSendAdmissionCriticalSection: (() -> Unit)? = null
+
+    @Volatile
+    internal var testOnlyBeforeScriptedDisconnectValidation: (() -> Unit)? = null
+
+    @Volatile
+    internal var testOnlyBeforeSendStatusValidation: (suspend () -> Unit)? = null
+
+    @Volatile
+    internal var testOnlyBeforeDeliveryValidation: (suspend () -> Unit)? = null
+
+    @Volatile
+    internal var testOnlyBeforeScheduledSelfEffectValidation: (suspend () -> Unit)? = null
+
     override val events: Flow<ChatEvent> = eventBus.events
 
     private fun requirePeer(caller: String): SimulatedChatTransportClient =
@@ -650,32 +665,14 @@ class SimulatedChatTransportClient internal constructor(
      * removes) the entry, rather than racing ahead of the `add` and leaving
      * a permanently-orphaned entry behind.
      *
-     * **Round-6 fresh pin: [Job.start] is NOT called here.** Round-5 called
-     * it here, LAST, after [lifecycleLock] was already released -- reasoning
-     * that "starting a job is a fast, non-suspending call" so it was safe to
-     * fire immediately. That reasoning held for a REAL dispatcher but not for
-     * an adversarial/instrumented one (a caller-supplied `scope` "MAY be
-     * backed by a genuinely multi-threaded dispatcher" -- this class's own
-     * doc comment), and more importantly it put `Job.start()`'s call INSIDE
-     * whichever public command's [commandInFlight] span was still open at
-     * that point for every caller EXCEPT [connect]/[send] (which round-5
-     * worked around by releasing early -- itself the round-6 bug; see
-     * [commandInFlight]'s doc comment). Returning the constructed-but-
-     * unstarted [job] instead and making EVERY caller start it only after
-     * its OWN [commandInFlight] release closes that gap uniformly for
-     * [start], [connect], and [send] alike, per CONTRACT.md's round-6-pinned
-     * "starting scheduled work inside the span must never synchronously
-     * execute or trap that work's body on the caller's thread; the work's
-     * first dispatch happens outside the span." The atomicity guarantee this
-     * method exists for is UNCHANGED: by the time this method returns, [job]
-     * is unconditionally either durably registered in [backgroundJobs] (so
-     * the very next [disconnect]/[stop] sweep is guaranteed to find, cancel,
-     * and join it, even though it has not been started yet -- `Job.cancel()`
-     * on an unstarted `CoroutineStart.LAZY` job is well-defined and prevents
-     * [Job.start] from ever running a line of [block]) or this method has
-     * thrown without registering anything at all. Callers MUST call
-     * `.start()` on the returned [job] themselves, strictly after their own
-     * [commandInFlight] release.
+     * [Job.start] is intentionally NOT called here. Returning a constructed,
+     * durably registered, unstarted [job] keeps admission atomic and lets the
+     * public caller start it while still holding its own [commandInFlight]
+     * span. By the time this method returns, [job] is unconditionally either
+     * present in [backgroundJobs] (so the next [disconnect]/[stop] sweep finds
+     * it, even if it has not started) or this method has thrown without
+     * registering anything. `Job.cancel()` on an unstarted
+     * [CoroutineStart.LAZY] job prevents [block] from running.
      */
     private fun launchBackgroundJob(
         caller: String,
@@ -733,41 +730,28 @@ class SimulatedChatTransportClient internal constructor(
      * [runIfLive]/[runIfBothLive]'s drop-not-throw precedent for every
      * other peer-driven effect in this class instead.
      *
-     * Starts [block] IMMEDIATELY (unlike every [launchBackgroundJob] call
-     * site in this class, which defers `Job.start()` until after an outer
-     * public command's own [commandInFlight] release -- see that field's
-     * round-6 doc comment): every call site of THIS method is reached from
-     * deep inside an ALREADY fully-dispatched background coroutine (e.g.
-     * [connect]'s own handshake job, itself started long after [connect]'s
-     * own [commandInFlight] release), never from within a public command's
-     * own guarded span -- so there is no enclosing span left to escape.
+     * Starts [block] immediately. Every call site is reached from an already
+     * dispatched background coroutine, never from a public command's guarded
+     * span.
      *
-     * No [runIfLive]-style re-check is needed inside [block] itself: once
-     * admitted into the TARGET's (`other`'s) own [backgroundJobs], that
-     * target's own FUTURE [disconnect]/[stop] sweep cancels this exact job
-     * directly (`Job.cancel()`) -- identically to how every other
-     * self-owned scheduled step in this class needs no re-check either.
-     * This differs from a cross-owned effect like message delivery
-     * ([send]'s `other.runIfLive(otherGenerationAtSend) { other
-     * .deliverEnvelope(...) }`), which still needs an explicit fire-time
-     * generation re-check because that job lives in the SENDER's
-     * [backgroundJobs], not the receiver's: here, this job's own
-     * cancellation IS the target's own lifecycle sweep, not a peer's.
+     * Admission captures and supplies [expectedGeneration] to [block]. Every
+     * effect inside the block must revalidate it on this target at fire time;
+     * direct job cancellation alone is cooperative and cannot prevent a
+     * coroutine already past a suspension point from performing synchronous
+     * work.
      */
-    private fun launchOwnedBackgroundJobIfLive(block: suspend CoroutineScope.() -> Unit): Job? {
-        val job = scope.launch(start = CoroutineStart.LAZY, block = block)
-        val admitted =
-            synchronized(lifecycleLock) {
-                if (terminal.get()) {
-                    false
-                } else {
-                    backgroundJobs.add(job)
-                    true
+    private fun launchOwnedBackgroundJobIfLive(
+        block: suspend CoroutineScope.(expectedGeneration: Long) -> Unit,
+    ): Job? {
+        lateinit var job: Job
+        synchronized(lifecycleLock) {
+            if (terminal.get()) return null
+            val expectedGeneration = generation.get()
+            job =
+                scope.launch(start = CoroutineStart.LAZY) {
+                    block(expectedGeneration)
                 }
-            }
-        if (!admitted) {
-            job.cancel()
-            return null
+            backgroundJobs.add(job)
         }
         job.invokeOnCompletion { backgroundJobs.remove(job) }
         job.start()
@@ -813,23 +797,19 @@ class SimulatedChatTransportClient internal constructor(
     override suspend fun start() {
         // ../../../CONTRACT.md section 2's round-6-pinned "Command ownership
         // (pinned)" bullet -- see [commandInFlight]'s doc comment. Held for
-        // this method's ENTIRE body, released in the ONE `finally` below on
-        // every path -- [startOwningCommandSpan] admits and registers any
-        // discovery jobs it schedules but never starts them; they are
-        // started below, strictly AFTER this release, so `Job.start()`'s
-        // dispatch can never trap a different concurrent command open on
-        // this same instance (round-6 fix -- see [commandInFlight]'s and
-        // [launchBackgroundJob]'s doc comments).
+        // this method's ENTIRE body, including every `Job.start()` below, and
+        // released in the ONE `finally` on every path. A blocking
+        // caller-supplied dispatch therefore cannot expose an unowned tail
+        // before this call returns.
         if (!commandInFlight.compareAndSet(false, true)) {
             throw ChatTransportError.concurrentCommand("start()")
         }
-        val discoveryJobs: List<Job>
         try {
-            discoveryJobs = startOwningCommandSpan()
+            val discoveryJobs = startOwningCommandSpan()
+            discoveryJobs.forEach { it.start() }
         } finally {
             commandInFlight.set(false)
         }
-        discoveryJobs.forEach { it.start() }
     }
 
     private suspend fun startOwningCommandSpan(): List<Job> {
@@ -861,9 +841,8 @@ class SimulatedChatTransportClient internal constructor(
      * once per pair, by whichever client's [start] call won [discoveryArmed]'s
      * arbiter CAS. `this` is that (second-to-start, or race-winning) client;
      * [other] is the first. Returns both admitted-but-unstarted [Job]s (in
-     * A-then-B order) for [start] to `.start()` itself, strictly after its
-     * own [commandInFlight] release -- see [launchBackgroundJob]'s round-6
-     * doc comment.
+     * A-then-B order) for [start] to `.start()` itself while its
+     * [commandInFlight] ownership is still held.
      */
     private fun armDiscoveryForBothClients(other: SimulatedChatTransportClient): List<Job> {
         val clientA = if (label == 'A') this else other
@@ -954,14 +933,13 @@ class SimulatedChatTransportClient internal constructor(
      * exactly what this lock must never do.
      *
      * Every job is cancelled (requested) as one batch here, rather than
-     * cancel-then-immediately-join one at a time by the caller: requesting
-     * every cancellation up front means a job that is itself mid-execution
-     * (e.g. between two back-to-back `emit()` calls with no suspension point
-     * in between) sees its own cancellation requested as early as possible,
-     * minimizing -- though, per ordinary cooperative cancellation, not
-     * eliminating the theoretical possibility of -- extra work happening
-     * before it actually stops. `join()` never throws for a cancelled job
-     * (unlike `Deferred.await`), so the caller needs no try/catch.
+     * cancel-then-immediately-join one at a time by the caller. Cancellation
+     * supplies prompt quiescence, while each scheduled synchronous effect also
+     * validates [terminal]/[generation] under [lifecycleLock] immediately
+     * before mutation. Thus a job already past a suspension point cannot emit
+     * after this invalidation wins the lock. `join()` never throws for a
+     * cancelled job (unlike `Deferred.await`), so the caller needs no
+     * try/catch.
      *
      * NOT used by a scenario-scripted disconnect (see
      * [failNonterminalOutgoingSends]'s call sites in [connect]): that
@@ -1008,15 +986,60 @@ class SimulatedChatTransportClient internal constructor(
      * instance-scoped.
      */
     internal fun failNonterminalOutgoingSends(reason: String) {
-        val pendingInSendOrder: List<String>
-        synchronized(pendingSendJobs) {
-            pendingInSendOrder = pendingSendJobs.keys.toList()
-            pendingSendJobs.values.forEach { it.cancel() }
-            pendingSendJobs.clear()
+        synchronized(lifecycleLock) {
+            val pendingInSendOrder: List<String>
+            synchronized(pendingSendJobs) {
+                pendingInSendOrder = pendingSendJobs.keys.toList()
+                pendingSendJobs.values.forEach { it.cancel() }
+                pendingSendJobs.clear()
+            }
+            for (messageIdHex in pendingInSendOrder) {
+                terminalMessageIds.add(messageIdHex)
+                emit { seq ->
+                    ChatEvent.MessageStatusChanged(
+                        seq,
+                        messageIdHex,
+                        ChatMessageDisplayStatus.Failed(reason),
+                    )
+                }
+            }
         }
-        for (messageIdHex in pendingInSendOrder) {
-            markTerminal(messageIdHex)
-            emit { seq -> ChatEvent.MessageStatusChanged(seq, messageIdHex, ChatMessageDisplayStatus.Failed(reason)) }
+    }
+
+    /**
+     * Atomically applies one peer-loss scripted disconnect to this client.
+     * The connection-state mutation and pending-send sweep share
+     * [lifecycleLock] with send admission and every scheduled transfer effect,
+     * so either a send is admitted first and this sweep observes it, or this
+     * transition lands first and the send observes `Disconnected` and rejects.
+     *
+     * [expectedGeneration] makes an actual [disconnect]/[stop] that wins before
+     * this fire-time validation drop the scripted effect. Scripted disconnect
+     * itself deliberately does not advance [generation]: the subsequent
+     * scripted `peerLost` remains part of this client's local timeline.
+     */
+    private fun applyScriptedDisconnectIfLive(
+        expectedGeneration: Long,
+        disconnectReason: String,
+        sendFailureReason: String,
+    ): Boolean {
+        testOnlyBeforeScriptedDisconnectValidation?.invoke()
+        return synchronized(lifecycleLock) {
+            if (terminal.get() || generation.get() != expectedGeneration) {
+                false
+            } else {
+                emit { seq ->
+                    ChatEvent.ConnectionChanged(
+                        seq,
+                        ChatConnectionState.Disconnected(disconnectReason),
+                    )
+                }
+                // Reentrant lifecycleLock acquisition. Keeping this call inside
+                // the same critical section makes Disconnected + sweep one
+                // indivisible lifecycle transition.
+                failNonterminalOutgoingSends(sendFailureReason)
+                true
+            }
         }
     }
 
@@ -1025,8 +1048,7 @@ class SimulatedChatTransportClient internal constructor(
         // (pinned)" bullet -- see [commandInFlight]'s doc comment. Held for
         // this method's ENTIRE body, INCLUDING the suspending `job.join()`
         // wait below (this method's own serialized span is what a concurrent
-        // caller must wait its OWN prior command out for -- there is no early
-        // "admission complete" point to release at, unlike [connect]/[send]).
+        // caller must wait its OWN prior command out for).
         if (!commandInFlight.compareAndSet(false, true)) {
             throw ChatTransportError.concurrentCommand("stop()")
         }
@@ -1143,21 +1165,18 @@ class SimulatedChatTransportClient internal constructor(
         // below (including the terminal check), matching "detect concurrent
         // public-command entry ... instead of corrupting state." Released in
         // the ONE `finally` below, covering every path -- see
-        // [commandInFlight]'s doc comment for why the handshake job's own
-        // `Job.start()` is deliberately called AFTER that release, not
-        // before it (round-6 fix: the guard now spans the COMPLETE call).
+        // [commandInFlight]'s doc comment. The handshake job's own
+        // `Job.start()` is inside the guarded try, so a synchronous dispatch
+        // tail remains part of this public call's ownership.
         if (!commandInFlight.compareAndSet(false, true)) {
             throw ChatTransportError.concurrentCommand("connect()")
         }
-        val handshakeJob: Job
         try {
-            handshakeJob = connectOwningCommandSpan(peerIdHex)
+            val handshakeJob = connectOwningCommandSpan(peerIdHex)
+            handshakeJob.start()
         } finally {
             commandInFlight.set(false)
         }
-        // Strictly outside the guarded span: see [launchBackgroundJob]'s and
-        // [commandInFlight]'s round-6 doc comments.
-        handshakeJob.start()
     }
 
     private suspend fun connectOwningCommandSpan(peerIdHex: String): Job {
@@ -1203,20 +1222,10 @@ class SimulatedChatTransportClient internal constructor(
         val selfIdHex = idBytes.toHexString()
         // ../../../CONTRACT.md section 2's "Target ownership" bullet, and
         // its round-6-pinned "Post-admission script locality" bullet:
-        // otherGenerationAtConnect is captured HERE, at connect() call time
-        // (before the handshake delay even starts), and used ONLY by
-        // emitConnectedIfBothLive's own joint "both endpoints live" check
-        // below -- the sole effect in this method that still needs a
-        // fire-time generation re-check against `other`, because it mutates
-        // `other` from a job that lives in THIS (A's) own backgroundJobs.
-        // peerLoss's own both-targeted post-connect script (the one place
-        // this method used to also validate against `other`'s generation at
-        // a LATER fire time, deep inside the when(scenario) block below) is
-        // scheduled differently: B's half is admitted directly into B's OWN
-        // backgroundJobs via other.launchOwnedBackgroundJobIfLive, so B's
-        // own future disconnect()/stop() sweep is what invalidates it --
-        // see that method's doc comment for why no separate generation
-        // re-check is needed there.
+        // Both generations are captured at connect admission. The joint
+        // connected transition validates both. Every later post-connect step
+        // is target-local and validates only its owning client's captured
+        // generation under that client's lifecycleLock.
         val selfGenerationAtConnect = currentGeneration()
         val otherGenerationAtConnect = other.currentGeneration()
 
@@ -1231,8 +1240,7 @@ class SimulatedChatTransportClient internal constructor(
         // [backgroundJobs] registry AND have this `Connecting` event (or
         // anything scheduled below) still fire afterward. The returned job
         // is NOT started here -- see [launchBackgroundJob]'s round-6 doc
-        // comment -- [connect] starts it once this whole call has released
-        // [commandInFlight].
+        // comment -- [connect] starts it before releasing [commandInFlight].
         return launchBackgroundJob(
             caller = "connect()",
             onAdmitted = { _ ->
@@ -1255,17 +1263,19 @@ class SimulatedChatTransportClient internal constructor(
             when (scenario) {
                 ChatScenario.HAPPY_PAIR -> {
                     delay(ChatScenarioTimings.HAPPY_PAIR_LINK_BUDGET_DELAY_MS)
-                    emit { seq ->
-                        ChatEvent.LinkBudgetChanged(
-                            seq,
-                            ChatLinkBudget(
-                                LinkBudgetClass.TEXT,
-                                null,
-                                null,
-                                ChatScenarioTimings.HAPPY_PAIR_LINK_BUDGET_CONFIDENCE,
-                                ChatScenarioTimings.LINK_BUDGET_FRESH_AGE_MS,
-                            ),
-                        )
+                    runScheduledSelfEffectIfLive(selfGenerationAtConnect) {
+                        emit { seq ->
+                            ChatEvent.LinkBudgetChanged(
+                                seq,
+                                ChatLinkBudget(
+                                    LinkBudgetClass.TEXT,
+                                    null,
+                                    null,
+                                    ChatScenarioTimings.HAPPY_PAIR_LINK_BUDGET_CONFIDENCE,
+                                    ChatScenarioTimings.LINK_BUDGET_FRESH_AGE_MS,
+                                ),
+                            )
+                        }
                     }
                 }
 
@@ -1286,82 +1296,110 @@ class SimulatedChatTransportClient internal constructor(
                     // `becomeConnected()` calls `scheduleScenarioPostConnect`
                     // synchronously before returning -- see
                     // launchOwnedBackgroundJobIfLive's doc comment for the
-                    // bug this fixes and why no other.runIfLive re-check is
-                    // needed inside the new job's own body below.
-                    other.launchOwnedBackgroundJobIfLive {
+                    // bug this fixes. That helper supplies B's admission-time
+                    // generation for each fire-time validation below.
+                    other.launchOwnedBackgroundJobIfLive { otherExpectedGeneration ->
                         delay(ChatScenarioTimings.PEER_LOSS_SILENCE_TIMEOUT_DELAY_MS)
-                        other.emitFromPeer { seq -> ChatEvent.ConnectionChanged(seq, ChatConnectionState.Disconnected(timeoutReason)) }
-                        other.failNonterminalOutgoingSends(ChatReasonStrings.PEER_LOST)
+                        if (!other.applyScriptedDisconnectIfLive(
+                                otherExpectedGeneration,
+                                timeoutReason,
+                                ChatReasonStrings.PEER_LOST,
+                            )
+                        ) {
+                            return@launchOwnedBackgroundJobIfLive
+                        }
 
                         delay(ChatScenarioTimings.PEER_LOSS_PEER_LOST_DELAY_MS)
-                        other.emitFromPeer { seq -> ChatEvent.PeerLost(seq, selfIdHex, timeoutReason) }
+                        other.runScheduledSelfEffectIfLive(otherExpectedGeneration) {
+                            other.emitFromPeer { seq -> ChatEvent.PeerLost(seq, selfIdHex, timeoutReason) }
+                        }
                     }
 
                     delay(ChatScenarioTimings.PEER_LOSS_SILENCE_TIMEOUT_DELAY_MS)
-                    emit { seq -> ChatEvent.ConnectionChanged(seq, ChatConnectionState.Disconnected(timeoutReason)) }
-                    // "every nonterminal outgoing message on that client
-                    // transitions to messageStatusChanged(failed,
-                    // failureReason: "peerLost") immediately after the
-                    // scripted disconnect event" (../../../CONTRACT.md
-                    // section 2's "Lifecycle cancellation (pinned)") -- for
-                    // THIS client, right after THIS client's own disconnect
-                    // event above; B's own nonterminal sends get the same
-                    // treatment right after ITS OWN disconnect event, inside
-                    // B's own job scheduled above (each client's own
-                    // eventSeq stream is independent).
-                    failNonterminalOutgoingSends(ChatReasonStrings.PEER_LOST)
+                    if (!applyScriptedDisconnectIfLive(
+                            selfGenerationAtConnect,
+                            timeoutReason,
+                            ChatReasonStrings.PEER_LOST,
+                        )
+                    ) {
+                        return@launchBackgroundJob
+                    }
 
                     delay(ChatScenarioTimings.PEER_LOSS_PEER_LOST_DELAY_MS)
-                    emit { seq -> ChatEvent.PeerLost(seq, otherIdHex, timeoutReason) }
+                    runScheduledSelfEffectIfLive(selfGenerationAtConnect) {
+                        emit { seq -> ChatEvent.PeerLost(seq, otherIdHex, timeoutReason) }
+                    }
                 }
 
                 ChatScenario.DEGRADED_THEN_RECOVERED -> {
                     delay(ChatScenarioTimings.DEGRADED_LINK_BUDGET_TEXT_DELAY_MS)
-                    emit { seq ->
-                        ChatEvent.LinkBudgetChanged(
-                            seq,
-                            ChatLinkBudget(
-                                LinkBudgetClass.TEXT,
-                                null,
-                                null,
-                                ChatScenarioTimings.DEGRADED_LINK_BUDGET_TEXT_CONFIDENCE,
-                                ChatScenarioTimings.LINK_BUDGET_FRESH_AGE_MS,
-                            ),
-                        )
+                    if (!runScheduledSelfEffectIfLive(selfGenerationAtConnect) {
+                            emit { seq ->
+                                ChatEvent.LinkBudgetChanged(
+                                    seq,
+                                    ChatLinkBudget(
+                                        LinkBudgetClass.TEXT,
+                                        null,
+                                        null,
+                                        ChatScenarioTimings.DEGRADED_LINK_BUDGET_TEXT_CONFIDENCE,
+                                        ChatScenarioTimings.LINK_BUDGET_FRESH_AGE_MS,
+                                    ),
+                                )
+                            }
+                        }
+                    ) {
+                        return@launchBackgroundJob
                     }
 
                     delay(ChatScenarioTimings.DEGRADED_DEGRADE_DELAY_MS)
-                    emit { seq -> ChatEvent.ConnectionChanged(seq, ChatConnectionState.Degraded) }
+                    if (!runScheduledSelfEffectIfLive(selfGenerationAtConnect) {
+                            emit { seq -> ChatEvent.ConnectionChanged(seq, ChatConnectionState.Degraded) }
+                        }
+                    ) {
+                        return@launchBackgroundJob
+                    }
 
                     delay(ChatScenarioTimings.DEGRADED_LINK_BUDGET_LOW_DELAY_MS)
-                    emit { seq ->
-                        ChatEvent.LinkBudgetChanged(
-                            seq,
-                            ChatLinkBudget(
-                                LinkBudgetClass.CONTROL_ONLY,
-                                null,
-                                null,
-                                ChatScenarioTimings.DEGRADED_LINK_BUDGET_LOW_CONFIDENCE,
-                                ChatScenarioTimings.LINK_BUDGET_FRESH_AGE_MS,
-                            ),
-                        )
+                    if (!runScheduledSelfEffectIfLive(selfGenerationAtConnect) {
+                            emit { seq ->
+                                ChatEvent.LinkBudgetChanged(
+                                    seq,
+                                    ChatLinkBudget(
+                                        LinkBudgetClass.CONTROL_ONLY,
+                                        null,
+                                        null,
+                                        ChatScenarioTimings.DEGRADED_LINK_BUDGET_LOW_CONFIDENCE,
+                                        ChatScenarioTimings.LINK_BUDGET_FRESH_AGE_MS,
+                                    ),
+                                )
+                            }
+                        }
+                    ) {
+                        return@launchBackgroundJob
                     }
 
                     delay(ChatScenarioTimings.DEGRADED_RECOVER_DELAY_MS)
-                    emit { seq -> ChatEvent.ConnectionChanged(seq, ChatConnectionState.Connected) }
+                    if (!runScheduledSelfEffectIfLive(selfGenerationAtConnect) {
+                            emit { seq -> ChatEvent.ConnectionChanged(seq, ChatConnectionState.Connected) }
+                        }
+                    ) {
+                        return@launchBackgroundJob
+                    }
 
                     delay(ChatScenarioTimings.DEGRADED_LINK_BUDGET_RECOVERED_DELAY_MS)
-                    emit { seq ->
-                        ChatEvent.LinkBudgetChanged(
-                            seq,
-                            ChatLinkBudget(
-                                LinkBudgetClass.TEXT,
-                                null,
-                                null,
-                                ChatScenarioTimings.DEGRADED_LINK_BUDGET_RECOVERED_CONFIDENCE,
-                                ChatScenarioTimings.LINK_BUDGET_FRESH_AGE_MS,
-                            ),
-                        )
+                    runScheduledSelfEffectIfLive(selfGenerationAtConnect) {
+                        emit { seq ->
+                            ChatEvent.LinkBudgetChanged(
+                                seq,
+                                ChatLinkBudget(
+                                    LinkBudgetClass.TEXT,
+                                    null,
+                                    null,
+                                    ChatScenarioTimings.DEGRADED_LINK_BUDGET_RECOVERED_CONFIDENCE,
+                                    ChatScenarioTimings.LINK_BUDGET_FRESH_AGE_MS,
+                                ),
+                            )
+                        }
                     }
                 }
 
@@ -1372,17 +1410,19 @@ class SimulatedChatTransportClient internal constructor(
 
                 ChatScenario.SLOW_LINK -> {
                     delay(ChatScenarioTimings.SLOW_LINK_LINK_BUDGET_DELAY_MS)
-                    emit { seq ->
-                        ChatEvent.LinkBudgetChanged(
-                            seq,
-                            ChatLinkBudget(
-                                LinkBudgetClass.CONTROL_ONLY,
-                                null,
-                                null,
-                                ChatScenarioTimings.SLOW_LINK_LINK_BUDGET_CONFIDENCE,
-                                ChatScenarioTimings.LINK_BUDGET_FRESH_AGE_MS,
-                            ),
-                        )
+                    runScheduledSelfEffectIfLive(selfGenerationAtConnect) {
+                        emit { seq ->
+                            ChatEvent.LinkBudgetChanged(
+                                seq,
+                                ChatLinkBudget(
+                                    LinkBudgetClass.CONTROL_ONLY,
+                                    null,
+                                    null,
+                                    ChatScenarioTimings.SLOW_LINK_LINK_BUDGET_CONFIDENCE,
+                                    ChatScenarioTimings.LINK_BUDGET_FRESH_AGE_MS,
+                                ),
+                            )
+                        }
                     }
                 }
             }
@@ -1448,8 +1488,8 @@ class SimulatedChatTransportClient internal constructor(
 
     /** [sendOwningCommandSpan]'s admission result: the drawn `messageIdHex` plus
      * the admitted-but-unstarted [job] backing its scheduled status
-     * transitions -- [send] starts [job] itself, strictly after releasing
-     * [commandInFlight] (round-6 fix; see that field's doc comment). */
+     * transitions. [send] starts [job] while still owning
+     * [commandInFlight]. */
     private class SendAdmission(val messageIdHex: String, val job: Job)
 
     override suspend fun send(body: String): String {
@@ -1467,159 +1507,225 @@ class SimulatedChatTransportClient internal constructor(
         if (!commandInFlight.compareAndSet(false, true)) {
             throw ChatTransportError.concurrentCommand("send()")
         }
-        val admission: SendAdmission
         try {
-            admission = sendOwningCommandSpan(body)
+            val admission = sendOwningCommandSpan(body)
+            admission.job.start()
+            return admission.messageIdHex
         } finally {
             commandInFlight.set(false)
         }
-        // Strictly outside the guarded span: see [launchBackgroundJob]'s and
-        // [commandInFlight]'s round-6 doc comments.
-        admission.job.start()
-        return admission.messageIdHex
     }
 
     private suspend fun sendOwningCommandSpan(body: String): SendAdmission {
-        // ../../../CONTRACT.md section 2's new pinned "disconnect() is
-        // terminal for the client instance" bullet: a terminal client
-        // rejects send() outright, before touching any state -- the only
-        // call still permitted on it is stop(). This is guaranteed
-        // equivalent to (but more direct than) the `connectionState` check
-        // just below in every reachable state -- a terminal client's
-        // `connectionState` is always `Disconnected`, since [disconnect]/
-        // [stop] set it there -- but stating it explicitly here matches
-        // CONTRACT.md's wording directly rather than leaning on that
-        // invariant implicitly. Deliberately NOT checking `other.terminal`
-        // here: send() to a terminal RECEIVER is accepted (this client's own
-        // transfer statuses proceed unaffected, per the "Target ownership"
-        // bullet below); only delivery to that receiver is what gets
-        // dropped, at fire time, via runIfLive.
-        if (terminal.get()) {
-            throw ChatTransportError("send() rejected: this client is terminal (disconnect()/stop() already ran)")
-        }
         val other = requirePeer("send()")
-
-        // "send(body:) is accepted only while the connection state is connected
-        // or degraded; in any other state it throws/raises the transport-misuse
-        // 'not connected' error and emits no event." (../../../CONTRACT.md
-        // section 2's "Send precondition (pinned)"). Checked FIRST, before
-        // drawing a message ID or touching the codec, so a rejected send has zero
-        // side effects -- not even consuming a PRNG draw that a subsequent,
-        // accepted send would otherwise have gotten.
-        val stateAtSend = connectionState
-        if (stateAtSend != ChatConnectionState.Connected && stateAtSend != ChatConnectionState.Degraded) {
-            throw ChatTransportError("send() rejected: not connected or degraded (state=$stateAtSend)")
-        }
-
-        val messageId = generateMessageId()
-        val messageIdHex = messageId.toHexString()
-        // Encoding validates senderId/body bounds and UTF-8, throwing the matching
-        // ChatEnvelopeError (e.g. oversizeBody) -- see ENVELOPE.md section 3.
-        val envelope =
-            ChatEnvelope(ChatEnvelopeCodec.VERSION, ChatEnvelopeKind.TEXT, messageId, null, idBytes, body)
-        val encoded = ChatEnvelopeCodec.encode(envelope)
-
-        fun emitStatus(status: ChatMessageDisplayStatus) {
-            emit { seq -> ChatEvent.MessageStatusChanged(seq, messageIdHex, status) }
-        }
-
-        // ../../../CONTRACT.md section 2's "Target ownership" bullet: "a
-        // client never emits messageReceived after its own disconnect()/
-        // stop(), even for a message the peer's send() had already scheduled
-        // (receiver-side inbound cancellation)." Captured HERE, at send() call
-        // time, and re-checked immediately before each `other.deliverEnvelope`
-        // call below fires -- this client's OWN transfer statuses
-        // (transmitting/delivered/failed, emitted via `emitStatus` above and
-        // below) are deliberately left UNGUARDED: "The sender's own transfer
-        // statuses are unaffected by the receiver's disconnect."
         val otherGenerationAtSend = other.currentGeneration()
-
-        // t=300 in every scenario table that sends: queued fires
-        // synchronously at the call itself (QUEUED_DELAY_MS == 0), before
-        // send() returns -- "Returns on queue acceptance, NOT delivery"
-        // (CONTRACT.md section 1.8) -- from [launchBackgroundJob]'s
-        // `onAdmitted` callback, TOGETHER with this message's own
-        // `pendingSendJobs` registration, atomically with THIS client's
-        // terminal-admission check (../../../CONTRACT.md section 2's
-        // "Linearized admission and registration," reviewer probe Q3): a
-        // send admitted here is GUARANTEED present in [pendingSendJobs] by
-        // the time any subsequent [disconnect]/[stop] sweep runs
-        // ([failNonterminalOutgoingSends]), so this message is always
-        // either terminalized `failed("disconnected"/"stopped")` by that
-        // sweep, or -- if the terminal check below instead loses the race
-        // and throws -- rejected outright with no `Queued` event at all; it
-        // can never end up silently orphaned in [pendingSendJobs] with no
-        // further status transition.
-        val job = launchBackgroundJob(
-            caller = "send()",
-            onAdmitted = { job ->
-                pendingSendJobs[messageIdHex] = job
-                emitStatus(ChatMessageDisplayStatus.Queued)
-            },
-        ) {
-            delay(ChatScenarioTimings.TRANSMITTING_DELAY_MS)
-            emitStatus(ChatMessageDisplayStatus.Transmitting)
-
-            when (scenario) {
-                ChatScenario.SEND_FAILURE -> {
-                    delay(ChatScenarioTimings.SEND_FAILURE_FAILED_DELAY_MS)
-                    markTerminal(messageIdHex)
-                    emitStatus(ChatMessageDisplayStatus.Failed(ChatReasonStrings.NO_ACKNOWLEDGMENT))
+        val admission =
+            synchronized(lifecycleLock) {
+                // The terminal check, connected/degraded precondition, message-ID
+                // draw, job registration, pending-send registration, and Queued
+                // emission are one synchronous lifecycle transaction. In
+                // particular, a peer-loss scripted Disconnected+sweep cannot land
+                // between the state check and pending registration.
+                if (terminal.get()) {
+                    throw ChatTransportError(
+                        "send() rejected: this client is terminal (disconnect()/stop() already ran)",
+                    )
                 }
-
-                ChatScenario.DUPLICATE_INCOMING -> {
-                    delay(ChatScenarioTimings.DUPLICATE_DELIVER_DELAY_MS)
-                    other.runIfLive(otherGenerationAtSend) { other.deliverEnvelope(encoded) }
-
-                    // Fault-injected retransmit of the exact same bytes; B's
-                    // messageId dedup in deliverEnvelope() suppresses it, so
-                    // this produces no second messageReceived event.
-                    delay(ChatScenarioTimings.DUPLICATE_REDELIVER_DELAY_MS)
-                    other.runIfLive(otherGenerationAtSend) { other.deliverEnvelope(encoded) }
-
-                    delay(ChatScenarioTimings.DUPLICATE_DELIVERED_DELAY_MS)
-                    markTerminal(messageIdHex)
-                    emitStatus(ChatMessageDisplayStatus.Delivered)
+                val stateAtSend = connectionState
+                if (stateAtSend != ChatConnectionState.Connected &&
+                    stateAtSend != ChatConnectionState.Degraded
+                ) {
+                    throw ChatTransportError(
+                        "send() rejected: not connected or degraded (state=$stateAtSend)",
+                    )
                 }
+                testOnlyInsideSendAdmissionCriticalSection?.invoke()
 
-                ChatScenario.SLOW_LINK -> {
-                    delay(ChatScenarioTimings.SLOW_LINK_DELIVER_DELAY_MS)
-                    other.runIfLive(otherGenerationAtSend) { other.deliverEnvelope(encoded) }
+                val messageId = generateMessageId()
+                val messageIdHex = messageId.toHexString()
+                val envelope =
+                    ChatEnvelope(
+                        ChatEnvelopeCodec.VERSION,
+                        ChatEnvelopeKind.TEXT,
+                        messageId,
+                        null,
+                        idBytes,
+                        body,
+                    )
+                val encoded = ChatEnvelopeCodec.encode(envelope)
 
-                    delay(ChatScenarioTimings.SLOW_LINK_DELIVERED_DELAY_MS)
-                    markTerminal(messageIdHex)
-                    emitStatus(ChatMessageDisplayStatus.Delivered)
-                }
+                val job =
+                    launchBackgroundJob(
+                        caller = "send()",
+                        onAdmitted = { admittedJob ->
+                            pendingSendJobs[messageIdHex] = admittedJob
+                            emit { seq ->
+                                ChatEvent.MessageStatusChanged(
+                                    seq,
+                                    messageIdHex,
+                                    ChatMessageDisplayStatus.Queued,
+                                )
+                            }
+                        },
+                    ) {
+                        delay(ChatScenarioTimings.TRANSMITTING_DELAY_MS)
+                        if (!emitPendingSendStatus(messageIdHex, ChatMessageDisplayStatus.Transmitting)) {
+                            return@launchBackgroundJob
+                        }
 
-                // happyPair's own table (../../../CONTRACT.md section 3.1),
-                // AND the generic fallback the "Send precondition (pinned)"
-                // text pins for any send() accepted while connected/degraded
-                // with no scenario-specific script of its own: "follows the
-                // happyPair delivery timeline unless a scenario table or a
-                // lifecycle rule ... overrides it." peerLoss and
-                // degradedThenRecovered never call send() in their own
-                // CONTRACT.md tables, so an off-script send() during either
-                // (e.g. this module's degraded-accepts-send regression test)
-                // falls through to this same branch. A peerLoss scripted
-                // disconnect firing before this timeline completes still
-                // overrides it via failNonterminalOutgoingSends() above.
-                ChatScenario.HAPPY_PAIR, ChatScenario.PEER_LOSS, ChatScenario.DEGRADED_THEN_RECOVERED -> {
-                    delay(ChatScenarioTimings.HAPPY_PAIR_DELIVER_DELAY_MS)
-                    other.runIfLive(otherGenerationAtSend) { other.deliverEnvelope(encoded) }
+                        when (scenario) {
+                            ChatScenario.SEND_FAILURE -> {
+                                delay(ChatScenarioTimings.SEND_FAILURE_FAILED_DELAY_MS)
+                                completePendingSend(
+                                    messageIdHex,
+                                    ChatMessageDisplayStatus.Failed(ChatReasonStrings.NO_ACKNOWLEDGMENT),
+                                )
+                            }
 
-                    delay(ChatScenarioTimings.HAPPY_PAIR_DELIVERED_DELAY_MS)
-                    markTerminal(messageIdHex)
-                    emitStatus(ChatMessageDisplayStatus.Delivered)
-                }
+                            ChatScenario.DUPLICATE_INCOMING -> {
+                                delay(ChatScenarioTimings.DUPLICATE_DELIVER_DELAY_MS)
+                                deliverEnvelopeIfPendingAndTargetAccepting(
+                                    messageIdHex,
+                                    other,
+                                    otherGenerationAtSend,
+                                    encoded,
+                                )
+
+                                delay(ChatScenarioTimings.DUPLICATE_REDELIVER_DELAY_MS)
+                                deliverEnvelopeIfPendingAndTargetAccepting(
+                                    messageIdHex,
+                                    other,
+                                    otherGenerationAtSend,
+                                    encoded,
+                                )
+
+                                delay(ChatScenarioTimings.DUPLICATE_DELIVERED_DELAY_MS)
+                                completePendingSend(messageIdHex, ChatMessageDisplayStatus.Delivered)
+                            }
+
+                            ChatScenario.SLOW_LINK -> {
+                                delay(ChatScenarioTimings.SLOW_LINK_DELIVER_DELAY_MS)
+                                deliverEnvelopeIfPendingAndTargetAccepting(
+                                    messageIdHex,
+                                    other,
+                                    otherGenerationAtSend,
+                                    encoded,
+                                )
+
+                                delay(ChatScenarioTimings.SLOW_LINK_DELIVERED_DELAY_MS)
+                                completePendingSend(messageIdHex, ChatMessageDisplayStatus.Delivered)
+                            }
+
+                            ChatScenario.HAPPY_PAIR,
+                            ChatScenario.PEER_LOSS,
+                            ChatScenario.DEGRADED_THEN_RECOVERED,
+                            -> {
+                                delay(ChatScenarioTimings.HAPPY_PAIR_DELIVER_DELAY_MS)
+                                deliverEnvelopeIfPendingAndTargetAccepting(
+                                    messageIdHex,
+                                    other,
+                                    otherGenerationAtSend,
+                                    encoded,
+                                )
+
+                                delay(ChatScenarioTimings.HAPPY_PAIR_DELIVERED_DELAY_MS)
+                                completePendingSend(messageIdHex, ChatMessageDisplayStatus.Delivered)
+                            }
+                        }
+                    }
+                SendAdmission(messageIdHex, job)
             }
-        }
+
         // Test-only suspension point -- see [testOnlyAfterQueuedEmissionLatch]'s
         // doc comment. `null` (every non-test caller) makes this an
         // immediate no-op with no actual suspension. Still fully inside
         // [send]'s own commandInFlight-guarded span (this function's caller,
         // [send], has not released it yet).
-        testOnlyAfterQueuedEmissionLatch?.invoke(messageIdHex)
-        return SendAdmission(messageIdHex, job)
+        testOnlyAfterQueuedEmissionLatch?.invoke(admission.messageIdHex)
+        return admission
+    }
+
+    /**
+     * Emits a nonterminal sender status only while [messageIdHex] is still in
+     * [pendingSendJobs]. The check and event emission share [lifecycleLock]
+     * with scripted disconnect+sweep, so cooperative cancellation is not the
+     * correctness boundary: a coroutine already resumed past `delay()` either
+     * emits before Disconnected, or observes the completed sweep and drops.
+     */
+    private suspend fun emitPendingSendStatus(
+        messageIdHex: String,
+        status: ChatMessageDisplayStatus,
+    ): Boolean {
+        testOnlyBeforeSendStatusValidation?.invoke()
+        return synchronized(lifecycleLock) {
+            if (terminal.get() || messageIdHex !in pendingSendJobs) {
+                false
+            } else {
+                emit { seq -> ChatEvent.MessageStatusChanged(seq, messageIdHex, status) }
+                true
+            }
+        }
+    }
+
+    /**
+     * Atomically removes a pending send, marks it terminal, and emits its final
+     * status. A lifecycle sweep and this completion therefore have a single
+     * winner; neither can append a second terminal status after the other.
+     */
+    private suspend fun completePendingSend(
+        messageIdHex: String,
+        status: ChatMessageDisplayStatus,
+    ): Boolean {
+        testOnlyBeforeSendStatusValidation?.invoke()
+        return synchronized(lifecycleLock) {
+            if (terminal.get() || pendingSendJobs.remove(messageIdHex) == null) {
+                false
+            } else {
+                terminalMessageIds.add(messageIdHex)
+                emit { seq -> ChatEvent.MessageStatusChanged(seq, messageIdHex, status) }
+                true
+            }
+        }
+    }
+
+    /**
+     * Delivers only while the sender's transfer is pending and the receiver is
+     * still live and connected/degraded. Both clients' [lifecycleLock]s are
+     * held in the same global A-then-B order used by [runIfBothLive], making
+     * delivery atomic with either endpoint's actual or scripted disconnect.
+     *
+     * This helper is called with no lifecycle lock already held. Its only
+     * nested acquisition after the two lifecycle locks is
+     * [pendingSendJobs]' monitor on the sender; every other path in this class
+     * follows lifecycle-then-pending or takes the pending monitor alone, never
+     * pending-then-lifecycle.
+     */
+    private suspend fun deliverEnvelopeIfPendingAndTargetAccepting(
+        messageIdHex: String,
+        target: SimulatedChatTransportClient,
+        targetExpectedGeneration: Long,
+        bytes: ByteArray,
+    ): Boolean {
+        testOnlyBeforeDeliveryValidation?.invoke()
+        val clientA = if (label == 'A') this else target
+        val clientB = if (label == 'A') target else this
+        return synchronized(clientA.lifecycleLock) {
+            synchronized(clientB.lifecycleLock) {
+                val senderPending = !terminal.get() && messageIdHex in pendingSendJobs
+                val targetState = target.connectionState
+                val targetAccepting =
+                    !target.terminal.get() &&
+                        target.generation.get() == targetExpectedGeneration &&
+                        (targetState == ChatConnectionState.Connected ||
+                            targetState == ChatConnectionState.Degraded)
+                if (senderPending && targetAccepting) {
+                    target.deliverEnvelope(bytes)
+                    true
+                } else {
+                    false
+                }
+            }
+        }
     }
 
     override suspend fun cancelSend(messageIdHex: String) {
@@ -1645,12 +1751,14 @@ class SimulatedChatTransportClient internal constructor(
         // scheduled status transitions and emits
         // messageStatusChanged(failed, failureReason: "cancelled"), unless the
         // messageId is unknown or already terminal, in which case it is a no-op.
-        if (messageIdHex in terminalMessageIds) return
-        val job = pendingSendJobs.remove(messageIdHex) ?: return
-        job.cancel()
-        markTerminal(messageIdHex)
-        val cancelledStatus = ChatMessageDisplayStatus.Failed(ChatReasonStrings.CANCELLED)
-        emit { seq -> ChatEvent.MessageStatusChanged(seq, messageIdHex, cancelledStatus) }
+        synchronized(lifecycleLock) {
+            if (messageIdHex in terminalMessageIds) return
+            val job = pendingSendJobs.remove(messageIdHex) ?: return
+            job.cancel()
+            terminalMessageIds.add(messageIdHex)
+            val cancelledStatus = ChatMessageDisplayStatus.Failed(ChatReasonStrings.CANCELLED)
+            emit { seq -> ChatEvent.MessageStatusChanged(seq, messageIdHex, cancelledStatus) }
+        }
     }
 
     /** Called by [peer]'s scheduled coroutines to emit an event on THIS client's
@@ -1685,11 +1793,6 @@ class SimulatedChatTransportClient internal constructor(
                 status = ChatMessageDisplayStatus.Delivered,
             )
         emit { seq -> ChatEvent.MessageReceived(seq, message) }
-    }
-
-    private fun markTerminal(messageIdHex: String) {
-        terminalMessageIds.add(messageIdHex)
-        pendingSendJobs.remove(messageIdHex)
     }
 
     /** 16-byte message ID, drawn from this client's own independent

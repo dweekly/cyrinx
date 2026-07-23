@@ -1,6 +1,6 @@
 # Chat application contract — types, transport client, simulator, traces
 
-Fresh as of 2026-07-19. Platform-neutral application contracts for the C3-28
+Fresh as of 2026-07-23. Platform-neutral application contracts for the C3-28
 chat sample, pinned by the C3-28 design brief and
 [`docs/CYRINX_3_PLAN.md`](../../docs/CYRINX_3_PLAN.md) Phase F ("Sample
 architecture"). This document is the spec; the Swift realization
@@ -561,11 +561,15 @@ Deterministic, in-process, driven by `(scenarioName, seed)`. Requirements:
      implementations serialize check and mutation against
      `disconnect()`/`stop()` (per-client lock, actor, or serial
      dispatcher), so a validated effect can never interleave with an
-     invalidation between its check and its mutation.
+     invalidation between its check and its mutation. A scenario-scripted
+     `disconnected` transition and its pending-send sweep use that same
+     serialization boundary as one indivisible lifecycle transition.
    - **Linearized admission and registration.** The same serialization
-     covers a public command's admission (its terminality check), the
-     registration of any work it spawns (background jobs, scheduled
-     tokens, pending-transfer bookkeeping), and lifecycle invalidation:
+     covers a public command's admission (including `send()`'s
+     connected/degraded precondition), the registration of any work it
+     spawns (background jobs, scheduled tokens, pending-transfer
+     bookkeeping), every scheduled transfer status or inbound delivery,
+     and lifecycle invalidation:
      a command admitted before an invalidation registers its work where
      the invalidation sweep will find it (or completes rejection before
      the sweep); a command arriving after is rejected. No orphan may
@@ -584,16 +588,19 @@ Deterministic, in-process, driven by `(scenarioName, seed)`. Requirements:
      state. Ownership spans the COMPLETE public call — from entry to
      the call's return to its caller, across any internal suspension —
      identically on both platforms: a sequence rejected on one platform
-     is rejected on the other. Starting scheduled work inside the span
-     must never synchronously execute (or trap on) that work's body on
-     the caller's thread; the work's first dispatch happens outside the
-     span. Message-ID draws and all other command-span mutations
-     execute inside the command's serialized span. Scheduled simulator
-     work may still race a command internally; that interleaving is
-     what the atomic-validation and linearized-admission bullets
-     govern, and Kotlin retains its internal locks as defense in
-     depth. The live SDK's threading ownership remains C3-01's to pin,
-     not this sample's.
+     is rejected on the other. Registering and starting scheduled work
+     are both part of the complete public call: registration happens
+     before the start, and command ownership remains held until the
+     start operation itself returns. Thus synchronous dispatch latency
+     cannot expose an unowned tail in which a second public command is
+     admitted before the first call returns. Message-ID draws and all
+     other command-span mutations execute inside the command's
+     serialized span. Scheduled simulator work may still race a command
+     internally; every such effect is revalidated at fire time under
+     the target lifecycle serialization boundary. That interleaving is
+     what the atomic-validation and linearized-admission bullets govern,
+     and Kotlin retains its internal locks as defense in depth. The live
+     SDK's threading ownership remains C3-01's to pin, not this sample's.
    - **Cancellation-safe terminal completion.** Once a terminal
      command (`disconnect()`/`stop()`) commits its invalidation (flag,
      generation), the remainder — awaiting admitted work, terminalizing
