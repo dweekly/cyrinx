@@ -1,0 +1,5 @@
+{"eventSeq": 0, "connection": "disconnected", "budget": "controlOnly", "peers": ["beeb8da1"], "messages": [], "banner": null, "gap": false}
+{"eventSeq": 1, "connection": "connecting", "budget": "controlOnly", "peers": ["beeb8da1"], "messages": [], "banner": null, "gap": false}
+{"eventSeq": 2, "connection": "connected", "budget": "controlOnly", "peers": ["beeb8da1"], "messages": [], "banner": null, "gap": false}
+{"eventSeq": 3, "connection": "disconnected", "budget": "controlOnly", "peers": ["beeb8da1"], "messages": [], "banner": "Peer stopped responding. Move the devices closer and reconnect.", "gap": false}
+{"eventSeq": 4, "connection": "disconnected", "budget": "controlOnly", "peers": [], "messages": [], "banner": "Peer stopped responding. Move the devices closer and reconnect.", "gap": false}
