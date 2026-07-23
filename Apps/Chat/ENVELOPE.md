@@ -1,6 +1,6 @@
 # Chat envelope v1 — byte spec and golden-vector contract
 
-Fresh as of 2026-07-19. Pinned by the C3-28 design brief (orchestrator-owned,
+Fresh as of 2026-07-23. Pinned by the C3-28 design brief (orchestrator-owned,
 not itself checked into this tree) and by
 [`docs/CYRINX_3_PLAN.md`](../../docs/CYRINX_3_PLAN.md) Phase F, "Chat message
 envelope." This document is authoritative for the wire layout; the Swift
@@ -257,10 +257,9 @@ expected bytes or decoded fields need to change, the corresponding change
 to this document's layout/error tables must land in the same commit, and
 the PR description must say which section changed and why.
 
-To regenerate:
+To regenerate from the repository root:
 
 ```console
-cd /Users/dew/dev/cyrinx-WORKTREE/c3-28-chat
 python3 -m venv .venv          # if the venv does not already exist
 .venv/bin/python Apps/Chat/fixtures/tools/generate_golden.py --self-test
 # iterate on generate_golden.py until self-test passes, then:

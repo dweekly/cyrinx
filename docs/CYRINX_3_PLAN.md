@@ -1159,8 +1159,9 @@ dependency.
 **Verification and documentation**
 
 - Cross-check Swift and Kotlin encoded bytes against every golden vector.
-- Test invalid UTF-8, oversize, duplicate ID, unknown version/kind, and seeded
-  failure behavior.
+- Test invalid UTF-8, oversize, and unknown version/kind against the shared
+  envelope vectors; test duplicate-ID suppression and seeded failure behavior
+  against the platform-neutral scenarios on both implementations.
 - Test retry-stable sequence values, bounded out-of-order reassembly,
   duplicate-sequence rejection, explicit gaps, reconnection scope reset, and
   sequence exhaustion.
