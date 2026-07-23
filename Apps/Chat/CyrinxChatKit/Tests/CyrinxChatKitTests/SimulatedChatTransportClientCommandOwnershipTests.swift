@@ -4,6 +4,13 @@ import Testing
 
 @testable import CyrinxChatKit
 
+#if canImport(Darwin)
+    import Darwin
+    import MachO
+#elseif canImport(Glibc)
+    import Glibc
+#endif
+
 /// C3-28 round-5 fix pass: direct tests of CONTRACT.md §2's "Command
 /// ownership (pinned)" bullet -- `SimulatedChatTransportClient`'s
 /// `commandLock`/`commandActive` guard (see that type's own "Command
@@ -392,12 +399,27 @@ struct SimulatedChatTransportClientCommandOwnershipTests {
         #expect(connectionChanges == [.connecting, .connected, .disconnected(reason: "stopped")])
     }
 
-    @Test(
-        "The default non-throwing-command misuse handler terminates the process instead of failing open",
-        .timeLimit(.minutes(1))
-    )
-    func defaultMisuseHandlerTerminatesTheProcess() async {
-        await #expect(processExitsWith: .failure) {
+    #if os(macOS) || os(Linux)
+        @Test(
+            "The default non-throwing-command misuse handler terminates the process instead of failing open",
+            .timeLimit(.minutes(1))
+        )
+        func defaultMisuseHandlerTerminatesTheProcess() async throws {
+            if ProcessInfo.processInfo.environment[misuseTrapProbeEnvironmentKey] == "1" {
+                // This branch runs only in the child test process. Reaching
+                // the end means the production precondition failed open.
+                try await exerciseDefaultMisuseHandler()
+                Issue.record("The default misuse handler returned instead of terminating the process")
+                return
+            }
+
+            let observation = try await runMisuseTrapProbe()
+            #expect(observation.terminatedByUncaughtSignal)
+            #expect(observation.standardError.contains(misuseTrapProbeReadyMarker))
+            #expect(observation.standardError.contains(misuseTrapProbeExpectedDiagnostic))
+        }
+
+        private func exerciseDefaultMisuseHandler() async throws {
             let (clientA, _, clock) = try await connectedPair(seed: 305)
             clock.advance(toMs: 300)
 
@@ -408,9 +430,10 @@ struct SimulatedChatTransportClientCommandOwnershipTests {
             // The first send still owns the command span. With no
             // test-only misuseHandler installed, a non-throwing concurrent
             // command must take the production preconditionFailure path.
+            writeMisuseTrapProbeReadyMarker()
             await box.client.disconnect()
         }
-    }
+    #endif
 
     @Test(
         "Cancelling a latched-send waiter unwinds without a spurious harness issue",
@@ -478,12 +501,15 @@ private final class LockedBox<Value>: @unchecked Sendable {
 }
 
 private enum ConcurrencyHarnessError: Error, CustomStringConvertible {
+    case childProcessLaunchFailed(String)
     case signalEnded(String)
     case timedOut(String)
     case workerFailures([String])
 
     var description: String {
         switch self {
+        case .childProcessLaunchFailed(let description):
+            return "child process failed to launch: \(description)"
         case .signalEnded(let description):
             return "\(description) ended without its expected signal"
         case .timedOut(let description):
@@ -493,6 +519,200 @@ private enum ConcurrencyHarnessError: Error, CustomStringConvertible {
         }
     }
 }
+
+#if os(macOS) || os(Linux)
+    private let misuseTrapProbeEnvironmentKey = "CYRINX_CHAT_MISUSE_TRAP_PROBE"
+    private let misuseTrapProbeTestFilter = "defaultMisuseHandlerTerminatesTheProcess"
+    private let misuseTrapProbeReadyMarker = "CYRINX_CHAT_MISUSE_TRAP_READY"
+    private let misuseTrapProbeExpectedDiagnostic =
+        "SimulatedChatTransportClient: concurrent public-command entry detected"
+
+    private struct MisuseTrapProbeObservation: Sendable {
+        let terminatedByUncaughtSignal: Bool
+        let standardError: String
+    }
+
+    /// Runs the current Swift Testing host as a child with an environment
+    /// marker. Reusing its executable and required arguments preserves
+    /// SwiftPM's platform-specific test-bundle loader; the inherited filter
+    /// is replaced with this probe alone. The marked copy of
+    /// `defaultMisuseHandlerTerminatesTheProcess` takes the misuse path
+    /// directly instead of recursively launching another child. A dedicated
+    /// OS thread owns the blocking process wait.
+    private func runMisuseTrapProbe() async throws -> MisuseTrapProbeObservation {
+        let standardErrorURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cyrinx-chat-misuse-\(UUID().uuidString).stderr")
+        guard FileManager.default.createFile(atPath: standardErrorURL.path, contents: nil),
+            let standardErrorHandle = FileHandle(forWritingAtPath: standardErrorURL.path)
+        else {
+            throw ConcurrencyHarnessError.childProcessLaunchFailed(
+                "could not create the trap probe's temporary standard-error file"
+            )
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+        process.arguments = misuseTrapProbeArguments()
+
+        var environment = ProcessInfo.processInfo.environment
+        environment[misuseTrapProbeEnvironmentKey] = "1"
+        #if canImport(Darwin)
+            inheritThreadSanitizerRuntimeIfPresent(into: &environment)
+        #endif
+        process.environment = environment
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = standardErrorHandle
+
+        do {
+            try process.run()
+        } catch {
+            standardErrorHandle.closeFile()
+            try? FileManager.default.removeItem(at: standardErrorURL)
+            throw ConcurrencyHarnessError.childProcessLaunchFailed(String(describing: error))
+        }
+        standardErrorHandle.closeFile()
+
+        // Publish only an already-running process. Timeout cleanup therefore
+        // cannot observe "not running" and then race a later process launch.
+        let processBox = LockedBox(process)
+        let observationBox = LockedBox<MisuseTrapProbeObservation?>(nil)
+        let workerGroup = DispatchGroup()
+        workerGroup.enter()
+
+        let worker = Thread {
+            defer {
+                try? FileManager.default.removeItem(at: standardErrorURL)
+                workerGroup.leave()
+            }
+
+            let runningProcess = processBox.withLock { $0 }
+            runningProcess.waitUntilExit()
+            let standardErrorData = (try? Data(contentsOf: standardErrorURL)) ?? Data()
+            observationBox.withLock {
+                $0 = MisuseTrapProbeObservation(
+                    terminatedByUncaughtSignal: runningProcess.terminationReason == .uncaughtSignal,
+                    standardError: String(decoding: standardErrorData, as: UTF8.self)
+                )
+            }
+        }
+        worker.start()
+
+        do {
+            try await waitForProcessWorker(
+                workerGroup,
+                timeout: .seconds(15),
+                description: "default-misuse trap child process"
+            )
+        } catch {
+            processBox.withLock { runningProcess in
+                if runningProcess.isRunning {
+                    runningProcess.terminate()
+                }
+            }
+            do {
+                try await waitForProcessWorker(
+                    workerGroup,
+                    timeout: .seconds(2),
+                    description: "SIGTERM-terminated default-misuse trap child process"
+                )
+            } catch {
+                forceKill(processBox)
+                do {
+                    try await waitForProcessWorker(
+                        workerGroup,
+                        timeout: .seconds(5),
+                        description: "SIGKILL-terminated default-misuse trap child process"
+                    )
+                } catch {
+                    try? FileManager.default.removeItem(at: standardErrorURL)
+                    preconditionFailure(
+                        "The default-misuse trap worker survived SIGKILL; aborting to avoid "
+                            + "leaking a child process or dedicated thread"
+                    )
+                }
+            }
+            throw error
+        }
+
+        guard let observation = observationBox.withLock({ $0 }) else {
+            throw ConcurrencyHarnessError.signalEnded("default-misuse trap observation")
+        }
+        return observation
+    }
+
+    /// Preserves SwiftPM's test-host arguments while replacing any inherited
+    /// filter with the single crash-probe test. This prevents a crash in an
+    /// unrelated concurrently running test from satisfying the assertion.
+    private func misuseTrapProbeArguments() -> [String] {
+        var result: [String] = []
+        var iterator = CommandLine.arguments.dropFirst().makeIterator()
+        while let argument = iterator.next() {
+            if argument == "--filter" {
+                _ = iterator.next()
+            } else if !argument.hasPrefix("--filter=") {
+                result.append(argument)
+            }
+        }
+        result.append(contentsOf: ["--filter", misuseTrapProbeTestFilter])
+        return result
+    }
+
+    private func waitForProcessWorker(
+        _ workerGroup: DispatchGroup,
+        timeout: Duration,
+        description: String
+    ) async throws {
+        let completion = CancellationAwareSignal()
+        workerGroup.notify(queue: .global()) {
+            completion.signal()
+        }
+        defer { completion.cancel() }
+        try await completion.wait(timeout: timeout, description: description)
+    }
+
+    private func forceKill(_ processBox: LockedBox<Process>) {
+        processBox.withLock { runningProcess in
+            guard runningProcess.isRunning else {
+                return
+            }
+            #if canImport(Darwin)
+                _ = Darwin.kill(runningProcess.processIdentifier, SIGKILL)
+            #elseif canImport(Glibc)
+                _ = Glibc.kill(runningProcess.processIdentifier, SIGKILL)
+            #endif
+        }
+    }
+
+    private func writeMisuseTrapProbeReadyMarker() {
+        FileHandle.standardError.write(Data("\(misuseTrapProbeReadyMarker)\n".utf8))
+        FileHandle.standardError.synchronizeFile()
+    }
+
+    #if canImport(Darwin)
+        /// SwiftPM hosts macOS test bundles through `dlopen`. Under TSan the
+        /// runtime must instead be present when the child host starts, so
+        /// propagate the already-loaded runtime through dyld.
+        private func inheritThreadSanitizerRuntimeIfPresent(
+            into environment: inout [String: String]
+        ) {
+            for imageIndex in 0..<_dyld_image_count() {
+                guard let imageName = _dyld_get_image_name(imageIndex) else {
+                    continue
+                }
+                let imagePath = String(cString: imageName)
+                guard imagePath.hasSuffix("libclang_rt.tsan_osx_dynamic.dylib") else {
+                    continue
+                }
+
+                let existingPaths = environment["DYLD_INSERT_LIBRARIES"].map { [$0] } ?? []
+                environment["DYLD_INSERT_LIBRARIES"] =
+                    (existingPaths + [imagePath]).joined(separator: ":")
+                return
+            }
+        }
+    #endif
+#endif
 
 /// A buffered, one-shot async signal. `AsyncStream` makes a suspended wait
 /// cancellation-aware: cancelling the waiter ends iteration instead of
