@@ -24,7 +24,11 @@ enum ChatUITestSupport {
     /// and this sample's own `chat.attachTo`, and returns it running.
     /// `chat.simulated` is intentionally omitted -- always `true` through
     /// C3-28-C3-30 regardless (CONTRACT.md §5), so there is nothing this
-    /// launcher needs to pass for it.
+    /// launcher needs to pass for it. `@MainActor`: recent XCTest SDKs
+    /// isolate `XCUIApplication`'s initializer, `launchArguments`, and
+    /// `launch()` to the main actor (same rationale as `assertExists`
+    /// below); every call site is already an `@MainActor` `XCTestCase`.
+    @MainActor
     static func launch(scenario: String, seed: UInt64 = 1, attachToB: Bool = false) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [

@@ -29,11 +29,11 @@ let package = Package(
     name: "CyrinxChatApp",
     platforms: [
         .macOS(.v14),
-        .iOS(.v17)
+        .iOS(.v17),
     ],
     products: [
         .library(name: "CyrinxChatApp", targets: ["CyrinxChatApp"]),
-        .executable(name: "chat-model-trace-gen", targets: ["ChatModelTraceGen"])
+        .executable(name: "chat-model-trace-gen", targets: ["ChatModelTraceGen"]),
     ],
     dependencies: [
         .package(path: "../../CyrinxChatKit")
@@ -50,7 +50,7 @@ let package = Package(
             name: "ChatModelTraceGen",
             dependencies: [
                 "CyrinxChatApp",
-                .product(name: "CyrinxChatKit", package: "CyrinxChatKit")
+                .product(name: "CyrinxChatKit", package: "CyrinxChatKit"),
             ],
             path: "Sources/ChatModelTraceGen"
         ),
@@ -58,9 +58,9 @@ let package = Package(
             name: "CyrinxChatAppTests",
             dependencies: [
                 "CyrinxChatApp",
-                .product(name: "CyrinxChatKit", package: "CyrinxChatKit")
+                .product(name: "CyrinxChatKit", package: "CyrinxChatKit"),
             ],
             path: "Tests/CyrinxChatAppTests"
-        )
+        ),
     ]
 )
