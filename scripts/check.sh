@@ -6,4 +6,6 @@ cd "$ROOT_DIR"
 
 ./scripts/format-check.sh
 ./scripts/lint.sh
+./scripts/check-api-inventory.sh --test
+./scripts/check-api-inventory.sh
 swift test

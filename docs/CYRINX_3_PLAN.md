@@ -1,6 +1,6 @@
 # Cyrinx 3.0 Delivery Plan
 
-Fresh as of 2026-07-20. Status: proposed execution decomposition, revised per
+Fresh as of 2026-07-23. Status: proposed execution decomposition, revised per
 PR #69 review: Rank 2's 4x real-time gate now blocks at C3-09/C3-10, Rank 5 is
 split (C3-20a measurements / C3-20b self-characterization / C3-21 sounding),
 the bounded capacity-predictor spike is restored as C3-21a, and C3-16 requires
@@ -119,9 +119,9 @@ The exact target names may change in the initial architecture decision record,
 but the dependency direction must remain:
 
 ```text
-CCyrinxDSP          portable FFT, bulk/bootstrap codecs, sounder metrics
+CCyrinxDSP          FFT, coded PHY blocks/validity, sounder metrics
     ^
-CCyrinxCore         profiles, framing, streaming contexts, session, diagnostics
+CCyrinxCore         profiles, wire/message framing, session, diagnostics
     ^
 CyrinxCore          platform-neutral Swift value types and actor facade
     ^
@@ -218,6 +218,10 @@ final downstream lane.
 
 **Depends on:** none.
 
+**Contract artifacts:** [architecture decisions](adr/README.md),
+[semantic state contract](CYRINX_3_SEMANTIC_CONTRACT.md), and
+[machine-checked 2.x API/ABI disposition](API_INVENTORY.md).
+
 **Scope**
 
 - Add architecture decision records for canonical ownership, executor/thread
@@ -226,8 +230,9 @@ final downstream lane.
 - Specify lifecycle states, connection states, transfer states, terminal
   outcomes, event generations, and snapshot recovery after event loss.
 - Specify the stable 3.0 API vocabulary without implementing it:
-  `CyrinxTransport`, `CyrinxPeer`, `CyrinxConnection`, `CyrinxTransfer`,
-  `LinkEstimate`, `SendOptions`, and structured errors.
+  `CyrinxTransport` and its `Configuration`/composite `Event`, `CyrinxPeer`,
+  `CyrinxConnection`, `CyrinxTransfer`, `LinkEstimate`, `SendOptions` and its
+  `DeliveryMode`, explicit `SecurityStatus`, and structured errors.
 - Define separate semantic, ABI, wire, profile, policy, and schema version axes.
 - Inventory each public 2.x Swift and C symbol as retain, deprecate, move to
   experimental, or replace.
@@ -258,6 +263,10 @@ with C3-03.
 - Add one representative Swift Testing suite and prove that `swift test` and CI
   discover both frameworks. Keep test-framework migration mechanical and
   separate from production behavior; do not require a big-bang conversion.
+- Add compiler-extracted macOS+iOS public-surface union coverage before lifting
+  C3-01's temporary prohibition on platform-exclusive public declarations.
+- Add semantic-value fixtures for retained/deprecated 2.x raw enums and public
+  static constants, which Swift symbol graphs do not encode.
 - Define shared Swift Testing tags for critical contracts, conformance, and
   intentionally slow suites. Do not mix Swift Testing and XCTest in one file.
 - Record Swift and C coverage separately. Coverage begins as an observed metric;
@@ -664,15 +673,26 @@ ends without unexplained sample loss, dead route, or unreported overflow.
   practical, and bounded effects for timers, TX enqueue, snapshots, and events.
 - Replace blocking ACK polling, direct application callbacks, process-global
   throttles, and synthetic goodput mutation.
-- Add a bounded C event queue with monotonic generation/timestamp, coalescing for
-  high-rate metrics, and sticky overflow generation outside the queue.
+- Add epoch/effect tokens, composite event generations, atomic snapshots, and a
+  bounded C event queue with high-rate metric coalescing and per-cursor sticky
+  overflow.
+- Implement atomic subscribe-with-snapshot, acknowledge, and snapshot-and-rebase
+  operations, including bounded cursor leases, invalidation, and terminal
+  tombstone retention.
+- Store and expose the baseline unsecured transport `SecurityStatus`.
 - Define explicit start, stop, restart, cancel, reset, and destroy behavior.
 
 **Verification and documentation**
 
 - Snapshot every valid transition and reject invalid commands deterministically.
-- Inject timer races, simultaneous commands, queue overflow, cancellation, and
+- Inject timer races, simultaneous commands, queue overflow, cancellation,
+  cursor acknowledgement/rebase races, lease expiry, tombstone eviction, and
   destruction with pending effects.
+- Cover concurrent start/join/idempotence, stop-versus-running-ready, startup
+  failure/cancellation precedence, and connection-close cancellation.
+- Verify stale epoch/effect rejection, composite-generation atomicity, sticky
+  overflow clearing only on successful rebase, and the explicit unsecured
+  transport status.
 - Run TSan where supported and sanitizer builds for C.
 - Document the executor and callback contract.
 
@@ -690,11 +710,15 @@ callback occurs on the audio thread, and no test uses wall-clock sleeping.
 - Add listen-before-talk, randomized bounded slots, duplicate suppression,
   expiration, and deterministic nonce-based role election.
 - Emit peer found/updated/lost events with explicit reasons and generation.
+- Store connection `SecurityStatus`; reject unknown or nonzero security
+  requirements before an association becomes `active`.
 
 **Verification and documentation**
 
 - Simulate two and multiple simultaneous advertisers, collisions, duplicates,
   peer disappearance, nonce ties, version mismatch, and cancellation.
+- Test unknown, stronger, disappearing, and contradictory security offers; no
+  active connection may acquire a positive security claim in 3.0.
 - Run a long noise corpus with no false peer event meeting the declared
   confidence threshold.
 - Document peer identity as ephemeral and unauthenticated.
@@ -711,14 +735,28 @@ failure without persistent collision or deadlock.
 - Implement bounded message IDs, fragmentation, reassembly, duplicate
   suppression, cancellation, missing-block maps, and queue backpressure using a
   manually selected conservative bulk profile.
-- Add transfer states for accepted, rendered, best-effort complete, partial, and
-  failed. Do not call a best-effort result reliably delivered.
+- Add the versioned C representation of `SendOptions`: best-effort delivery,
+  four priority classes with FIFO within a class and a fixed bounded
+  anti-starvation baseline, an injected-monotonic-clock deadline, and the
+  manual `require(id, hash)` profile constraint. The declared default
+  `receiptRequired` mode is rejected as unsupported before transfer creation
+  until C3-22 enables it; `negotiated` and `allow(set)` are likewise rejected
+  until C3-23.
+- Add transfer states and terminal outcomes for accepted, rendering, rendered,
+  best-effort complete, received, partial, failed, and `cancelled(stage)`. Do
+  not call a best-effort result reliably delivered.
+- Insert complete inbound messages into the authoritative bounded C mailbox and
+  expose atomic single-consumer claim; event loss cannot consume or discard a
+  mailbox entry.
 - Preserve robust control slots while the bulk burst is active.
 
 **Verification and documentation**
 
 - Test empty/min/max messages, fragment boundaries, missing/duplicate/reordered
   blocks, cancellation at each state, queue full, peer loss, and restart.
+- Test every `SendOptions` field, pre-admission deadline/mode rejection,
+  same-class FIFO, mailbox-full behavior, event-overflow recovery, and racing
+  mailbox claims.
 - Attempt 64 KiB and 1 MiB simulator and physical best-effort transfers and
   report exact delivered/missing maps.
 - Document best-effort semantics and limits.
@@ -854,6 +892,12 @@ stops rather than retuning indefinitely.
 - Add selective ACK bitmaps, bounded retransmission windows, ACK-loss recovery,
   retry exhaustion, duplicate suppression, and terminal reliable-delivery
   receipts.
+- Enable `receiptRequired` admission and retransmit the same idempotent final
+  receipt after duplicate valid data without reinsertion, redelivery, or a new
+  terminal outcome.
+- Add the `awaitingReceipt` state and `receiptConfirmed` terminal outcome with
+  the exact rendered/receipt/cancellation precedence from the semantic
+  contract.
 - Keep retransmission scheduling compatible with robust control reservations and
   profile activation boundaries.
 - Define cancellation and peer-loss semantics for queued, on-air, acknowledged,
@@ -863,6 +907,10 @@ stops rather than retuning indefinitely.
 
 - Fault-inject every data/ACK loss and duplication location, wraparound,
   cancellation, backpressure, restart, and retry exhaustion.
+- Prove receipt loss followed by duplicate data recovers, while mailbox count,
+  delivery count, and terminal-outcome count remain one.
+- Exercise every valid and invalid transition into `awaitingReceipt` and
+  `receiptConfirmed`, including receipt-versus-cancellation reducer order.
 - Require hash-correct completion or an explicit terminal failure; never expose
   partial bytes as a reliable success.
 - Document delivery evidence and why acknowledgment is not authenticated peer
@@ -880,6 +928,9 @@ dependency).
 **Scope**
 
 - Define a versioned replaceable policy with one conservative built-in default.
+- Enable `negotiated` and `allow(set)`, preserve `require(id, hash)`, and reject
+  every profile-constraint escape. Replace the fixed C3-19 fairness baseline
+  with a versioned bounded anti-starvation policy across priority classes.
 - Select directional speaker/input, primary versus MRC, CP, pilot cadence,
   MCS/FEC, active mask, coherent tier, or non-coherent floor from causally prior
   evidence. The C3-21a predictor participates in these selections only if it
@@ -893,6 +944,8 @@ dependency).
 
 - Replay preregistered quiet, HVAC, reverberant, shadowed, moved, and route-change
   sequences against the best fixed conservative policy.
+- Test exact profile-constraint rejection, allowed-set selection, same-class
+  FIFO, cross-class bounded fairness, and observable policy-version changes.
 - Add leakage tests that mutate payload/data bins/current CRC and prove the same
   receiver/profile decision.
 - Calibrate advertised lower bounds against subsequent delivery windows.
@@ -915,7 +968,10 @@ always returns to bootstrap.
 - Expose peer discovery, connection lifecycle, transfer receipts/status updates,
   incoming messages, link estimates, cancellation, and explicit shutdown.
 - Drain C events on a non-audio executor using bounded `AsyncStream` policies;
-  detect generation gaps and refresh authoritative snapshots.
+  project the atomic cursor/ack/rebase contract, detect generation gaps, refresh
+  authoritative snapshots, and surface lease invalidation/history loss.
+- Project `SendOptions`, explicit `SecurityStatus`, and atomic inbound mailbox
+  claim without adding Swift-owned policy or state.
 - Inject the audio adapter, clock where applicable, and diagnostic sink rather
   than creating hidden global dependencies.
 
@@ -923,8 +979,9 @@ always returns to bootstrap.
 
 - Add Swift Testing async tests for success, errors, event ordering, buffer
   overflow, snapshot refresh, cancellation, deallocation, repeated start/stop,
-  and concurrent callers. Use confirmations and injected clocks rather than
-  sleeps.
+  concurrent callers, cursor invalidation, mailbox claim races, every send
+  option, and security projection. Use confirmations and injected clocks rather
+  than sleeps.
 - Compile with strict concurrency and no `@unchecked Sendable` on public session
   types.
 - Add DocC tutorials for discovery, send/receive, failure, and custom audio.
@@ -945,11 +1002,14 @@ lost silently.
   streams for events, incoming messages, and status.
 - Map cancellation, close, native error, unknown enum/version, and event overflow
   without duplicating protocol state.
+- Project the same cursor/ack/rebase and mailbox-claim operations,
+  `SendOptions`, and `SecurityStatus` as the C contract.
 
 **Verification and documentation**
 
 - Add coroutine tests with virtual time for lifecycle, flow backpressure,
-  cancellation, generation gaps, close races, and native exceptions.
+  cancellation, generation gaps, cursor invalidation, mailbox claim races,
+  close races, send options, security projection, and native exceptions.
 - Run Swift/Kotlin API-behavior scenarios from shared machine-readable traces.
 - Add KDoc and Android integration documentation.
 
@@ -1040,13 +1100,20 @@ Cyrinx transport wire protocol. Version 1 contains:
 - envelope version and message kind;
 - 128-bit random message ID;
 - sender's current ephemeral peer ID;
+- a nonzero sender-local 64-bit sequence number, strictly increasing within the
+  current ephemeral peer/chat-connection scope;
 - UTF-8 body length and body; and
 - optional reply-to message ID reserved but absent by default.
 
 The body is capped at 2 KiB for 3.0. Sender wall-clock time is display metadata,
 not delivery ordering evidence, because peer clocks are not assumed
-synchronized. Cross-language golden vectors pin valid, malformed, maximum,
-Unicode, duplicate-ID, and unknown-version envelopes.
+synchronized. Retries retain both message ID and sequence number. Reconnection
+creates a new ordering scope; sequence exhaustion requires a new scope rather
+than wraparound. A receiver buffers within a documented finite window, discards
+duplicate IDs, and surfaces an explicit gap when a missing sequence terminates
+or exceeds that bound. No global order is claimed across two senders.
+Cross-language golden vectors pin valid, malformed, maximum, Unicode,
+duplicate-ID, out-of-order, gap, and unknown-version envelopes.
 
 ### Sample architecture
 
@@ -1082,6 +1149,9 @@ dependency.
 - Cross-check Swift and Kotlin encoded bytes against every golden vector.
 - Test invalid UTF-8, oversize, duplicate ID, unknown version/kind, and seeded
   failure behavior.
+- Test retry-stable sequence values, bounded out-of-order reassembly,
+  duplicate-sequence rejection, explicit gaps, reconnection scope reset, and
+  sequence exhaustion.
 - Add `Apps/Chat/README.md` with scope, non-security warning, and simulator use.
 
 **Merge gate:** both platforms can exchange the same chat envelopes in tests
@@ -1176,8 +1246,10 @@ an Apple and Android app exchange text and show correct terminal delivery state.
 
 **Verification and documentation**
 
-- Require bidirectional seeded message sets to arrive once, byte-identical and
-  in transport order, or end in an explicit failure state.
+- Require bidirectional seeded message sets to arrive once and byte-identical,
+  with each sender's successful messages presented in application-envelope
+  sequence order or with an explicit bounded gap/failure. Do not infer a global
+  order between senders from transport timing.
 - Exercise peer disappearance, cancellation, degradation/fallback, recovery,
   and route change.
 - Capture release screenshots only after the underlying run passes its evidence
