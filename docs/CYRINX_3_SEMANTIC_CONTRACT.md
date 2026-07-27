@@ -19,7 +19,8 @@ projection, but it may not independently transition canonical state.
 | Connection lifecycle and negotiated capabilities | C session reducer | Session reducer executor | `CyrinxConnection` snapshots |
 | Transfer lifecycle, terminal outcome, and receipt evidence | C session reducer | Session reducer executor | `CyrinxTransfer` snapshots and waiters |
 | Inbound mailbox payload, capacity, availability, and claim state | C session reducer | Session reducer executor | Snapshot metadata and atomic facade claim results |
-| Wire/profile/policy selection | C registry and reducer | Session reducer executor | Generated binding values |
+| Profile/policy identity and geometry | C registry | Registry generation/build step | Generated binding values (immutable, presented not mutated) |
+| Wire/profile/policy selection (active runtime choice) | C session reducer | Session reducer executor | Generated binding values and the registry-sourced candidate set |
 | Link measurements and validity interval | C DSP result committed by reducer | DSP workspace, then reducer commit | `LinkEstimate` values |
 | Event epoch, generation, order, cursor lease/ack/rebase, and overflow marker | C session reducer | Session reducer executor | Facade delivery queues |
 | Security status and negotiation failure | C session reducer | Session reducer executor | Transport/connection snapshots |
@@ -175,10 +176,14 @@ accepted transfers receive ordered cancellation after any already committed
 positive terminal outcome. Connections then become terminal: normally
 `closed`, while an already-failed connection or a teardown failure remains
 `failed`. Only after every connection and transfer is terminal does the
-transport commit `stopped`. A transport-fatal failure instead terminates
-affected transfers with `partial` when positive partial evidence exists and
-`failed` otherwise, then makes connections `failed`. Obsolete effects cannot
-complete a transfer after this cascade.
+transport commit `stopped`. A transport-fatal failure instead first commits
+every affected connection to `failed(transportFatal)`, then terminates that
+connection's nonterminal transfers with `partial` when positive partial
+evidence exists and `failed(transportFatal)` otherwise — the same
+connection-before-transfers order as the `failed(connectionFailure)` cascade,
+and a distinct reason tag so bindings can distinguish one dead connection
+from a transport-wide fatality. Obsolete effects cannot complete a transfer
+after this cascade.
 
 ## 4. Discovery and peer observations
 
@@ -470,6 +475,12 @@ A facade maintains its last applied `(epoch, generation)`. The C observation
 boundary exposes one atomic `subscribeWithSnapshot` operation (the eventual
 name may differ) that registers the sole facade drain, captures an authoritative
 snapshot, and returns a cursor positioned immediately after that snapshot.
+The advertised cursor-count bound is exactly one live cursor per transport
+context. A `subscribeWithSnapshot` call that would exceed that bound fails
+with `resourceExhausted` and leaves the existing cursor — including its lease
+and generation state — unchanged; it never silently evicts a live cursor.
+Replacing the drain requires the current cursor to be released (or its lease
+to expire) first, then a fresh `subscribeWithSnapshot`.
 The bounded core event queue retains a sticky overflow marker for each cursor.
 Applying a normal event is followed by a monotonic
 `acknowledge(cursor, generation)` only after the facade has installed that
@@ -650,9 +661,14 @@ No 3.0 `SendOptions` field requests a stronger mode. If local configuration or
 a peer requires an unknown or nonzero security mechanism, connection
 establishment fails with `unsupportedCapability` or `profileMismatch` before
 message admission. A previously observed stronger/unknown offer disappearing
-is an observable negotiation delta and cannot silently produce an active
-unsecured connection. Positive security claims require a superseding contract,
-the separate cryptographic program, and external review.
+is an observable negotiation delta with a named mechanism, not an aspiration:
+the peer observation carries the peer's last observed security capability, a
+change to it is a typed change in the composite event envelope (§7.2) with its
+own generation like every other observable delta, and a downgrade detected
+during establishment fails the connection with `unsupportedCapability` before
+message admission — so an active unsecured connection can never appear as the
+silent result of an offer disappearing. Positive security claims require a
+superseding contract, the separate cryptographic program, and external review.
 
 Specifically, legacy `Config.enableCrypto == true`, a nonzero legacy security
 mode, or supplied legacy local key material is an explicit unsupported

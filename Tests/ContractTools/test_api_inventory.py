@@ -17,6 +17,12 @@ CHECKER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(CHECKER)
 
 
+TEST_TOOLCHAIN = {
+    "swift": "Apple Swift version 6.3.3 (swiftlang-6.3.3.1.3 clang-2100.1.1.101)",
+    "clang": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+}
+
+
 def refresh_fingerprint(value):
     value["fingerprint"] = CHECKER.symbol_fingerprint(value)
     return value
@@ -72,6 +78,7 @@ def manifest(*symbols):
             counts[value["language"]][value["disposition"]] += 1
     return {
         "schemaVersion": CHECKER.EXPECTED_SCHEMA_VERSION,
+        "toolchain": dict(TEST_TOOLCHAIN),
         "surface": {
             "swiftModule": "Cyrinx",
             "cHeaders": "Sources/CCyrinx/include/cyrinx/*.h",
@@ -143,6 +150,16 @@ class ManifestValidationTests(unittest.TestCase):
         del value["surface"]
         self.assert_invalid(value, "surface must be an object")
 
+    def test_rejects_missing_toolchain_metadata(self):
+        value = manifest(symbol())
+        del value["toolchain"]
+        self.assert_invalid(value, "toolchain must be an object")
+
+    def test_rejects_incomplete_toolchain_metadata(self):
+        value = manifest(symbol())
+        del value["toolchain"]["clang"]
+        self.assert_invalid(value, "toolchain.clang must be a non-empty string")
+
     def test_rejects_an_unreviewed_platform_scope(self):
         value = symbol()
         value["platforms"] = ["UNCLASSIFIED"]
@@ -178,6 +195,96 @@ class ManifestValidationTests(unittest.TestCase):
         value = manifest(symbol())
         value["classificationCounts"]["swift"]["retain"] = 2
         self.assert_invalid(value, "classificationCounts does not match")
+
+    @staticmethod
+    def phy_family_pair(*, swift_replacement, c_replacement="module:CyrinxExperimental"):
+        """Build a Swift wrapper / C twin pair in the "phy" header family.
+
+        Mirrors the real PHYStub bug: Sources/Cyrinx/PHY.swift wraps
+        Sources/CCyrinx/include/cyrinx/cyrinx_phy.h.
+        """
+
+        c_twin = symbol(
+            language="c",
+            kind="c.enum",
+            path="cyrinx_phy_stub_mode_t",
+            declaration="typedef enum cyrinx_phy_stub_mode_t cyrinx_phy_stub_mode_t",
+            disposition="experimental",
+        )
+        c_twin["source"] = "Sources/CCyrinx/include/cyrinx/cyrinx_phy.h"
+        c_twin["replacement"] = c_replacement
+        refresh_fingerprint(c_twin)
+
+        swift_wrapper = symbol(
+            language="swift",
+            kind="swift.enum",
+            path="PHYStubMode",
+            declaration="enum PHYStubMode",
+            disposition="experimental",
+        )
+        swift_wrapper["source"] = "Sources/Cyrinx/PHY.swift"
+        swift_wrapper["replacement"] = swift_replacement
+        refresh_fingerprint(swift_wrapper)
+        return c_twin, swift_wrapper
+
+    def test_rejects_a_phy_stub_style_swift_c_module_mismatch(self):
+        c_twin, swift_wrapper = self.phy_family_pair(
+            swift_replacement="module:CyrinxSimulation",
+            c_replacement="module:CyrinxExperimental",
+        )
+        value = manifest(c_twin, swift_wrapper)
+        value["replacementTargets"] = sorted(
+            {"module:CyrinxExperimental", "module:CyrinxSimulation"}
+        )
+        self.assert_invalid(
+            value,
+            "but its C twin family Sources/CCyrinx/include/cyrinx/cyrinx_phy.h "
+            "targets 'module:CyrinxExperimental'",
+        )
+
+    def test_accepts_a_swift_wrapper_matching_its_c_twin_module(self):
+        c_twin, swift_wrapper = self.phy_family_pair(
+            swift_replacement="module:CyrinxExperimental",
+            c_replacement="module:CyrinxExperimental",
+        )
+        value = manifest(c_twin, swift_wrapper)
+        value["replacementTargets"] = ["module:CyrinxExperimental"]
+        symbols = CHECKER.validate_manifest(value)
+        self.assertEqual(len(symbols), 2)
+
+
+class ToolchainIdentityTests(unittest.TestCase):
+    def test_matching_toolchain_has_no_drift(self):
+        self.assertIsNone(
+            CHECKER.toolchain_drift_diagnostic(TEST_TOOLCHAIN, dict(TEST_TOOLCHAIN))
+        )
+
+    def test_mismatched_toolchain_reports_actionable_drift(self):
+        active = {
+            "swift": "Apple Swift version 6.4.0 (swiftlang-6.4.0.1.1 clang-2200.0.0.1)",
+            "clang": TEST_TOOLCHAIN["clang"],
+        }
+        diagnostic = CHECKER.toolchain_drift_diagnostic(TEST_TOOLCHAIN, active)
+        self.assertIsNotNone(diagnostic)
+        self.assertIn(
+            "toolchain drift — re-extract and review the diff with the pinned "
+            "toolchain.",
+            diagnostic,
+        )
+        self.assertIn(TEST_TOOLCHAIN["swift"], diagnostic)
+        self.assertIn(active["swift"], diagnostic)
+        # An unaffected field is not reported as drifted.
+        self.assertEqual(diagnostic.count("clang:"), 0)
+
+    def test_mismatched_toolchain_reports_every_drifted_field(self):
+        active = {
+            "swift": "Apple Swift version 6.4.0 (swiftlang-6.4.0.1.1 clang-2200.0.0.1)",
+            "clang": "Apple clang version 22.0.0 (clang-2200.0.0.1)",
+        }
+        diagnostic = CHECKER.toolchain_drift_diagnostic(TEST_TOOLCHAIN, active)
+        self.assertIsNotNone(diagnostic)
+        self.assertIn("swift:", diagnostic)
+        self.assertIn("clang:", diagnostic)
 
 
 class PlatformSurfaceTests(unittest.TestCase):
@@ -771,7 +878,7 @@ class RefreshTests(unittest.TestCase):
             CHECKER.INVENTORY_PATH = destination
             try:
                 with contextlib.redirect_stdout(io.StringIO()):
-                    CHECKER.write_surface(value, [], "macosx")
+                    CHECKER.write_surface(value, [], "macosx", TEST_TOOLCHAIN)
             finally:
                 CHECKER.INVENTORY_PATH = original
             refreshed = json.loads(destination.read_text(encoding="utf-8"))
@@ -795,7 +902,7 @@ class RefreshTests(unittest.TestCase):
             CHECKER.INVENTORY_PATH = destination
             try:
                 with contextlib.redirect_stdout(io.StringIO()):
-                    CHECKER.write_surface(value, [live], "macosx")
+                    CHECKER.write_surface(value, [live], "macosx", TEST_TOOLCHAIN)
             finally:
                 CHECKER.INVENTORY_PATH = original
             refreshed = json.loads(destination.read_text(encoding="utf-8"))
@@ -819,7 +926,7 @@ class RefreshTests(unittest.TestCase):
             CHECKER.INVENTORY_PATH = destination
             try:
                 with contextlib.redirect_stdout(io.StringIO()):
-                    CHECKER.write_surface(value, [live], "macosx")
+                    CHECKER.write_surface(value, [live], "macosx", TEST_TOOLCHAIN)
             finally:
                 CHECKER.INVENTORY_PATH = original
             refreshed = json.loads(destination.read_text(encoding="utf-8"))
@@ -843,7 +950,7 @@ class RefreshTests(unittest.TestCase):
             CHECKER.INVENTORY_PATH = destination
             try:
                 with contextlib.redirect_stdout(io.StringIO()):
-                    CHECKER.write_surface(value, [live], "macosx")
+                    CHECKER.write_surface(value, [live], "macosx", TEST_TOOLCHAIN)
             finally:
                 CHECKER.INVENTORY_PATH = original
             refreshed = json.loads(destination.read_text(encoding="utf-8"))

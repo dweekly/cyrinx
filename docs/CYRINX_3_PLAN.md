@@ -1115,6 +1115,18 @@ or exceeds that bound. No global order is claimed across two senders.
 Cross-language golden vectors pin valid, malformed, maximum, Unicode,
 duplicate-ID, out-of-order, gap, and unknown-version envelopes.
 
+**Reconciliation with the in-flight C3-28 artifacts.** The unmerged C3-28
+branch (PR #70) shipped envelope v1 without the sequence field, with
+merge-gated golden vectors and byte-identical cross-language traces. This
+freeze deliberately amends that pre-release v1: PR #70 must, before it merges,
+revise `ENVELOPE.md`'s byte layout, all three codecs, the golden vectors, and
+the simulated client, regenerating its committed goldens under the existing
+regeneration policy (spec change in the same PR). The simulator satisfies the
+retry/out-of-order/duplicate/gap requirements through deterministic test-only
+injection seams on the paired client — its six pinned scenario timelines stay
+byte-stable — while reconnection-scope semantics bind the live adapter
+(C3-31) and are exercised in the simulator through the same seams.
+
 ### Sample architecture
 
 ```text

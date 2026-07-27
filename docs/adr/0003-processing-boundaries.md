@@ -70,7 +70,10 @@ cross the missing sample range.
 Batch entry points are adapters over the same canonical behavior. Batch and
 streaming paths must produce equivalent ordered validity and payload evidence
 within declared numerical tolerances; neither may use expected payload bytes,
-future CRC results, or same-frame payload decisions to select a receiver.
+future CRC results, or same-frame payload decisions to select a receiver or a
+PHY mode/profile for that frame — the plan's causal-adaptation invariant is
+two-part, and both halves bind every DSP block and the adaptation policy
+(C3-23's leakage tests exercise the receiver and the profile decision alike).
 
 ### Performance and evidence
 

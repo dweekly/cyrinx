@@ -30,6 +30,7 @@ effects, but do not implement a second state machine or shipping modem.
 | Profile identity and geometry | `CCyrinxCore` registry | Present immutable generated values |
 | Wire/control/message framing, fragmentation/reassembly, session, connection, transfer, inbound mailbox, retry, timer, and event order | `CCyrinxCore` reducer | Submit commands and render snapshots |
 | Link measurements and receiver-selection evidence | `CCyrinxCore` using DSP results | Format or localize the resulting values |
+| Profile/PHY-mode-selection evidence (adaptation inputs) | `CCyrinxCore` using DSP results, causally prior evidence only | Format or localize the resulting values |
 | Swift object identity, async waiters, and subscriptions | `CyrinxCore` facade | Observe immutable C snapshots |
 | Android object identity, coroutine waiters, and flows | Android binding facade | Observe immutable C snapshots |
 | Audio device and route state | Platform audio adapter | Deliver bounded PCM and discontinuity effects |

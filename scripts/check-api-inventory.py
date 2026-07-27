@@ -5,6 +5,28 @@ The live surface is extracted with the Swift and Clang symbol-graph tools. The
 checked-in inventory is deliberately keyed by language, declaration kind, and
 public path instead of compiler USRs: Clang macro USRs contain byte offsets and
 would otherwise change when comments move.
+
+Why pin the producing toolchain: the same source can extract to a different
+symbol graph fingerprint under a different Swift/Clang build (new implicit
+conformances, reworded availability, reordered attributes — see the Swift 6.3
+`Swift.SendableMetatype` handling in normalize_graph for a real example). A
+fingerprint diff caused by toolchain drift is not an API change, but it looks
+identical to one unless the toolchain identity is checked first. This mirrors
+scripts/swift-format-version.sh's pin-and-compare pattern, applied to
+`swift --version` / `clang --version` instead of `swift-format --version`.
+
+Exit codes:
+  0  the inventory matches the compiler-extracted surface, or --write
+     completed
+  1  the inventory is structurally invalid, or does not match the live
+     compiler-extracted surface (a real API/ABI change to classify)
+  3  the active Swift/Clang toolchain does not match the "toolchain" identity
+     pinned in docs/api-inventory.json (re-extract and review the diff with
+     the pinned toolchain before trusting a reported API change)
+
+scripts/check-api-inventory.sh additionally exits 2 when it cannot find a
+Python virtual environment to run this script in; see that script's usage
+comment.
 """
 
 from __future__ import annotations
@@ -25,6 +47,10 @@ from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parents[1]
 INVENTORY_PATH = ROOT / "docs" / "api-inventory.json"
+EXIT_OK = 0
+EXIT_INVENTORY_ERROR = 1
+EXIT_TOOLCHAIN_DRIFT = 3
+TOOLCHAIN_FIELDS = ("swift", "clang")
 ALLOWED_DISPOSITIONS = {"retain", "deprecate", "experimental", "replace"}
 ALLOWED_PLATFORMS = {"all", "linux", "macosx"}
 ALLOWED_LANGUAGES = {"c", "swift"}
@@ -209,6 +235,111 @@ def canonical_availability(value: Any) -> list[dict[str, Any]]:
     ]
 
 
+def c_header_symbol_family(source: Any) -> str | None:
+    """Return the header family name a checked-in C source path belongs to.
+
+    Per AGENTS.md, "C API symbols use the existing cyrinx_ / CYRINX_ prefixes
+    and public declarations belong in the matching include/cyrinx header":
+    Sources/CCyrinx/include/cyrinx/cyrinx_phy.h is the "phy" family. The
+    umbrella cyrinx.h has no single family and is not matched.
+    """
+
+    if not isinstance(source, str):
+        return None
+    prefix = "Sources/CCyrinx/include/cyrinx/cyrinx_"
+    if not source.startswith(prefix) or not source.endswith(".h"):
+        return None
+    return source[len(prefix) : -len(".h")]
+
+
+def swift_source_symbol_family(source: Any) -> str | None:
+    """Return the snake_case header family a checked-in Swift source wraps.
+
+    Cyrinx 2.x Swift wrapper files are named after the C header family they
+    front: Sources/Cyrinx/PHY.swift wraps the "phy" family
+    (Sources/CCyrinx/include/cyrinx/cyrinx_phy.h). This mirrors
+    c_header_symbol_family so the two can be compared directly.
+    """
+
+    if not isinstance(source, str):
+        return None
+    prefix = "Sources/Cyrinx/"
+    if not source.startswith(prefix) or not source.endswith(".swift"):
+        return None
+    stem = source[len(prefix) : -len(".swift")]
+    step1 = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", stem)
+    step2 = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", step1)
+    return step2.lower()
+
+
+def c_wrapper_family_module_targets(
+    symbols: list[dict[str, Any]],
+) -> dict[str, str]:
+    """Return each C header family's single agreed-upon module replacement.
+
+    A family is included only when every present C symbol in that header that
+    names a module replacement names the *same* module; a family with no
+    module-targeted symbols, or with disagreeing module targets, has nothing
+    unambiguous to enforce and is omitted.
+    """
+
+    targets_by_family: dict[str, set[str]] = {}
+    for raw_symbol in symbols:
+        if not isinstance(raw_symbol, dict) or raw_symbol.get("language") != "c":
+            continue
+        if raw_symbol.get("present") is not True:
+            continue
+        family = c_header_symbol_family(raw_symbol.get("source"))
+        if family is None:
+            continue
+        replacement = raw_symbol.get("replacement")
+        if isinstance(replacement, str) and replacement.startswith("module:"):
+            targets_by_family.setdefault(family, set()).add(replacement)
+    return {
+        family: next(iter(targets))
+        for family, targets in targets_by_family.items()
+        if len(targets) == 1
+    }
+
+
+def swift_c_wrapper_module_mismatches(symbols: list[dict[str, Any]]) -> list[str]:
+    """Flag a Swift entry whose replacement module disagrees with its C twin.
+
+    This is the PHYStub-misrouting class of bug: a Swift wrapper's source file
+    (e.g. Sources/Cyrinx/PHY.swift) and the C header family it wraps (e.g.
+    Sources/CCyrinx/include/cyrinx/cyrinx_phy.h, the "phy" family) are the
+    wrapper relationship the inventory already records via each symbol's
+    `source` path. A Swift entry and its C twin must move to the same module;
+    disagreement here previously let 20 Swift PHYStub entries record
+    module:CyrinxSimulation while their C twins recorded
+    module:CyrinxExperimental, contradicting ADR 0004.
+    """
+
+    header_targets = c_wrapper_family_module_targets(symbols)
+    mismatches: list[str] = []
+    for index, raw_symbol in enumerate(symbols):
+        if not isinstance(raw_symbol, dict) or raw_symbol.get("language") != "swift":
+            continue
+        family = swift_source_symbol_family(raw_symbol.get("source"))
+        if family is None or family not in header_targets:
+            continue
+        expected = header_targets[family]
+        replacement = raw_symbol.get("replacement")
+        if (
+            isinstance(replacement, str)
+            and replacement.startswith("module:")
+            and replacement != expected
+        ):
+            mismatches.append(
+                f"symbols[{index}].replacement is {replacement!r} "
+                f"(id={raw_symbol.get('id')!r}) but its C twin family "
+                f"Sources/CCyrinx/include/cyrinx/cyrinx_{family}.h targets "
+                f"{expected!r}; a Swift wrapper and its C twin must target the "
+                "same module"
+            )
+    return mismatches
+
+
 def validate_manifest(manifest: dict[str, Any]) -> list[dict[str, Any]]:
     errors: list[str] = []
     if manifest.get("schemaVersion") != EXPECTED_SCHEMA_VERSION:
@@ -233,6 +364,15 @@ def validate_manifest(manifest: dict[str, Any]) -> list[dict[str, Any]]:
             value = surface.get(key)
             if not isinstance(value, str) or not value.strip():
                 errors.append(f"surface.{key} must be a non-empty string")
+
+    toolchain = manifest.get("toolchain")
+    if not isinstance(toolchain, dict):
+        errors.append("toolchain must be an object")
+    else:
+        for key in TOOLCHAIN_FIELDS:
+            value = toolchain.get(key)
+            if not isinstance(value, str) or not value.strip():
+                errors.append(f"toolchain.{key} must be a non-empty string")
 
     replacement_targets = manifest.get("replacementTargets")
     if (
@@ -467,6 +607,8 @@ def validate_manifest(manifest: dict[str, Any]) -> list[dict[str, Any]]:
             f"expected {actual_counts!r}, found {expected_counts!r}"
         )
 
+    errors.extend(swift_c_wrapper_module_mismatches(symbols))
+
     if errors:
         formatted = "\n".join(f"- {error}" for error in errors)
         raise InventoryError(f"inventory structure is invalid:\n{formatted}")
@@ -520,6 +662,62 @@ def extraction_environment(cache_root: Path) -> dict[str, str]:
     return environment
 
 
+def toolchain_component_version(arguments: list[str]) -> str:
+    """Return the first stdout line of a toolchain component's --version."""
+
+    output = run(arguments, capture=True)
+    first_line = output.splitlines()[0].strip() if output else ""
+    if not first_line:
+        raise InventoryError(f"{' '.join(arguments)} produced no version output")
+    return first_line
+
+
+def active_toolchain_identity() -> dict[str, str]:
+    """Return the active `swift --version` / `clang --version` first lines.
+
+    These are the exact toolchain identities pinned in the inventory's
+    top-level "toolchain" metadata; see the module docstring for why the
+    producing toolchain is pinned.
+    """
+
+    return {
+        "swift": toolchain_component_version(["swift", "--version"]),
+        "clang": toolchain_component_version([find_clang(), "--version"]),
+    }
+
+
+def toolchain_drift_diagnostic(
+    recorded: dict[str, Any],
+    active: dict[str, str],
+) -> str | None:
+    """Return an actionable diagnostic if the active toolchain has drifted
+    from docs/api-inventory.json's pinned "toolchain" identity, else None."""
+
+    drifted = [
+        (field, recorded.get(field), active[field])
+        for field in TOOLCHAIN_FIELDS
+        if recorded.get(field) != active[field]
+    ]
+    if not drifted:
+        return None
+    lines = [
+        "toolchain drift — re-extract and review the diff with the pinned toolchain.",
+        "The checked-in fingerprints were produced by a different Swift/Clang "
+        "build than the one running this check, so a reported API/ABI change "
+        "below may only be toolchain noise:",
+    ]
+    for field, recorded_value, active_value in drifted:
+        lines.append(f"  {field}:")
+        lines.append(f"    pinned:  {recorded_value!r}")
+        lines.append(f"    active:  {active_value!r}")
+    lines.append(
+        "Install the pinned toolchain and re-run, or run "
+        "scripts/check-api-inventory.py --write with this toolchain and review "
+        "the resulting contract diff before trusting it."
+    )
+    return "\n".join(lines)
+
+
 def find_swift_command(description: dict[str, Any]) -> dict[str, Any]:
     commands = description.get("swiftCommands", {})
     if not isinstance(commands, dict):
@@ -554,6 +752,13 @@ def find_symbolgraph_extractor() -> str:
     raise InventoryError(
         "swift-symbolgraph-extract was not found in PATH or the active Xcode toolchain"
     )
+
+
+def find_clang() -> str:
+    configured = os.environ.get("CLANG") or shutil.which("clang")
+    if not configured:
+        raise InventoryError("clang was not found in PATH")
+    return configured
 
 
 def tri_not(value: bool | None) -> bool | None:
@@ -1261,9 +1466,7 @@ def extract_c_symbol_graph(
     temporary_directory: Path,
     environment: dict[str, str],
 ) -> Path:
-    clang = os.environ.get("CLANG") or shutil.which("clang")
-    if not clang:
-        raise InventoryError("clang was not found in PATH")
+    clang = find_clang()
     include_root = ROOT / "Sources" / "CCyrinx" / "include"
     headers = sorted((include_root / "cyrinx").glob("*.h"))
     if not headers:
@@ -1297,9 +1500,7 @@ def extract_c_ast(
 ) -> dict[str, Any]:
     """Extract source-contract facts that Clang ExtractAPI omits."""
 
-    clang = os.environ.get("CLANG") or shutil.which("clang")
-    if not clang:
-        raise InventoryError("clang was not found in PATH")
+    clang = find_clang()
     include_root = ROOT / "Sources" / "CCyrinx" / "include"
     headers = sorted((include_root / "cyrinx").glob("*.h"))
     umbrella = temporary_directory / "cyrinx-public-headers.c"
@@ -2316,6 +2517,7 @@ def write_surface(
     manifest: dict[str, Any] | None,
     live_symbols: list[dict[str, Any]],
     swift_platform: str,
+    toolchain: dict[str, str],
 ) -> None:
     if swift_platform != "macosx":
         raise InventoryError(
@@ -2442,6 +2644,10 @@ def write_surface(
 
     output = {
         "schemaVersion": EXPECTED_SCHEMA_VERSION,
+        "toolchain": {
+            "swift": toolchain["swift"],
+            "clang": toolchain["clang"],
+        },
         "surface": {
             "swiftModule": "Cyrinx",
             "cHeaders": "Sources/CCyrinx/include/cyrinx/*.h",
@@ -2503,14 +2709,18 @@ def main() -> int:
 
     if arguments.write:
         live_symbols, swift_platform = extract_live_surface()
-        write_surface(manifest, live_symbols, swift_platform)
-        return 0
+        write_surface(manifest, live_symbols, swift_platform, active_toolchain_identity())
+        return EXIT_OK
 
     if manifest is None:
         raise InventoryError(f"missing inventory: {INVENTORY_PATH.relative_to(ROOT)}")
     recorded_symbols = validate_manifest(manifest)
     validate_documented_counts(manifest)
     if not arguments.structural_only:
+        drift = toolchain_drift_diagnostic(manifest["toolchain"], active_toolchain_identity())
+        if drift is not None:
+            print(drift, file=sys.stderr)
+            return EXIT_TOOLCHAIN_DRIFT
         live_symbols, swift_platform = extract_live_surface()
         compare_surface(recorded_symbols, live_symbols, swift_platform)
 
@@ -2519,8 +2729,17 @@ def main() -> int:
         if symbol["present"]:
             counts[symbol["language"]] = counts.get(symbol["language"], 0) + 1
     count_summary = ", ".join(f"{key}={counts[key]}" for key in sorted(counts))
-    print(f"API inventory OK: total={len(recorded_symbols)}, {count_summary}")
-    return 0
+    if arguments.structural_only:
+        # A structural pass never ran compiler extraction, so a self-consistent
+        # hand-edit of the JSON is invisible here; say so instead of "OK".
+        print(
+            f"API inventory structurally consistent: total={len(recorded_symbols)}, "
+            f"{count_summary} — NOT verified against the compiler-extracted live "
+            "surface (run without --structural-only for the full gate)"
+        )
+    else:
+        print(f"API inventory OK: total={len(recorded_symbols)}, {count_summary}")
+    return EXIT_OK
 
 
 if __name__ == "__main__":
@@ -2528,4 +2747,4 @@ if __name__ == "__main__":
         sys.exit(main())
     except InventoryError as error:
         print(f"API inventory check failed: {error}", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(EXIT_INVENTORY_ERROR)
