@@ -155,7 +155,7 @@ struct ChatModelProjectionTests {
         let model = makeModel()
         let message = ChatMessage(
             id: Data(hexString: "0102030405060708090a0b0c0d0e0f10")!,
-            direction: .incoming, body: "hi", senderPeerIdHex: "aaaaaaaa",
+            sequence: 1, direction: .incoming, body: "hi", senderPeerIdHex: "aaaaaaaa",
             sentAtWallClockMs: 42, status: .delivered
         )
         model.apply(ChatEvent(eventSeq: 0, kind: .messageReceived(message)))
@@ -168,7 +168,7 @@ struct ChatModelProjectionTests {
         let model = makeModel()
         let messageId = Data(hexString: "0102030405060708090a0b0c0d0e0f10")!
         let message = ChatMessage(
-            id: messageId, direction: .incoming, body: "hi", senderPeerIdHex: "aaaaaaaa",
+            id: messageId, sequence: 1, direction: .incoming, body: "hi", senderPeerIdHex: "aaaaaaaa",
             sentAtWallClockMs: 0, status: .delivered
         )
         model.apply(ChatEvent(eventSeq: 0, kind: .messageReceived(message)))
@@ -191,6 +191,113 @@ struct ChatModelProjectionTests {
             ChatEvent(eventSeq: 0, kind: .messageStatusChanged(messageIdHex: "deadbeef", status: .delivered)))
         #expect(model.messages.isEmpty)
         #expect(model.droppedStatusUpdates == 1)
+    }
+
+    // MARK: - messageGap (C3-29 sequence amendment: counter, notice, caption text, banner unaffected)
+
+    @Test("messageGap increments messageGaps and appends a notice with the pinned caption text")
+    @MainActor
+    func messageGapIncrementsCounterAndAppendsNotice() throws {
+        let model = makeModel()
+        model.apply(ChatEvent(eventSeq: 0, kind: .messageGap(fromSequence: 5, toSequence: 7)))
+
+        #expect(model.messageGaps == 1)
+        #expect(model.messageGapNotices.count == 1)
+        let notice = try #require(model.messageGapNotices.first)
+        #expect(notice.fromSequence == 5)
+        #expect(notice.toSequence == 7)
+        #expect(notice.text == "Messages missing: sequences 5-7")
+    }
+
+    @Test("a single missing sequence renders 'sequences X-X', not a special-cased singular form")
+    @MainActor
+    func messageGapSingleSequenceRendersXDashX() {
+        let model = makeModel()
+        model.apply(ChatEvent(eventSeq: 0, kind: .messageGap(fromSequence: 9, toSequence: 9)))
+        #expect(model.messageGapNotices.first?.text == "Messages missing: sequences 9-9")
+    }
+
+    @Test("multiple messageGap events accumulate: counter and notices both grow, in order")
+    @MainActor
+    func multipleMessageGapsAccumulate() {
+        let model = makeModel()
+        model.apply(ChatEvent(eventSeq: 0, kind: .messageGap(fromSequence: 1, toSequence: 1)))
+        model.apply(ChatEvent(eventSeq: 1, kind: .messageGap(fromSequence: 10, toSequence: 12)))
+
+        #expect(model.messageGaps == 2)
+        #expect(
+            model.messageGapNotices.map { $0.text } == [
+                "Messages missing: sequences 1-1",
+                "Messages missing: sequences 10-12",
+            ])
+    }
+
+    @Test("messageGap is not an error: banner priority rules are unchanged (ORCHESTRATOR PINS #3)")
+    @MainActor
+    func messageGapDoesNotAffectBanner() {
+        let model = makeModel()
+        model.apply(ChatEvent(eventSeq: 0, kind: .connectionChanged(.connected)))
+        #expect(model.banner == nil)
+
+        model.apply(ChatEvent(eventSeq: 1, kind: .messageGap(fromSequence: 3, toSequence: 4)))
+        #expect(model.banner == nil)
+        #expect(model.composerError == nil)
+
+        // A messageGap must not outrank or otherwise disturb an
+        // already-established higher-priority banner either.
+        model.apply(ChatEvent(eventSeq: 2, kind: .clientFailed(reason: "transportFault")))
+        model.apply(ChatEvent(eventSeq: 3, kind: .messageGap(fromSequence: 6, toSequence: 6)))
+        #expect(model.banner == "transportFault")
+    }
+
+    @Test("conversationRows interleaves a messageGap notice at the point it was consumed")
+    @MainActor
+    func conversationRowsInterleavesNoticeAtConsumptionPoint() {
+        let model = makeModel()
+        let firstMessage = ChatMessage(
+            id: Data(hexString: "01010101010101010101010101010101")!, sequence: 1,
+            direction: .incoming, body: "first", senderPeerIdHex: "aaaaaaaa",
+            sentAtWallClockMs: 0, status: .delivered
+        )
+        let secondMessage = ChatMessage(
+            id: Data(hexString: "02020202020202020202020202020202")!, sequence: 3,
+            direction: .incoming, body: "second", senderPeerIdHex: "aaaaaaaa",
+            sentAtWallClockMs: 0, status: .delivered
+        )
+        model.apply(ChatEvent(eventSeq: 0, kind: .messageReceived(firstMessage)))
+        // The missing sequence-2 message would have landed here, between
+        // `firstMessage` and `secondMessage` -- CONTRACT.md §2's "Gap
+        // surfacing (pinned)."
+        model.apply(ChatEvent(eventSeq: 1, kind: .messageGap(fromSequence: 2, toSequence: 2)))
+        model.apply(ChatEvent(eventSeq: 2, kind: .messageReceived(secondMessage)))
+
+        #expect(
+            model.conversationRows == [
+                .message(firstMessage),
+                .messageGapNotice(
+                    ChatMessageGapNotice(fromSequence: 2, toSequence: 2, precedingMessageCount: 1)),
+                .message(secondMessage),
+            ])
+    }
+
+    @Test("conversationRows renders a trailing messageGap notice after every known message")
+    @MainActor
+    func conversationRowsRendersTrailingNotice() {
+        let model = makeModel()
+        let message = ChatMessage(
+            id: Data(hexString: "01010101010101010101010101010101")!, sequence: 1,
+            direction: .incoming, body: "hi", senderPeerIdHex: "aaaaaaaa",
+            sentAtWallClockMs: 0, status: .delivered
+        )
+        model.apply(ChatEvent(eventSeq: 0, kind: .messageReceived(message)))
+        model.apply(ChatEvent(eventSeq: 1, kind: .messageGap(fromSequence: 2, toSequence: 3)))
+
+        #expect(
+            model.conversationRows == [
+                .message(message),
+                .messageGapNotice(
+                    ChatMessageGapNotice(fromSequence: 2, toSequence: 3, precedingMessageCount: 1)),
+            ])
     }
 
     // MARK: - eventSeq gap detection (sticky caption, not a banner)

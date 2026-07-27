@@ -1016,6 +1016,7 @@ Swift: `enum ChatAccessibilityID`. Kotlin: `object ChatTestTags`.
 | `diagnosticsButton` | `chat.diagnosticsButton` |
 | `unauthenticatedNotice` | `chat.unauthenticatedNotice` |
 | `errorBanner` | `chat.errorBanner` |
+| `messageGapNotice` | `chat.messageGapNotice` |
 
 Launch/instrumentation arguments:
 

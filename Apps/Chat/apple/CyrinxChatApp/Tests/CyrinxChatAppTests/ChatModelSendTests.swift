@@ -73,6 +73,32 @@ struct ChatModelSendTests {
         #expect(message.status == .queued)
         #expect(message.sentAtWallClockMs == 12_345)
         #expect(message.id.hexString == transport.nextSendMessageIdHex)
+        // CONTRACT.md §2's "Outgoing sequence assignment (pinned)": starts
+        // at 1. `ChatModel` mirrors this locally (see `ChatModel
+        // .nextOutgoingSequence`'s doc comment) since `send(body:)` never
+        // returns the transport's own assigned sequence.
+        #expect(message.sequence == 1)
+    }
+
+    @Test("outgoing sequence starts at 1 and increments by 1 per accepted send, mirroring CONTRACT.md §2")
+    @MainActor
+    func outgoingSequenceIncrementsPerAcceptedSend() async {
+        let transport = StubTransport()
+        let model = ChatModel(transport: transport, now: { 0 })
+
+        transport.nextSendMessageIdHex = "01010101010101010101010101010101"
+        await model.send("first")
+        transport.nextSendMessageIdHex = "02020202020202020202020202020202"
+        await model.send("second")
+        // A synchronous send failure must NOT consume a sequence value --
+        // only accepted sends increment the counter.
+        transport.sendError = ChatSimulatedTransportError.notConnected
+        await model.send("this one fails")
+        transport.sendError = nil
+        transport.nextSendMessageIdHex = "03030303030303030303030303030303"
+        await model.send("third")
+
+        #expect(model.messages.map { $0.sequence } == [1, 2, 3])
     }
 
     @Test("an invalid (non-hex) returned messageIdHex surfaces a composer error, no message row")

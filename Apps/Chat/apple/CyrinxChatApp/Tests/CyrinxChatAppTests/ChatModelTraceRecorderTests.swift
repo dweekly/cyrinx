@@ -5,11 +5,13 @@ import Testing
 @testable import CyrinxChatApp
 
 /// Format and determinism tests for `ChatModelTraceRecorder` -- the design
-/// brief's pinned model-trace schema: canonical field order `eventSeq,
-/// connection, budget, peers, messages, banner, gap`, exact `": "`/`", "`
-/// spacing, and byte-identical output for the same `(scenario, seed)` --
-/// the same property `chat-model-trace-gen`'s own determinism gate depends
-/// on. No sleeps anywhere in this file.
+/// brief's pinned model-trace schema (as amended by the C3-29 sequence
+/// amendment, ORCHESTRATOR PINS #1): canonical field order `eventSeq,
+/// connection, budget, peers, messages, messageGaps, banner, gap`, each
+/// `messages` entry's own field order `idHex, sequence, direction, status`,
+/// exact `": "`/`", "` spacing, and byte-identical output for the same
+/// `(scenario, seed)` -- the same property `chat-model-trace-gen`'s own
+/// determinism gate depends on. No sleeps anywhere in this file.
 @Suite("ChatModelTraceRecorder: schema and determinism")
 struct ChatModelTraceRecorderTests {
     @Test("one record matches the pinned canonical field order and spacing exactly")
@@ -20,15 +22,16 @@ struct ChatModelTraceRecorderTests {
             connectionWire: "connected",
             budgetClassWire: "text",
             peerIdHexes: ["a1b2c3d4"],
-            messageEntries: [(idHex: "deadbeef", direction: "outgoing", status: "delivered")],
+            messageEntries: [(idHex: "deadbeef", sequence: 1, direction: "outgoing", status: "delivered")],
+            messageGaps: 0,
             banner: nil,
             gap: false
         )
 
         let expected = """
             {"eventSeq": 2, "connection": "connected", "budget": "text", "peers": ["a1b2c3d4"], \
-            "messages": [{"idHex": "deadbeef", "direction": "outgoing", "status": "delivered"}], \
-            "banner": null, "gap": false}
+            "messages": [{"idHex": "deadbeef", "sequence": 1, "direction": "outgoing", "status": "delivered"}], \
+            "messageGaps": 0, "banner": null, "gap": false}
             """
         #expect(recorder.lines == [expected])
     }
@@ -42,13 +45,14 @@ struct ChatModelTraceRecorderTests {
             budgetClassWire: "controlOnly",
             peerIdHexes: [],
             messageEntries: [],
+            messageGaps: 0,
             banner: "Disconnected.",
             gap: true
         )
 
         let expected = """
             {"eventSeq": 0, "connection": "disconnected", "budget": "controlOnly", "peers": [], \
-            "messages": [], "banner": "Disconnected.", "gap": true}
+            "messages": [], "messageGaps": 0, "banner": "Disconnected.", "gap": true}
             """
         #expect(recorder.lines == [expected])
     }
@@ -62,17 +66,59 @@ struct ChatModelTraceRecorderTests {
             budgetClassWire: "bulk",
             peerIdHexes: ["aaaa", "bbbb"],
             messageEntries: [
-                (idHex: "1111", direction: "outgoing", status: "queued"),
-                (idHex: "2222", direction: "incoming", status: "delivered"),
+                (idHex: "1111", sequence: 1, direction: "outgoing", status: "queued"),
+                (idHex: "2222", sequence: 1, direction: "incoming", status: "delivered"),
             ],
+            messageGaps: 0,
             banner: nil,
             gap: false
         )
 
         let expected = """
             {"eventSeq": 5, "connection": "connected", "budget": "bulk", "peers": ["aaaa", "bbbb"], \
-            "messages": [{"idHex": "1111", "direction": "outgoing", "status": "queued"}, \
-            {"idHex": "2222", "direction": "incoming", "status": "delivered"}], "banner": null, "gap": false}
+            "messages": [{"idHex": "1111", "sequence": 1, "direction": "outgoing", "status": "queued"}, \
+            {"idHex": "2222", "sequence": 1, "direction": "incoming", "status": "delivered"}], \
+            "messageGaps": 0, "banner": null, "gap": false}
+            """
+        #expect(recorder.lines == [expected])
+    }
+
+    @Test("the sequence field renders the exact u64 wire value, including UInt64.max")
+    func sequenceFieldRendersExactU64Value() {
+        let recorder = ChatModelTraceRecorder()
+        recorder.record(
+            eventSeq: 0,
+            connectionWire: "connected",
+            budgetClassWire: "text",
+            peerIdHexes: [],
+            messageEntries: [
+                (idHex: "ffff", sequence: UInt64.max, direction: "outgoing", status: "queued")
+            ],
+            messageGaps: 0,
+            banner: nil,
+            gap: false
+        )
+
+        #expect(recorder.lines.first?.contains("\"sequence\": 18446744073709551615") == true)
+    }
+
+    @Test("messageGaps renders the given count, positioned immediately before banner")
+    func messageGapsFieldRendersCountBeforeBanner() {
+        let recorder = ChatModelTraceRecorder()
+        recorder.record(
+            eventSeq: 3,
+            connectionWire: "connected",
+            budgetClassWire: "text",
+            peerIdHexes: [],
+            messageEntries: [],
+            messageGaps: 2,
+            banner: "Disconnected.",
+            gap: false
+        )
+
+        let expected = """
+            {"eventSeq": 3, "connection": "connected", "budget": "text", "peers": [], "messages": [], \
+            "messageGaps": 2, "banner": "Disconnected.", "gap": false}
             """
         #expect(recorder.lines == [expected])
     }
@@ -82,11 +128,12 @@ struct ChatModelTraceRecorderTests {
         let recorder = ChatModelTraceRecorder()
         recorder.record(
             eventSeq: 0, connectionWire: "connected", budgetClassWire: "text",
-            peerIdHexes: [], messageEntries: [], banner: nil, gap: false
+            peerIdHexes: [], messageEntries: [], messageGaps: 0, banner: nil, gap: false
         )
         recorder.record(
             eventSeq: 1, connectionWire: "degraded", budgetClassWire: "controlOnly",
-            peerIdHexes: [], messageEntries: [], banner: "Link degraded — move devices closer", gap: false
+            peerIdHexes: [], messageEntries: [], messageGaps: 0,
+            banner: "Link degraded — move devices closer", gap: false
         )
 
         let text = recorder.joinedText()

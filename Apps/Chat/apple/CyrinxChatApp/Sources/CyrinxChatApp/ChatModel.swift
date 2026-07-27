@@ -50,6 +50,18 @@ public final class ChatModel {
     /// pinned "unknown idHex is ignored (already-terminal races) but
     /// counted in `droppedStatusUpdates`."
     public private(set) var droppedStatusUpdates = 0
+    /// Count of `messageGap` events consumed so far (CONTRACT.md §1.7/§2's
+    /// "Gap surfacing (pinned)"), C3-29 sequence amendment. Never resets;
+    /// mirrors the model-trace schema's own top-level `messageGaps` field
+    /// (`ChatModelTraceRecorder`'s doc comment). Not a `droppedStatusUpdates`-
+    /// style "ignored" counter -- every `messageGap` also produces a
+    /// `messageGapNotices` entry below, so this count and that array's
+    /// length always agree.
+    public private(set) var messageGaps = 0
+    /// One entry per consumed `messageGap` event, in consumption order --
+    /// see `ChatMessageGapNotice`'s doc comment and `conversationRows`
+    /// below for how these are interleaved with `messages` for display.
+    public private(set) var messageGapNotices: [ChatMessageGapNotice] = []
     /// Transient error string from a `send()`/`connect()`/`disconnect()`/
     /// `cancelSend()` call that threw synchronously -- the design brief's
     /// pinned "surface as a transient composer error string, not a message
@@ -143,6 +155,24 @@ public final class ChatModel {
     /// defensive banner fallback described on `recomputeBanner()`. Cleared
     /// alongside `connectedPeerIdHex` on the same transitions.
     private var peerLossReason: String?
+    /// This model's own next outgoing envelope `sequence`, mirroring
+    /// `ChatTransportClient`'s internal counter (CONTRACT.md §2's
+    /// "Outgoing sequence assignment (pinned)": "starts at 1 ... and
+    /// increments by exactly 1 per accepted `send()`"). `send(body:)`
+    /// (CONTRACT.md §1.8) returns only `messageIdHex`, never the assigned
+    /// `sequence`, so this model cannot read the transport's own counter --
+    /// it instead keeps an identical local counter, starting at `1` and
+    /// incremented only on the same event this model's `send(_:)` uses to
+    /// append the local outgoing `ChatMessage` row (its own successful
+    /// `transport.send(body:)` return). Since `send(body:)` can only ever
+    /// succeed when the transport itself is about to assign the next
+    /// sequence value (both are gated on the identical "connected or
+    /// degraded" precondition, CONTRACT.md §2's "Send precondition
+    /// (pinned)"), and there is no reconnection-scope reset in this sample
+    /// (ENVELOPE.md §6's Reconciliation cross-reference) to desync them,
+    /// this local mirror and the transport's own counter march in lockstep
+    /// 1:1 for the lifetime of one model/transport pair.
+    private var nextOutgoingSequence: UInt64 = 1
 
     /// Test/tooling-only observability hook: total events `apply(_:)` has
     /// processed. Not part of the design brief's pinned field list; exists
@@ -266,13 +296,15 @@ public final class ChatModel {
             }
             let message = ChatMessage(
                 id: messageId,
+                sequence: nextOutgoingSequence,
                 direction: .outgoing,
                 body: body,
                 senderPeerIdHex: "",
                 sentAtWallClockMs: now(),
                 status: .queued
             )
-            messages.append(message)
+            nextOutgoingSequence += 1
+            appendMessage(message)
         } catch {
             composerError = Self.composerErrorDescription(for: error)
         }
@@ -350,7 +382,20 @@ public final class ChatModel {
         case .linkBudgetChanged(let newBudget):
             budget = newBudget
         case .messageReceived(let message):
-            messages.append(message)
+            appendMessage(message)
+        case .messageGap(let fromSequence, let toSequence):
+            // CONTRACT.md §1.7/§2's "Gap surfacing (pinned)" -- C3-29
+            // sequence amendment. ORCHESTRATOR PINS #3: "not an error; banner
+            // priority rules unchanged" -- deliberately does NOT touch
+            // `banner`/`clientFailedReason`/`peerLossReason`, only the
+            // dedicated counter and notice list below.
+            messageGaps += 1
+            messageGapNotices.append(
+                ChatMessageGapNotice(
+                    fromSequence: fromSequence, toSequence: toSequence,
+                    precedingMessageCount: messages.count
+                )
+            )
         case .messageStatusChanged(let messageIdHex, let status):
             if let index = messages.firstIndex(where: { $0.id.hexString == messageIdHex }) {
                 messages[index].status = status
@@ -365,6 +410,46 @@ public final class ChatModel {
 
         recomputeBanner()
         recordTraceLineIfNeeded(eventSeq: event.eventSeq)
+    }
+
+    /// Appends `message` to `messages` -- the single append point shared by
+    /// `send(_:)`'s own outgoing acceptance and `apply(_:)`'s
+    /// `messageReceived` handling, so both paths stay in exact lockstep for
+    /// any future bookkeeping keyed off "a message was just appended" (today:
+    /// none beyond the append itself, but see `conversationRows` below,
+    /// which reads `messages` post-append via `ChatMessageGapNotice
+    /// .precedingMessageCount`).
+    private func appendMessage(_ message: ChatMessage) {
+        messages.append(message)
+    }
+
+    /// Merges `messages` and `messageGapNotices` into a single,
+    /// chronologically interleaved sequence for rendering inside one
+    /// scrolling list -- ORCHESTRATOR PINS #1/#3 (C3-29 sequence amendment):
+    /// "the caption is a message-list row with the new accessibility tag,"
+    /// positioned where the missing messages would have appeared
+    /// (`ChatMessageGapNotice.precedingMessageCount`), not always trailing
+    /// at the end. A computed property (not a third stored array to keep in
+    /// sync) so `messages`' own in-place status mutations
+    /// (`messageStatusChanged` above) are reflected here for free on next
+    /// read, with no separate update path to forget.
+    public var conversationRows: [ChatConversationRow] {
+        var noticesByPosition: [Int: [ChatMessageGapNotice]] = [:]
+        for notice in messageGapNotices {
+            noticesByPosition[notice.precedingMessageCount, default: []].append(notice)
+        }
+        var rows: [ChatConversationRow] = []
+        rows.reserveCapacity(messages.count + messageGapNotices.count)
+        for (index, message) in messages.enumerated() {
+            for notice in noticesByPosition[index] ?? [] {
+                rows.append(.messageGapNotice(notice))
+            }
+            rows.append(.message(message))
+        }
+        for notice in noticesByPosition[messages.count] ?? [] {
+            rows.append(.messageGapNotice(notice))
+        }
+        return rows
     }
 
     /// Inserts (if `insertIfMissing`) or replaces (always, when already
@@ -483,10 +568,12 @@ public final class ChatModel {
             peerIdHexes: peers.map { $0.id.hexString },
             messageEntries: messages.map {
                 (
-                    idHex: $0.id.hexString, direction: Self.wireString(for: $0.direction),
+                    idHex: $0.id.hexString, sequence: $0.sequence,
+                    direction: Self.wireString(for: $0.direction),
                     status: Self.wireString(for: $0.status)
                 )
             },
+            messageGaps: messageGaps,
             banner: banner,
             gap: eventSeqGapDetected
         )

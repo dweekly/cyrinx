@@ -91,19 +91,19 @@ struct MessageRowView: View {
     VStack(alignment: .leading, spacing: 8) {
         MessageRowView(
             message: ChatMessage(
-                id: Data(repeating: 1, count: 16), direction: .incoming, body: "hello there",
+                id: Data(repeating: 1, count: 16), sequence: 1, direction: .incoming, body: "hello there",
                 senderPeerIdHex: "aabbccdd", sentAtWallClockMs: 0, status: .delivered
             )
         )
         MessageRowView(
             message: ChatMessage(
-                id: Data(repeating: 2, count: 16), direction: .outgoing, body: "hi!",
+                id: Data(repeating: 2, count: 16), sequence: 1, direction: .outgoing, body: "hi!",
                 senderPeerIdHex: "", sentAtWallClockMs: 0, status: .transmitting
             )
         )
         MessageRowView(
             message: ChatMessage(
-                id: Data(repeating: 3, count: 16), direction: .outgoing, body: "did this fail?",
+                id: Data(repeating: 3, count: 16), sequence: 2, direction: .outgoing, body: "did this fail?",
                 senderPeerIdHex: "", sentAtWallClockMs: 0, status: .failed(reason: "noAcknowledgment")
             )
         )

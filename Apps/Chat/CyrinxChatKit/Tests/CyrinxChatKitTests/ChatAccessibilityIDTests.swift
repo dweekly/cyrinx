@@ -24,6 +24,7 @@ struct ChatAccessibilityIDTests {
         ("diagnosticsButton", ChatAccessibilityID.diagnosticsButton, "chat.diagnosticsButton"),
         ("unauthenticatedNotice", ChatAccessibilityID.unauthenticatedNotice, "chat.unauthenticatedNotice"),
         ("errorBanner", ChatAccessibilityID.errorBanner, "chat.errorBanner"),
+        ("messageGapNotice", ChatAccessibilityID.messageGapNotice, "chat.messageGapNotice"),
     ]
 
     @Test(
@@ -34,9 +35,9 @@ struct ChatAccessibilityIDTests {
         #expect(entry.value == entry.expected, "ChatAccessibilityID.\(entry.name)")
     }
 
-    @Test("ChatAccessibilityID registry has exactly the 13 constants CONTRACT.md §5 lists")
+    @Test("ChatAccessibilityID registry has exactly the 14 constants CONTRACT.md §5 lists")
     func accessibilityIdCountMatchesContractTable() {
-        #expect(Self.expectedAccessibilityIDs.count == 13)
+        #expect(Self.expectedAccessibilityIDs.count == 14)
     }
 
     /// CONTRACT.md §5's launch/instrumentation-argument table, transcribed

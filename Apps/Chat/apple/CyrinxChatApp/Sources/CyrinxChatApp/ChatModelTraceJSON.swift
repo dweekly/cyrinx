@@ -42,6 +42,11 @@ enum ChatModelTraceJSON {
 
     static func bool(_ value: Bool) -> String { value ? "true" : "false" }
     static func uint64(_ value: UInt64) -> String { String(value) }
+    /// For plain (non-`u64`-wire) integer counters, e.g. `ChatModel
+    /// .messageGaps` -- distinct from `uint64(_:)` above, which exists for
+    /// wire-exact `u64` values (envelope `sequence`, `eventSeq`) that must
+    /// never round-trip through a signed type.
+    static func int(_ value: Int) -> String { String(value) }
 
     /// `[item1, item2, ...]` from already-encoded JSON-value-text items, in
     /// the given order.

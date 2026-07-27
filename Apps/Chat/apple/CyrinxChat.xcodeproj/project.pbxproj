@@ -17,6 +17,7 @@
 		4955F7F34CE31057FC2B395D /* PeerBrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45B5F478775CCA87FCF9C988 /* PeerBrowserView.swift */; };
 		4968531F73E3F583E4C7D4DC /* ConversationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6EA0516CBFF470984131665 /* ConversationView.swift */; };
 		4BA856C361B66353AF32B662 /* ChatAppOnlyLaunchArgs.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7CBEFFF4AE98526FA8AABC3 /* ChatAppOnlyLaunchArgs.swift */; };
+		4D0EBF6AC7AA73473EFB50D4 /* MessageGapNoticeRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAF146CA181FADC8E09561BB /* MessageGapNoticeRowView.swift */; };
 		55896D63856E6BC68DA727C3 /* ChatAppSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C1AB45DA867C96862E3770A /* ChatAppSession.swift */; };
 		56A05A75B43834B29EE0DB60 /* MessageRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 667BD281F68D219D1AB70179 /* MessageRowView.swift */; };
 		61C2041171C1D214E7491535 /* LinkBudgetBadgeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBABE9BA5C3277909E0EAE36 /* LinkBudgetBadgeView.swift */; };
@@ -40,6 +41,7 @@
 		CC76CBCD871DD5FBEC10A0EC /* ConversationPageObject.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD6E0500B706AA6B2752E078 /* ConversationPageObject.swift */; };
 		CCEE409E6FA1FDA34A1406E6 /* DiagnosticsSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 891FB1B20753A4B59A6F1B24 /* DiagnosticsSheetView.swift */; };
 		D54044D0F581ED5CBCF31FD2 /* ChatRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54DE062215AC6FABB71F2EB2 /* ChatRootView.swift */; };
+		D6CD71BBCCBA1E88D588C1BB /* MessageGapNoticeRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAF146CA181FADC8E09561BB /* MessageGapNoticeRowView.swift */; };
 		DEF18A857FEFA54296341DDA /* DiscoveryConnectSendReceiveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F70C366A98C2A210E50818D /* DiscoveryConnectSendReceiveTests.swift */; };
 		E6DC56051D73FC05561B33A6 /* ChatUITestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75D5EF61BC31D586F7583869 /* ChatUITestSupport.swift */; };
 		EEBA08F161485EB3B52CF130 /* CyrinxChatiOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 802ED18443BF77A05026657D /* CyrinxChatiOSApp.swift */; };
@@ -90,6 +92,7 @@
 		CBABE9BA5C3277909E0EAE36 /* LinkBudgetBadgeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkBudgetBadgeView.swift; sourceTree = "<group>"; };
 		CDDA11DBC71EE14961F4A1E1 /* PreviewSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewSupport.swift; sourceTree = "<group>"; };
 		DFA72C417490E8AF95191650 /* CyrinxChat-iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "CyrinxChat-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		FAF146CA181FADC8E09561BB /* MessageGapNoticeRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageGapNoticeRowView.swift; sourceTree = "<group>"; };
 		FD6E0500B706AA6B2752E078 /* ConversationPageObject.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationPageObject.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -142,6 +145,7 @@
 				B6EA0516CBFF470984131665 /* ConversationView.swift */,
 				891FB1B20753A4B59A6F1B24 /* DiagnosticsSheetView.swift */,
 				CBABE9BA5C3277909E0EAE36 /* LinkBudgetBadgeView.swift */,
+				FAF146CA181FADC8E09561BB /* MessageGapNoticeRowView.swift */,
 				667BD281F68D219D1AB70179 /* MessageRowView.swift */,
 				45B5F478775CCA87FCF9C988 /* PeerBrowserView.swift */,
 				CDDA11DBC71EE14961F4A1E1 /* PreviewSupport.swift */,
@@ -383,6 +387,7 @@
 				75D0814C27F54CCA0C7BF627 /* CyrinxChatMacApp.swift in Sources */,
 				8E4919C7E17CD66EA903C472 /* DiagnosticsSheetView.swift in Sources */,
 				C60E5A0A34A77FFEDEEEB3F0 /* LinkBudgetBadgeView.swift in Sources */,
+				D6CD71BBCCBA1E88D588C1BB /* MessageGapNoticeRowView.swift in Sources */,
 				8F3A66178E29D3578D465A0E /* MessageRowView.swift in Sources */,
 				1699EAFB3F590A648D9283FF /* PeerBrowserView.swift in Sources */,
 				A6A073FBC22D5CD43A336228 /* PreviewSupport.swift in Sources */,
@@ -411,6 +416,7 @@
 				EEBA08F161485EB3B52CF130 /* CyrinxChatiOSApp.swift in Sources */,
 				CCEE409E6FA1FDA34A1406E6 /* DiagnosticsSheetView.swift in Sources */,
 				61C2041171C1D214E7491535 /* LinkBudgetBadgeView.swift in Sources */,
+				4D0EBF6AC7AA73473EFB50D4 /* MessageGapNoticeRowView.swift in Sources */,
 				56A05A75B43834B29EE0DB60 /* MessageRowView.swift in Sources */,
 				4955F7F34CE31057FC2B395D /* PeerBrowserView.swift in Sources */,
 				F79B34BCCDBB1090EB93B0C9 /* PreviewSupport.swift in Sources */,
