@@ -18,6 +18,17 @@ object ChatTestTags {
     const val DIAGNOSTICS_BUTTON: String = "chat.diagnosticsButton"
     const val UNAUTHENTICATED_NOTICE: String = "chat.unauthenticatedNotice"
     const val ERROR_BANNER: String = "chat.errorBanner"
+
+    /**
+     * The C3-29 sequence amendment's `messageGap` caption row
+     * (../../../CONTRACT.md section 1.7/2's "Gap surfacing (pinned)"):
+     * "Messages missing: sequences X-Y", rendered inline in the message
+     * list. Landed in CONTRACT.md's section 5 registry table via the C3-29
+     * merge (Apple lane); this Android module only consumes the string
+     * literal here -- the C3-30 Android chat app is what will actually tag
+     * a composable with it.
+     */
+    const val MESSAGE_GAP_NOTICE: String = "chat.messageGapNotice"
 }
 
 /**

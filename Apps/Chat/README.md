@@ -120,3 +120,34 @@ All three run in CI on every change under `Apps/Chat/` via
 See `ENVELOPE.md` §9 for the full regeneration policy (regeneration is
 permitted only alongside a spec change, and the resulting JSON is
 committed/diffed, not treated as disposable build output).
+
+## The offline apps (C3-29 Apple, C3-30 Android)
+
+Fresh as of 2026-07-23. Two sibling PRs stack on the contract above:
+`Apps/Chat/apple/` (SwiftUI iOS/macOS apps + XcodeGen project + macOS
+XCUITest page objects + the `CyrinxChatApp` package holding `ChatModel`)
+and `Apps/Chat/android/app/` (Compose Material3 app + `ChatViewModel`).
+Both consume only the simulated `ChatTransportClient`; neither touches
+audio, the live SDK, C, or JNI (C3-31 adds the live adapter).
+
+Cross-platform behavior is pinned by `fixtures/model-traces/`: the Swift
+`chat-model-trace-gen` executable generates the seed-1 happyPair/peerLoss
+model-projection traces and the Android suite asserts byte-identity —
+the C3-30 "scenario traces agree" merge gate. Regeneration follows the
+same policy as the wire-trace goldens.
+
+Intentional platform differences (behavior identical, presentation
+idiomatic): the unauthenticated notice is a footer on Apple and a
+top-anchored strip on Android; Apple offers macOS Return-to-send and
+Cmd-N reconnect with no Android hardware-shortcut equivalent; iconography
+is SF Symbols vs Material Icons (always icon+text, never color alone);
+diagnostics is a modal sheet on Apple and a `ModalBottomSheet` on
+Android; Android keeps the composer visible-but-disabled while
+disconnected so drafts survive connection flips, Apple swaps whole
+screens via `NavigationStack`; the Apple app adds app-only launch
+arguments (`chat.attachTo`, narrator send, real-time virtual-clock
+pacing) to make scripted scenarios watchable live — none are part of
+the CONTRACT.md registry. UI-test execution gates: macOS XCUITest and
+Android instrumentation suites build cleanly but require a windowed
+session / emulator respectively; both are documented manual gates and
+the deterministic model/ViewModel suites are the CI gates.

@@ -25,6 +25,12 @@ public enum ChatAccessibilityID {
     public static let diagnosticsButton = "chat.diagnosticsButton"
     public static let unauthenticatedNotice = "chat.unauthenticatedNotice"
     public static let errorBanner = "chat.errorBanner"
+    /// The C3-29 sequence amendment's `messageGap` caption row (CONTRACT.md
+    /// §1.7/§2's "Gap surfacing (pinned)"): "Messages missing: sequences
+    /// X-Y," rendered inline in the message list, not folded into
+    /// `messageRow` above -- it carries no `ChatMessage`, so it needs its
+    /// own identifier for VoiceOver/XCUITest to find it independently.
+    public static let messageGapNotice = "chat.messageGapNotice"
 }
 
 /// Launch/instrumentation argument keys. Apps/Chat/CONTRACT.md §5. Apple:
