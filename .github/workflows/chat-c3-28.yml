@@ -68,3 +68,26 @@ jobs:
       - name: gradlew check
         working-directory: Apps/Chat/android
         run: ./gradlew --no-daemon check
+
+  swift-chatapp:
+    name: CyrinxChatApp model suite (Swift Testing)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: swift test
+        run: swift test --package-path Apps/Chat/apple/CyrinxChatApp
+
+  android-chatapp:
+    name: chat app module (JVM tests + assembleDebug)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: gradlew app gates
+        working-directory: Apps/Chat/android
+        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug
