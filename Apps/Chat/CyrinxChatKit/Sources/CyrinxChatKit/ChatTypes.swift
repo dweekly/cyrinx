@@ -110,6 +110,11 @@ public struct ChatMessage: Equatable, Identifiable, Sendable {
 
     /// Same value as the envelope's `messageId` (ENVELOPE.md §1.1).
     public let id: Data
+    /// The envelope's `sequence` field (ENVELOPE.md §1.2): nonzero,
+    /// sender-local, strictly increasing within the sending client's
+    /// current connection scope. This -- not `sentAtWallClockMs` -- is the
+    /// real cross-message ordering evidence; see `ENVELOPE.md` §6.
+    public var sequence: UInt64
     public var direction: Direction
     /// Decoded UTF-8 text.
     public var body: String
@@ -122,6 +127,7 @@ public struct ChatMessage: Equatable, Identifiable, Sendable {
 
     public init(
         id: Data,
+        sequence: UInt64,
         direction: Direction,
         body: String,
         senderPeerIdHex: String,
@@ -129,6 +135,7 @@ public struct ChatMessage: Equatable, Identifiable, Sendable {
         status: ChatMessageDisplayStatus
     ) {
         self.id = id
+        self.sequence = sequence
         self.direction = direction
         self.body = body
         self.senderPeerIdHex = senderPeerIdHex

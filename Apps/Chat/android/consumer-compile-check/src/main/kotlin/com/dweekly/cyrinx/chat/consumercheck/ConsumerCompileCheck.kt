@@ -28,6 +28,7 @@ fun buildEnvelopeAndPairAgainstChatkitPublicApi(): SimulatedChatPair {
             messageId = ByteArray(ChatEnvelopeCodec.ID_LEN),
             replyToId = null,
             senderId = byteArrayOf(0x01),
+            sequence = 1L,
             body = "consumer-compile-check",
         )
     val encoded = ChatEnvelopeCodec.encode(envelope)

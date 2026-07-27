@@ -17,8 +17,9 @@ class ChatEnvelopeCodecBoundsTest {
     private fun envelope(
         senderId: ByteArray = this.senderId,
         replyToId: ByteArray? = null,
+        sequence: Long = 1L,
         body: String = "hi",
-    ) = ChatEnvelope(ChatEnvelopeCodec.VERSION, ChatEnvelopeKind.TEXT, messageId, replyToId, senderId, body)
+    ) = ChatEnvelope(ChatEnvelopeCodec.VERSION, ChatEnvelopeKind.TEXT, messageId, replyToId, senderId, sequence, body)
 
     @Test
     fun encodeRejectsSenderIdTooShort() {
@@ -67,7 +68,7 @@ class ChatEnvelopeCodecBoundsTest {
     @Test
     fun encodeRejectsMessageIdWrongLength() {
         val badEnvelope =
-            ChatEnvelope(ChatEnvelopeCodec.VERSION, ChatEnvelopeKind.TEXT, ByteArray(15), null, senderId, "hi")
+            ChatEnvelope(ChatEnvelopeCodec.VERSION, ChatEnvelopeKind.TEXT, ByteArray(15), null, senderId, 1L, "hi")
         val error = assertThrows(ChatEnvelopeError.Malformed::class.java) {
             ChatEnvelopeCodec.encode(badEnvelope)
         }
@@ -84,11 +85,37 @@ class ChatEnvelopeCodecBoundsTest {
 
     @Test
     fun encodeRejectsUnknownVersion() {
-        val badEnvelope = ChatEnvelope(2, ChatEnvelopeKind.TEXT, messageId, null, senderId, "hi")
+        val badEnvelope = ChatEnvelope(2, ChatEnvelopeKind.TEXT, messageId, null, senderId, 1L, "hi")
         val error = assertThrows(ChatEnvelopeError.UnknownVersion::class.java) {
             ChatEnvelopeCodec.encode(badEnvelope)
         }
         assertEquals("unknownVersion", error.errorName)
+    }
+
+    // -- sequence bounds (../../../ENVELOPE.md section 1.2, C3-28 sequence amendment) --
+
+    @Test
+    fun encodeRejectsSequenceZero() {
+        val error = assertThrows(ChatEnvelopeError.Malformed::class.java) {
+            ChatEnvelopeCodec.encode(envelope(sequence = 0L))
+        }
+        assertEquals("malformed", error.errorName)
+    }
+
+    @Test
+    fun encodeAcceptsSequenceOne() {
+        val encoded = ChatEnvelopeCodec.encode(envelope(sequence = 1L))
+        assertEquals(1L, ChatEnvelopeCodec.decode(encoded).sequence)
+    }
+
+    @Test
+    fun encodeThenDecodeRoundTripsSequenceMaxU64() {
+        // 0xFFFFFFFFFFFFFFFF as the Long bit pattern is -1L; see ENVELOPE.md
+        // section 8's "never through a Double intermediate" note and
+        // ChatEnvelope's own doc comment.
+        val maxU64AsLongBitPattern = -1L
+        val encoded = ChatEnvelopeCodec.encode(envelope(sequence = maxU64AsLongBitPattern))
+        assertEquals(maxU64AsLongBitPattern, ChatEnvelopeCodec.decode(encoded).sequence)
     }
 
     @Test

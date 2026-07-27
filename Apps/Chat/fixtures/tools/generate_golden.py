@@ -85,6 +85,17 @@ BODY_LEN_FIELD_WIDTH = 2
 """bodyLen is a big-endian u16 on the wire (max representable 65535), but the
 *semantic* max is MAX_BODY_LEN (2048); the two are independent constants."""
 
+SEQUENCE_FIELD_WIDTH = 8
+"""sequence is a big-endian u64 on the wire (ENVELOPE.md §1.2/§1.3),
+positioned immediately after senderId and before bodyLen, in both the
+with-replyTo and without-replyTo shapes."""
+
+MIN_SEQUENCE = 1
+MAX_SEQUENCE = 0xFFFFFFFFFFFFFFFF
+"""sequence valid range is 1..0xFFFFFFFFFFFFFFFF inclusive (nonzero u64);
+0 is `malformed` (ENVELOPE.md §1.2 step 8's immediate range check, the
+same discipline as senderIdLen/bodyLen)."""
+
 # Fixed non-variable-length header size when replyTo is absent:
 # version(1) + kind(1) + flags(1) + messageId(16) + senderIdLen(1) = 20
 # bytes before the variable-length senderId. Not used directly by the codec
@@ -100,10 +111,11 @@ MAX_ENVELOPE_LEN = (
     + REPLY_TO_ID_LEN
     + 1  # senderIdLen
     + MAX_SENDER_ID_LEN
+    + SEQUENCE_FIELD_WIDTH
     + BODY_LEN_FIELD_WIDTH
     + MAX_BODY_LEN
 )
-assert MAX_ENVELOPE_LEN == 2118, "max envelope size arithmetic drifted from ENVELOPE.md"
+assert MAX_ENVELOPE_LEN == 2126, "max envelope size arithmetic drifted from ENVELOPE.md"
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +188,7 @@ class DecodedEnvelope:
     message_id: bytes
     reply_to_id: Optional[bytes]
     sender_id: bytes
+    sequence: int  # nonzero u64, ENVELOPE.md §1.2
     body: str  # already UTF-8-validated
 
     def to_json_dict(self) -> dict:
@@ -187,6 +200,7 @@ class DecodedEnvelope:
             "messageIdHex": self.message_id.hex(),
             "replyToIdHex": self.reply_to_id.hex() if self.reply_to_id is not None else None,
             "senderIdHex": self.sender_id.hex(),
+            "sequence": self.sequence,
             "body": self.body,
         }
 
@@ -244,6 +258,15 @@ def decode_envelope(data: bytes) -> DecodedEnvelope:
         )
     sender_id = take(sender_id_len)
 
+    sequence = int.from_bytes(take(SEQUENCE_FIELD_WIDTH), "big")
+    if sequence == 0:
+        # Range-checked immediately after the 8 sequence bytes are read, and
+        # before parsing advances to bodyLen -- ENVELOPE.md §1.2 step 8's
+        # "immediate range check" rule, the same discipline as senderIdLen
+        # (step 6) and bodyLen (step 9), even though sequence is not itself
+        # a length prefix for any later field.
+        raise MalformedError("sequence is zero (must be nonzero per ENVELOPE.md §1.2)")
+
     body_len = int.from_bytes(take(BODY_LEN_FIELD_WIDTH), "big")
     if body_len > MAX_BODY_LEN:
         # Same rule as senderIdLen: the range check happens immediately
@@ -267,6 +290,7 @@ def decode_envelope(data: bytes) -> DecodedEnvelope:
         message_id=message_id,
         reply_to_id=reply_to_id,
         sender_id=sender_id,
+        sequence=sequence,
         body=body,
     )
 
@@ -289,6 +313,7 @@ def encode_strict(
     message_id: bytes,
     reply_to_id: Optional[bytes],
     sender_id: bytes,
+    sequence: int,
     body: bytes,
 ) -> bytes:
     if version != VERSION_1:
@@ -303,6 +328,10 @@ def encode_strict(
         raise MalformedError(
             f"encode: senderId length {len(sender_id)} outside "
             f"{MIN_SENDER_ID_LEN}..{MAX_SENDER_ID_LEN}"
+        )
+    if not (MIN_SEQUENCE <= sequence <= MAX_SEQUENCE):
+        raise MalformedError(
+            f"encode: sequence {sequence} outside {MIN_SEQUENCE}..{MAX_SEQUENCE}"
         )
     if len(body) > MAX_BODY_LEN:
         raise OversizeBodyError(f"encode: body length {len(body)} exceeds {MAX_BODY_LEN}")
@@ -321,6 +350,7 @@ def encode_strict(
         out += reply_to_id
     out.append(len(sender_id))
     out += sender_id
+    out += sequence.to_bytes(SEQUENCE_FIELD_WIDTH, "big")
     out += len(body).to_bytes(BODY_LEN_FIELD_WIDTH, "big")
     out += body
     return bytes(out)
@@ -335,6 +365,7 @@ def encode_decoded(decoded: DecodedEnvelope) -> bytes:
         message_id=decoded.message_id,
         reply_to_id=decoded.reply_to_id,
         sender_id=decoded.sender_id,
+        sequence=decoded.sequence,
         body=decoded.body.encode("utf-8"),
     )
 
@@ -398,8 +429,21 @@ assert MIN_SENDER_ID_LEN <= len(SENDER_ID_4) <= MAX_SENDER_ID_LEN
 SENDER_ID_32 = bytes(range(32))
 """32-byte (maximum-length) sender ID: bytes 0x00..0x1f in order. Used by
 the vector that also exercises the maximum body length, together
-demonstrating the full 2118-byte MAX_ENVELOPE_LEN arithmetic."""
+demonstrating the full 2126-byte MAX_ENVELOPE_LEN arithmetic."""
 assert len(SENDER_ID_32) == MAX_SENDER_ID_LEN
+
+SEQUENCE_FILLER = 0x0102030405060708
+"""An arbitrary, hand-chosen valid (nonzero) sequence value -- ascending hex
+bytes 0x01..0x08, matching this file's convention of visually-patterned
+constants (c.f. MESSAGE_ID_A) -- used in error vectors whose failure has
+nothing to do with the sequence field itself (e.g. oversize-body,
+invalid-UTF-8, or bodyLen-exceeds-remaining vectors), so each such vector
+isolates the ONE field actually under test."""
+assert MIN_SEQUENCE <= SEQUENCE_FILLER <= MAX_SEQUENCE
+SEQUENCE_FILLER_BYTES = SEQUENCE_FILLER.to_bytes(SEQUENCE_FIELD_WIDTH, "big")
+"""SEQUENCE_FILLER as its 8-byte big-endian wire encoding; also sliced by
+the `truncated_mid_sequence` vector to build a deliberately-short sequence
+field."""
 
 
 def peer_display_name(peer_id: bytes) -> str:
@@ -421,7 +465,9 @@ def peer_display_name(peer_id: bytes) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _decode_vec(name: str, comment: str, *, message_id, reply_to_id, sender_id, body: str) -> dict:
+def _decode_vec(
+    name: str, comment: str, *, message_id, reply_to_id, sender_id, sequence: int, body: str
+) -> dict:
     body_bytes = body.encode("utf-8")
     encoded = encode_strict(
         version=VERSION_1,
@@ -429,6 +475,7 @@ def _decode_vec(name: str, comment: str, *, message_id, reply_to_id, sender_id, 
         message_id=message_id,
         reply_to_id=reply_to_id,
         sender_id=sender_id,
+        sequence=sequence,
         body=body_bytes,
     )
     decoded = DecodedEnvelope(
@@ -437,6 +484,7 @@ def _decode_vec(name: str, comment: str, *, message_id, reply_to_id, sender_id, 
         message_id=message_id,
         reply_to_id=reply_to_id,
         sender_id=sender_id,
+        sequence=sequence,
         body=body,
     )
     return {
@@ -467,11 +515,12 @@ def build_vectors() -> list:
         _decode_vec(
             "text_ascii_min",
             "Smallest realistic envelope: no replyTo, 4-byte senderId, "
-            "2-byte ASCII body 'hi'. This is the vector hand-verified "
-            "byte-by-byte in the C3-28 spec-stage report.",
+            "sequence=1, 2-byte ASCII body 'hi'. This is the vector "
+            "hand-verified byte-by-byte in the C3-28 spec-stage report.",
             message_id=MESSAGE_ID_A,
             reply_to_id=None,
             sender_id=SENDER_ID_4,
+            sequence=1,
             body="hi",
         )
     )
@@ -485,6 +534,7 @@ def build_vectors() -> list:
             message_id=MESSAGE_ID_A,
             reply_to_id=None,
             sender_id=SENDER_ID_4,
+            sequence=2,
             body="",
         )
     )
@@ -495,13 +545,32 @@ def build_vectors() -> list:
             "body_max_2048",
             "bodyLen at the exact maximum (2048 ASCII 'A' bytes). Also uses "
             "the maximum-length (32-byte) senderId and a present replyTo, so "
-            "the encoded length is exactly MAX_ENVELOPE_LEN = 2118 bytes -- "
-            "the concrete instance of the 3+16+16+1+32+2+2048 arithmetic in "
-            "ENVELOPE.md.",
+            "the encoded length is exactly MAX_ENVELOPE_LEN = 2126 bytes -- "
+            "the concrete instance of the 3+16+16+1+32+8+2+2048 arithmetic "
+            "in ENVELOPE.md.",
             message_id=MESSAGE_ID_A,
             reply_to_id=REPLY_TO_ID_A,
             sender_id=SENDER_ID_32,
+            sequence=3,
             body="A" * MAX_BODY_LEN,
+        )
+    )
+
+    # -- Required coverage item: "sequence at max u64 accepted" -------------
+    vectors.append(
+        _decode_vec(
+            "sequence_max_u64_accepted",
+            "sequence field at the exact maximum representable u64 value "
+            "(0xFFFFFFFFFFFFFFFF). The codec accepts any nonzero u64 "
+            "sequence unconditionally; scope-exhaustion behavior at this "
+            "boundary is client-layer (CONTRACT.md), not a codec concern "
+            "-- see ENVELOPE.md §10. This is the ONE decode vector "
+            "whose sequence is not a small ascending integer, by design.",
+            message_id=MESSAGE_ID_A,
+            reply_to_id=None,
+            sender_id=SENDER_ID_4,
+            sequence=MAX_SEQUENCE,
+            body="max-seq",
         )
     )
 
@@ -511,16 +580,18 @@ def build_vectors() -> list:
         _error_vec(
             "reject_oversize_body_len_2049",
             "bodyLen field set to 2049 (one over MAX_BODY_LEN) with ZERO "
-            "body bytes supplied afterward. Proves the bodyLen range check "
-            "fires before any attempt to read body bytes: this must be "
-            "oversizeBody, not truncated, even though 2049 body bytes were "
-            "never actually present.",
+            "body bytes supplied afterward. A valid SEQUENCE_FILLER precedes "
+            "bodyLen so this vector isolates bodyLen alone. Proves the "
+            "bodyLen range check fires before any attempt to read body "
+            "bytes: this must be oversizeBody, not truncated, even though "
+            "2049 body bytes were never actually present.",
             error="oversizeBody",
             bytes_value=pack_raw(
                 _hdr_no_reply,
                 MESSAGE_ID_A,
                 bytes([len(SENDER_ID_4)]),
                 SENDER_ID_4,
+                SEQUENCE_FILLER_BYTES,
                 u16be(MAX_BODY_LEN + 1),
                 # (no body bytes follow)
             ),
@@ -542,6 +613,7 @@ def build_vectors() -> list:
             message_id=MESSAGE_ID_B,
             reply_to_id=None,
             sender_id=SENDER_ID_4,
+            sequence=4,
             body=unicode_body,
         )
     )
@@ -564,6 +636,7 @@ def build_vectors() -> list:
                 MESSAGE_ID_A,
                 bytes([len(SENDER_ID_4)]),
                 SENDER_ID_4,
+                SEQUENCE_FILLER_BYTES,
                 u16be(len(body_bytes)),
                 body_bytes,
             ),
@@ -640,6 +713,7 @@ def build_vectors() -> list:
             message_id=MESSAGE_ID_A,
             reply_to_id=REPLY_TO_ID_A,
             sender_id=SENDER_ID_4,
+            sequence=5,
             body="ack",
         )
     )
@@ -672,6 +746,27 @@ def build_vectors() -> list:
                 _hdr_no_reply,
                 MESSAGE_ID_A,
                 bytes([33]),
+            ),
+        )
+    )
+
+    # -- Required coverage item: "sequence=0 -> malformed" --------------------
+    vectors.append(
+        _error_vec(
+            "reject_sequence_zero",
+            "sequence field is all-zero (0x0000000000000000...00) "
+            "immediately after a valid, complete senderId. No bodyLen/body "
+            "bytes follow: the range check on sequence fires before "
+            "bodyLen is ever read, the same 'range checked before further "
+            "bytes are requested' discipline as the senderIdLen=0/33 "
+            "vectors above.",
+            error="malformed",
+            bytes_value=pack_raw(
+                _hdr_no_reply,
+                MESSAGE_ID_A,
+                bytes([len(SENDER_ID_4)]),
+                SENDER_ID_4,
+                bytes(SEQUENCE_FIELD_WIDTH),  # sequence = 0x00 * 8
             ),
         )
     )
@@ -719,6 +814,24 @@ def build_vectors() -> list:
         )
     )
 
+    # -- Required coverage item: "truncated mid-sequence" ---------------------
+    vectors.append(
+        _error_vec(
+            "truncated_mid_sequence",
+            "senderIdLen/senderId are complete and valid, then only 3 of "
+            "the required 8 sequence bytes are supplied (the leading 3 "
+            "bytes of SEQUENCE_FILLER_BYTES).",
+            error="truncated",
+            bytes_value=pack_raw(
+                _hdr_no_reply,
+                MESSAGE_ID_A,
+                bytes([len(SENDER_ID_4)]),
+                SENDER_ID_4,
+                SEQUENCE_FILLER_BYTES[:3],
+            ),
+        )
+    )
+
     # -- Required coverage item: bodyLen > remaining bytes -> truncated -------
     vectors.append(
         _error_vec(
@@ -726,13 +839,16 @@ def build_vectors() -> list:
             "bodyLen declares 5 (well within the 0..2048 range, so this is "
             "NOT oversizeBody), but only 2 body bytes are actually "
             "supplied -- distinguishes this from the bodyLen=2049 vector "
-            "above, which fails on the range check alone.",
+            "above, which fails on the range check alone. A valid "
+            "SEQUENCE_FILLER precedes bodyLen so this vector isolates "
+            "bodyLen/body alone.",
             error="truncated",
             bytes_value=pack_raw(
                 _hdr_no_reply,
                 MESSAGE_ID_A,
                 bytes([len(SENDER_ID_4)]),
                 SENDER_ID_4,
+                SEQUENCE_FILLER_BYTES,
                 u16be(5),
                 bytes([0x61, 0x62]),  # "ab" -- only 2 of the declared 5 bytes
             ),
@@ -746,6 +862,7 @@ def build_vectors() -> list:
         message_id=MESSAGE_ID_A,
         reply_to_id=None,
         sender_id=SENDER_ID_4,
+        sequence=SEQUENCE_FILLER,
         body=b"hi",
     )
     vectors.append(

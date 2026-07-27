@@ -5,6 +5,7 @@ package com.dweekly.cyrinx.chat
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runCurrent
@@ -26,6 +27,30 @@ fun TestScope.createChatPair(
     seed: Long,
     recorder: ChatTraceRecorder? = null,
 ): SimulatedChatPair = SimulatedChatPair.create(scenario, seed, this, VirtualTimeSource { currentTime }, recorder)
+
+/**
+ * Drives a pair through start -> connect, matching the driver timing every
+ * one of ../../../CONTRACT.md section 3's six tables share (connect at
+ * t=100, connected at t=150), leaving virtual time at t=150. Callers advance
+ * further as needed for their own test. Mirrors CyrinxChatKit's Swift twin's
+ * `connectedPair(scenario:seed:)` (`SimulatedChatTransportClientTests.swift`)
+ * exactly, including its default `scenario = happyPair`.
+ */
+suspend fun TestScope.connectedPair(
+    seed: Long,
+    scenario: ChatScenario = ChatScenario.HAPPY_PAIR,
+    recorder: ChatTraceRecorder? = null,
+): SimulatedChatPair {
+    val pair = createChatPair(scenario, seed, recorder)
+    pair.clientA.start()
+    pair.clientB.start()
+    advanceTimeBy(100)
+    runCurrent()
+    pair.clientA.connect(expectedPeerIds(seed).second.toHexString())
+    advanceTimeBy(50)
+    runCurrent()
+    return pair
+}
 
 /**
  * Starts collecting `client.events` into a list that grows in place as events

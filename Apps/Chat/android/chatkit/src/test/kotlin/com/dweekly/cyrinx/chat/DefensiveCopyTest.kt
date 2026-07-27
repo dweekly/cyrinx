@@ -44,7 +44,7 @@ class DefensiveCopyTest {
     fun chatMessageIdIsCopiedOnTheWayInAndOut() {
         val source = byteArrayOf(1, 2, 3, 4)
         val message =
-            ChatMessage(source, ChatMessage.Direction.OUTGOING, "hi", "aabbccdd", 0, ChatMessageDisplayStatus.Queued)
+            ChatMessage(source, 1L, ChatMessage.Direction.OUTGOING, "hi", "aabbccdd", 0, ChatMessageDisplayStatus.Queued)
 
         source[0] = 0xFF.toByte()
         assertEquals("01020304", message.id.toHexString())
@@ -64,7 +64,7 @@ class DefensiveCopyTest {
         val expectedSenderIdHex = senderId.toHexString()
 
         val envelope =
-            ChatEnvelope(ChatEnvelopeCodec.VERSION, ChatEnvelopeKind.TEXT, messageId, replyToId, senderId, "hi")
+            ChatEnvelope(ChatEnvelopeCodec.VERSION, ChatEnvelopeKind.TEXT, messageId, replyToId, senderId, 1L, "hi")
 
         // Mutate every array the caller passed IN.
         messageId[0] = 0xFF.toByte()

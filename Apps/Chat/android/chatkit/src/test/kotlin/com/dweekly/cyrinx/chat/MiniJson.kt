@@ -10,8 +10,14 @@ package com.dweekly.cyrinx.chat
  * commas), which is sufficient for this repo's own generated fixture files.
  *
  * Produces plain Kotlin values: `Map<String, Any?>` for objects (insertion-order
- * preserved via `LinkedHashMap`), `List<Any?>` for arrays, `String`, `Double` for
- * every JSON number, `Boolean`, and `null`.
+ * preserved via `LinkedHashMap`), `List<Any?>` for arrays, `String`, `Boolean`,
+ * `null`, and for JSON numbers: [java.math.BigInteger] for an integer literal (no
+ * `.`/`e`/`E`), or [Double] otherwise. The [java.math.BigInteger] case matters for
+ * ../fixtures/chat-envelope-golden.json's `sequence` field specifically --
+ * ../../../ENVELOPE.md section 8 requires `sequence_max_u64_accepted`'s
+ * `18446744073709551615` to "round-trip exactly," which a `Double` intermediate
+ * cannot represent (a `u64` has 64 significant bits; an IEEE-754 `double` has only
+ * 53). See [JsonAccess.uLong].
  */
 object MiniJson {
     fun parse(text: String): Any? {
@@ -140,21 +146,28 @@ object MiniJson {
             }
         }
 
-        private fun parseNumber(): Double {
+        /** Returns [java.math.BigInteger] for an integral literal (arbitrary
+         * precision -- see this file's top-level doc comment) or [Double]
+         * otherwise. */
+        private fun parseNumber(): Any {
             val start = pos
+            var isIntegral = true
             if (peek() == '-') pos++
             while (pos < text.length && text[pos].isDigit()) pos++
             if (pos < text.length && text[pos] == '.') {
+                isIntegral = false
                 pos++
                 while (pos < text.length && text[pos].isDigit()) pos++
             }
             if (pos < text.length && (text[pos] == 'e' || text[pos] == 'E')) {
+                isIntegral = false
                 pos++
                 if (pos < text.length && (text[pos] == '+' || text[pos] == '-')) pos++
                 while (pos < text.length && text[pos].isDigit()) pos++
             }
             require(pos > start) { "expected a number at offset $start" }
-            return text.substring(start, pos).toDouble()
+            val raw = text.substring(start, pos)
+            return if (isIntegral) java.math.BigInteger(raw) else raw.toDouble()
         }
 
         private fun peek(): Char {
@@ -181,5 +194,15 @@ object JsonAccess {
 
     fun strOrNull(value: Any?): String? = value as String?
 
-    fun int(value: Any?): Int = (value as Double).also { require(it == Math.floor(it)) { "not an integer: $it" } }.toInt()
+    fun int(value: Any?): Int = (value as java.math.BigInteger).intValueExact()
+
+    /** Reads a JSON integer literal as the bit pattern of an unsigned 64-bit
+     * value -- e.g. `18446744073709551615` (`u64` max) becomes `-1L` -- matching
+     * ../../../ENVELOPE.md section 8's "decode it straight into `UInt64`/`ULong`,
+     * never through a `Double` intermediate" requirement for the golden
+     * fixture's `sequence` field. [java.math.BigInteger.toLong] returns exactly
+     * the low-order 64 bits for a value too large to fit in a signed [Long],
+     * which for a value already range-checked to `0..2^64-1` (as every
+     * `sequence` in the fixture is) is precisely the `u64` wire bit pattern. */
+    fun uLong(value: Any?): Long = (value as java.math.BigInteger).toLong()
 }

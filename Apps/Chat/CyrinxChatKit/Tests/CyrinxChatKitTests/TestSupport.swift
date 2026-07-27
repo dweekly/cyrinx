@@ -60,6 +60,11 @@ struct DecodedFieldsJSON: Codable, Sendable {
     let messageIdHex: String
     let replyToIdHex: String?
     let senderIdHex: String
+    /// The wire `u64` sequence value, decoded straight into `UInt64` --
+    /// ENVELOPE.md §8's field notes require this, never through a
+    /// `Double` intermediate, so `sequence_max_u64_accepted`'s
+    /// `18446744073709551615` round-trips exactly.
+    let sequence: UInt64
     let body: String
 }
 

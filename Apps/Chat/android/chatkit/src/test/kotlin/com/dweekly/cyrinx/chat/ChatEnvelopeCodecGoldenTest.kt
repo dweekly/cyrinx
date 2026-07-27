@@ -14,12 +14,16 @@ import java.io.File
 private fun failTest(message: String): Nothing = throw AssertionError(message)
 
 /**
- * Every golden vector in ../fixtures/chat-envelope-golden.json (19 vectors: 5
- * `expect: "decode"`, 14 `expect: "error"`), checked against [ChatEnvelopeCodec]
- * per ../../../ENVELOPE.md section 8's schema. For each `decode` vector: decoded
- * field values match, AND re-encoding the decoded value reproduces `bytes_hex`
- * exactly (ENVELOPE.md section 3's canonical-encoding guarantee). For each
- * `error` vector: decoding raises exactly the named [ChatEnvelopeError].
+ * Every golden vector in ../fixtures/chat-envelope-golden.json (22 vectors: 6
+ * `expect: "decode"`, 16 `expect: "error"` -- the C3-28 sequence amendment added
+ * `sequence_max_u64_accepted`, `reject_sequence_zero`, and `truncated_mid_sequence`
+ * to the pre-amendment 19), checked against [ChatEnvelopeCodec] per
+ * ../../../ENVELOPE.md section 8's schema. For each `decode` vector: decoded
+ * field values match (including `sequence`, compared via [JsonAccess.uLong] so
+ * `sequence_max_u64_accepted`'s `18446744073709551615` round-trips exactly rather
+ * than through a lossy `Double`), AND re-encoding the decoded value reproduces
+ * `bytes_hex` exactly (ENVELOPE.md section 3's canonical-encoding guarantee). For
+ * each `error` vector: decoding raises exactly the named [ChatEnvelopeError].
  */
 class ChatEnvelopeCodecGoldenTest {
     private val goldenFile = File("../fixtures/chat-envelope-golden.json")
@@ -32,11 +36,11 @@ class ChatEnvelopeCodecGoldenTest {
     }
 
     @Test
-    fun goldenVectorCountIs19() {
+    fun goldenVectorCountIs22() {
         val vectors = loadVectors()
-        assertEquals(19, vectors.size)
-        assertEquals(5, vectors.count { it["expect"] == "decode" })
-        assertEquals(14, vectors.count { it["expect"] == "error" })
+        assertEquals(22, vectors.size)
+        assertEquals(6, vectors.count { it["expect"] == "decode" })
+        assertEquals(16, vectors.count { it["expect"] == "error" })
     }
 
     @Test
@@ -68,6 +72,7 @@ class ChatEnvelopeCodecGoldenTest {
             }
 
             assertEquals("[$name] senderIdHex", JsonAccess.str(decodedJson["senderIdHex"]), envelope.senderId.toHexString())
+            assertEquals("[$name] sequence", JsonAccess.uLong(decodedJson["sequence"]), envelope.sequence)
             assertEquals("[$name] body", JsonAccess.str(decodedJson["body"]), envelope.body)
 
             // ENVELOPE.md section 3: canonical encoding round-trip.
@@ -102,6 +107,6 @@ class ChatEnvelopeCodecGoldenTest {
         val vector = loadVectors().single { it["name"] == "body_max_2048" }
         val bytes = JsonAccess.str(vector["bytes_hex"]).hexToByteArray()
         assertEquals(ChatEnvelopeCodec.MAX_ENVELOPE_LEN, bytes.size)
-        assertEquals(2118, ChatEnvelopeCodec.MAX_ENVELOPE_LEN)
+        assertEquals(2126, ChatEnvelopeCodec.MAX_ENVELOPE_LEN)
     }
 }

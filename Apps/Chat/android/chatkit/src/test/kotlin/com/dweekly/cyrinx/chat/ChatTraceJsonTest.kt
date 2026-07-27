@@ -62,6 +62,7 @@ class ChatTraceJsonTest {
                     2,
                     ChatMessage(
                         id = ByteArray(16) { 0x11 },
+                        sequence = 1L,
                         direction = ChatMessage.Direction.INCOMING,
                         body = "hello",
                         senderPeerIdHex = "aabbccdd",
@@ -73,8 +74,34 @@ class ChatTraceJsonTest {
         val expectedIdHex = ByteArray(16) { 0x11 }.toHexString()
         assertEquals(
             """{"eventSeq": 2, "virtualTimeMs": 380, "client": "B", "event": {"type": "messageReceived", """ +
-                """"message": {"idHex": "$expectedIdHex", "direction": "incoming", "body": "hello", """ +
+                """"message": {"idHex": "$expectedIdHex", "sequence": 1, "direction": "incoming", "body": "hello", """ +
                 """"senderPeerIdHex": "aabbccdd", "sentAtWallClockMs": 380, "status": "delivered"}}}""",
+            ChatTraceJson.renderLine(entry),
+        )
+    }
+
+    @Test
+    fun messageGapFieldOrder() {
+        // ../../../CONTRACT.md section 4's `messageGap` row: `fromSequence,
+        // toSequence`, rendered as unsigned decimal (ENVELOPE.md section 8).
+        val entry = ChatTraceEntry(6, 900, 'B', ChatEvent.MessageGap(6, 5L, 9L))
+        assertEquals(
+            """{"eventSeq": 6, "virtualTimeMs": 900, "client": "B", "event": {"type": "messageGap", """ +
+                """"fromSequence": 5, "toSequence": 9}}""",
+            ChatTraceJson.renderLine(entry),
+        )
+    }
+
+    @Test
+    fun messageGapRendersUnsignedNotSignedForHighBitSequences() {
+        // sequence.toULong() must be used when rendering -- a naive
+        // Long.toString() would print a negative number for a u64 value in the
+        // top half of the range (ENVELOPE.md section 8's u64-not-Double rule
+        // extends to trace rendering, not just JSON decode).
+        val entry = ChatTraceEntry(0, 0, 'A', ChatEvent.MessageGap(0, -1L, -1L))
+        assertEquals(
+            """{"eventSeq": 0, "virtualTimeMs": 0, "client": "A", "event": {"type": "messageGap", """ +
+                """"fromSequence": 18446744073709551615, "toSequence": 18446744073709551615}}""",
             ChatTraceJson.renderLine(entry),
         )
     }
@@ -173,7 +200,7 @@ class ChatTraceJsonTest {
                 'A',
                 ChatEvent.MessageReceived(
                     0,
-                    ChatMessage(ByteArray(16), ChatMessage.Direction.INCOMING, "Café 日本語 😀", "deadbeef", 0, ChatMessageDisplayStatus.Delivered),
+                    ChatMessage(ByteArray(16), 1L, ChatMessage.Direction.INCOMING, "Café 日本語 😀", "deadbeef", 0, ChatMessageDisplayStatus.Delivered),
                 ),
             )
         val rendered = ChatTraceJson.renderLine(entry)

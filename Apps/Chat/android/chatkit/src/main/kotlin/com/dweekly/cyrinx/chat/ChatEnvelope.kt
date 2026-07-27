@@ -20,7 +20,11 @@ enum class ChatEnvelopeKind(val wireByte: Int, val wireName: String) {
 /**
  * A decoded (or about-to-be-encoded) chat envelope v1 value, per ../../../ENVELOPE.md
  * section 1. `messageId` and `replyToId` are 16-byte opaque IDs; `senderId` is
- * 1..32 opaque bytes; `body` is already-validated UTF-8 text (0..2048 bytes when
+ * 1..32 opaque bytes; `sequence` is a nonzero sender-local `u64` (../../../ENVELOPE.md
+ * section 1.2, the C3-28 sequence amendment), represented here as a [Long] holding
+ * the exact 64-bit wire bit pattern (so `0xFFFFFFFFFFFFFFFF` round-trips as `-1L`,
+ * never through a `Double`/floating intermediate -- see ../../../ENVELOPE.md
+ * section 8); `body` is already-validated UTF-8 text (0..2048 bytes when
  * re-encoded). This class does not enforce those bounds itself -- both are enforced,
  * with the exact named errors from ../../../ENVELOPE.md section 5, in
  * [ChatEnvelopeCodec.encode] and [ChatEnvelopeCodec.decode].
@@ -40,6 +44,7 @@ class ChatEnvelope(
     messageId: ByteArray,
     replyToId: ByteArray?,
     senderId: ByteArray,
+    val sequence: Long,
     val body: String,
 ) {
     private val messageIdBytes: ByteArray = messageId.copyOf()
@@ -63,6 +68,7 @@ class ChatEnvelope(
             messageIdBytes.contentEquals(other.messageIdBytes) &&
             nullableContentEquals(replyToIdBytes, other.replyToIdBytes) &&
             senderIdBytes.contentEquals(other.senderIdBytes) &&
+            sequence == other.sequence &&
             body == other.body
     }
 
@@ -72,6 +78,7 @@ class ChatEnvelope(
         result = 31 * result + messageIdBytes.contentHashCode()
         result = 31 * result + (replyToIdBytes?.contentHashCode() ?: 0)
         result = 31 * result + senderIdBytes.contentHashCode()
+        result = 31 * result + sequence.hashCode()
         result = 31 * result + body.hashCode()
         return result
     }
@@ -79,7 +86,7 @@ class ChatEnvelope(
     override fun toString(): String =
         "ChatEnvelope(version=$version, kind=$kind, messageId=${messageIdBytes.toHexString()}, " +
             "replyToId=${replyToIdBytes?.toHexString()}, senderId=${senderIdBytes.toHexString()}, " +
-            "body.length=${body.length})"
+            "sequence=${sequence.toULong()}, body.length=${body.length})"
 }
 
 /** Lowercase hex, no separators -- matches the golden-vector JSON's `*Hex` field

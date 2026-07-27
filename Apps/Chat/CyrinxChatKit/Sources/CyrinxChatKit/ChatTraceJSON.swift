@@ -81,6 +81,7 @@ enum ChatTraceJSON {
         let (statusStr, _) = statusStrings(message.status)
         return object([
             ("idHex", string(message.id.hexString)),
+            ("sequence", uint64(message.sequence)),
             ("direction", string(message.direction == .incoming ? "incoming" : "outgoing")),
             ("body", string(message.body)),
             ("senderPeerIdHex", string(message.senderPeerIdHex)),
@@ -134,6 +135,12 @@ enum ChatTraceJSON {
             return object([("type", string("linkBudgetChanged")), ("budget", encodeLinkBudget(budget))])
         case .messageReceived(let message):
             return object([("type", string("messageReceived")), ("message", encodeMessage(message))])
+        case .messageGap(let fromSequence, let toSequence):
+            return object([
+                ("type", string("messageGap")),
+                ("fromSequence", uint64(fromSequence)),
+                ("toSequence", uint64(toSequence)),
+            ])
         case .messageStatusChanged(let messageIdHex, let status):
             let (statusStr, failureReason) = statusStrings(status)
             return object([

@@ -60,6 +60,12 @@ object ChatTraceJson {
                 appendField(sb, "message", renderMessage(event.message))
             }
 
+            is ChatEvent.MessageGap -> {
+                appendField(sb, "type", jsonString("messageGap"), first = true)
+                appendField(sb, "fromSequence", event.fromSequence.toULong().toString())
+                appendField(sb, "toSequence", event.toSequence.toULong().toString())
+            }
+
             is ChatEvent.MessageStatusChanged -> {
                 appendField(sb, "type", jsonString("messageStatusChanged"), first = true)
                 appendField(sb, "messageIdHex", jsonString(event.messageIdHex))
@@ -105,6 +111,11 @@ object ChatTraceJson {
         val sb = StringBuilder()
         sb.append('{')
         appendField(sb, "idHex", jsonString(message.id.toHexString()), first = true)
+        // Rendered as the unsigned decimal value of the u64 wire bit pattern
+        // (../../../ENVELOPE.md section 8), matching the golden fixture's own
+        // `sequence` field convention -- not a signed Long.toString(), which
+        // would be wrong for any sequence in the top half of the u64 range.
+        appendField(sb, "sequence", message.sequence.toULong().toString())
         appendField(sb, "direction", jsonString(message.direction.wireName))
         appendField(sb, "body", jsonString(message.body))
         appendField(sb, "senderPeerIdHex", jsonString(message.senderPeerIdHex))

@@ -3,8 +3,14 @@ package com.dweekly.cyrinx.chat
 /**
  * Every event carries [eventSeq], monotonic from 0, per client instance (client
  * A's and client B's `eventSeq` sequences are both independently zero-based and
- * never compared to each other). Eight payload kinds. ../../../CONTRACT.md
- * section 1.7.
+ * never compared to each other). Nine payload kinds (the C3-28 sequence amendment
+ * added [MessageGap]). ../../../CONTRACT.md section 1.7.
+ *
+ * [MessageGap] is unrelated to THIS section's own `eventSeq` gap-detection
+ * contract (bounded-buffer drops of [ChatEvent]s, see [ChatEventBus]) -- see
+ * ../../../CONTRACT.md section 2's "Gap surfacing (pinned)" for what
+ * [MessageGap] actually means: missing envelope `sequence` numbers, never
+ * delivered.
  *
  * No event is emitted for a client's implicit initial state (no peers,
  * `disconnected(reason: null)`) -- events represent transitions, not the zero
@@ -42,6 +48,15 @@ sealed class ChatEvent {
     ) : ChatEvent()
 
     data class MessageReceived(override val eventSeq: Long, val message: ChatMessage) : ChatEvent()
+
+    /** ../../../CONTRACT.md section 2's "Gap surfacing (pinned)": [fromSequence]
+     * is the first missing sequence and [toSequence] is the last missing
+     * sequence in that run, inclusive. */
+    data class MessageGap(
+        override val eventSeq: Long,
+        val fromSequence: Long,
+        val toSequence: Long,
+    ) : ChatEvent()
 
     data class MessageStatusChanged(
         override val eventSeq: Long,

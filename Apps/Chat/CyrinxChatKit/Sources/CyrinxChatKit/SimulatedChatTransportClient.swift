@@ -80,7 +80,9 @@ import Foundation
 /// executor thread could otherwise do): once a command has WON entry, no
 /// OTHER command can be concurrently mutating anything for the lock to
 /// race against, by construction, so the span's own body needs no further
-/// synchronization. Message-ID draws and every other command-span
+/// synchronization. Message-ID draws, the C3-28 sequence amendment's own
+/// outgoing-sequence draw (`nextOutgoingSequence`, CONTRACT.md §2's
+/// "Outgoing sequence assignment (pinned)"), and every other command-span
 /// mutation (the pin's own examples) therefore run inside the held span
 /// without needing separate synchronization of their own. Production
 /// callers must still honor the "Concurrency note" above and never
@@ -357,6 +359,22 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
     /// (§4's byte-identical-trace guarantee).
     private var messageIdPRNG: SplitMix64
 
+    /// CONTRACT.md §2's "Outgoing sequence assignment (pinned)": this
+    /// client's own next outgoing envelope `sequence` (ENVELOPE.md
+    /// §1.2/§1.3). Starts at `1` as a plain instance-field default,
+    /// without needing to be latched explicitly inside `becomeConnected()`
+    /// the way `isEstablished` is: `send()` is only ever reachable once
+    /// this client's own joint `connected` emission has already succeeded
+    /// (the "Send precondition (pinned)" bullet below accepts only
+    /// `.connected`/`.degraded`, both unreachable before
+    /// `becomeConnected()` runs), so nothing ever reads this field before
+    /// the exact moment CONTRACT.md pins as its start. Drawn inside
+    /// `send()`'s own serialized command span, exactly like the
+    /// message-ID draw immediately below it. There is no reconnection
+    /// scope in this sample (ENVELOPE.md §6's Reconciliation
+    /// cross-reference), so this counter is never reset once assigned.
+    private var nextOutgoingSequence: UInt64 = 1
+
     private(set) var started = false
     private var discoveryScheduled = false
     private var finished = false
@@ -416,6 +434,59 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
 
     private var outgoingMessages: [String: ChatMessage] = [:]
     private var seenIncomingMessageIds: Set<String> = []
+    /// CONTRACT.md §2's "Receiver reorder window (pinned; 32 sequences)":
+    /// window width, in inbound envelope `sequence` numbers.
+    static let reorderWindowSize: UInt64 = 32
+    /// Lowest inbound `sequence` this client has not yet resolved --
+    /// delivered, dropped as a stale/duplicate-sequence collision, or
+    /// given up on as part of a surfaced `messageGap`. Starts at `1`,
+    /// matching a peer's own outgoing sequence numbering
+    /// (`nextOutgoingSequence` above).
+    private var nextExpectedIncomingSequence: UInt64 = 1
+    /// In-window (`sequence - nextExpectedIncomingSequence <
+    /// reorderWindowSize`) out-of-order arrivals, buffered until
+    /// `nextExpectedIncomingSequence` reaches them or a later arrival
+    /// bypasses the window -- CONTRACT.md §2's "buffers up to 32
+    /// sequences' worth of in-window out-of-order arrivals and delivers
+    /// them in strict sequence order."
+    private var reorderBuffer: [UInt64: ChatEnvelope] = [:]
+    /// CONTRACT.md §2's "already delivered but messageId unseen" /
+    /// "stale-after-gap" drop count: an inbound envelope whose `sequence`
+    /// this client has already resolved one way or another (delivered, or
+    /// given up on as part of a surfaced gap) but whose `messageId` is
+    /// new. No public `ChatEvent` carries a running drop count --
+    /// `messageGap` carries only the missing range -- so this is test-only
+    /// observability, read directly by tests via `@testable import`
+    /// (matching this file's existing `private(set)` pattern, e.g.
+    /// `lifecycleGeneration`/`isEstablished` above).
+    private(set) var droppedStaleOrDuplicateSequenceCount = 0
+
+    /// CONTRACT.md §2's "Test-only injection seam (pinned; test-only, not
+    /// part of any scenario timeline)": intercepts THIS client's own
+    /// outgoing envelope bytes -- i.e. bytes this client's own `send()`
+    /// produced, about to be scheduled for delivery to `peer` -- before
+    /// scheduling, letting a test apply deterministic, virtual-time-
+    /// scheduled reorder / duplicate / drop / re-deliver operations. `nil`
+    /// (the default; every production caller and all six canonical
+    /// scenario scripts) makes `scheduleDelivery(atMs:encoded:)` behave
+    /// exactly as it did before this seam existed: exactly one scheduled
+    /// delivery, at the original `dueAtMs`, unmodified bytes.
+    ///
+    /// Called once per outgoing envelope with its ORIGINAL scheduled
+    /// `(dueAtMs, bytes)`; returns the actual list of `(dueAtMs, bytes)`
+    /// deliveries to schedule instead: zero entries drops the message
+    /// outright, one entry re-delivers it (optionally retimed --
+    /// reorder), more than one entry duplicates/re-delivers it (each
+    /// entry independently subject to the SAME target-ownership/
+    /// generation/terminality gate `scheduleDelivery` already applies at
+    /// fire time, per CONTRACT.md §2's "All target-ownership/generation/
+    /// terminality guards apply to buffered deliveries too" -- this seam
+    /// sits strictly upstream of that gate and never bypasses it). Every
+    /// returned `dueAtMs` must be `>= clock.nowMs` at the moment `send()`
+    /// runs (`VirtualClock.schedule`'s own precondition) -- deterministic,
+    /// virtual-time scheduling only, never a real-clock delay.
+    var testOnlyInjectionSeam: ((_ originalDueAtMs: Int64, _ bytes: Data) -> [(dueAtMs: Int64, bytes: Data)])?
+
     /// Scheduled `VirtualClock` tokens for each nonterminal outgoing
     /// message's remaining status transitions, by `messageIdHex`. An entry
     /// exists **iff** that message is currently nonterminal: `emitDelivered`
@@ -620,6 +691,12 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
         lifecycleGeneration += 1
         cancelAllScheduledActions()
         terminalizeNonterminalSends(reason: "stopped")
+        // CONTRACT.md §2's "Gap surfacing (pinned)" case (b): the scope is
+        // ending here -- report any run of inbound sequences this client
+        // knows it never resolved (a no-op when nothing is buffered, true
+        // for all six canonical scenarios and any run this client already
+        // drained/gapped-over on its own).
+        surfaceScopeEndGapIfNeeded()
         if case .disconnected = connectionState {
             // Already disconnected (e.g. via `disconnect()` or a scenario's
             // scripted disconnect) -- CONTRACT.md's "unless the state is
@@ -705,6 +782,9 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
         lifecycleGeneration += 1
         cancelAllScheduledActions()
         terminalizeNonterminalSends(reason: "disconnected")
+        // CONTRACT.md §2's "Gap surfacing (pinned)" case (b) -- see
+        // `stop()`'s identical call for the full rationale.
+        surfaceScopeEndGapIfNeeded()
         connectionState = .disconnected(reason: "userInitiated")
         emit(.connectionChanged(.disconnected(reason: "userInitiated")))
     }
@@ -744,7 +824,14 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
 
         let messageId = generateMessageId()
         let messageIdHex = messageId.hexString
-        let envelope = ChatEnvelope(messageId: messageId, replyToId: nil, senderId: localPeerId, body: body)
+        // CONTRACT.md §2's "Outgoing sequence assignment (pinned)": drawn
+        // inside this command's serialized span, exactly like the
+        // message-ID draw immediately above.
+        let sequence = nextOutgoingSequence
+        nextOutgoingSequence += 1
+        let envelope = ChatEnvelope(
+            messageId: messageId, replyToId: nil, senderId: localPeerId, sequence: sequence, body: body
+        )
         // CONTRACT.md §2 point 2: real envelope bytes, through the real
         // codec -- not a shortcut that skips it.
         let encoded = try ChatEnvelopeCodec.encode(envelope)
@@ -752,6 +839,7 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
         let sentAtMs = clock.nowMs
         let message = ChatMessage(
             id: messageId,
+            sequence: sequence,
             direction: .outgoing,
             body: body,
             senderPeerIdHex: localPeerId.hexString,
@@ -1129,9 +1217,9 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
         )
         switch outcome {
         case .deliverNormally(let receiveDeltaMs, let deliveredDeltaMs):
-            if let token = scheduleDelivery(atMs: transmittingAtMs + receiveDeltaMs, encoded: encoded) {
-                tokens.append(token)
-            }
+            tokens.append(
+                contentsOf: scheduleDelivery(atMs: transmittingAtMs + receiveDeltaMs, encoded: encoded)
+            )
             tokens.append(
                 clock.schedule(atMs: transmittingAtMs + deliveredDeltaMs) { [weak self] in
                     self?.emitDelivered(messageIdHex: messageIdHex)
@@ -1144,15 +1232,15 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
                 }
             )
         case .deliverWithDuplicate(let receiveDeltaMs, let redeliverDeltaMs, let deliveredDeltaMs):
-            if let token = scheduleDelivery(atMs: transmittingAtMs + receiveDeltaMs, encoded: encoded) {
-                tokens.append(token)
-            }
+            tokens.append(
+                contentsOf: scheduleDelivery(atMs: transmittingAtMs + receiveDeltaMs, encoded: encoded)
+            )
             // Fault-injected retransmit: the SAME bytes, decoded again.
             // `receiveEnvelope`'s messageId dedup (CONTRACT.md's
             // `duplicateIncoming` scenario) is what suppresses this one.
-            if let token = scheduleDelivery(atMs: transmittingAtMs + redeliverDeltaMs, encoded: encoded) {
-                tokens.append(token)
-            }
+            tokens.append(
+                contentsOf: scheduleDelivery(atMs: transmittingAtMs + redeliverDeltaMs, encoded: encoded)
+            )
             tokens.append(
                 clock.schedule(atMs: transmittingAtMs + deliveredDeltaMs) { [weak self] in
                     self?.emitDelivered(messageIdHex: messageIdHex)
@@ -1182,7 +1270,7 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
     /// `pendingSendTokens`) never touched it, letting a receiver observe
     /// `messageReceived` after its own disconnect.
     ///
-    /// The returned token is still folded into the SENDER's own
+    /// The returned tokens are still folded into the SENDER's own
     /// `pendingSendTokens` by the caller (`scheduleSendOutcome`), so
     /// `self`'s own `cancelSend`/`disconnect()`/`stop()` continues to be
     /// able to cancel this delivery outright too -- CONTRACT.md pins
@@ -1196,6 +1284,18 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
     /// delivery: the sender cancelling the underlying `VirtualClock`
     /// token outright, or the receiver's terminality/generation check
     /// catching it at fire time.
+    ///
+    /// **Test-only injection seam.** When `testOnlyInjectionSeam` is
+    /// non-`nil` (default: `nil`, every production caller and all six
+    /// canonical scenario scripts), this method's ORIGINAL single
+    /// `(dueAtMs, encoded)` delivery is first passed through it, and the
+    /// list it returns is what actually gets scheduled -- zero, one, or
+    /// many deliveries of (possibly identical) bytes at (possibly
+    /// different) virtual times, each independently subject to the exact
+    /// same target-ownership/generation/terminality gate below (see that
+    /// property's own doc comment). This is the mechanism behind
+    /// CONTRACT.md §2's pinned deterministic reorder/duplicate/drop/
+    /// re-deliver seam.
     ///
     /// **Terminality, not generation equality alone, is the gate (C3-28
     /// terminality review, reviewer probe P2).** CONTRACT.md §2's
@@ -1218,16 +1318,18 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
     /// phrasing, catching the (currently only theoretical, since nothing
     /// else bumps generation) case of a target that went terminal and
     /// somehow became non-terminal again with a new generation.
-    @discardableResult
-    private func scheduleDelivery(atMs dueAtMs: Int64, encoded: Data) -> Int? {
-        guard let peer else { return nil }
+    private func scheduleDelivery(atMs dueAtMs: Int64, encoded: Data) -> [Int] {
+        guard let peer else { return [] }
+        let deliveries = testOnlyInjectionSeam?(dueAtMs, encoded) ?? [(dueAtMs: dueAtMs, bytes: encoded)]
         let targetGenerationAtSchedule = peer.lifecycleGeneration
-        return clock.schedule(atMs: dueAtMs) { [weak peer] in
-            guard let peer,
-                !peer.isTerminal,
-                peer.lifecycleGeneration == targetGenerationAtSchedule
-            else { return }
-            peer.receiveEnvelope(encoded)
+        return deliveries.map { delivery in
+            clock.schedule(atMs: delivery.dueAtMs) { [weak peer] in
+                guard let peer,
+                    !peer.isTerminal,
+                    peer.lifecycleGeneration == targetGenerationAtSchedule
+                else { return }
+                peer.receiveEnvelope(delivery.bytes)
+            }
         }
     }
 
@@ -1266,18 +1368,61 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
     /// strict codec validated against the golden vectors, applies
     /// messageId dedup (CONTRACT.md's `duplicateIncoming` scenario: exactly
     /// one `messageReceived` survives per distinct messageId, not zero, not
-    /// two), and emits `messageReceived` for a new message. Malformed
-    /// inbound bytes are silently dropped -- not exercised by any of the
-    /// six scenarios, which only ever deliver bytes this same codec just
-    /// encoded, but a real transport can't assume well-formed bytes from
-    /// the wire either.
+    /// two -- checked first and unchanged by the C3-28 sequence amendment),
+    /// then applies the "Receiver reorder window (pinned; 32 sequences)"
+    /// and "Gap surfacing (pinned)" rules: an arrival exactly at
+    /// `nextExpectedIncomingSequence` is delivered immediately (draining
+    /// any now-contiguous buffered arrivals behind it); an in-window
+    /// out-of-order arrival is buffered until the window catches up to it;
+    /// an arrival whose `sequence` already fell behind
+    /// `nextExpectedIncomingSequence` (already delivered, or already given
+    /// up on as part of a prior surfaced gap) is dropped and counted; and
+    /// an arrival 32 or more sequences beyond the current
+    /// `nextExpectedIncomingSequence` bypasses the window, surfacing a
+    /// `messageGap` for the run it leaves behind. Malformed inbound bytes
+    /// are silently dropped -- not exercised by any of the six scenarios,
+    /// which only ever deliver bytes this same codec just encoded, but a
+    /// real transport can't assume well-formed bytes from the wire either.
     func receiveEnvelope(_ encoded: Data) {
         guard let envelope = try? ChatEnvelopeCodec.decode(encoded) else { return }
         let messageIdHex = envelope.messageId.hexString
         guard !seenIncomingMessageIds.contains(messageIdHex) else { return }
+
+        let sequence = envelope.sequence
+        guard sequence >= nextExpectedIncomingSequence else {
+            // CONTRACT.md §2: this sequence was already resolved (delivered
+            // earlier, or already given up on as part of a previously
+            // surfaced gap), but this messageId is new -- dropped, counted,
+            // never delivered, never (re-)surfaced as its own gap.
+            droppedStaleOrDuplicateSequenceCount += 1
+            return
+        }
+
         seenIncomingMessageIds.insert(messageIdHex)
+
+        if sequence - nextExpectedIncomingSequence >= Self.reorderWindowSize {
+            surfaceWindowBypassGap(arrivingSequence: sequence)
+        }
+
+        if sequence == nextExpectedIncomingSequence {
+            deliverIncoming(envelope)
+            drainReorderBuffer()
+        } else {
+            reorderBuffer[sequence] = envelope
+        }
+    }
+
+    /// Emits `messageReceived` for `envelope` and advances
+    /// `nextExpectedIncomingSequence` past it. Only ever called with
+    /// `envelope.sequence == nextExpectedIncomingSequence` -- directly from
+    /// `receiveEnvelope`, or from `drainReorderBuffer()`'s own loop, which
+    /// only removes and delivers a buffered entry once its key matches the
+    /// (possibly just-advanced) current `nextExpectedIncomingSequence`.
+    private func deliverIncoming(_ envelope: ChatEnvelope) {
+        nextExpectedIncomingSequence = envelope.sequence + 1
         let message = ChatMessage(
             id: envelope.messageId,
+            sequence: envelope.sequence,
             direction: .incoming,
             body: envelope.body,
             senderPeerIdHex: envelope.senderId.hexString,
@@ -1285,6 +1430,57 @@ public final class SimulatedChatTransportClient: ChatTransportClient {
             status: .delivered
         )
         emit(.messageReceived(message))
+    }
+
+    /// Delivers every contiguous buffered arrival starting at the (now
+    /// current) `nextExpectedIncomingSequence`, in ascending order --
+    /// CONTRACT.md §2's "delivers them in strict sequence order."
+    private func drainReorderBuffer() {
+        while let envelope = reorderBuffer.removeValue(forKey: nextExpectedIncomingSequence) {
+            deliverIncoming(envelope)
+        }
+    }
+
+    /// CONTRACT.md §2's "Gap surfacing (pinned)" case (a): `arrivingSequence`
+    /// is 32 or more beyond the current (missing) `nextExpectedIncomingSequence`,
+    /// so the run `[nextExpectedIncomingSequence, arrivingSequence -
+    /// reorderWindowSize]` can never be filled within a 32-wide window and
+    /// is declared permanently missing. Advances the window's floor to
+    /// `arrivingSequence - reorderWindowSize + 1` (so `arrivingSequence`
+    /// itself lands exactly on the new window's top edge) and discards --
+    /// as stale, counted -- any already-buffered entry the jump leaves
+    /// behind below the new floor. `arrivingSequence` itself is handled by
+    /// the caller (`receiveEnvelope`) immediately afterward, against the
+    /// now-updated `nextExpectedIncomingSequence`.
+    private func surfaceWindowBypassGap(arrivingSequence: UInt64) {
+        let fromSequence = nextExpectedIncomingSequence
+        let toSequence = arrivingSequence - Self.reorderWindowSize
+        emit(.messageGap(fromSequence: fromSequence, toSequence: toSequence))
+        nextExpectedIncomingSequence = toSequence + 1
+        for key in reorderBuffer.keys where key <= toSequence {
+            reorderBuffer.removeValue(forKey: key)
+            droppedStaleOrDuplicateSequenceCount += 1
+        }
+    }
+
+    /// CONTRACT.md §2's "Gap surfacing (pinned)" case (b): the connection
+    /// scope is ending (`disconnect()`/`stop()`) with at least one
+    /// known-but-undelivered arrival still buffered above an unfilled
+    /// hole. Reports the single missing run
+    /// `[nextExpectedIncomingSequence, (lowest buffered sequence) - 1]` --
+    /// CONTRACT.md pins one `messageGap` per unresolved run at scope end,
+    /// not an exhaustive ledger of every individual hole a
+    /// multiply-buffered window might contain. A no-op when nothing is
+    /// buffered (nothing is known to be missing). Clears the buffer and
+    /// advances `nextExpectedIncomingSequence` past everything this client
+    /// currently knows about, so a second call in the same scope teardown
+    /// (`disconnect()` followed by `stop()`) is a harmless no-op.
+    private func surfaceScopeEndGapIfNeeded() {
+        guard let lowestBuffered = reorderBuffer.keys.min() else { return }
+        let toSequence = lowestBuffered - 1
+        emit(.messageGap(fromSequence: nextExpectedIncomingSequence, toSequence: toSequence))
+        nextExpectedIncomingSequence = (reorderBuffer.keys.max() ?? toSequence) + 1
+        reorderBuffer.removeAll()
     }
 
     // MARK: - Helpers

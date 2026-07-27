@@ -18,16 +18,22 @@ struct ChatEnvelopePropertyTests {
             messageId: Data(repeating: 0x01, count: ChatEnvelope.messageIdLength),
             replyToId: nil,
             senderId: Data(repeating: 0xAB, count: 4),
+            sequence: 1,
             body: body
         )
         let encoded = try ChatEnvelopeCodec.encode(envelope)
         // version(1) + kind(1) + flags(1) + messageId(16) + senderIdLen(1)
-        // + senderId(4) + bodyLen(2) + body(2048), no replyTo (ENVELOPE.md §1.3).
-        #expect(encoded.count == 3 + 16 + 1 + 4 + 2 + ChatEnvelope.maxBodyLength)
+        // + senderId(4) + sequence(8) + bodyLen(2) + body(2048), no replyTo
+        // (ENVELOPE.md §1.3).
+        #expect(
+            encoded.count
+                == 3 + 16 + 1 + 4 + ChatEnvelope.sequenceLength + 2 + ChatEnvelope.maxBodyLength
+        )
 
         let decoded = try ChatEnvelopeCodec.decode(encoded)
         #expect(decoded.body == body)
         #expect(decoded.body.utf8.count == ChatEnvelope.maxBodyLength)
+        #expect(decoded.sequence == 1)
     }
 
     @Test("body 2049 bytes (utf8) fails to encode with oversizeBody")
@@ -37,6 +43,7 @@ struct ChatEnvelopePropertyTests {
             messageId: Data(repeating: 0x01, count: ChatEnvelope.messageIdLength),
             replyToId: nil,
             senderId: Data(repeating: 0xAB, count: 4),
+            sequence: 1,
             body: body
         )
         do {
@@ -49,14 +56,49 @@ struct ChatEnvelopePropertyTests {
         }
     }
 
+    @Test("sequence zero fails to encode with malformed")
+    func sequenceZeroFailsToEncode() {
+        let envelope = ChatEnvelope(
+            messageId: Data(repeating: 0x01, count: ChatEnvelope.messageIdLength),
+            replyToId: nil,
+            senderId: Data(repeating: 0xAB, count: 4),
+            sequence: 0,
+            body: "ok"
+        )
+        do {
+            _ = try ChatEnvelopeCodec.encode(envelope)
+            Issue.record("expected malformed, encode succeeded")
+        } catch let error as ChatEnvelopeError {
+            #expect(error == .malformed)
+        } catch {
+            Issue.record("threw non-ChatEnvelopeError \(error)")
+        }
+    }
+
+    @Test("sequence at UInt64.max round-trips")
+    func sequenceAtMaxRoundTrips() throws {
+        let envelope = ChatEnvelope(
+            messageId: Data(repeating: 0x01, count: ChatEnvelope.messageIdLength),
+            replyToId: nil,
+            senderId: Data(repeating: 0xAB, count: 4),
+            sequence: UInt64.max,
+            body: "ok"
+        )
+        let encoded = try ChatEnvelopeCodec.encode(envelope)
+        let decoded = try ChatEnvelopeCodec.decode(encoded)
+        #expect(decoded.sequence == UInt64.max)
+    }
+
     @Test("crafted bodyLen=2049 with zero body bytes decodes as oversizeBody, not truncated")
     func craftedBodyLenOverMaxIsOversizeNotTruncated() {
         // version, kind, flags=0 (no replyTo), messageId(16), senderIdLen=4,
-        // senderId(4), bodyLen=2049 (0x0801) big-endian, then NO body bytes.
+        // senderId(4), sequence=1 (8 bytes big-endian), bodyLen=2049
+        // (0x0801) big-endian, then NO body bytes.
         var bytes: [UInt8] = [ChatEnvelope.version, ChatEnvelope.kindText, 0x00]
         bytes.append(contentsOf: Array(repeating: 0x01, count: ChatEnvelope.messageIdLength))
         bytes.append(0x04)
         bytes.append(contentsOf: [0xDE, 0xAD, 0xBE, 0xEF])
+        bytes.append(contentsOf: Array(repeating: 0x00, count: ChatEnvelope.sequenceLength - 1) + [0x01])
         let overMaxBodyLen = UInt16(ChatEnvelope.maxBodyLength + 1)
         bytes.append(UInt8(overMaxBodyLen >> 8))
         bytes.append(UInt8(overMaxBodyLen & 0x00FF))
@@ -77,6 +119,7 @@ struct ChatEnvelopePropertyTests {
         bytes.append(contentsOf: Array(repeating: 0x02, count: ChatEnvelope.messageIdLength))
         bytes.append(0x04)
         bytes.append(contentsOf: [0xDE, 0xAD, 0xBE, 0xEF])
+        bytes.append(contentsOf: Array(repeating: 0x00, count: ChatEnvelope.sequenceLength - 1) + [0x01])
         let maxBodyLen = UInt16(ChatEnvelope.maxBodyLength)
         bytes.append(UInt8(maxBodyLen >> 8))
         bytes.append(UInt8(maxBodyLen & 0x00FF))
@@ -84,6 +127,7 @@ struct ChatEnvelopePropertyTests {
 
         let decoded = try ChatEnvelopeCodec.decode(Data(bytes))
         #expect(decoded.body.utf8.count == ChatEnvelope.maxBodyLength)
+        #expect(decoded.sequence == 1)
     }
 
     @Test("senderId at max length 32 round-trips")
@@ -93,6 +137,7 @@ struct ChatEnvelopePropertyTests {
             messageId: Data(repeating: 0x02, count: ChatEnvelope.messageIdLength),
             replyToId: nil,
             senderId: maxSenderId,
+            sequence: 1,
             body: "ok"
         )
         let encoded = try ChatEnvelopeCodec.encode(envelope)
@@ -107,6 +152,7 @@ struct ChatEnvelopePropertyTests {
             messageId: Data(repeating: 0x02, count: ChatEnvelope.messageIdLength),
             replyToId: nil,
             senderId: overSenderId,
+            sequence: 1,
             body: "ok"
         )
         do {
@@ -119,16 +165,19 @@ struct ChatEnvelopePropertyTests {
         }
     }
 
-    @Test("maximum encoded envelope is exactly 2118 bytes (replyTo + 32-byte senderId + 2048-byte body)")
+    @Test(
+        "maximum encoded envelope is exactly 2126 bytes (replyTo + 32-byte senderId + sequence + 2048-byte body)"
+    )
     func maxEnvelopeSizeArithmetic() throws {
         let envelope = ChatEnvelope(
             messageId: Data(repeating: 0x01, count: ChatEnvelope.messageIdLength),
             replyToId: Data(repeating: 0xF0, count: ChatEnvelope.replyToIdLength),
             senderId: Data((0..<ChatEnvelope.maxSenderIdLength).map { UInt8($0) }),
+            sequence: UInt64.max,
             body: String(repeating: "A", count: ChatEnvelope.maxBodyLength)
         )
         let encoded = try ChatEnvelopeCodec.encode(envelope)
-        #expect(encoded.count == 2118)
+        #expect(encoded.count == 2126)
         #expect(encoded.count == ChatEnvelope.maxEncodedLength)
     }
 }

@@ -93,7 +93,7 @@ class ChatScenarioExactTraceTest {
         expected.add('B', 380) { seq ->
             ChatEvent.MessageReceived(
                 seq,
-                ChatMessage(msg1Hex.hexToByteArray(), ChatMessage.Direction.INCOMING, "hello", idA.toHexString(), 380, ChatMessageDisplayStatus.Delivered),
+                ChatMessage(msg1Hex.hexToByteArray(), 1L, ChatMessage.Direction.INCOMING, "hello", idA.toHexString(), 380, ChatMessageDisplayStatus.Delivered),
             )
         }
         expected.add('A', 400) { seq -> ChatEvent.MessageStatusChanged(seq, msg1Hex, ChatMessageDisplayStatus.Delivered) }
@@ -236,6 +236,7 @@ class ChatScenarioExactTraceTest {
                 seq,
                 ChatMessage(
                     msgDupHex.hexToByteArray(),
+                    1L,
                     ChatMessage.Direction.INCOMING,
                     "dup-test",
                     idA.toHexString(),
@@ -288,7 +289,7 @@ class ChatScenarioExactTraceTest {
         expected.add('B', 2450) { seq ->
             ChatEvent.MessageReceived(
                 seq,
-                ChatMessage(msg1Hex.hexToByteArray(), ChatMessage.Direction.INCOMING, "slow", idA.toHexString(), 2450, ChatMessageDisplayStatus.Delivered),
+                ChatMessage(msg1Hex.hexToByteArray(), 1L, ChatMessage.Direction.INCOMING, "slow", idA.toHexString(), 2450, ChatMessageDisplayStatus.Delivered),
             )
         }
         expected.add('A', 2500) { seq -> ChatEvent.MessageStatusChanged(seq, msg1Hex, ChatMessageDisplayStatus.Delivered) }

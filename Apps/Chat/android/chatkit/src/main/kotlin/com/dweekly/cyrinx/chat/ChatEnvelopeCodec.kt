@@ -9,7 +9,7 @@ import java.nio.charset.StandardCharsets
  * Envelope v1 strict codec, big-endian, sequential parse. Byte-layout, error
  * taxonomy, and the "canonical encoding" round-trip guarantee are pinned in
  * ../../../ENVELOPE.md; this object is the Kotlin realization checked against
- * ../../../fixtures/chat-envelope-golden.json (19 vectors), not against the Swift
+ * ../../../fixtures/chat-envelope-golden.json (22 vectors), not against the Swift
  * codec directly (per ENVELOPE.md's opening paragraph).
  */
 object ChatEnvelopeCodec {
@@ -26,6 +26,10 @@ object ChatEnvelopeCodec {
     /** Inclusive upper bound of `senderIdLen`. ../../../ENVELOPE.md section 1.2. */
     const val MAX_SENDER_ID_LEN: Int = 32
 
+    /** Length in bytes of the `sequence` field (`u64`, big-endian).
+     * ../../../ENVELOPE.md section 1.2, the C3-28 sequence amendment. */
+    const val SEQUENCE_LEN: Int = 8
+
     /** Inclusive upper bound of `bodyLen`. ../../../ENVELOPE.md section 1.2. */
     const val MAX_BODY_LEN: Int = 2048
 
@@ -35,10 +39,10 @@ object ChatEnvelopeCodec {
     private const val FLAG_DEFINED_BITS_MASK: Int = FLAG_REPLY_TO_PRESENT
 
     /** 3 (version+kind+flags) + 16 (messageId) + 16 (replyToId) + 1 (senderIdLen)
-     * + 32 (max senderId) + 2 (bodyLen) + 2048 (max body) = 2118, the concrete
-     * instance the `body_max_2048` golden vector hand-verifies.
+     * + 32 (max senderId) + 8 (sequence) + 2 (bodyLen) + 2048 (max body) = 2126,
+     * the concrete instance the `body_max_2048` golden vector hand-verifies.
      * ../../../ENVELOPE.md section 4. */
-    const val MAX_ENVELOPE_LEN: Int = 3 + ID_LEN + ID_LEN + 1 + MAX_SENDER_ID_LEN + 2 + MAX_BODY_LEN
+    const val MAX_ENVELOPE_LEN: Int = 3 + ID_LEN + ID_LEN + 1 + MAX_SENDER_ID_LEN + SEQUENCE_LEN + 2 + MAX_BODY_LEN
 
     /**
      * Decodes one envelope from `data`, per the 11-step strict sequential parse
@@ -96,17 +100,27 @@ object ChatEnvelopeCodec {
         // Step 7: senderId.
         val senderId = takeBytes(senderIdLen, "senderId")
 
-        // Step 8: bodyLen (u16 big-endian), range-checked before reading body bytes
+        // Step 8: sequence (u64 big-endian), range-checked immediately after being
+        // fully read (ENVELOPE.md section 2 step 8): sequence == 0 -> malformed,
+        // before parsing advances to bodyLen. Not a length prefix -- no further
+        // bytes depend on its value -- but checked under the same
+        // immediate-range-check discipline as senderIdLen/bodyLen.
+        val sequenceBytes = takeBytes(SEQUENCE_LEN, "sequence")
+        var sequence = 0L
+        for (b in sequenceBytes) sequence = (sequence shl 8) or (b.toLong() and 0xFF)
+        if (sequence == 0L) throw ChatEnvelopeError.Malformed("sequence must be nonzero")
+
+        // Step 9: bodyLen (u16 big-endian), range-checked before reading body bytes
         // (same reasoning as step 6).
         val bodyLenHi = takeByte("bodyLen")
         val bodyLenLo = takeByte("bodyLen")
         val bodyLen = (bodyLenHi shl 8) or bodyLenLo
         if (bodyLen > MAX_BODY_LEN) throw ChatEnvelopeError.OversizeBody(bodyLen)
 
-        // Step 9: body bytes.
+        // Step 10: body bytes.
         val bodyBytes = takeBytes(bodyLen, "body")
 
-        // Step 10: strict UTF-8 validation. java.nio's REPORT-mode decoder rejects
+        // Step 11: strict UTF-8 validation. java.nio's REPORT-mode decoder rejects
         // lone/invalid lead bytes, truncated multi-byte sequences, overlong
         // encodings, and encoded surrogate halves -- verified against every
         // reject_invalid_utf8_* golden vector and cross-checked against a standalone
@@ -124,22 +138,22 @@ object ChatEnvelopeCodec {
                 throw ChatEnvelopeError.InvalidUtf8("body is not valid UTF-8: ${e.message}")
             }
 
-        // Step 11: no trailing bytes.
+        // Step 12: no trailing bytes.
         if (offset != data.size) {
             val trailing = data.size - offset
             throw ChatEnvelopeError.Malformed("$trailing trailing byte(s) after a complete envelope")
         }
 
-        return ChatEnvelope(version, kind, messageId, replyToId, senderId, body)
+        return ChatEnvelope(version, kind, messageId, replyToId, senderId, sequence, body)
     }
 
     /**
      * Encodes `envelope` to its unique canonical byte form. Throws the matching
      * [ChatEnvelopeError] if any bound is violated; per ../../../ENVELOPE.md
      * section 3, an encoder only ever needs to guard `unknownVersion`,
-     * `unknownKind`, `malformed` (bad ID/senderId lengths), `oversizeBody`, and
-     * `invalidUtf8` -- `truncated` and trailing-byte `malformed` only arise when
-     * parsing an externally supplied buffer.
+     * `unknownKind`, `malformed` (bad ID/senderId lengths, zero sequence),
+     * `oversizeBody`, and `invalidUtf8` -- `truncated` and trailing-byte
+     * `malformed` only arise when parsing an externally supplied buffer.
      */
     fun encode(envelope: ChatEnvelope): ByteArray {
         if (envelope.version != VERSION) throw ChatEnvelopeError.UnknownVersion(envelope.version)
@@ -166,6 +180,7 @@ object ChatEnvelopeCodec {
                 "senderIdLen $senderIdLen outside $MIN_SENDER_ID_LEN..$MAX_SENDER_ID_LEN",
             )
         }
+        if (envelope.sequence == 0L) throw ChatEnvelopeError.Malformed("sequence must be nonzero")
 
         val bodyBytes =
             try {
@@ -200,6 +215,7 @@ object ChatEnvelopeCodec {
         envelope.replyToId?.let { putBytes(it) }
         putByte(senderIdLen)
         putBytes(envelope.senderId)
+        putBytes(envelope.sequence.toBigEndianBytes())
         putByte((bodyBytes.size shr 8) and 0xFF)
         putByte(bodyBytes.size and 0xFF)
         putBytes(bodyBytes)

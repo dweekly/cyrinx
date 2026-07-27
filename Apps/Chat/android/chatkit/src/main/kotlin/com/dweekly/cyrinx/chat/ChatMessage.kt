@@ -41,6 +41,12 @@ sealed class ChatMessageDisplayStatus {
 class ChatMessage(
     /** Same value as the envelope's `messageId`. */
     id: ByteArray,
+    /** The envelope's `sequence` field (../../../ENVELOPE.md section 1.2):
+     * nonzero, sender-local, strictly increasing within the sending client's
+     * current connection scope -- the real cross-message ordering evidence, NOT
+     * [sentAtWallClockMs]. Represented as the exact `u64` wire bit pattern (see
+     * [ChatEnvelope]'s doc comment). */
+    val sequence: Long,
     val direction: Direction,
     /** Decoded UTF-8 text. */
     val body: String,
@@ -64,6 +70,7 @@ class ChatMessage(
     override fun equals(other: Any?): Boolean =
         other is ChatMessage &&
             idBytes.contentEquals(other.idBytes) &&
+            sequence == other.sequence &&
             direction == other.direction &&
             body == other.body &&
             senderPeerIdHex == other.senderPeerIdHex &&
@@ -73,6 +80,7 @@ class ChatMessage(
     override fun hashCode(): Int = idBytes.contentHashCode()
 
     override fun toString(): String =
-        "ChatMessage(id=${idBytes.toHexString()}, direction=$direction, body.length=${body.length}, " +
-            "senderPeerIdHex=$senderPeerIdHex, sentAtWallClockMs=$sentAtWallClockMs, status=$status)"
+        "ChatMessage(id=${idBytes.toHexString()}, sequence=${sequence.toULong()}, direction=$direction, " +
+            "body.length=${body.length}, senderPeerIdHex=$senderPeerIdHex, " +
+            "sentAtWallClockMs=$sentAtWallClockMs, status=$status)"
 }

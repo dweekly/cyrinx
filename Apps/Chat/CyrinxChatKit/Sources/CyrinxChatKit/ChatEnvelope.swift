@@ -47,6 +47,16 @@ public struct ChatEnvelope: Equatable, Sendable {
     /// `>32` is `malformed`.
     public static let minSenderIdLength = 1
     public static let maxSenderIdLength = 32
+    /// `sequence` width in bytes (ENVELOPE.md §1.2/§1.3): 8-byte
+    /// big-endian `u64`, always present, immediately after `senderId` and
+    /// before `bodyLen`.
+    public static let sequenceLength = 8
+    /// `sequence` valid range, inclusive (ENVELOPE.md §1.2): nonzero --
+    /// `0` is `malformed`. The upper bound is `UInt64.max` itself (every
+    /// nonzero `u64` is valid at the codec level; scope-exhaustion
+    /// handling near that boundary is client-layer behavior, per
+    /// ENVELOPE.md §10's `sequence_max_u64_accepted` note).
+    public static let minSequence: UInt64 = 1
     /// `bodyLen` valid maximum in bytes (ENVELOPE.md §1.2): `>2048` is
     /// `oversizeBody`. Matches the Phase F product-scope 2 KiB body cap
     /// (Apps/Chat/README.md "Scope").
@@ -54,11 +64,12 @@ public struct ChatEnvelope: Equatable, Sendable {
 
     /// Maximum possible encoded envelope size, per ENVELOPE.md §4:
     /// `version(1) + kind(1) + flags(1) + messageId(16) + replyToId(16)
-    /// + senderIdLen(1) + senderId(32 max) + bodyLen(2) + body(2048 max)
-    /// = 2118 bytes`. The `body_max_2048` golden vector is the concrete,
-    /// hand-verifiable instance of this arithmetic.
+    /// + senderIdLen(1) + senderId(32 max) + sequence(8) + bodyLen(2)
+    /// + body(2048 max) = 2126 bytes`. The `body_max_2048` golden vector
+    /// is the concrete, hand-verifiable instance of this arithmetic.
     public static let maxEncodedLength =
-        1 + 1 + 1 + messageIdLength + replyToIdLength + 1 + maxSenderIdLength + 2 + maxBodyLength
+        1 + 1 + 1 + messageIdLength + replyToIdLength + 1 + maxSenderIdLength + sequenceLength + 2
+        + maxBodyLength
 
     /// 128-bit opaque message ID. Always exactly `messageIdLength` (16)
     /// bytes for a value produced by this package; the codec's encoder
@@ -72,6 +83,14 @@ public struct ChatEnvelope: Equatable, Sendable {
     /// §1.2). Length must be within `minSenderIdLength...maxSenderIdLength`
     /// (1..32).
     public var senderId: Data
+    /// Sender-local sequence number (ENVELOPE.md §1.2/§1.3): nonzero,
+    /// strictly increasing within the sender's current connection scope.
+    /// This -- not any wall-clock field, since the envelope carries none
+    /// (ENVELOPE.md §6) -- is the real cross-message ordering evidence a
+    /// receiver uses to buffer bounded out-of-order arrivals and detect a
+    /// skipped message (see `CONTRACT.md` §2's outgoing-sequence-
+    /// assignment, reorder-window, and `messageGap` rules).
+    public var sequence: UInt64
     /// Decoded/to-be-encoded UTF-8 text. Every Swift `String` is already
     /// valid Unicode, so the encoder's `invalidUtf8` guard (ENVELOPE.md §3)
     /// can never actually fire from this initializer -- only the decoder's
@@ -80,10 +99,11 @@ public struct ChatEnvelope: Equatable, Sendable {
     /// clusters) is what the encoder checks against `maxBodyLength`.
     public var body: String
 
-    public init(messageId: Data, replyToId: Data? = nil, senderId: Data, body: String) {
+    public init(messageId: Data, replyToId: Data? = nil, senderId: Data, sequence: UInt64, body: String) {
         self.messageId = messageId
         self.replyToId = replyToId
         self.senderId = senderId
+        self.sequence = sequence
         self.body = body
     }
 }
@@ -121,6 +141,9 @@ public enum ChatEnvelopeCodec {
         else {
             throw ChatEnvelopeError.malformed
         }
+        guard envelope.sequence >= ChatEnvelope.minSequence else {
+            throw ChatEnvelopeError.malformed
+        }
         let bodyBytes = [UInt8](envelope.body.utf8)
         guard bodyBytes.count <= ChatEnvelope.maxBodyLength else {
             throw ChatEnvelopeError.oversizeBody
@@ -131,7 +154,7 @@ public enum ChatEnvelopeCodec {
         out.reserveCapacity(
             3 + ChatEnvelope.messageIdLength
                 + (hasReplyTo ? ChatEnvelope.replyToIdLength : 0)
-                + 1 + envelope.senderId.count + 2 + bodyBytes.count
+                + 1 + envelope.senderId.count + ChatEnvelope.sequenceLength + 2 + bodyBytes.count
         )
         out.append(ChatEnvelope.version)
         out.append(ChatEnvelope.kindText)
@@ -142,6 +165,7 @@ public enum ChatEnvelopeCodec {
         }
         out.append(UInt8(envelope.senderId.count))
         out.append(contentsOf: envelope.senderId)
+        out.append(contentsOf: bigEndianBytes(envelope.sequence))
         let bodyLen = UInt16(bodyBytes.count)
         out.append(UInt8(bodyLen >> 8))
         out.append(UInt8(bodyLen & 0x00FF))
@@ -149,8 +173,15 @@ public enum ChatEnvelopeCodec {
         return Data(out)
     }
 
+    /// Big-endian byte decomposition of a `UInt64`, most-significant byte
+    /// first -- used to write the wire `sequence` field (ENVELOPE.md
+    /// §1.2/§1.3).
+    private static func bigEndianBytes(_ value: UInt64) -> [UInt8] {
+        (0..<8).map { index in UInt8((value >> (56 - 8 * UInt64(index))) & 0xFF) }
+    }
+
     /// Decodes `data` per the strict sequential parse order in
-    /// Apps/Chat/ENVELOPE.md §2 (steps 1-11), stopping at the first
+    /// Apps/Chat/ENVELOPE.md §2 (steps 1-12), stopping at the first
     /// violation encountered -- no lookahead, no partial recovery.
     public static func decode(_ data: Data) throws -> ChatEnvelope {
         let bytes = [UInt8](data)
@@ -205,19 +236,32 @@ public enum ChatEnvelopeCodec {
         // Step 7: senderId (ENVELOPE.md §2.7).
         let senderId = try take(Int(senderIdLen))
 
-        // Step 8: bodyLen (big-endian u16), range-checked BEFORE reading
+        // Step 8: sequence (8 bytes, big-endian u64), range-checked
+        // IMMEDIATELY after the 8 bytes are read -- not a length prefix
+        // like senderIdLen/bodyLen, but checked under the same
+        // immediate-range-check discipline as steps 6 and 9 (ENVELOPE.md
+        // §2.8): reject an invalid field value as soon as it is fully
+        // read, before parsing advances to bodyLen.
+        let sequenceBytes = try take(ChatEnvelope.sequenceLength)
+        var sequence: UInt64 = 0
+        for byte in sequenceBytes {
+            sequence = (sequence << 8) | UInt64(byte)
+        }
+        guard sequence >= ChatEnvelope.minSequence else { throw ChatEnvelopeError.malformed }
+
+        // Step 9: bodyLen (big-endian u16), range-checked BEFORE reading
         // body bytes -- same "range before availability" rule as step 6
-        // (ENVELOPE.md §2.8; the bodyLen=2049 golden vector supplies zero
+        // (ENVELOPE.md §2.9; the bodyLen=2049 golden vector supplies zero
         // body bytes and must still be oversizeBody, not truncated).
         let bodyLenHi = try takeByte()
         let bodyLenLo = try takeByte()
         let bodyLen = (Int(bodyLenHi) << 8) | Int(bodyLenLo)
         guard bodyLen <= ChatEnvelope.maxBodyLength else { throw ChatEnvelopeError.oversizeBody }
 
-        // Step 9: body bytes (ENVELOPE.md §2.9).
+        // Step 10: body bytes (ENVELOPE.md §2.10).
         let bodyBytes = try take(bodyLen)
 
-        // Step 10: strict UTF-8 validation (ENVELOPE.md §2.10). Foundation's
+        // Step 11: strict UTF-8 validation (ENVELOPE.md §2.11). Foundation's
         // `String(bytes:encoding:.utf8)` performs strict validation --
         // overlong encodings, truncated multibyte sequences, and lone
         // continuation/lead bytes are all rejected, returning `nil` -- as
@@ -234,13 +278,14 @@ public enum ChatEnvelopeCodec {
             throw ChatEnvelopeError.invalidUtf8
         }
 
-        // Step 11: no trailing bytes (ENVELOPE.md §2.11).
+        // Step 12: no trailing bytes (ENVELOPE.md §2.12).
         guard pos == bytes.count else { throw ChatEnvelopeError.malformed }
 
         return ChatEnvelope(
             messageId: Data(messageId),
             replyToId: replyToId.map { Data($0) },
             senderId: Data(senderId),
+            sequence: sequence,
             body: body
         )
     }

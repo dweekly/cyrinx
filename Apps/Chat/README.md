@@ -1,6 +1,6 @@
 # Cyrinx Chat sample
 
-Fresh as of 2026-07-23. The chat sample is a **product-level acceptance
+Fresh as of 2026-07-27. The chat sample is a **product-level acceptance
 client** for the Cyrinx 3.0 SDK, not a second HIL diagnostics panel — see
 [`docs/CYRINX_3_PLAN.md`](../../docs/CYRINX_3_PLAN.md) Phase F, "Chat sample
 application." It exists to prove that a small, real application can be built
@@ -89,7 +89,7 @@ code does not change shape when that lands.
 | [`README.md`](README.md) | This file: scope, security notice, simulator-first story, test commands. | present |
 | [`ENVELOPE.md`](ENVELOPE.md) | Envelope v1 byte-layout spec, error taxonomy, golden-vector JSON schema, regeneration policy. | present |
 | [`CONTRACT.md`](CONTRACT.md) | Platform-neutral app contracts (`ChatPeer`, `ChatEvent`, `ChatTransportClient`, ...), the simulated client, the six scenario scripts, the trace schema, and the accessibility-ID/launch-argument registry. | present |
-| `fixtures/chat-envelope-golden.json` | Committed golden vectors for the envelope v1 codec (19 vectors: 5 decode, 14 error). Diffed in review, not a build artifact — see `ENVELOPE.md` §9. | present |
+| `fixtures/chat-envelope-golden.json` | Committed golden vectors for the envelope v1 codec (22 vectors: 6 decode, 16 error, including the sender-local sequence field frozen by C3-01). Diffed in review, not a build artifact — see `ENVELOPE.md` §9. | present |
 | `fixtures/tools/generate_golden.py` | Python-stdlib-only reference codec + fixture generator + `--self-test`. The third independent implementation of the codec, kept permanently as a diagnostic ("ship the spike"). | present |
 | `fixtures/traces/` | Golden JSON-lines traces for the `happyPair` and `peerLoss` scenarios (`CONTRACT.md` §4), generated from the Swift implementation in the verify stage and checked byte-identical from Kotlin. | committed — seed 1; regenerate only together with a `CONTRACT.md` change |
 | `CyrinxChatKit/` | Standalone Swift package (Swift Testing tests). Must not depend on the Cyrinx SDK package. | implemented — `swift test --package-path Apps/Chat/CyrinxChatKit` |

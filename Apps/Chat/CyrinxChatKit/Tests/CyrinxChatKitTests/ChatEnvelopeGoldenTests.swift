@@ -4,21 +4,23 @@ import Testing
 @testable import CyrinxChatKit
 
 /// Golden-vector conformance for the envelope v1 codec, parameterized over
-/// every vector in Apps/Chat/fixtures/chat-envelope-golden.json (19
-/// vectors: 5 decode, 14 error -- ENVELOPE.md §10's traceability table).
-/// Checks: decode-field equality, canonical re-encode byte-identity
-/// (ENVELOPE.md §3), and exact error case per vector (ENVELOPE.md §5).
+/// every vector in Apps/Chat/fixtures/chat-envelope-golden.json (22
+/// vectors: 6 decode, 16 error -- ENVELOPE.md §10's traceability table,
+/// amended by the C3-28 sequence amendment to add `sequence_max_u64_accepted`,
+/// `reject_sequence_zero`, and `truncated_mid_sequence`). Checks:
+/// decode-field equality, canonical re-encode byte-identity (ENVELOPE.md
+/// §3), and exact error case per vector (ENVELOPE.md §5).
 @Suite("Chat envelope golden vectors")
 struct ChatEnvelopeGoldenTests {
     static let allVectors = GoldenFixture.loadVectors()
     static let decodeVectors = allVectors.filter { $0.expect == "decode" }
     static let errorVectors = allVectors.filter { $0.expect == "error" }
 
-    @Test("fixture has the documented vector counts (19 total: 5 decode, 14 error)")
+    @Test("fixture has the documented vector counts (22 total: 6 decode, 16 error)")
     func fixtureShape() {
-        #expect(Self.allVectors.count == 19)
-        #expect(Self.decodeVectors.count == 5)
-        #expect(Self.errorVectors.count == 14)
+        #expect(Self.allVectors.count == 22)
+        #expect(Self.decodeVectors.count == 6)
+        #expect(Self.errorVectors.count == 16)
     }
 
     @Test(
@@ -39,6 +41,7 @@ struct ChatEnvelopeGoldenTests {
         #expect(envelope.messageId.hexString == decodedFields.messageIdHex, "vector \(vector.name)")
         #expect(envelope.replyToId?.hexString == decodedFields.replyToIdHex, "vector \(vector.name)")
         #expect(envelope.senderId.hexString == decodedFields.senderIdHex, "vector \(vector.name)")
+        #expect(envelope.sequence == decodedFields.sequence, "vector \(vector.name)")
         #expect(envelope.body == decodedFields.body, "vector \(vector.name)")
 
         // Canonical encoding (ENVELOPE.md §3): re-encoding the decoded

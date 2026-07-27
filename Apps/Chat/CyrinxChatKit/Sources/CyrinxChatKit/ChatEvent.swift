@@ -1,7 +1,7 @@
 import Foundation
 
 /// A single transport-emitted event, wrapping a monotonic `eventSeq` around
-/// one of eight payload kinds. Apps/Chat/CONTRACT.md §1.7.
+/// one of nine payload kinds. Apps/Chat/CONTRACT.md §1.7.
 ///
 /// `eventSeq` is monotonic from 0, **per client instance** -- client A's and
 /// client B's `eventSeq` sequences are both independently zero-based and
@@ -30,6 +30,16 @@ public struct ChatEvent: Equatable, Sendable {
         case connectionChanged(ChatConnectionState)
         case linkBudgetChanged(ChatLinkBudget)
         case messageReceived(ChatMessage)
+        /// CONTRACT.md §2's "Gap surfacing (pinned)": a run of inbound
+        /// envelope `sequence` numbers, `fromSequence...toSequence`
+        /// inclusive, this client has given up on ever receiving --
+        /// either because a later arrival bypassed the 32-sequence
+        /// reorder window, or because the connection scope ended
+        /// (`disconnect()`/`stop()`) with the run still unfilled.
+        /// Unrelated to this enum's own `eventSeq` gap-detection contract
+        /// (bounded-buffer drops of `ChatEvent`s themselves) -- see
+        /// CONTRACT.md §1.7's own note distinguishing the two.
+        case messageGap(fromSequence: UInt64, toSequence: UInt64)
         case messageStatusChanged(messageIdHex: String, status: ChatMessageDisplayStatus)
         case clientFailed(reason: String)
     }

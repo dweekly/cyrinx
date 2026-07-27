@@ -15,6 +15,43 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 /**
+ * Test-only injection seam -- ../../../CONTRACT.md section 2's "Test-only
+ * injection seam (pinned)": "a per-pair hook intercepting outgoing envelope
+ * bytes before delivery and applies deterministic, virtual-time-scheduled
+ * reorder / duplicate / drop / re-deliver operations." Installed via
+ * [SimulatedChatTransportClient.testOnlyInjectionSeam]; see that property's
+ * doc comment. Not part of any of the six ../../../CONTRACT.md section 3
+ * scenario scripts.
+ */
+fun interface ChatInjectionSeam {
+    /**
+     * Called once, synchronously, for one outgoing envelope's already-encoded
+     * [bytes], at the moment the sender would otherwise schedule its normal
+     * delivery. Returns the actual [Delivery] operations to perform: an empty
+     * list drops the envelope entirely; one entry with `delayMs == 0`
+     * reproduces default passthrough delivery; a `delayMs` different from the
+     * scenario's own delivery delay reorders/delays it; multiple entries
+     * duplicate/re-deliver it (each entry's own `bytes` need not be identical
+     * -- a re-delivery of the SAME bytes, per ../../../CONTRACT.md section 2,
+     * is the common case, built by passing [bytes] through unmodified).
+     */
+    fun intercept(bytes: ByteArray): List<Delivery>
+
+    /** One scheduled delivery: [bytes] delivered [delayMs] of virtual time
+     * after [intercept] was called. */
+    data class Delivery(val delayMs: Long, val bytes: ByteArray)
+}
+
+/** The receiver reorder window's fixed size, pinned in ../../../CONTRACT.md
+ * section 2: "Receiver reorder window (pinned; 32 sequences)." */
+private const val REORDER_WINDOW_SIZE: Long = 32L
+
+/** Orders [Long] `sequence` values as `u64` bit patterns rather than by
+ * [Long]'s natural signed ordering -- see [SimulatedChatTransportClient
+ * .reorderBuffer]'s doc comment. */
+private val ULongKeyComparator = Comparator<Long> { a, b -> a.toULong().compareTo(b.toULong()) }
+
+/**
  * Deterministic, in-process, paired [ChatTransportClient] driven by
  * `(scenarioName, seed)`. ../../../CONTRACT.md section 2. Construct a paired A/B
  * instance via [SimulatedChatPair.create]; do not construct this class directly
@@ -501,10 +538,101 @@ class SimulatedChatTransportClient internal constructor(
         }
     }
 
+    /**
+     * This client's own outgoing envelope `sequence` counter -- ../../../
+     * CONTRACT.md section 2's "Outgoing sequence assignment (pinned)": "starts
+     * at 1 the moment that client's joint `connected` emission succeeds, and
+     * increments by exactly 1 per accepted `send()`."
+     *
+     * DECISION (not pinned by the brief): initialized to `1` at CONSTRUCTION
+     * time rather than armed lazily when the joint `connected` emission
+     * actually fires. This is behaviorally equivalent to the pinned rule under
+     * every path in this class: [sendOwningCommandSpan]'s own "connected or
+     * degraded" precondition (../../../CONTRACT.md section 2's "Send
+     * precondition (pinned)") already makes `send()` unreachable before a
+     * joint `connected` has fired at least once, and this sample has no
+     * reconnection-scope reset (../../../docs/CYRINX_3_PLAN.md's
+     * Reconciliation paragraph reserves that for the live adapter, C3-31) --
+     * so the counter's value is never observed before the moment the pinned
+     * rule says it "starts." Drawn via [AtomicLong.getAndIncrement] inside
+     * [sendOwningCommandSpan]'s [lifecycleLock]-guarded critical section,
+     * alongside the message-ID draw -- "The sequence draw is a command-span
+     * mutation and executes inside `send()`'s serialized span."
+     */
+    private val outgoingSequenceCounter = AtomicLong(1L)
+
     /** MessageIds (lowercase hex) this client has already delivered a
      * `messageReceived` for -- the duplicateIncoming dedup set, per
      * ../../../CONTRACT.md section 3.5. */
     private val receivedMessageIds = ConcurrentHashMap.newKeySet<String>()
+
+    /**
+     * Receiver-side reorder-window state -- ../../../CONTRACT.md section 2's
+     * "Receiver reorder window (pinned; 32 sequences)" and "Gap surfacing
+     * (pinned; `messageGap` event)". [nextExpectedIncomingSequence] is the
+     * smallest inbound `sequence` this client has not yet resolved --
+     * delivered, dropped as a stale/duplicate-sequence collision, or given up
+     * on as part of a surfaced `messageGap` (starts at 1, matching a peer's
+     * own outgoing sequence numbering, [outgoingSequenceCounter]).
+     * [reorderBuffer] holds in-window (`sequence - nextExpectedIncomingSequence
+     * < 32`) out-of-order arrivals, keyed by `sequence`, storing the decoded
+     * [ChatEnvelope] rather than a pre-built [ChatMessage] -- [ChatMessage
+     * .sentAtWallClockMs] is captured at actual DELIVERY time (see
+     * [deliverIncoming]), not at arrival time, so a buffered-then-later-
+     * drained message reports when it was actually surfaced to the consumer,
+     * not when its bytes first arrived.
+     *
+     * A plain (unsorted) [HashMap], not a sorted map: every consultation of
+     * [reorderBuffer]'s key set below ([surfaceWindowBypassGap],
+     * [flushUnfilledGapAtScopeEnd]) explicitly compares keys as `u64` via
+     * [Long.toULong] rather than relying on [Long]'s natural signed ordering,
+     * which would be wrong for a `sequence` in the top half of the `u64`
+     * range (out of scope for this amendment per ../../../ENVELOPE.md
+     * section 10's exhaustion note, but cheap to get right regardless).
+     *
+     * Both fields are mutated ONLY from [deliverEnvelope]/[deliverIncoming]/
+     * [drainReorderBuffer]/[surfaceWindowBypassGap] (reached only while THIS
+     * client's own [lifecycleLock] is held -- see
+     * [deliverEnvelopeIfPendingAndTargetAccepting]) and from
+     * [flushUnfilledGapAtScopeEnd] (called from
+     * [markTerminalAndRequestCancellation], itself inside [lifecycleLock]) --
+     * so plain (non-atomic, non-volatile) fields are safe: every access is
+     * already serialized by this client's own [lifecycleLock].
+     */
+    private var nextExpectedIncomingSequence: Long = 1L
+
+    private val reorderBuffer = HashMap<Long, ChatEnvelope>()
+
+    /** Count of envelopes dropped because their `sequence` was already
+     * resolved (delivered earlier, or already written off by a surfaced gap)
+     * while carrying an unseen `messageId` -- ../../../CONTRACT.md section 2's
+     * "duplicate-sequence" drop rule. `@Volatile` because it is written only
+     * under [lifecycleLock] (see [nextExpectedIncomingSequence]'s doc
+     * comment) but may be read by a test from outside that lock, the same
+     * cross-thread visibility pattern as [connectionState]/[discoveredPeer]
+     * above. Exposed (module-visible) purely for test regression coverage,
+     * same rationale as [pendingSendJobCount]/[backgroundJobCount]. */
+    @Volatile
+    private var droppedStaleOrDuplicateSequenceCountField: Int = 0
+
+    internal val droppedStaleOrDuplicateSequenceCount: Int
+        get() = droppedStaleOrDuplicateSequenceCountField
+
+    /**
+     * Test-only injection seam (../../../CONTRACT.md section 2's "Test-only
+     * injection seam (pinned)"): intercepts THIS client's outgoing envelope
+     * bytes, once per would-be delivery, immediately before the delivery that
+     * would otherwise happen -- see [scheduleEnvelopeDelivery]. `null` (every
+     * production caller and all six ../../../CONTRACT.md section 3 scenario
+     * scripts) reproduces exactly the un-seamed, single-immediate-delivery
+     * behavior with zero overhead. Deterministic: [ChatInjectionSeam.intercept]
+     * is a plain synchronous function of the input bytes, called from inside
+     * this client's own scheduled `send()` coroutine (so under
+     * `kotlinx-coroutines-test`'s virtual dispatcher it participates in the
+     * same deterministic scheduling every other delay in this class does).
+     */
+    @Volatile
+    internal var testOnlyInjectionSeam: ChatInjectionSeam? = null
 
     /** MessageIds (lowercase hex) that have already reached a terminal outgoing
      * status (`delivered` or `failed`); consulted by [cancelSend] to avoid
@@ -951,9 +1079,18 @@ class SimulatedChatTransportClient internal constructor(
      * [disconnect]/[stop] call does; ../../../CONTRACT.md section 2 does not
      * pin a scripted disconnect as terminal for the client instance the way
      * `disconnect()`/`stop()` are).
+     *
+     * Also surfaces any still-unfilled receiver gap first, via
+     * [flushUnfilledGapAtScopeEnd] -- ../../../CONTRACT.md section 2's "Gap
+     * surfacing (pinned)" bullet (b), "the scope ends ... with the gap
+     * unfilled" -- still inside this same [lifecycleLock] critical section,
+     * before this client is marked terminal (the `emit` it performs does not
+     * itself check [terminal], only whether [eventBus] is already closed,
+     * which it is not yet at this point in [disconnect]/[stop]).
      */
     private fun markTerminalAndRequestCancellation(): List<Job> {
         synchronized(lifecycleLock) {
+            flushUnfilledGapAtScopeEnd()
             terminal.set(true)
             generation.incrementAndGet()
             val jobs = backgroundJobs.toList()
@@ -1543,6 +1680,12 @@ class SimulatedChatTransportClient internal constructor(
 
                 val messageId = generateMessageId()
                 val messageIdHex = messageId.toHexString()
+                // "The sequence draw is a command-span mutation and executes
+                // inside send()'s serialized span" (../../../CONTRACT.md
+                // section 2's "Outgoing sequence assignment (pinned)") -- drawn
+                // here, inside this same lifecycleLock-guarded critical
+                // section as the message-ID draw above.
+                val sequence = outgoingSequenceCounter.getAndIncrement()
                 val envelope =
                     ChatEnvelope(
                         ChatEnvelopeCodec.VERSION,
@@ -1550,6 +1693,7 @@ class SimulatedChatTransportClient internal constructor(
                         messageId,
                         null,
                         idBytes,
+                        sequence,
                         body,
                     )
                 val encoded = ChatEnvelopeCodec.encode(envelope)
@@ -1584,7 +1728,7 @@ class SimulatedChatTransportClient internal constructor(
 
                             ChatScenario.DUPLICATE_INCOMING -> {
                                 delay(ChatScenarioTimings.DUPLICATE_DELIVER_DELAY_MS)
-                                deliverEnvelopeIfPendingAndTargetAccepting(
+                                scheduleEnvelopeDelivery(
                                     messageIdHex,
                                     other,
                                     otherGenerationAtSend,
@@ -1592,7 +1736,7 @@ class SimulatedChatTransportClient internal constructor(
                                 )
 
                                 delay(ChatScenarioTimings.DUPLICATE_REDELIVER_DELAY_MS)
-                                deliverEnvelopeIfPendingAndTargetAccepting(
+                                scheduleEnvelopeDelivery(
                                     messageIdHex,
                                     other,
                                     otherGenerationAtSend,
@@ -1605,7 +1749,7 @@ class SimulatedChatTransportClient internal constructor(
 
                             ChatScenario.SLOW_LINK -> {
                                 delay(ChatScenarioTimings.SLOW_LINK_DELIVER_DELAY_MS)
-                                deliverEnvelopeIfPendingAndTargetAccepting(
+                                scheduleEnvelopeDelivery(
                                     messageIdHex,
                                     other,
                                     otherGenerationAtSend,
@@ -1621,7 +1765,7 @@ class SimulatedChatTransportClient internal constructor(
                             ChatScenario.DEGRADED_THEN_RECOVERED,
                             -> {
                                 delay(ChatScenarioTimings.HAPPY_PAIR_DELIVER_DELAY_MS)
-                                deliverEnvelopeIfPendingAndTargetAccepting(
+                                scheduleEnvelopeDelivery(
                                     messageIdHex,
                                     other,
                                     otherGenerationAtSend,
@@ -1770,29 +1914,215 @@ class SimulatedChatTransportClient internal constructor(
         emit(build)
     }
 
-    /** Decodes and, unless it is a dedup'd duplicate, delivers `bytes` as an
-     * incoming message on this client -- the "envelope bytes actually cross the
-     * codec boundary" mechanism CONTRACT.md section 2 point 2 pins as the
-     * simulated pairing's core behavior. Called on the RECEIVING client by the
-     * SENDING client's scheduled coroutine. */
+    /**
+     * Decodes and, unless it is a dedup'd duplicate, admits `bytes` as an
+     * incoming message on this client -- the "envelope bytes actually cross
+     * the codec boundary" mechanism CONTRACT.md section 2 point 2 pins as the
+     * simulated pairing's core behavior. Called on the RECEIVING client by
+     * the SENDING client's scheduled coroutine, always while this client's
+     * own [lifecycleLock] is held (see
+     * [deliverEnvelopeIfPendingAndTargetAccepting]), which is what makes this
+     * method's (and [deliverIncoming]'s/[drainReorderBuffer]'s/
+     * [surfaceWindowBypassGap]'s) plain-field mutations safe.
+     *
+     * Malformed inbound bytes are silently dropped -- not exercised by any of
+     * the six ../../../CONTRACT.md section 3 scenarios, which only ever
+     * deliver bytes this same codec just encoded, but a real transport can't
+     * assume well-formed bytes from the wire either.
+     *
+     * Then applies ../../../CONTRACT.md section 2's "Receiver reorder window
+     * (pinned; 32 sequences)" and "Gap surfacing (pinned)" rules: an arrival
+     * exactly at [nextExpectedIncomingSequence] is delivered immediately
+     * (draining any now-contiguous buffered arrivals behind it); an in-window
+     * out-of-order arrival is buffered until the window catches up to it; an
+     * arrival whose `sequence` already fell behind
+     * [nextExpectedIncomingSequence] (already delivered, or already given up
+     * on as part of a prior surfaced gap) is dropped and counted
+     * ([droppedStaleOrDuplicateSequenceCount]); and an arrival
+     * [REORDER_WINDOW_SIZE] or more beyond [nextExpectedIncomingSequence]
+     * bypasses the window, surfacing a `messageGap` for the run it leaves
+     * behind (see [surfaceWindowBypassGap]) -- the triggering arrival itself
+     * is NOT specially delivered by the bypass; it falls through to the same
+     * equal/buffer check below, now evaluated against the just-advanced
+     * [nextExpectedIncomingSequence], and (since [REORDER_WINDOW_SIZE] > 1)
+     * always lands exactly on the new window's top edge, i.e. buffered, not
+     * delivered immediately.
+     */
     internal fun deliverEnvelope(bytes: ByteArray) {
-        val decoded = ChatEnvelopeCodec.decode(bytes)
+        val decoded =
+            try {
+                ChatEnvelopeCodec.decode(bytes)
+            } catch (e: ChatEnvelopeError) {
+                return
+            }
         val messageIdHex = decoded.messageId.toHexString()
-        // Set.add() returns false if the element was already present -- this IS
-        // the duplicateIncoming dedup-by-messageId check (CONTRACT.md section 3.5).
-        if (!receivedMessageIds.add(messageIdHex)) return
+        // The duplicateIncoming dedup-by-messageId check (CONTRACT.md section
+        // 3.5), unchanged by the sequence amendment: a MEMBERSHIP check only
+        // here (not an insert) -- messageIdHex is added to receivedMessageIds
+        // below only once this arrival is confirmed NOT stale, mirroring the
+        // Swift twin exactly, so a repeated delivery of a message this class
+        // already dropped as stale (never inserted) is re-evaluated by the
+        // stale check again on every redelivery, incrementing
+        // droppedStaleOrDuplicateSequenceCount every time, rather than being
+        // silently absorbed by dedup after its first drop.
+        if (messageIdHex in receivedMessageIds) return
 
-        val now = timeSource.nowMs()
+        val sequence = decoded.sequence
+        if (sequence.toULong() < nextExpectedIncomingSequence.toULong()) {
+            // This sequence slot is already resolved (delivered earlier, or
+            // already written off by a surfaced gap), but this messageId is
+            // new -- CONTRACT.md section 2's "duplicate-sequence" case:
+            // dropped, counted, never delivered, never (re-)surfaced as its
+            // own gap.
+            droppedStaleOrDuplicateSequenceCountField++
+            return
+        }
+
+        receivedMessageIds.add(messageIdHex)
+
+        if (sequence.toULong() - nextExpectedIncomingSequence.toULong() >= REORDER_WINDOW_SIZE.toULong()) {
+            surfaceWindowBypassGap(arrivingSequence = sequence)
+        }
+
+        if (sequence == nextExpectedIncomingSequence) {
+            deliverIncoming(decoded)
+            drainReorderBuffer()
+        } else {
+            reorderBuffer[sequence] = decoded
+        }
+    }
+
+    /** Emits `messageReceived` for [envelope] and advances
+     * [nextExpectedIncomingSequence] past it. Only ever called with
+     * `envelope.sequence == nextExpectedIncomingSequence` -- directly from
+     * [deliverEnvelope], or from [drainReorderBuffer]'s own loop, which only
+     * removes and delivers a buffered entry once its key matches the
+     * (possibly just-advanced) current [nextExpectedIncomingSequence].
+     * [ChatMessage.sentAtWallClockMs] is captured HERE, at actual delivery
+     * time -- see [reorderBuffer]'s doc comment for why that matters for a
+     * message that sat buffered before draining. */
+    private fun deliverIncoming(envelope: ChatEnvelope) {
+        nextExpectedIncomingSequence = envelope.sequence + 1
         val message =
             ChatMessage(
-                id = decoded.messageId,
+                id = envelope.messageId,
+                sequence = envelope.sequence,
                 direction = ChatMessage.Direction.INCOMING,
-                body = decoded.body,
-                senderPeerIdHex = decoded.senderId.toHexString(),
-                sentAtWallClockMs = now,
+                body = envelope.body,
+                senderPeerIdHex = envelope.senderId.toHexString(),
+                sentAtWallClockMs = timeSource.nowMs(),
                 status = ChatMessageDisplayStatus.Delivered,
             )
         emit { seq -> ChatEvent.MessageReceived(seq, message) }
+    }
+
+    /** Delivers every contiguous buffered arrival starting at the (now
+     * current) [nextExpectedIncomingSequence], in ascending order --
+     * ../../../CONTRACT.md section 2's "delivers them in strict sequence
+     * order." */
+    private fun drainReorderBuffer() {
+        while (true) {
+            val envelope = reorderBuffer.remove(nextExpectedIncomingSequence) ?: break
+            deliverIncoming(envelope)
+        }
+    }
+
+    /**
+     * ../../../CONTRACT.md section 2's "Gap surfacing (pinned)" case (a):
+     * [arrivingSequence] is [REORDER_WINDOW_SIZE] or more beyond the current
+     * (missing) [nextExpectedIncomingSequence], so the run
+     * `[nextExpectedIncomingSequence, arrivingSequence - REORDER_WINDOW_SIZE]`
+     * can never be filled within a 32-wide window and is declared
+     * permanently missing. Advances the window's floor to
+     * `arrivingSequence - REORDER_WINDOW_SIZE + 1` (so [arrivingSequence]
+     * itself lands exactly on the new window's top edge) and discards -- as
+     * stale, counted -- any already-buffered entry the jump leaves behind
+     * below the new floor; anything still buffered ABOVE the new floor
+     * survives (it is still reachable within the shifted window). Key
+     * comparisons use [Long.toULong] throughout, per [reorderBuffer]'s doc
+     * comment. [arrivingSequence] itself is handled by the caller
+     * ([deliverEnvelope]) immediately afterward, against the now-updated
+     * [nextExpectedIncomingSequence].
+     */
+    private fun surfaceWindowBypassGap(arrivingSequence: Long) {
+        val fromSequence = nextExpectedIncomingSequence
+        val toSequence = arrivingSequence - REORDER_WINDOW_SIZE
+        emit { seq -> ChatEvent.MessageGap(seq, fromSequence, toSequence) }
+        nextExpectedIncomingSequence = toSequence + 1
+        val staleKeys = reorderBuffer.keys.filter { it.toULong() <= toSequence.toULong() }
+        for (key in staleKeys) {
+            reorderBuffer.remove(key)
+            droppedStaleOrDuplicateSequenceCountField++
+        }
+    }
+
+    /**
+     * ../../../CONTRACT.md section 2's "Gap surfacing (pinned)" case (b): the
+     * connection scope is ending (`disconnect()`/`stop()`) with at least one
+     * known-but-undelivered arrival still buffered above an unfilled hole.
+     * Reports the single missing run
+     * `[nextExpectedIncomingSequence, (lowest buffered sequence) - 1]` --
+     * CONTRACT.md pins one `messageGap` per unresolved run at scope end, not
+     * an exhaustive ledger of every individual hole a multiply-buffered
+     * window might contain. A no-op when nothing is buffered (nothing is
+     * known to be missing). Clears the buffer and advances
+     * [nextExpectedIncomingSequence] past everything this client currently
+     * knows about, so a second call in the same scope teardown
+     * (`disconnect()` followed by `stop()`) is a harmless no-op. Called only
+     * from [markTerminalAndRequestCancellation], already inside
+     * [lifecycleLock].
+     */
+    private fun flushUnfilledGapAtScopeEnd() {
+        val lowestBuffered = reorderBuffer.keys.minWithOrNull(ULongKeyComparator) ?: return
+        val toSequence = lowestBuffered - 1
+        emit { seq -> ChatEvent.MessageGap(seq, nextExpectedIncomingSequence, toSequence) }
+        val highestBuffered = reorderBuffer.keys.maxWithOrNull(ULongKeyComparator) ?: toSequence
+        nextExpectedIncomingSequence = highestBuffered + 1
+        reorderBuffer.clear()
+    }
+
+    /**
+     * Schedules delivery of one outgoing envelope's [bytes] to [target],
+     * routing through [testOnlyInjectionSeam] when one is installed --
+     * ../../../CONTRACT.md section 2's "Test-only injection seam (pinned)".
+     * With no seam installed (`null`, every production call and all six
+     * ../../../CONTRACT.md section 3 scenario scripts), this is exactly
+     * [deliverEnvelopeIfPendingAndTargetAccepting] called synchronously,
+     * inline, with zero behavior change from before this method existed.
+     * With a seam installed, each returned [ChatInjectionSeam.Delivery] is
+     * scheduled independently: a zero delay delivers inline (same call
+     * stack, same virtual-time tick) and a positive delay spawns its own
+     * [launchBackgroundJob] (admitted into THIS -- the sender's -- own
+     * [backgroundJobs], matching every other delivery-scheduling job in this
+     * class) that `delay()`s then delivers. An empty seam result schedules
+     * nothing (drop).
+     */
+    private suspend fun scheduleEnvelopeDelivery(
+        messageIdHex: String,
+        target: SimulatedChatTransportClient,
+        targetExpectedGeneration: Long,
+        bytes: ByteArray,
+    ) {
+        val seam = testOnlyInjectionSeam
+        if (seam == null) {
+            deliverEnvelopeIfPendingAndTargetAccepting(messageIdHex, target, targetExpectedGeneration, bytes)
+            return
+        }
+        for (delivery in seam.intercept(bytes)) {
+            if (delivery.delayMs <= 0L) {
+                deliverEnvelopeIfPendingAndTargetAccepting(messageIdHex, target, targetExpectedGeneration, delivery.bytes)
+            } else {
+                launchBackgroundJob(caller = "send() [injection seam]") {
+                    delay(delivery.delayMs)
+                    deliverEnvelopeIfPendingAndTargetAccepting(
+                        messageIdHex,
+                        target,
+                        targetExpectedGeneration,
+                        delivery.bytes,
+                    )
+                }.start()
+            }
+        }
     }
 
     /** 16-byte message ID, drawn from this client's own independent

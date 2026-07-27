@@ -965,11 +965,14 @@ merge-gate evidence. Regeneration is permitted only together with a
 change to this document, and the diff is reviewed like source. This
 sequence amendment is exactly such a change: the `messageReceived` field
 order above and the new `messageGap` event type require regenerating
-`fixtures/traces/happyPair.jsonl` and `fixtures/traces/peerLoss.jsonl` —
-and, per the model-trace note below, `fixtures/model-traces/` — together
-with this document, in this same PR, under the same discipline as
-`ENVELOPE.md` §9 (spec change in the same PR, never a routine rerun):
-Swift generates, Kotlin asserts byte-identity, unchanged.
+`fixtures/traces/happyPair.jsonl` and `fixtures/traces/peerLoss.jsonl`
+together with this document, in this same PR, under the same discipline
+as `ENVELOPE.md` §9 (spec change in the same PR, never a routine rerun):
+Swift generates, Kotlin asserts byte-identity, unchanged. The
+`fixtures/model-traces/` goldens live on the C3-29/C3-30 app branches
+(the model-trace recorders do not exist on this branch) and regenerate
+there when those branches restack onto this amendment, citing this same
+paragraph as their authorizing spec change.
 
 **Known schema limitation.** `messageReceived.message` has no field for
 a failure reason alongside `status`; in every §3 scenario an incoming
