@@ -2592,6 +2592,77 @@ class SimulatedChatTransportClientTest {
     }
 
     /**
+     * De-flaked replacement for polling [disconnectThread]'s raw
+     * `java.lang.Thread.State` (see the CI-observed failure this fixes,
+     * below). Waits until [pair]'s A client's `disconnect()` -- running on
+     * [disconnectThread] -- has DEFINITELY already acquired
+     * `commandInFlight` and will keep holding it for as long as this test
+     * likes (i.e. until it itself calls `heldDispatch.release()`), by
+     * polling [SimulatedChatTransportClient.isTerminal] instead of the
+     * racing thread's JVM-reported state.
+     *
+     * This is sound, not merely convenient: `disconnect()`'s only write to
+     * `terminal` happens inside `markTerminalAndRequestCancellation()`,
+     * strictly AFTER `commandInFlight`'s `compareAndSet` has already
+     * committed in that SAME call's program order, and strictly BEFORE the
+     * `Job.join()` suspension that then holds `commandInFlight` for the
+     * rest of the held-job race (see `disconnect()`'s and
+     * `markTerminalAndRequestCancellation()`'s own doc comments in
+     * SimulatedChatTransportClient.kt). Both fields are `AtomicBoolean`s,
+     * so observing `isTerminal() == true` here also guarantees (via the
+     * JMM's happens-before-through-a-single-writer-thread's-own-atomic-
+     * writes transitivity) that this thread's earlier `commandInFlight` CAS
+     * is visible too -- there is no window in which this predicate can fire
+     * before `commandInFlight` is actually held.
+     *
+     * Root cause this replaces: CI run 30299948910 (a 2-core GitHub-hosted
+     * ubuntu runner) failed
+     * `cancelSendConcurrentWithAnInFlightDisconnectIsRejectedAsConcurrentCommand`
+     * at its `caught != null` assertion -- `cancelSend()` had NOT been
+     * rejected, meaning `commandInFlight` was NOT actually held yet when it
+     * ran. The old predicate (`disconnectThread.state in {TIMED_WAITING,
+     * WAITING, BLOCKED}`) is only a PROXY for "parked in the held job's
+     * `Job.join()` wait", and `BLOCKED` in particular is not even the state
+     * that specific wait produces (see
+     * [disconnectFindsAndCancelsAConnectHandshakeJobHeldAtItsFirstDispatch]'s
+     * own comment -- "kept alongside it for parity ... though it is not
+     * the state actually produced by this specific runBlocking/Job.join()
+     * combination"). On a resource-constrained runner a freshly spawned,
+     * merely-scheduled-but-not-yet-executing real OS thread can transiently
+     * report one of those same three states for reasons that have nothing
+     * to do with the held job (thread/JVM scheduling and startup pauses),
+     * i.e. strictly BEFORE `disconnect()` has run even its own first line
+     * -- so a fast racing reader on the SAME (test) thread could slip
+     * `cancelSend()` in before `commandInFlight` was actually set,
+     * observing it as free. On fast/idle machines and in local loops that
+     * startup window is reliably too small to ever be caught mid-poll,
+     * which is why this only reproduced on a constrained CI runner. Polling
+     * an actual invariant of `disconnect()`'s own state machine, rather
+     * than a same-shape-but-unrelated JVM thread-state proxy, makes the
+     * intended interleaving guaranteed rather than probable.
+     */
+    private fun spinUntilDisconnectDurablyHoldsCommandInFlight(
+        pair: SimulatedChatPair,
+        disconnectThread: Thread,
+    ) {
+        spinUntil("disconnect() never actually acquired commandInFlight (isTerminal() never flipped true)") {
+            pair.clientA.isTerminal()
+        }
+        // Sanity companion to the predicate above, not a substitute for it:
+        // commandInFlight cannot have been released yet either (the same
+        // `disconnectOwningCommandSpan()` call that set `terminal` is still
+        // parked in `Job.join()` on the still-held job -- nothing in this
+        // test has released it), so disconnect() cannot have returned and
+        // disconnectThread cannot have exited.
+        assertTrue(
+            "disconnect() must still be alive, parked in its own join() wait for the held job, once " +
+                "isTerminal() is observed true -- it cannot have already returned since the held job " +
+                "has not been released",
+            disconnectThread.isAlive,
+        )
+    }
+
+    /**
      * Reviewer probe (round-5 "Command ownership" pin, R2's sibling
      * coverage for `cancelSend()`): `cancelSend()` invoked concurrently
      * with an `disconnect()` that is genuinely, durably in flight on the
@@ -2613,15 +2684,15 @@ class SimulatedChatTransportClientTest {
                 thread(start = true) {
                     runBlocking { pair.clientA.disconnect() }
                 }
-            // See disconnectFindsAndCancelsAConnectHandshakeJobHeldAtItsFirstDispatch's
-            // spinUntil above for why TIMED_WAITING (not WAITING) is the
-            // state actually produced by a thread parked inside
-            // `runBlocking { ... Job.join() ... }`.
-            spinUntil("disconnect() never entered its join-wait for the held job") {
-                disconnectThread.state == Thread.State.TIMED_WAITING ||
-                    disconnectThread.state == Thread.State.WAITING ||
-                    disconnectThread.state == Thread.State.BLOCKED
-            }
+            // Deterministic handshake -- see
+            // spinUntilDisconnectDurablyHoldsCommandInFlight's own doc
+            // comment for why this polls disconnect()'s own isTerminal()
+            // flip rather than disconnectThread's raw JVM-reported
+            // Thread.State (the latter is what a 2-core GitHub Actions
+            // runner tripped in run 30299948910: caught == null below,
+            // because the old proxy predicate could fire before
+            // commandInFlight was actually held).
+            spinUntilDisconnectDurablyHoldsCommandInFlight(pair, disconnectThread)
 
             // disconnect() has NOT released commandInFlight yet -- its own
             // serialized span holds it across the WHOLE join() wait (see
@@ -2688,11 +2759,14 @@ class SimulatedChatTransportClientTest {
                 thread(start = true) {
                     runBlocking { pair.clientA.disconnect() }
                 }
-            spinUntil("disconnect() never entered its join-wait for the held job") {
-                disconnectThread.state == Thread.State.TIMED_WAITING ||
-                    disconnectThread.state == Thread.State.WAITING ||
-                    disconnectThread.state == Thread.State.BLOCKED
-            }
+            // Deterministic handshake -- see
+            // spinUntilDisconnectDurablyHoldsCommandInFlight's own doc
+            // comment (same shared race as
+            // cancelSendConcurrentWithAnInFlightDisconnectIsRejectedAsConcurrentCommand,
+            // which is where the flaky Thread.State-polling predicate this
+            // replaces was actually observed to fail on a 2-core CI
+            // runner).
+            spinUntilDisconnectDurablyHoldsCommandInFlight(pair, disconnectThread)
 
             // disconnect() still owns commandInFlight -- a concurrent
             // stop() attempted right now, on this SAME instance, must be
