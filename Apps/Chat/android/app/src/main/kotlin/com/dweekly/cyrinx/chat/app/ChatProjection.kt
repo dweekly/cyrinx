@@ -37,6 +37,7 @@ object ChatProjection {
                 is ChatEvent.ConnectionChanged -> applyConnectionChanged(withGap, event.state)
                 is ChatEvent.LinkBudgetChanged -> recomputeBanner(withGap.copy(budget = event.budget))
                 is ChatEvent.MessageReceived -> withGap.copy(messages = withGap.messages + event.message)
+                is ChatEvent.MessageGap -> applyMessageGap(withGap, event.fromSequence, event.toSequence)
                 is ChatEvent.MessageStatusChanged -> applyMessageStatusChanged(withGap, event.messageIdHex, event.status)
                 is ChatEvent.ClientFailed -> recomputeBanner(withGap.copy(clientFailedReason = event.reason))
             }
@@ -114,6 +115,22 @@ object ChatProjection {
         return state.copy(banner = banner)
     }
 
+    /**
+     * Sequence amendment (CONTRACT.md section 4's "Model-trace cross-reference"
+     * paragraph): every consumed [ChatEvent.MessageGap] increments the sticky
+     * [ChatUiState.messageGaps] counter and appends a system caption --
+     * orchestrator pin: "text exactly `Messages missing: sequences X-Y`
+     * (X=fromSequence, Y=toSequence; single missing sequence renders X-X)" --
+     * as a NEW row in [ChatUiState.messageGapNotices], anchored to insert
+     * after however many [ChatUiState.messages] rows already exist (pin: "the
+     * caption is a message-list row," not a banner -- see [ChatBanner
+     * .messageGapNoticeText] and `ui/MessageList.kt`'s row-interleaving).
+     */
+    private fun applyMessageGap(state: ChatUiState, fromSequence: Long, toSequence: Long): ChatUiState {
+        val notice = ChatMessageGapNotice(ChatBanner.messageGapNoticeText(fromSequence, toSequence), state.messages.size)
+        return state.copy(messageGaps = state.messageGaps + 1, messageGapNotices = state.messageGapNotices + notice)
+    }
+
     /** "messageStatusChanged updates in place by idHex; unknown idHex is
      * ignored (already-terminal races) but counted in droppedStatusUpdates." */
     private fun applyMessageStatusChanged(
@@ -132,9 +149,11 @@ object ChatProjection {
 
 /** [ChatMessage] has no mutating setter (every field is `val`) -- this rebuilds
  * an equal message with only [status] replaced, matching CONTRACT.md's
- * `messageStatusChanged` semantics ("updates in place by idHex"). */
+ * `messageStatusChanged` semantics ("updates in place by idHex"). [sequence]
+ * is carried through unchanged -- CONTRACT.md section 1.6: the envelope's
+ * `sequence` never changes after a message is created. */
 fun ChatMessage.withStatus(newStatus: ChatMessageDisplayStatus): ChatMessage =
-    ChatMessage(id, direction, body, senderPeerIdHex, sentAtWallClockMs, newStatus)
+    ChatMessage(id, sequence, direction, body, senderPeerIdHex, sentAtWallClockMs, newStatus)
 
 /**
  * Inserts a new OUTGOING [ChatMessage] with [ChatMessageDisplayStatus.Queued]
@@ -153,6 +172,13 @@ fun ChatMessage.withStatus(newStatus: ChatMessageDisplayStatus): ChatMessage =
  */
 fun ChatUiState.withOutgoingQueuedIfAbsent(
     idHex: String,
+    /** This message's envelope `sequence` (ENVELOPE.md section 1.2) -- NOT
+     * returned by [com.dweekly.cyrinx.chat.ChatTransportClient.send] (its
+     * signature, CONTRACT.md section 1.8, returns only `messageIdHex`), so
+     * [ChatViewModel.sendMessage] supplies it from its own locally-tracked
+     * outgoing counter mirroring CONTRACT.md section 2's "Outgoing sequence
+     * assignment (pinned)" rule -- see that call site's doc comment. */
+    sequence: Long,
     body: String,
     senderPeerIdHex: String,
     sentAtWallClockMs: Long,
@@ -161,6 +187,7 @@ fun ChatUiState.withOutgoingQueuedIfAbsent(
     val message =
         ChatMessage(
             id = idHex.hexToByteArray(),
+            sequence = sequence,
             direction = ChatMessage.Direction.OUTGOING,
             body = body,
             senderPeerIdHex = senderPeerIdHex,

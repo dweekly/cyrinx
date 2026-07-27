@@ -1,7 +1,7 @@
-{"eventSeq": 0, "connection": "disconnected", "budget": "controlOnly", "peers": ["beeb8da1"], "messages": [], "banner": null, "gap": false}
-{"eventSeq": 1, "connection": "connecting", "budget": "controlOnly", "peers": ["beeb8da1"], "messages": [], "banner": null, "gap": false}
-{"eventSeq": 2, "connection": "connected", "budget": "controlOnly", "peers": ["beeb8da1"], "messages": [], "banner": null, "gap": false}
-{"eventSeq": 3, "connection": "connected", "budget": "text", "peers": ["beeb8da1"], "messages": [], "banner": null, "gap": false}
-{"eventSeq": 4, "connection": "connected", "budget": "text", "peers": ["beeb8da1"], "messages": [{"idHex": "8a1233a1de59995ae7487b0d37491117", "direction": "outgoing", "status": "queued"}], "banner": null, "gap": false}
-{"eventSeq": 5, "connection": "connected", "budget": "text", "peers": ["beeb8da1"], "messages": [{"idHex": "8a1233a1de59995ae7487b0d37491117", "direction": "outgoing", "status": "transmitting"}], "banner": null, "gap": false}
-{"eventSeq": 6, "connection": "connected", "budget": "text", "peers": ["beeb8da1"], "messages": [{"idHex": "8a1233a1de59995ae7487b0d37491117", "direction": "outgoing", "status": "delivered"}], "banner": null, "gap": false}
+{"eventSeq": 0, "connection": "disconnected", "budget": "controlOnly", "peers": ["beeb8da1"], "messages": [], "messageGaps": 0, "banner": null, "gap": false}
+{"eventSeq": 1, "connection": "connecting", "budget": "controlOnly", "peers": ["beeb8da1"], "messages": [], "messageGaps": 0, "banner": null, "gap": false}
+{"eventSeq": 2, "connection": "connected", "budget": "controlOnly", "peers": ["beeb8da1"], "messages": [], "messageGaps": 0, "banner": null, "gap": false}
+{"eventSeq": 3, "connection": "connected", "budget": "text", "peers": ["beeb8da1"], "messages": [], "messageGaps": 0, "banner": null, "gap": false}
+{"eventSeq": 4, "connection": "connected", "budget": "text", "peers": ["beeb8da1"], "messages": [{"idHex": "8a1233a1de59995ae7487b0d37491117", "sequence": 1, "direction": "outgoing", "status": "queued"}], "messageGaps": 0, "banner": null, "gap": false}
+{"eventSeq": 5, "connection": "connected", "budget": "text", "peers": ["beeb8da1"], "messages": [{"idHex": "8a1233a1de59995ae7487b0d37491117", "sequence": 1, "direction": "outgoing", "status": "transmitting"}], "messageGaps": 0, "banner": null, "gap": false}
+{"eventSeq": 6, "connection": "connected", "budget": "text", "peers": ["beeb8da1"], "messages": [{"idHex": "8a1233a1de59995ae7487b0d37491117", "sequence": 1, "direction": "outgoing", "status": "delivered"}], "messageGaps": 0, "banner": null, "gap": false}

@@ -2,6 +2,7 @@
 
 package com.dweekly.cyrinx.chat.app
 
+import com.dweekly.cyrinx.chat.ChatEvent
 import com.dweekly.cyrinx.chat.ChatScenario
 import com.dweekly.cyrinx.chat.VirtualTimeSource
 import com.dweekly.cyrinx.chat.toHexString
@@ -97,5 +98,39 @@ suspend fun TestScope.generateModelTrace(scenario: ChatScenario, seed: Long): St
     }
     advanceTimeBy(300)
     runCurrent()
+    return recorder.toJsonLines()
+}
+
+/**
+ * Drives a fresh [ChatViewModel]/[ChatModelTraceRecorder]/[FakeChatTransportClient]
+ * triple by emitting [events] in order (each followed by [runCurrent] so it is
+ * fully consumed before the next), and returns the recorded model-level
+ * trace. This module's stand-in for chatkit's own "test-only injection seam"
+ * (../../../CONTRACT.md section 2 -- see [FakeChatTransportClient]'s doc
+ * comment for why this module cannot reach chatkit's actual
+ * `testOnlyInjectionSeam`): the six CONTRACT.md section 3 scenarios never
+ * produce a `messageGap`, so exercising [ChatEvent.MessageGap] consumption at
+ * all requires hand-scripting it here, same as chatkit's own
+ * ChatSequenceAndReorderTest does for the wire-level trace one layer down.
+ * Shared by ChatViewModelTest's messageGap tests so both the single-run
+ * consumption assertions and the two-run determinism check exercise the
+ * exact same driver.
+ */
+suspend fun TestScope.generateModelTraceFromScript(events: List<ChatEvent>): String {
+    val recorder = ChatModelTraceRecorder()
+    val fake = FakeChatTransportClient()
+    ChatViewModel(
+        config = ChatLaunchConfig(ChatScenario.HAPPY_PAIR, seed = 1L, simulated = true),
+        timeSource = testVirtualTimeSource(),
+        scope = backgroundScope,
+        modelTraceRecorder = recorder,
+        transportClientOverride = fake,
+        overrideLocalPeerIdHex = "aabbccdd",
+    )
+    runCurrent()
+    for (event in events) {
+        fake.emit(event)
+        runCurrent()
+    }
     return recorder.toJsonLines()
 }

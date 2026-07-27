@@ -2,10 +2,12 @@ package com.dweekly.cyrinx.chat.app
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.dweekly.cyrinx.chat.ChatMessage
 import com.dweekly.cyrinx.chat.ChatMessageDisplayStatus
+import com.dweekly.cyrinx.chat.app.ChatMessageGapNotice
 import com.dweekly.cyrinx.chat.app.ui.ChatTheme
 import com.dweekly.cyrinx.chat.app.ui.MessageList
 import org.junit.Rule
@@ -49,6 +51,7 @@ class ChatReceiveFlowInstrumentedTest {
                         listOf(
                             ChatMessage(
                                 id = byteArrayOf(0x01, 0x02, 0x03, 0x04),
+                                sequence = 1L,
                                 direction = ChatMessage.Direction.INCOMING,
                                 body = "hi from the other device",
                                 senderPeerIdHex = "01020304",
@@ -60,5 +63,27 @@ class ChatReceiveFlowInstrumentedTest {
             }
         }
         composeRule.onNodeWithText("hi from the other device").assertIsDisplayed()
+    }
+
+    /**
+     * Sequence amendment: a consumed `messageGap` renders as its own
+     * message-list row, carrying the literal `chat.messageGapNotice` test tag
+     * (see `ui/MessageList.kt`'s `MESSAGE_GAP_NOTICE_TEST_TAG` -- the shared
+     * registry constant of this exact name arrives via the C3-29 merge, see
+     * that constant's doc comment) plus its exact pinned caption text as the
+     * TalkBack content description.
+     */
+    @Test
+    fun consumedMessageGapRendersItsOwnRowWithThePinnedTagAndExactCaptionText() {
+        composeRule.setContent {
+            ChatTheme {
+                MessageList(
+                    messages = emptyList(),
+                    gapNotices = listOf(ChatMessageGapNotice("Messages missing: sequences 5-7", afterMessageCount = 0)),
+                )
+            }
+        }
+        composeRule.onNodeWithTag("chat.messageGapNotice").assertIsDisplayed()
+        composeRule.onNodeWithText("Messages missing: sequences 5-7").assertIsDisplayed()
     }
 }

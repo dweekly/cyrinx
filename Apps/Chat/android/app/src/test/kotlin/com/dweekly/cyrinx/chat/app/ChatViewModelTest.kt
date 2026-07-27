@@ -3,6 +3,7 @@
 package com.dweekly.cyrinx.chat.app
 
 import com.dweekly.cyrinx.chat.ChatConnectionState
+import com.dweekly.cyrinx.chat.ChatEvent
 import com.dweekly.cyrinx.chat.ChatMessageDisplayStatus
 import com.dweekly.cyrinx.chat.ChatReasonStrings
 import com.dweekly.cyrinx.chat.ChatScenario
@@ -282,6 +283,82 @@ class ChatViewModelTest {
         runCurrent()
         assertTrue("the post-recreation collector must keep receiving updates", secondCollected.size > 1)
         secondJob.cancel()
+    }
+
+    // -- messageGap consumption (sequence amendment) --------------------------
+    // These drive ChatViewModel's REAL applyEvent collection loop through
+    // FakeChatTransportClient (this module's stand-in for chatkit's own
+    // test-only injection seam -- see that class's doc comment), since none
+    // of the six CONTRACT.md section 3 scenarios ever produce a `messageGap`.
+
+    @Test
+    fun messageGapEventIncrementsTheCounterAndAppendsTheExactSystemCaption() = runTest {
+        val fake = FakeChatTransportClient()
+        val viewModel =
+            ChatViewModel(
+                config(ChatScenario.HAPPY_PAIR),
+                testVirtualTimeSource(),
+                backgroundScope,
+                transportClientOverride = fake,
+                overrideLocalPeerIdHex = "aabbccdd",
+            )
+        runCurrent()
+
+        fake.emit(ChatEvent.ConnectionChanged(0, ChatConnectionState.Connected))
+        fake.emit(ChatEvent.MessageGap(1, fromSequence = 4L, toSequence = 4L))
+        runCurrent()
+
+        val state = viewModel.uiState.value
+        assertEquals(1, state.messageGaps)
+        assertEquals(listOf("Messages missing: sequences 4-4"), state.messageGapNotices.map { it.text })
+        // Pin 3: banner priority rules are unchanged -- a plain `connected`
+        // transition produces no banner, and the messageGap must not add one.
+        assertNull(state.banner)
+    }
+
+    @Test
+    fun multipleMessageGapEventsAccumulateTheCounterAndEachOwnCaption() = runTest {
+        val fake = FakeChatTransportClient()
+        val viewModel =
+            ChatViewModel(
+                config(ChatScenario.HAPPY_PAIR),
+                testVirtualTimeSource(),
+                backgroundScope,
+                transportClientOverride = fake,
+                overrideLocalPeerIdHex = "aabbccdd",
+            )
+        runCurrent()
+
+        fake.emit(ChatEvent.MessageGap(0, fromSequence = 1L, toSequence = 1L))
+        fake.emit(ChatEvent.MessageGap(1, fromSequence = 10L, toSequence = 12L))
+        runCurrent()
+
+        val state = viewModel.uiState.value
+        assertEquals(2, state.messageGaps)
+        assertEquals(
+            listOf("Messages missing: sequences 1-1", "Messages missing: sequences 10-12"),
+            state.messageGapNotices.map { it.text },
+        )
+    }
+
+    @Test
+    fun messageGapConsumptionThroughTheModelTraceRecorderIsByteIdenticalAcrossTwoIndependentRuns() = runTest {
+        val script =
+            listOf(
+                ChatEvent.ConnectionChanged(0, ChatConnectionState.Connected),
+                ChatEvent.MessageGap(1, fromSequence = 6L, toSequence = 6L),
+                ChatEvent.ConnectionChanged(2, ChatConnectionState.Degraded),
+            )
+
+        val first = generateModelTraceFromScript(script)
+        val second = generateModelTraceFromScript(script)
+
+        assertTrue("a scripted messageGap run must produce at least one trace line", first.isNotEmpty())
+        assertEquals(first, second)
+        // Sanity: the new top-level field actually appears, and in the pinned
+        // position immediately before "banner" (CONTRACT.md section 4's
+        // "Model-trace cross-reference" paragraph).
+        assertTrue(first.contains("\"messageGaps\": 1, \"banner\""))
     }
 
     // -- chat.simulated = false (live adapter not available until C3-31) ------

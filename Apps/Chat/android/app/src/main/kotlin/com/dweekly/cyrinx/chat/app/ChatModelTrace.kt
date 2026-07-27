@@ -27,6 +27,12 @@ data class ChatModelTraceEntry(
      * [ChatProjection.upsertPeerSorted]). */
     val peers: List<String>,
     val messages: List<ChatModelTraceMessage>,
+    /** Sequence amendment (CONTRACT.md section 4's "Model-trace cross-
+     * reference" paragraph): [ChatUiState.messageGaps], verbatim -- "a new
+     * top-level `messageGaps` field (Int/Long, default 0) counting
+     * `messageGap` ChatEvents surfaced so far." Field ORDER is pinned too:
+     * immediately before [banner] -- see [ChatModelTraceJson.renderLine]. */
+    val messageGaps: Int,
     /** [ChatUiState.banner], verbatim (already the pinned plain-language
      * string or `null`). */
     val banner: String?,
@@ -35,9 +41,14 @@ data class ChatModelTraceEntry(
 )
 
 /** One [ChatModelTraceEntry.messages] row: "entries in list order with only
- * idHex/direction/status" (design brief). */
+ * idHex/sequence/direction/status" (design brief, sequence amendment: "messages
+ * entries gain `sequence` after `idHex`"). */
 data class ChatModelTraceMessage(
     val idHex: String,
+    /** [com.dweekly.cyrinx.chat.ChatMessage.sequence], the exact u64 wire bit
+     * pattern -- see [ChatModelTraceJson.renderLine]'s `.toULong()` rendering,
+     * matching chatkit's own `ChatTraceJson` convention for this field. */
+    val sequence: Long,
     /** [com.dweekly.cyrinx.chat.ChatMessage.Direction.wireName]. */
     val direction: String,
     /** [com.dweekly.cyrinx.chat.ChatMessageDisplayStatus.wireName]. */
@@ -52,7 +63,11 @@ fun ChatUiState.toModelTraceEntry(eventSeq: Long): ChatModelTraceEntry =
         connection = connection.wireName,
         budget = budget.classification.wireName,
         peers = peers.map { it.id.toHexString() },
-        messages = messages.map { ChatModelTraceMessage(it.id.toHexString(), it.direction.wireName, it.status.wireName) },
+        messages =
+            messages.map {
+                ChatModelTraceMessage(it.id.toHexString(), it.sequence, it.direction.wireName, it.status.wireName)
+            },
+        messageGaps = messageGaps,
         banner = banner,
         gap = eventSeqGapDetected,
     )
@@ -74,6 +89,7 @@ object ChatModelTraceJson {
         appendField(sb, "budget", jsonString(entry.budget))
         appendField(sb, "peers", renderStringArray(entry.peers))
         appendField(sb, "messages", renderMessages(entry.messages))
+        appendField(sb, "messageGaps", entry.messageGaps.toString())
         appendField(sb, "banner", entry.banner?.let { jsonString(it) } ?: JSON_NULL)
         appendField(sb, "gap", entry.gap.toString())
         sb.append('}')
@@ -94,6 +110,10 @@ object ChatModelTraceJson {
         val sb = StringBuilder()
         sb.append('{')
         appendField(sb, "idHex", jsonString(message.idHex), first = true)
+        // .toULong(): the exact u64 wire bit pattern, matching chatkit's own
+        // `ChatTraceJson`'s `sequence` convention -- never Long's signed
+        // decimal form (CONTRACT.md section 8's `sequence` field notes).
+        appendField(sb, "sequence", message.sequence.toULong().toString())
         appendField(sb, "direction", jsonString(message.direction))
         appendField(sb, "status", jsonString(message.status))
         sb.append('}')

@@ -199,6 +199,7 @@ class ChatProjectionReducerTest {
         val incoming =
             ChatMessage(
                 id = byteArrayOf(0x01),
+                sequence = 1L,
                 direction = ChatMessage.Direction.INCOMING,
                 body = "hi",
                 senderPeerIdHex = peerB.id.toHexString(),
@@ -209,6 +210,7 @@ class ChatProjectionReducerTest {
 
         assertEquals(1, state.messages.size)
         assertEquals("hi", state.messages.single().body)
+        assertEquals(1L, state.messages.single().sequence)
     }
 
     // -- gap detection (CONTRACT.md section 1.7) -----------------------------
@@ -262,10 +264,77 @@ class ChatProjectionReducerTest {
     private fun outgoingMessage(idHex: String, status: ChatMessageDisplayStatus): ChatMessage =
         ChatMessage(
             id = idHex.hexToByteArray(),
+            sequence = 1L,
             direction = ChatMessage.Direction.OUTGOING,
             body = "test",
             senderPeerIdHex = peerA.id.toHexString(),
             sentAtWallClockMs = 0,
             status = status,
         )
+
+    // -- messageGap (CONTRACT.md section 4's "Model-trace cross-reference" /
+    // orchestrator sequence amendment) -------------------------------------
+
+    @Test
+    fun messageGapIncrementsCounterAndAppendsExactCaptionText() {
+        val state = reduceOne(ChatEvent.MessageGap(0, fromSequence = 5L, toSequence = 7L))
+
+        assertEquals(1, state.messageGaps)
+        assertEquals(
+            listOf("Messages missing: sequences 5-7"),
+            state.messageGapNotices.map { it.text },
+        )
+    }
+
+    @Test
+    fun messageGapForASingleMissingSequenceRendersXDashX() {
+        val state = reduceOne(ChatEvent.MessageGap(0, fromSequence = 9L, toSequence = 9L))
+
+        assertEquals("Messages missing: sequences 9-9", state.messageGapNotices.single().text)
+    }
+
+    @Test
+    fun messageGapCounterAccumulatesAcrossMultipleGapEvents() {
+        var state = ChatUiState()
+        state = ChatProjection.reduce(state, ChatEvent.MessageGap(0, fromSequence = 2L, toSequence = 2L))
+        state = ChatProjection.reduce(state, ChatEvent.MessageGap(1, fromSequence = 10L, toSequence = 11L))
+
+        assertEquals(2, state.messageGaps)
+        assertEquals(
+            listOf("Messages missing: sequences 2-2", "Messages missing: sequences 10-11"),
+            state.messageGapNotices.map { it.text },
+        )
+    }
+
+    @Test
+    fun messageGapDoesNotAffectTheBannerPriorityRules() {
+        // Pin 3: "Gap caption is not an error: banner priority rules
+        // unchanged." A messageGap consumed while a connection-disconnected
+        // banner is already showing must not clear or replace it.
+        var state = ChatUiState()
+        state = ChatProjection.reduce(state, ChatEvent.ConnectionChanged(0, ChatConnectionState.Disconnected(ChatReasonStrings.STOPPED)))
+        state = ChatProjection.reduce(state, ChatEvent.MessageGap(1, fromSequence = 1L, toSequence = 1L))
+
+        assertEquals("Session ended.", state.banner)
+        assertEquals(1, state.messageGaps)
+    }
+
+    @Test
+    fun messageGapNoticeAnchorsAfterTheMessagesPresentAtConsumptionTime() {
+        var state = ChatUiState()
+        val incoming =
+            ChatMessage(
+                id = byteArrayOf(0x02),
+                sequence = 1L,
+                direction = ChatMessage.Direction.INCOMING,
+                body = "first",
+                senderPeerIdHex = peerB.id.toHexString(),
+                sentAtWallClockMs = 0,
+                status = ChatMessageDisplayStatus.Delivered,
+            )
+        state = ChatProjection.reduce(state, ChatEvent.MessageReceived(0, incoming))
+        state = ChatProjection.reduce(state, ChatEvent.MessageGap(1, fromSequence = 3L, toSequence = 3L))
+
+        assertEquals(1, state.messageGapNotices.single().afterMessageCount)
+    }
 }

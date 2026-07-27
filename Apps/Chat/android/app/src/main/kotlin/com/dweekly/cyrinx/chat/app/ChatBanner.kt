@@ -25,6 +25,21 @@ object ChatBanner {
     const val GAP_CAPTION_TEXT: String = "Some events were dropped — state may be stale"
 
     /**
+     * Sequence amendment (CONTRACT.md section 4's "Model-trace cross-
+     * reference" paragraph): orchestrator-pinned, EXACT text for a consumed
+     * `messageGap` [com.dweekly.cyrinx.chat.ChatEvent]'s system caption --
+     * "text exactly `Messages missing: sequences X-Y` (X=fromSequence,
+     * Y=toSequence; single missing sequence renders X-X)." A single missing
+     * sequence renders `X-X` for free ([fromSequence] == [toSequence] in that
+     * case; no special-casing needed). Rendered via `.toULong()`, matching
+     * chatkit's own `ChatTraceJson`/[com.dweekly.cyrinx.chat.ChatMessage
+     * .toString] convention for `sequence`-typed fields (the exact u64 wire
+     * bit pattern, never [Long]'s signed decimal form).
+     */
+    fun messageGapNoticeText(fromSequence: Long, toSequence: Long): String =
+        "Messages missing: sequences ${fromSequence.toULong()}-${toSequence.toULong()}"
+
+    /**
      * Maps a `ChatConnectionState.Disconnected.reason` (or, per
      * [ChatUiState.peerLostRecoveryReason], the reused literal
      * [ChatReasonStrings.PEER_LOST]) to its pinned plain-language string, or

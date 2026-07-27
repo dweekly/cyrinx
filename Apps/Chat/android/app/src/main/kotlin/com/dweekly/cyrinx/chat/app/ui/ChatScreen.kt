@@ -80,7 +80,11 @@ fun ChatScreen(viewModel: ChatViewModel, modifier: Modifier = Modifier) {
             LinkBudgetBadge(budget = uiState.budget, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
 
             if (showingConversation) {
-                MessageList(messages = uiState.messages, modifier = Modifier.weight(1f))
+                MessageList(
+                    messages = uiState.messages,
+                    gapNotices = uiState.messageGapNotices,
+                    modifier = Modifier.weight(1f),
+                )
                 Composer(
                     text = composerText,
                     onTextChange = { composerText = it },

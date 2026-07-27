@@ -7,6 +7,25 @@ import com.dweekly.cyrinx.chat.ChatPeer
 import com.dweekly.cyrinx.chat.LinkBudgetClass
 
 /**
+ * One consumed [com.dweekly.cyrinx.chat.ChatEvent.MessageGap]'s rendered
+ * system caption -- orchestrator pin (CONTRACT.md section 4's "Model-trace
+ * cross-reference" paragraph, sequence amendment): "A consumed messageGap
+ * ALSO appends a system caption in the UI conversation: text exactly
+ * `Messages missing: sequences X-Y`." [afterMessageCount] anchors this
+ * caption's position among [ChatUiState.messages] at the moment it was
+ * surfaced (how many message rows existed then), so `ui/MessageList.kt` can
+ * interleave it as its own message-list row, in original consumption order,
+ * without [ChatUiState.messages] itself needing a non-[ChatMessage] element
+ * type. See [com.dweekly.cyrinx.chat.app.ChatBanner.messageGapNoticeText] for
+ * the exact text format and [ChatProjection]'s `applyMessageGap` for
+ * construction.
+ */
+data class ChatMessageGapNotice(
+    val text: String,
+    val afterMessageCount: Int,
+)
+
+/**
  * The shared ChatModel/ChatViewModel projection, pinned by
  * `/private/tmp/.../C3_29_30_DESIGN_BRIEF.md`'s "Shared ChatModel/ChatViewModel
  * projection (pinned -- the C3-30 merge gate)" section: identical semantics on
@@ -45,6 +64,19 @@ data class ChatUiState(
      * the BEHAVIOR (a caption exists, is not a banner, and is sticky) but not
      * this exact string. */
     val gapCaption: String? = null,
+    /** Sequence amendment (CONTRACT.md section 4's "Model-trace cross-
+     * reference" paragraph): sticky count of `messageGap` [com.dweekly.cyrinx.chat.ChatEvent]s
+     * consumed so far, default `0`. Distinct from [eventSeqGapDetected]/
+     * [gapCaption] above -- those track THIS client's own bounded-event-buffer
+     * drops (CONTRACT.md section 1.7); this tracks missing envelope
+     * `sequence` numbers the receiver gave up on (CONTRACT.md section 2's
+     * "Gap surfacing (pinned)"). Mirrors the model-trace schema's own
+     * top-level `messageGaps` field (see [com.dweekly.cyrinx.chat.app.ChatModelTraceEntry]). */
+    val messageGaps: Int = 0,
+    /** One entry per consumed `messageGap` event, in consumption order -- see
+     * [ChatMessageGapNotice]'s doc comment. Sticky (never cleared), matching
+     * [messageGaps]'s own accumulate-only semantics. */
+    val messageGapNotices: List<ChatMessageGapNotice> = emptyList(),
     /** Count of `messageStatusChanged` events whose `messageIdHex` matched no
      * known message (design brief: "unknown idHex is ignored (already-terminal
      * races) but counted in droppedStatusUpdates"). Not part of the pinned

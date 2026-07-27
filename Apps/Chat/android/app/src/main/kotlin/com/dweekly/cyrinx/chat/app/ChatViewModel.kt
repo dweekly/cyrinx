@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Lifecycle-aware `StateFlow<ChatUiState>` boundary over an injected
@@ -60,6 +61,28 @@ class ChatViewModel(
      * (see ../../CONTRACT.md section 5's reserved `diagnosticsButton` ID and
      * DiagnosticsSheet.kt's placeholder). */
     private val modelTraceRecorder: ChatModelTraceRecorder? = null,
+    /**
+     * Test-only DI seam: when non-null, THIS client is used instead of
+     * constructing a [SimulatedChatPair] from [config], and [config.simulated]
+     * is ignored. Exists so JVM tests can drive [ChatViewModel]'s real
+     * [applyEvent] collection loop with hand-built [ChatEvent]s -- in
+     * particular [ChatEvent.MessageGap], which chatkit's own
+     * [com.dweekly.cyrinx.chat.SimulatedChatTransportClient
+     * .testOnlyInjectionSeam] cannot reach from this module: that property is
+     * `internal` to `:chatkit`, and `:app` depends only on `:chatkit`'s public
+     * API (`implementation(project(":chatkit"))`, no `-Xfriend-paths`),
+     * matching this lane's read-only-`:chatkit` boundary. See
+     * `FakeChatTransportClient` (app's own test module) and
+     * ChatViewModelTest's messageGap-consumption tests. `null` (every
+     * production call site, via [ChatViewModelFactory]) reproduces the
+     * existing [SimulatedChatPair]-backed behavior exactly.
+     */
+    private val transportClientOverride: ChatTransportClient? = null,
+    /** Paired with [transportClientOverride]: this client's own idHex to use
+     * as [localPeerIdHex] when the override is active, since a fake transport
+     * client has no PRNG-derived identity a real [SimulatedChatPair] would
+     * supply. Ignored when [transportClientOverride] is null. */
+    private val overrideLocalPeerIdHex: String? = null,
 ) : ViewModel() {
     private val ownedScope: CoroutineScope = scope
     private val timeSourceRef: VirtualTimeSource = timeSource
@@ -85,7 +108,16 @@ class ChatViewModel(
     private val localPeerIdHex: String?
 
     init {
-        if (config.simulated) {
+        if (transportClientOverride != null) {
+            // Test-only seam -- see that parameter's doc comment. Skips
+            // SimulatedChatPair entirely; the fake's own `start()` (a no-op)
+            // still needs calling for interface parity with the production
+            // path, but nothing depends on it actually doing anything.
+            transportClient = transportClientOverride
+            localPeerIdHex = overrideLocalPeerIdHex
+            ownedScope.launch { transportClientOverride.start() }
+            ownedScope.launch { transportClientOverride.events.collect(::applyEvent) }
+        } else if (config.simulated) {
             val pair = SimulatedChatPair.create(config.scenario, config.seed, ownedScope, timeSourceRef)
             transportClient = pair.clientA
             localPeerIdHex = pair.clientA.id.toHexString()
@@ -115,6 +147,32 @@ class ChatViewModel(
                 )
         }
     }
+
+    /**
+     * This client's own outgoing-message `sequence` counter, mirrored locally
+     * because [ChatTransportClient.send] returns only `messageIdHex`
+     * (CONTRACT.md section 1.8), never the assigned `sequence` -- so
+     * [sendMessage] cannot read it off the send() result the way it reads
+     * `idHex`. DECISION (not pinned by any brief available to this lane):
+     * starts at `1` and increments by exactly `1` per ACCEPTED `send()` (the
+     * increment below only runs after `client.send(body)` has already
+     * returned successfully), mirroring CONTRACT.md section 2's own pinned
+     * "Outgoing sequence assignment" rule for the transport's real counter
+     * exactly -- both start at 1 and increment once per accepted send(), and
+     * this sample has no reconnection-scope reset (CONTRACT.md section 2:
+     * "there is no reconnection-scope reset in this sample") and only ever
+     * calls `send()` through this one client (see this class's own doc
+     * comment: "the design brief's product scope is a single local device's
+     * view of one conversation"), so nothing else can advance the transport's
+     * real counter out from under this mirror. [AtomicLong] because
+     * [sendMessage] launches a new coroutine per call on [ownedScope], which
+     * MAY run on a multi-threaded dispatcher (matches
+     * SimulatedChatTransportClient's own "[scope] ... MAY be backed by a
+     * genuinely multi-threaded dispatcher" note) -- though in practice
+     * chatkit's own per-client `commandInFlight` guard already serializes
+     * concurrent `send()` attempts to at most one accepted call at a time, so
+     * this is defense in depth, not the only thing preventing a race. */
+    private val nextOutgoingSequence = AtomicLong(1L)
 
     /** Applies one consumed [ChatEvent] via [ChatProjection.reduce] and records
      * the resulting projection to [modelTraceRecorder] (if attached). Uses
@@ -158,12 +216,17 @@ class ChatViewModel(
         ownedScope.launch {
             try {
                 val idHex = client.send(body)
+                // Only advances after client.send() has already returned
+                // successfully -- see [nextOutgoingSequence]'s doc comment for
+                // why this mirrors, rather than reads, the transport's own
+                // "per accepted send()" counter.
+                val sequence = nextOutgoingSequence.getAndIncrement()
                 val sentAtMs = timeSourceRef.nowMs()
                 val senderIdHex = localPeerIdHex
                 _uiState.update { current ->
                     val withMessage =
                         if (senderIdHex != null) {
-                            current.withOutgoingQueuedIfAbsent(idHex, body, senderIdHex, sentAtMs)
+                            current.withOutgoingQueuedIfAbsent(idHex, sequence, body, senderIdHex, sentAtMs)
                         } else {
                             current
                         }
