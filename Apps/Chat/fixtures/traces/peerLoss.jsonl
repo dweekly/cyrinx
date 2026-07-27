@@ -1,0 +1,9 @@
+{"eventSeq": 0, "virtualTimeMs": 50, "client": "A", "event": {"type": "peerFound", "peer": {"idHex": "beeb8da1", "displayName": "Peer-BEEB", "discoveredAtMs": 50}}}
+{"eventSeq": 0, "virtualTimeMs": 50, "client": "B", "event": {"type": "peerFound", "peer": {"idHex": "910a2dec", "displayName": "Peer-910A", "discoveredAtMs": 50}}}
+{"eventSeq": 1, "virtualTimeMs": 100, "client": "A", "event": {"type": "connectionChanged", "state": "connecting", "reason": null}}
+{"eventSeq": 2, "virtualTimeMs": 150, "client": "A", "event": {"type": "connectionChanged", "state": "connected", "reason": null}}
+{"eventSeq": 1, "virtualTimeMs": 150, "client": "B", "event": {"type": "connectionChanged", "state": "connected", "reason": null}}
+{"eventSeq": 3, "virtualTimeMs": 500, "client": "A", "event": {"type": "connectionChanged", "state": "disconnected", "reason": "peerSilenceTimeout"}}
+{"eventSeq": 2, "virtualTimeMs": 500, "client": "B", "event": {"type": "connectionChanged", "state": "disconnected", "reason": "peerSilenceTimeout"}}
+{"eventSeq": 4, "virtualTimeMs": 510, "client": "A", "event": {"type": "peerLost", "peerIdHex": "beeb8da1", "reason": "peerSilenceTimeout"}}
+{"eventSeq": 3, "virtualTimeMs": 510, "client": "B", "event": {"type": "peerLost", "peerIdHex": "910a2dec", "reason": "peerSilenceTimeout"}}

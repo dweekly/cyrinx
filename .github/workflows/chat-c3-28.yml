@@ -1,0 +1,70 @@
+# CI for the C3-28 chat sample lane (Apps/Chat only).
+#
+# Deliberately a separate workflow file from the repo-wide CI baseline
+# (C3-02, developed on another branch) so the two efforts cannot merge-
+# conflict. Covers the C3-28 suites, a pinned Swift 6.0 compatibility
+# lane, and the JVM-17 consumer compile check the PR review requested.
+name: chat-c3-28
+
+on:
+  push:
+    paths:
+      - "Apps/Chat/**"
+      - ".github/workflows/chat-c3-28.yml"
+  pull_request:
+    paths:
+      - "Apps/Chat/**"
+      - ".github/workflows/chat-c3-28.yml"
+
+jobs:
+  envelope-oracle:
+    name: Python envelope oracle self-test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run golden-vector self-test in a venv
+        run: |
+          python3 -m venv .venv
+          .venv/bin/python Apps/Chat/fixtures/tools/generate_golden.py --self-test
+
+  swift-chatkit:
+    name: CyrinxChatKit (Swift Testing)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: swift test
+        run: swift test --package-path Apps/Chat/CyrinxChatKit
+
+  swift-chatkit-swift-6-0:
+    name: CyrinxChatKit (Swift 6.0 Linux)
+    runs-on: ubuntu-24.04
+    container:
+      image: swift:6.0.3-jammy
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Report pinned compiler
+        run: swift --version
+      - name: swift test
+        run: >-
+          swift test
+          --package-path Apps/Chat/CyrinxChatKit
+          -Xswiftc -strict-concurrency=complete
+          -Xswiftc -warn-concurrency
+          -Xswiftc -warnings-as-errors
+
+  kotlin-chatkit:
+    name: chatkit + JVM-17 consumer compile (Gradle check)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: gradlew check
+        working-directory: Apps/Chat/android
+        run: ./gradlew --no-daemon check

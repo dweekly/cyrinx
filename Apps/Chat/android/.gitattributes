@@ -1,0 +1,11 @@
+# The Gradle Wrapper's Windows launcher script (gradlew.bat) requires CRLF
+# line endings to run correctly under cmd.exe -- this is the standard Gradle
+# Wrapper convention (the .gitattributes shipped by `gradle init`/`gradle
+# wrapper`, and https://docs.gradle.org/current/userguide/gradle_wrapper.html),
+# not an accidental line-ending mismatch introduced by an editor. Declaring it
+# explicitly here is the conventional Gradle fix: it stops `git diff --check`
+# (and diff/merge tooling in general) from flagging gradlew.bat's CRLF as
+# stray/trailing whitespace, and it pins the policy so a future checkout or
+# commit on a different platform's git `core.autocrlf` setting cannot silently
+# convert it to LF and break the script.
+*.bat text eol=crlf
