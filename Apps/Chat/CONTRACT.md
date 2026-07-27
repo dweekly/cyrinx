@@ -1,6 +1,6 @@
 # Chat application contract — types, transport client, simulator, traces
 
-Fresh as of 2026-07-23. Platform-neutral application contracts for the C3-28
+Fresh as of 2026-07-27. Platform-neutral application contracts for the C3-28
 chat sample, pinned by the C3-28 design brief and
 [`docs/CYRINX_3_PLAN.md`](../../docs/CYRINX_3_PLAN.md) Phase F ("Sample
 architecture"). This document is the spec; the Swift realization
@@ -190,6 +190,7 @@ sealed class ChatMessageDisplayStatus {
 | Field | Type | Notes |
 |---|---|---|
 | `id` | opaque bytes (128-bit) | Same value as the envelope's `messageId`. |
+| `sequence` | `UInt64` / `Long` | The envelope's `sequence` field (`ENVELOPE.md` §1.2): nonzero, sender-local, strictly increasing within the sending client's current connection scope (see §2's outgoing-sequence-assignment rule below). This — not `sentAtWallClockMs` — is the real cross-message ordering evidence; see `ENVELOPE.md` §6. |
 | `direction` | `incoming \| outgoing` | |
 | `body` | `String` | Decoded UTF-8 text. |
 | `senderPeerIdHex` | `String` | Lowercase hex. |
@@ -200,6 +201,7 @@ sealed class ChatMessageDisplayStatus {
 struct ChatMessage: Equatable, Identifiable {
     enum Direction: Equatable { case incoming, outgoing }
     let id: Data
+    var sequence: UInt64
     var direction: Direction
     var body: String
     var senderPeerIdHex: String
@@ -211,6 +213,7 @@ struct ChatMessage: Equatable, Identifiable {
 ```kotlin
 data class ChatMessage(
     val id: ByteArray,
+    val sequence: Long,
     val direction: Direction,
     val body: String,
     val senderPeerIdHex: String,
@@ -219,7 +222,7 @@ data class ChatMessage(
 ) {
     enum class Direction { INCOMING, OUTGOING }
     override fun equals(other: Any?) = other is ChatMessage && id.contentEquals(other.id) &&
-        direction == other.direction && body == other.body &&
+        sequence == other.sequence && direction == other.direction && body == other.body &&
         senderPeerIdHex == other.senderPeerIdHex &&
         sentAtWallClockMs == other.sentAtWallClockMs && status == other.status
     override fun hashCode() = id.contentHashCode()
@@ -230,12 +233,16 @@ data class ChatMessage(
 
 Every event carries `eventSeq`, monotonic from 0, **per client instance**
 (client A's and client B's `eventSeq` sequences are both independently
-zero-based and never compared to each other). Eight payload kinds:
+zero-based and never compared to each other). Nine payload kinds:
 `peerFound(ChatPeer)`, `peerUpdated(ChatPeer)`, `peerLost(idHex, reason)`,
 `connectionChanged(ChatConnectionState)`,
 `linkBudgetChanged(ChatLinkBudget)`, `messageReceived(ChatMessage)`,
+`messageGap(fromSequence, toSequence)`,
 `messageStatusChanged(messageIdHex, ChatMessageDisplayStatus)`,
-`clientFailed(reason)`.
+`clientFailed(reason)`. `messageGap` is unrelated to this section's own
+`eventSeq` gap-detection contract below (bounded-buffer drops of
+`ChatEvent`s) — see §2's "Gap surfacing (pinned)" for what it actually
+means (missing envelope `sequence` numbers, never delivered).
 
 No event is emitted for a client's implicit initial state (no peers,
 `disconnected(reason: nil)`) — events represent *transitions*, not the
@@ -265,6 +272,7 @@ struct ChatEvent: Equatable {
         case connectionChanged(ChatConnectionState)
         case linkBudgetChanged(ChatLinkBudget)
         case messageReceived(ChatMessage)
+        case messageGap(fromSequence: UInt64, toSequence: UInt64)
         case messageStatusChanged(messageIdHex: String, status: ChatMessageDisplayStatus)
         case clientFailed(reason: String)
     }
@@ -287,6 +295,9 @@ sealed class ChatEvent {
         override val eventSeq: Long, val budget: ChatLinkBudget,
     ) : ChatEvent()
     data class MessageReceived(override val eventSeq: Long, val message: ChatMessage) : ChatEvent()
+    data class MessageGap(
+        override val eventSeq: Long, val fromSequence: Long, val toSequence: Long,
+    ) : ChatEvent()
     data class MessageStatusChanged(
         override val eventSeq: Long,
         val messageIdHex: String,
@@ -463,6 +474,66 @@ Deterministic, in-process, driven by `(scenarioName, seed)`. Requirements:
    by the big-endian serialization of the second. This is pinned across
    Swift and Kotlin because §4's byte-identical-trace guarantee covers
    the `idHex` of every sent message appearing in a trace.
+
+   **Outgoing sequence assignment (pinned).** Each client's outgoing
+   message `sequence` (`ENVELOPE.md` §1.2; nonzero, not zero-based) starts
+   at `1` the moment that client's joint `connected` emission succeeds, and
+   increments by exactly `1` per accepted `send()`. That successful joint
+   `connected` emission is the sequence's ordering scope — the simulator
+   pairs exactly one scope per A/B run; there is no reconnection-scope
+   reset in this sample (see the Reconciliation paragraph in
+   `docs/CYRINX_3_PLAN.md`'s "Chat message envelope" section, which
+   reserves multi-scope/reconnection semantics for the live adapter,
+   C3-31). The sequence draw is a command-span mutation and executes
+   inside `send()`'s serialized span, per the Command ownership rule
+   below. A retried delivery via the test-only injection seam (below)
+   re-delivers the *same* encoded envelope bytes — same `messageId`, same
+   `sequence` — it is not a new `send()` and draws nothing new from any
+   stream.
+
+   **Receiver reorder window (pinned; 32 sequences).** A receiving client
+   buffers up to 32 sequences' worth of in-window out-of-order arrivals
+   and delivers them in strict `sequence` order — every `messageReceived`
+   a receiver emits is in ascending `sequence` order, even when the
+   underlying envelopes arrived out of order. Duplicate `messageId` is
+   discarded per the existing `duplicateIncoming` rule (§3.5), unchanged.
+   An envelope whose `sequence` was already delivered but whose
+   `messageId` is unseen is dropped, counted, and surfaced in the next
+   `messageGap` (below) rather than silently ignored — never delivered.
+
+   **Gap surfacing (pinned; `messageGap` event).**
+   `ChatEvent.messageGap(fromSequence, toSequence)` (§1.7) is emitted when
+   either: (a) a missing sequence is bypassed because an arrival's
+   `sequence` is 32 or more beyond it (falls outside the reorder window
+   above), or (b) the scope ends (`disconnect()`/`stop()`) with a gap
+   still unfilled. `fromSequence` is the first missing sequence and
+   `toSequence` is the last missing sequence in that run, inclusive.
+   After a gap is surfaced, later arrivals whose sequence falls inside the
+   already-surfaced range are dropped as stale — counted, never
+   delivered, never re-surfaced.
+
+   **Test-only injection seam (pinned; test-only, not part of any
+   scenario timeline).** Implementations expose a per-pair hook that
+   intercepts outgoing envelope bytes before delivery and applies
+   deterministic, virtual-time-scheduled reorder / duplicate / drop /
+   re-deliver operations, so tests can exercise the reorder window and
+   gap surfacing above. The seam defaults to a no-op, and none of the six
+   §3 scenario timelines invoke it — every one of those stays exactly as
+   documented in §3, event content and order unchanged, with scripted
+   sends now carrying their natural sequence numbers (e.g. `happyPair`'s
+   `msg1` is `sequence: 1`; `duplicateIncoming`'s retransmitted copy of
+   `msgDup` is the identical bytes, so the identical `sequence`, not a
+   second draw).
+
+   Both platforms must cover these rules with: `sequence` starting at `1`
+   and incrementing per accepted `send()`; a retried delivery via the
+   injection seam landing with the identical `messageId` and `sequence`;
+   in-window out-of-order arrivals delivered in ascending `sequence`
+   order; a duplicate-`sequence`/unknown-`messageId` arrival dropped; a
+   `messageGap` surfaced both at window bypass and at scope end; sequence
+   values appearing correctly in traces (§4); and injection-seam
+   determinism — the same seed plus the same seam script producing
+   byte-identical traces.
 
    **Behavior outside the six scenario tables (pinned).**
    `cancelSend(messageIdHex:)` cancels the message's remaining scheduled
@@ -854,7 +925,7 @@ eventSeq, virtualTimeMs, client, event
 ```json
 {"eventSeq": 0, "virtualTimeMs": 50, "client": "A", "event": {"type": "peerFound", "peer": {"idHex": "b1a2c3d4", "displayName": "Peer-B1A2", "discoveredAtMs": 50}}}
 {"eventSeq": 1, "virtualTimeMs": 100, "client": "A", "event": {"type": "connectionChanged", "state": "connecting", "reason": null}}
-{"eventSeq": 2, "virtualTimeMs": 380, "client": "B", "event": {"type": "messageReceived", "message": {"idHex": "…", "direction": "incoming", "body": "hello", "senderPeerIdHex": "…", "sentAtWallClockMs": 380, "status": "delivered"}}}
+{"eventSeq": 2, "virtualTimeMs": 380, "client": "B", "event": {"type": "messageReceived", "message": {"idHex": "…", "sequence": 1, "direction": "incoming", "body": "hello", "senderPeerIdHex": "…", "sentAtWallClockMs": 380, "status": "delivered"}}}
 ```
 
 - `eventSeq` — that emitting client's own `eventSeq` (NOT a global
@@ -878,7 +949,8 @@ eventSeq, virtualTimeMs, client, event
 | `peerLost` | `peerIdHex, reason` | |
 | `connectionChanged` | `state, reason` | `state` is one of `"disconnected"`, `"connecting"`, `"connected"`, `"degraded"`; `reason` is `null` except when `state == "disconnected"`. |
 | `linkBudgetChanged` | `budget: {classification, txLowerBoundBps, rxLowerBoundBps, confidence, ageMs}` | `classification` uses the wire strings from §1.3 (`controlOnly`, `text`, `thumbnail`, `bulk`); `txLowerBoundBps`/`rxLowerBoundBps` are `null` when unset. |
-| `messageReceived` | `message: {idHex, direction, body, senderPeerIdHex, sentAtWallClockMs, status}` | `direction` is `"incoming"` or `"outgoing"`; `status` is the current `ChatMessageDisplayStatus` at receipt (normally `"delivered"` from the receiver's own point of view — receiving IS the receiver's delivery). |
+| `messageReceived` | `message: {idHex, sequence, direction, body, senderPeerIdHex, sentAtWallClockMs, status}` | `direction` is `"incoming"` or `"outgoing"`; `status` is the current `ChatMessageDisplayStatus` at receipt (normally `"delivered"` from the receiver's own point of view — receiving IS the receiver's delivery). |
+| `messageGap` | `fromSequence, toSequence` | §2's "Gap surfacing (pinned)" rule. Emitted only via the test-only injection seam; never appears in the six §3 scenario timelines, so there is no worked example above. |
 | `messageStatusChanged` | `messageIdHex, status, failureReason` | `status` is one of `"queued"`, `"transmitting"`, `"delivered"`, `"failed"`; `failureReason` is `null` except when `status == "failed"`. |
 | `clientFailed` | `reason` | |
 
@@ -890,7 +962,14 @@ byte-identical to these files (Kotlin's
 `ChatTraceGoldenComparisonTest` and a Swift twin), and both comparisons
 FAIL — never skip — when a fixture file is missing, because they are
 merge-gate evidence. Regeneration is permitted only together with a
-change to this document, and the diff is reviewed like source.
+change to this document, and the diff is reviewed like source. This
+sequence amendment is exactly such a change: the `messageReceived` field
+order above and the new `messageGap` event type require regenerating
+`fixtures/traces/happyPair.jsonl` and `fixtures/traces/peerLoss.jsonl` —
+and, per the model-trace note below, `fixtures/model-traces/` — together
+with this document, in this same PR, under the same discipline as
+`ENVELOPE.md` §9 (spec change in the same PR, never a routine rerun):
+Swift generates, Kotlin asserts byte-identity, unchanged.
 
 **Known schema limitation.** `messageReceived.message` has no field for
 a failure reason alongside `status`; in every §3 scenario an incoming
@@ -898,6 +977,21 @@ message carries status `"delivered"` (reception is the receiver's own
 delivery observation), so the gap is not exercised. A future
 receive-side failure status requires a versioned trace-schema change
 adding that field, not an in-place reinterpretation.
+
+**Model-trace cross-reference.** A separate, higher-level trace exists
+at the UI-model layer (`ChatModelTraceEntry`/`ChatModelTraceJson` on
+Apple, `ChatModelTrace.kt` on Android; pinned by the C3-29/30 design
+brief, not this document) that records one line per consumed `ChatEvent`
+describing the model's current projected state — a `messages` array of
+per-message entries plus its own unrelated top-level `gap` boolean (tied
+to this section's `eventSeq` gap-detection contract, not to
+`messageGap`). This sequence amendment also touches that schema:
+`messages` entries gain `sequence` after `idHex` (→ `{idHex, sequence,
+direction, status}`), and each line gains a new top-level `messageGaps`
+field (`Int`/`Long`, default `0`) counting `messageGap` `ChatEvent`s
+surfaced so far. That schema's committed goldens
+(`fixtures/model-traces/`) regenerate together with this document's
+changes, under the same regeneration discipline described above.
 
 ## 5. Accessibility identifiers and launch arguments
 
