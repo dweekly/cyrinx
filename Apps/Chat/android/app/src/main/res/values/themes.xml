@@ -1,0 +1,12 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- This is a Compose-only app: all real theming (color scheme, typography)
+      lives in ui/ChatTheme.kt's MaterialTheme. This manifest theme only controls
+      the window background/status bar before Compose content is laid out, so it
+      deliberately parents a plain platform theme rather than pulling in the
+      com.google.android.material (View-system Material Components) library just
+      for an XML theme name; see build.gradle.kts's dependency list, which has
+      no com.google.android.material entry. -->
+    <style name="Theme.CyrinxChat" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor" tools:targetApi="l">@android:color/white</item>
+    </style>
+</resources>

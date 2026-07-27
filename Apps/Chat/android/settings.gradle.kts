@@ -20,3 +20,4 @@ dependencyResolutionManagement {
 rootProject.name = "CyrinxChatAndroid"
 include(":chatkit")
 include(":consumer-compile-check")
+include(":app")

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      C3-30 scope: NO audio permission is requested and no audio API is touched
+      (see ../../CONTRACT.md's "Simulator-first development" and
+      docs/CYRINX_3_PLAN.md Phase F's C3-30 scope: "Request no physical audio
+      permission until the live adapter is enabled"). This sample runs entirely
+      against SimulatedChatTransportClient. The eventual live-adapter permission
+      is reserved here as a comment, not a live declaration, so C3-31 has a
+      documented, reviewable place to add it:
+
+      <uses-permission android:name="android.permission.RECORD_AUDIO" />
+      (C3-31: live Cyrinx SDK acoustic transport adapter; do not enable before
+      that stage lands the actual audio-route code this permission would gate.)
+    -->
+
+    <application
+        android:allowBackup="true"
+        android:icon="@android:drawable/ic_dialog_info"
+        android:label="@string/app_name"
+        android:roundIcon="@android:drawable/ic_dialog_info"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.CyrinxChat">
+        <activity
+            android:name=".MainActivity"
+            android:launchMode="singleTask"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>
