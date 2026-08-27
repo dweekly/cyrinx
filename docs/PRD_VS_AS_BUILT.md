@@ -105,7 +105,8 @@ ultrasonic band with this phone hardware**; asymmetric design would be
 required.
 
 Also out of scope vs. the PRD: encryption (the predecessor stack's
-X25519/CTR/HMAC envelope exists on the old PHY and is not yet integrated
+An experimental X25519 plus custom SHA-256 XOR/HMAC envelope exists on the old
+PHY and is not yet integrated
 with the bulk PHY), discovery/wake-up, and rate-adaptation hysteresis.
 
 ## The meta-lesson

@@ -7,6 +7,26 @@ date-labelled.
 Detailed evidence for every claim is in the cited document and its reproduction
 commands or content hashes.
 
+## Unreleased — documentation and claim-boundary corrections
+
+- Replaced the unqualified C-ABI stability claim with the actual boundary: a
+  public 2.x API, a versioned receiver contract, and an active ABI migration.
+- Quarantined the optional Apple/Android HIL crypto envelope as an unaudited
+  interoperability prototype. The implementation record now identifies the
+  custom SHA-256 XOR stream, eight-byte sequence, eight-byte truncated HMAC,
+  unauthenticated key exchange, and missing receive-side replay protection.
+- Classified the headline Cyrinx 2 measurements as integrity-record evidence,
+  not public replay, because the full raw captures, manifests, and frozen
+  binaries are absent from the checkout. New comparative headline claims now
+  require their replay bundle and command in the same change.
+- Updated the Cyrinx 3 status ledger and research roadmap so branch-only work,
+  simulator-only chat, stopped Rank 8 spikes, and the non-identifiable Rank 11
+  audit are not presented as merged or active capabilities.
+- Marked `walkthrough.md` as a historical legacy-HIL narrative and removed its
+  current-product wording.
+- Added a mechanical claims gate to prevent recurrence of the corrected
+  compatibility, security, and legacy-HIL phrases.
+
 ## v2.0.0 — 2026-07-17 — Cyrinx 2.0 Pixel receiver and goodput campaign
 
 - **Swift Format advanced to 603.0.0.** The strict `Sources`/`Tests` formatter
@@ -304,12 +324,13 @@ Merge of `acoustic-20kbps` (docs/ACOUSTIC_BULK_PHY.md).
 - 10-byte capabilities handshake; transducer-calibration EQ curves; programmatic
   acoustic gain staging.
 - Dynamic background room-tone noise notcher; closed-loop handshake.
-- Curve25519 ECDH key exchange + CTR/HMAC envelope (experimental, unaudited —
-  see SECURITY.md).
+- Curve25519 ECDH key exchange plus custom SHA-256 XOR/HMAC envelope
+  (experimental, unaudited — see SECURITY.md).
 
 ## 2026-02-12 → 2026-05-08 — Ultrasonic transport stack (original strand)
 
-- C core (`CCyrinx`) with stable ABI + Swift wrapper; bit-packed frame codec
+- C core (`CCyrinx`) with a public 2.x API and Swift wrapper; the general ABI
+  was not frozen. The stack also included a bit-packed frame codec
   (CRC16/CRC32C), fragmentation/reassembly; half-duplex ping-pong MAC with ACK +
   selective retransmission; ARC gear state machine; stream-multiplexed transport
   API; in-memory linked transport for deterministic tests.

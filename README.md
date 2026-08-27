@@ -14,8 +14,9 @@ desktop-to-phone links. It contains two largely separate strands:
 2. A **measured wideband bulk PHY** (audible band): in a close-range MacBook
    Pro-to-Pixel 7a test, Cyrinx 2.0 delivered **65.875 kbps of verified
    payload**, 80.1% above the previous 36.571 kbps result. Both measurements
-   used five transmissions with the same 250 ms pauses, so they are directly
-   comparable. A more aggressive no-pause experiment reached **69.652 kbps**,
+   used five transmissions with the same 250 ms pauses, so they are
+   schedule-comparable. Their verifier and retained-evidence strength differ;
+   see the claim boundary below. A more aggressive no-pause experiment reached **69.652 kbps**,
    but recovered fewer transmitted blocks (90.666% versus 98.481%).
    The canonical receiver is portable C (`CCyrinx`, `cyrinx_bulk`) with a thin
    Swift binding (`BulkPHY`); committed tests pin two-mic maximal-ratio
@@ -37,7 +38,9 @@ methodology, and the documented platform/physical-layer defect catalog.
 
 This repository currently provides:
 
-- A C core (`CCyrinx`) with a stable C ABI
+- A public 2.x C API (`CCyrinx`) with a versioned receiver contract and an
+  active compatibility migration plan; the general cross-platform ABI is not
+  yet frozen
 - A **portable-C wideband bulk PHY codec** (`cyrinx_bulk`: DetRng, CRC-32, K=7
   convolutional FEC + puncturing, Gray QAM, OFDM via a vendored KISS FFT behind
   the `cyrinx_fft` plan interface, soft Viterbi, **two-mic MRC demodulation**
@@ -103,6 +106,22 @@ five times 4 s is 38.400 kbps. The accounting and evidence limitations are
 recorded in the
 [historical correction ledger](scratch/hw20k/evidence/historical-metric-corrections-2026-07-17/results-ledger.json).
 
+### Evidence availability and claim boundary
+
+The 65.875 and 69.652 kbps rows are **integrity-record evidence** in this
+checkout: tracked ledgers retain aggregate outcomes and content hashes, but the
+full raw PCM, execution manifests, frozen decoder binaries, and complete replay
+reports are not included. Their arithmetic and object identity can be audited;
+they cannot be independently replayed from a fresh public checkout. The
+historical rows have weaker aggregate or expected-set records as described
+above. See the [v2.0.0 release evidence limits](docs/releases/v2.0.0.md#scope-and-limitations).
+
+New comparative headline claims require a public replay bundle containing the
+raw or losslessly equivalent inputs, frozen decoder, manifest, expected output,
+and one documented replay command. Internally retained evidence may still
+support release qualification when provenance and limitations are explicit,
+but it does not satisfy that public-comparison gate.
+
 ### What changed in Cyrinx 2.0
 
 The throughput increase is a bundle of PHY, receiver, and scheduling changes;
@@ -123,7 +142,7 @@ function-key area, with the bottom microphone near the built-in left speaker,
 48 kHz stereo `UNPROCESSED` capture, and the A/C enabled but cycling and
 uninstrumented. SPL was not instrumented. These are route-specific bench
 results, not general device guarantees. Exact denominators and content hashes
-are retained in the tracked
+are retained in the tracked, integrity-record
 [Cyrinx 2.0 Pixel evidence ledger](scratch/hw20k/evidence/pixel7a-cyrinx2-2026-07-17/results-ledger.json).
 
 With the robustness/diversity layer engaged, the link degrades gracefully

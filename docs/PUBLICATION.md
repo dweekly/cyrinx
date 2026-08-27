@@ -234,15 +234,14 @@ assertions at the tiered tolerance above.
       buffers and closed-loop rate adaptation driven by the sounder. Closes the
       "not-yet-integrated / not-real-time / not-rate-adaptive" gaps the README
       discloses.
-- [ ] **1.9 Optional crypto envelope (decoupled layer).** The X25519/CTR/HMAC
-      envelope is an **opt-in layer above the PHY, OFF by default**, never a
-      hard dependency of bulk transport. Deliverable includes a documented
-      **cost/security tradeoff table**: fixed handshake bytes + per-frame
-      nonce/tag overhead expressed as a *percentage of goodput at each MCS
-      tier*, so an implementing app can choose plaintext-bulk vs
-      authenticated-trickle per channel quality and its own threat model. The
-      overhead is near-free at 36 kbps and can dominate at the 138 bps measured MFSK
-      floor — make that explicit. (Renumbers later stages.)
+- [x] **1.9 Quarantine the optional crypto prototype.** Source inspection found
+      that the legacy HIL envelope uses X25519 plus a custom SHA-256-derived
+      XOR/HMAC construction, not a standard authenticated-encryption mode. It
+      is off by default, unauthenticated, lacks receive-side replay protection,
+      and is not integrated with bulk transport. The maintained deliverable is
+      an implementation/cost record and explicit non-security boundary.
+      Standard construction selection, identity binding, replay semantics,
+      cross-language vectors, and review are separate security work.
 - [ ] **1.10 OTA re-validation, library-native — PARTIAL.** The prospective
       Mac-to-Pixel campaign through the C core exceeds the old headline; the
       reverse direction, iPhone path, Android JNI path, and crypto-on

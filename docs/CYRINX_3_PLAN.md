@@ -1,7 +1,8 @@
 # Cyrinx 3.0 Delivery Plan
 
-Fresh as of 2026-07-23. Status: proposed execution decomposition, revised per
-PR #69 review: Rank 2's 4x real-time gate now blocks at C3-09/C3-10, Rank 5 is
+Fresh as of 2026-08-27. Status: proposed execution decomposition with the
+implementation ledger below. The dependency structure was revised per PR #69
+review: Rank 2's 4x real-time gate now blocks at C3-09/C3-10, Rank 5 is
 split (C3-20a measurements / C3-20b self-characterization / C3-21 sounding),
 the bounded capacity-predictor spike is restored as C3-21a, and C3-16 requires
 physical over-the-air smoke transfers.
@@ -36,6 +37,26 @@ replay, and research facility.
 The release implements Roadmap Ranks 1 through 7. Ranks 8 through 15 remain
 separately gated 3.x research unless a candidate clears its existing promotion
 criteria without delaying the critical path.
+
+## Implementation status ledger
+
+This ledger records repository state, not intent. It is pinned to
+`main@123a105`; branch-only code is not a merged capability.
+
+| Plan item | Status | Evidence and boundary |
+|---|---|---|
+| C3-01 | **MERGED** | Architecture, semantic contract, and API inventory merged in PR #75. |
+| C3-02 through C3-05 | **BRANCH-ONLY CANDIDATE** | Bundled candidate at `origin/c3-02-05-batch-demod@2370fe2`; not on `main`. It requires reconstruction, branch-tip equivalence accounting, and re-verification of the safety/endian/race fixes before promotion. |
+| C3-06 through C3-27 | **NOT MERGED** | No independently gated implementation is present on `main`. Incidental candidate code on another branch does not complete these tasks. |
+| C3-28 | **MERGED** | Cross-platform chat contract, envelope, deterministic simulator, and golden traces merged in PR #70. |
+| C3-29 | **MERGED, OFFLINE ONLY** | Apple simulator chat app merged in PR #73; it is not a live acoustic transport. |
+| C3-30 | **MERGED, OFFLINE ONLY** | Android simulator chat app merged in PR #74; it is not a JNI/live acoustic transport. |
+| C3-31 through C3-35 | **NOT STARTED / DEPENDENCY-BLOCKED** | Live chat and qualification depend on the packaged C3-27 SDK and the intervening physical/session path. |
+
+Research-spike status is maintained in [ROADMAP.md](../ROADMAP.md). In
+particular, Rank 8's four offline spikes stopped without integration, and the
+Rank 11a retained-corpus audit stopped as not identifiable. Those results do
+not advance the numbered C3 delivery path.
 
 ## Release invariants
 
