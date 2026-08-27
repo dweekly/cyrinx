@@ -100,11 +100,11 @@ typedef struct {
     uint8_t crc_fail;
 } cyrinx_channel_report_t;
 
-#define CYRINX_DEVICE_GENERIC     0x00
+#define CYRINX_DEVICE_GENERIC 0x00
 #define CYRINX_DEVICE_MACBOOK_PRO 0x01
-#define CYRINX_DEVICE_PIXEL_7A    0x02
-#define CYRINX_NOTCH_MASK_BYTES   14
-#define CYRINX_PUBLIC_KEY_BYTES   32
+#define CYRINX_DEVICE_PIXEL_7A 0x02
+#define CYRINX_NOTCH_MASK_BYTES 14
+#define CYRINX_PUBLIC_KEY_BYTES 32
 #define CYRINX_CAP_PAYLOAD_SECURE_BYTES 56
 
 typedef struct {
@@ -127,7 +127,6 @@ typedef struct {
     uint8_t peer_notch_mask[CYRINX_NOTCH_MASK_BYTES];
     uint8_t peer_public_key[CYRINX_PUBLIC_KEY_BYTES];
 } cyrinx_metrics_t;
-
 
 typedef struct {
     float up_g2_to_qpsk_snr_db;
@@ -196,7 +195,6 @@ typedef struct {
     uint8_t notch_mask[CYRINX_NOTCH_MASK_BYTES];
     uint8_t local_public_key[CYRINX_PUBLIC_KEY_BYTES];
 } cyrinx_config_t;
-
 
 /* Returns the semantic version string of the linked cyrinx core. */
 CYRINX_API const char *cyrinx_version(void);
