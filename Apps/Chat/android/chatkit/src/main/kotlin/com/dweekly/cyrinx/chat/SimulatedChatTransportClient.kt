@@ -661,7 +661,10 @@ class SimulatedChatTransportClient internal constructor(
      * module-wide, so this is reachable from this module's test source set
      * without weakening [pendingSendJobs] itself past `private`. */
     internal val pendingSendJobCount: Int
-        get() = synchronized(pendingSendJobs) { pendingSendJobs.size }
+        get() =
+            synchronized(lifecycleLock) {
+                synchronized(pendingSendJobs) { pendingSendJobs.size }
+            }
 
     private val backgroundJobs = CopyOnWriteArrayList<Job>()
 
