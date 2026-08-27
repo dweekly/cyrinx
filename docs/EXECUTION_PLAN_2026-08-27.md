@@ -48,6 +48,18 @@ Reviewed revision: `main@123a105`.
    baseline. Do not refactor behavior merely to reduce lint counts in this
    tranche.
 
+## Delivery status at the Phase 3 review checkpoint
+
+| Work | Delivery | State |
+|---|---|---|
+| Android completion barrier | PR [#77](https://github.com/dweekly/cyrinx/pull/77) | Isolated and validated; not treated as merged here. |
+| Claim corrections, claims gate, and this plan | PR [#78](https://github.com/dweekly/cyrinx/pull/78) | Isolated and validated; updated with Phase 3 review evidence. |
+| Formatter ownership and KISS FFT integrity | PR [#79](https://github.com/dweekly/cyrinx/pull/79) | Isolated and validated. |
+| SwiftLint baseline | PR [#80](https://github.com/dweekly/cyrinx/pull/80) | Isolated and validated. |
+
+C3 reconstruction does not stack on these branches. Its implementation base is
+the reviewed result after the prerequisite PRs are accepted and merged.
+
 ## Operating constraints
 
 1. Each phase produces a reviewable diff and must pass its own gate before the
@@ -197,6 +209,14 @@ checked-in baseline, and contains no behavioral source refactor.
 
 ### Phase 3 — Reconstruct and review C3-02 through C3-05
 
+**Current checkpoint:** branch-tip review is complete and implementation is
+paused for contract critique. The empirical findings, expected divergence
+ledger, and proposed reconstruction contracts are recorded in
+[C3-02 through C3-05 branch-tip review](reviews/C3_02_05_TIP_REVIEW_2026-08-27.md).
+The review found promotion blockers in every bundled phase, including an
+off-by-one interleaved-stride calculation left by the tip fix, so no branch hunk
+is accepted merely because the existing sanitizer suites pass.
+
 The review target is the **tip** of `origin/c3-02-05-batch-demod`:
 
 ```text
@@ -272,10 +292,23 @@ extensibility, platform-sized wire/API field, retained borrowed string,
 inconsistent metric meaning, binding-specific result, sanitizer finding,
 TSAN finding, or unlisted branch divergence.
 
+**Decisions required before implementation:** fixed-width ABI prefix/count
+representation, 32-byte SHA-256 versus a truthfully sized non-cryptographic
+profile fingerprint, separation of route qualification from wire identity,
+caller-provided versus fixed-capacity block validity, and exclusion of the
+Swift session facade until C3-06.
+
 ### Phase 4 — Specify the C3-08 through C3-10 feasibility gates
 
 This phase writes and reviews acceptance criteria. It does not implement C3-08
 or imply that streaming exists because batch parity passes.
+
+**Draft delivered for critique:**
+[C3-08 through C3-10 promotion gates](C3_08_10_GATE_SPEC.md). The draft defines
+the cross-binding matrix, exact versus toleranced fields, negative controls,
+chunk and render schedules, soak criteria, callback-safety instrumentation,
+evidence provenance, and the numeric decisions that must be fixed before
+implementation. It remains unapproved and does not authorize C3-08 work.
 
 1. Specify the C3-08 direct-C/Swift/JNI conformance matrix over retained and
    malformed fixtures.
