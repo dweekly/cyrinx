@@ -66,4 +66,5 @@ if ! rg -q "Line Length Violation" "$TEMP_DIR/negative.log"; then
     exit 1
 fi
 
-echo "SwiftLint baseline matches 69 existing violations; seeded new violation rejected."
+baseline_violation_count="$(jq 'length' "$TEMP_DIR/expected.json")"
+echo "SwiftLint baseline matches $baseline_violation_count existing violations; seeded new violation rejected."
