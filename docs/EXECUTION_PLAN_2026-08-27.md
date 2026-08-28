@@ -56,6 +56,7 @@ Reviewed revision: `main@123a105`.
 | Claim corrections, claims gate, and this plan | PR [#78](https://github.com/dweekly/cyrinx/pull/78) | Isolated and validated; updated with Phase 3 review evidence. |
 | Formatter ownership and KISS FFT integrity | PR [#79](https://github.com/dweekly/cyrinx/pull/79) | Isolated and validated. |
 | SwiftLint baseline | PR [#80](https://github.com/dweekly/cyrinx/pull/80) | Isolated and validated. |
+| Minimum repository static CI | PR [#81](https://github.com/dweekly/cyrinx/pull/81) | Locally validated; Actions execution is blocked by an account billing lock. |
 
 C3 reconstruction does not stack on these branches. Its implementation base is
 the reviewed result after the prerequisite PRs are accepted and merged.
@@ -210,16 +211,19 @@ checked-in baseline, and contains no behavioral source refactor.
 
 #### 2.3 Minimum repository CI enforcement
 
-PR #78 adds an unfiltered pull-request workflow for the claims gate. Format,
-vendor-integrity, and lint enforcement cannot be added on any one isolated
-prerequisite branch because their passing implementations are split across PRs
-#79 and #80.
+PRs #78 through #80 are merged. PR
+[#81](https://github.com/dweekly/cyrinx/pull/81) is the independent follow-up
+that runs claims, format/vendor integrity, and lint on every pull request. It
+also repairs the merged `lint.sh` integration: SwiftLint 0.65.1 returned
+nonzero for all 69 known violations when invoked directly with the baseline,
+so the gate now regenerates and exactly compares the violation set before
+running its seeded-new-violation test.
 
-After PRs #78 through #80 are accepted and merged, the next independent change
-adds a minimum repo-wide workflow running claims, format/vendor integrity, and
-lint. It lands before any C3 reconstruction. Until then, claims are enforced by
-CI but format/vendor/lint remain locally validated and voluntary; this is an
-explicit temporary enforcement gap, not a green-CI claim.
+The complete static gate passes locally. GitHub currently starts none of its
+jobs because the account is locked due to a billing issue; the failed runs have
+zero executed steps and an infrastructure annotation. PR #81 is therefore not
+CI-green, and C3 reconstruction remains blocked until billing is restored and
+the workflow executes successfully on the hosted runners.
 
 ### Phase 3 — Reconstruct and review C3-02 through C3-05
 
