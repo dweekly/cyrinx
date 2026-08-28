@@ -1,5 +1,20 @@
 # C3-03 Through C3-05 Reconstruction Record
 
+## In plain English
+
+The July Cyrinx 3.0 branch was rejected in review, so its three pieces were
+rebuilt from scratch: the rulebook for versioned C structs (so old apps and
+new library versions can coexist), the catalog of radio presets with real
+SHA-256 fingerprints, and the "decode this recording" function with proper
+stereo handling. This document is the paper trail: which decisions were made
+and why, exactly what was kept from the old branch (mostly the preset values
+and enum numbering — credited in the reuse ledger below), how the result was
+tested, and what still has to happen (the Android side, comparisons against
+the Python reference, cross-device checks, CI) before these pieces count as
+finished rather than experimental.
+
+---
+
 Date: 2026-08-28
 Reconstruction base: `main@b4201c4` (after the claims, format-ownership, and
 lint-baseline gates merged).
