@@ -1,5 +1,20 @@
 # Cyrinx Gate Recovery and C3 Integration Execution Plan
 
+## In plain English
+
+An audit found two kinds of problems: the documentation claimed more than the
+code delivers, and a big July branch of Cyrinx 3.0 work was too buggy to
+merge. This plan is the cleanup, in order: fix one flaky Android test
+(PR #77); correct the docs and add an automatic checker that fails CI if the
+overclaims come back (PR #78); decide which files the code formatter owns and
+freeze the existing lint debt so new code stays clean (PRs #79–#80); rebuild
+the July branch's ideas properly on a fresh base (PR #82); and write the
+acceptance tests for real-time streaming *before* anyone builds it. Every
+phase is its own reviewable PR, and nothing in this plan claims streaming or
+on-device features exist yet.
+
+---
+
 Fresh as of 2026-08-27. Status: **revised after critique; decisions recorded**.
 The plan governs the next engineering tranche, ending after C3-05 integration
 and the C3-08 through C3-10 gate specification. C3-08 implementation is outside

@@ -1,5 +1,19 @@
 # Cyrinx 3.0 Delivery Plan
 
+## In plain English
+
+Cyrinx today is a research codebase that proved fast data-over-sound is
+possible. Cyrinx 3.0 is the plan to turn it into an SDK someone could
+actually build an app on: one C core doing the signal processing, Swift and
+Android as thin wrappers around it, real streaming from microphone and
+speaker instead of one-shot recording decodes, and honest evidence behind
+every claim. The work is broken into PR-sized steps (C3-01 through C3-35)
+with dependencies and a definition of done for each. The ledger just below
+tracks which steps have actually merged — most have not, and this document
+is deliberately careful never to describe planned work as finished.
+
+---
+
 Fresh as of 2026-08-27. Status: proposed execution decomposition with the
 implementation ledger below. The dependency structure was revised per PR #69
 review: Rank 2's 4x real-time gate now blocks at C3-09/C3-10, Rank 5 is
