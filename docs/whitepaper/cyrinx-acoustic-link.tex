@@ -1453,12 +1453,14 @@ with the same claims-versus-measurement discipline as the rest of the paper.
 
 \subsection{What each era delivered}
 
-Table~\ref{tab:eras} summarizes the development eras. Attribution for the
+Table~\ref{tab:eras} summarizes the development eras. Detailed machine-readable indicators of AI involvement (e.g., specific models, scopes, and verification logs) are documented at the repository root under \texttt{AI\_DISCLOSURE.md} conforming to emerging AI content transparency guidelines. Attribution for the
 2026 February--May era is from the operator's records (sessions with OpenAI
 GPT-5.5 tooling, which did not stamp commit trailers); attribution for the
 June and July eras is from \texttt{Co-Authored-By} commit trailers in the
 repository history, verifiable with
-\texttt{git log --pretty="\%ad \%(trailers:key=Co-Authored-By)"}.
+\texttt{git log --pretty="\%ad \%(trailers:key=Co-Authored-By)"}, and the Cyrinx 3.0 era is from operator's session records. That era's output remained
+branch-only: a 2026-08-27 branch-tip review found it not promotable, and
+reconstruction against reviewed contracts is pending.
 
 \begin{table}[t]
 \centering
@@ -1498,6 +1500,13 @@ to digital calibration found and fixed (floor erasure policy, floor stereo
 combining, MRC-aware sounding + CP-retry fallback) & --- &
 \textbf{138\,bps} RS floor (9/9 frames); \textbf{11.366\,kbps} with 75/75
 blocks MRC-carried where neither microphone decoded alone \\
+\addlinespace
+Jul 20 (1 day) & Gemini / Antigravity 2.0 (operator records) &
+Cyrinx 3.0 versioned C ABI base, profile registry, and batch capture
+contract experiments & --- &
+Digital/in-memory loopback only; branch never merged (2026-08-27 review:
+not promotable). No OTA result; the repository's 65.875\,kbps flagship is
+the July 17 campaign, not this era \\
 \bottomrule
 \end{tabular}
 \end{table}

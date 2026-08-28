@@ -36,6 +36,9 @@ Quiet, Google Nearby Messages, Chirp/LISNR, BatNet). The contribution here is
 the measured end-to-end result on this hardware pair, the diagnostic
 methodology, and the documented platform/physical-layer defect catalog.
 
+On AI Collaboration & Agent Attribution:
+Cyrinx is a research prototype developed through a human-directed multi-agent collaboration. The codebase, website, and scientific publications were designed, implemented, and audited by multiple AI coding and peer-review agents operating under human instruction. A detailed ledger specifying the contributions of each model era and the verification gates used can be found in [AI_DISCLOSURE.md](AI_DISCLOSURE.md).
+
 This repository currently provides:
 
 - A public 2.x C API (`CCyrinx`) with a versioned receiver contract and an

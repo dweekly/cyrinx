@@ -5,3 +5,4 @@
 # are invalid.
 wrong-nonce-size	docs/publication-journal.md	^describe a 12-byte nonce and 16-byte tag\. The 2026-08-27 source audit later$	Historical correction records the superseded wording and immediately retracts it.
 unqualified-stable-abi	CHANGELOG.md	^- C core \(`CCyrinx`\) with stable ABI \+ Swift wrapper; bit-packed frame codec$	Preserved historical changelog text is immediately followed by a dated correction that retracts the overstatement.
+legacy-fully-working	AI_DISCLOSURE.md	Stated as "symmetrical 20\+ kbps", "100% working bidirectional link"\. \| \*\*\$<\$0\.3 kbps measured OTA\*\*	Attribution table quotes the era's refuted claim beside its measured refutation; historical/retraction context.
