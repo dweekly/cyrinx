@@ -37,6 +37,12 @@ hardware-dependent checks. Run `swift test` for focused validation and
 
 Recent history uses short imperative commit subjects, for example `Add Android HIL app, ADB automation, and macOS Android HIL CLI`. Keep commits focused and avoid mixing generated artifacts with source edits unless the generation step is the change. PRs should include a concise summary, linked issue if applicable, test commands with results, and screenshots or diagnostic logs for HIL, Android, macOS, or UI-facing changes.
 
+## Plain English First (Docs & PRs)
+
+Every PR description starts with a `## Plain English summary`: a few sentences a developer new to the project could follow — what changed, why, and what it means for them — with no project dialect (no "promotion gates", "tranches", "identity digests" in the summary). Technical precision goes in a section below the summary, never in place of it.
+
+Every substantial document under `docs/` leads with an `## In plain English` section under the same rule. Plain does not mean loose: summaries must stay inside the claim boundaries enforced by `scripts/check-claims.sh` — say what is measured, built, or planned, and never present planned work as finished.
+
 ## Python Development & Environment Rules
 
 - **Use a Virtual Environment (`venv`)**: You must always use a Python virtual environment (`.venv`) for all Python package installations and running any diagnostic/analysis scripts. Do not install Python packages globally or using `--break-system-packages` on the system Python. Always invoke scripts using the `.venv/bin/python` interpreter.

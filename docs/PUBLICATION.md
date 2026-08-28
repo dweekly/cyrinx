@@ -1,5 +1,15 @@
 # Cyrinx Publication Plan
 
+## In plain English
+
+How Cyrinx went public, and what's left. Done: the library was cleaned up
+and released under Apache-2.0, the cyrinx.org site and both whitepapers were
+published, and v2.0.0 shipped. Remaining: archive the raw Cyrinx 2.0
+measurement evidence and submit the paper to arXiv. The numbered steps below
+are the working record of that effort.
+
+---
+
 Fresh as of 2026-07-17. This document retains the sequenced, multi-PR plan that
 took Cyrinx from a private prototype to a public Apache-2.0 v1.0.0 release. The
 remaining publication work is to archive the raw Cyrinx 2.0 evidence and

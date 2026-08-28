@@ -1,5 +1,19 @@
 # Experimental Crypto Envelope — Implementation and Cost Boundary
 
+## In plain English
+
+The old ultrasonic stack includes optional encryption, off by default. This
+document explains what it really is and why you should not rely on it: the
+key exchange can be hijacked by an active attacker, the cipher is a
+home-made construction rather than a reviewed standard mode, the
+authentication tag is short, and there is no protection against replayed
+frames. The speed cost of the envelope is tiny — 16 bytes per frame, well
+under 1% at bulk rates — so the reason it stays off is trust, not
+throughput. If real security is ever needed, the answer is a reviewed
+standard construction, which is separate future work.
+
+---
+
 Fresh as of 2026-08-27. Status: **documentation quarantine**. The legacy Apple
 and Android HIL paths contain an opt-in confidentiality/integrity prototype,
 off by default. It is not a standard authenticated-encryption construction,

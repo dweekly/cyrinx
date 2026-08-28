@@ -1,5 +1,22 @@
 # Draft C3-08 Through C3-10 Promotion Gates
 
+## In plain English
+
+This document writes the exam before the student exists. C3-08 through C3-10
+are the future streaming features, and this spec defines the tests each must
+pass to count as done: C3-08 proves the same recording decodes to identical
+results whether you call the C library directly, from Swift, or from Kotlin;
+C3-09 is the real-time receiver — listening continuously, in arbitrary-sized
+chunks, must produce the same answers as decoding a whole recording at once,
+without ever allocating memory or stalling inside the audio callback; C3-10
+is the transmit queue — the audio it renders must be sample-identical no
+matter how playback slices it. Writing the pass/fail criteria first keeps
+"done" from being renegotiated after the code is written. Numbers marked
+provisional get measured on real devices before being frozen, and approving
+this document does not start any of the implementation work.
+
+---
+
 Date: 2026-08-27
 Status: **draft for critique; no C3-08, C3-09, or C3-10 implementation is
 authorized by this document**
