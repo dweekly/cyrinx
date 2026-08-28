@@ -1,0 +1,7 @@
+# rule_id<TAB>path<TAB>full-line-regex<TAB>rationale
+#
+# Exceptions must identify one rule, one repository-relative path, and a regex
+# matching only the justified line. Directory-wide and path-only exceptions
+# are invalid.
+wrong-nonce-size	docs/publication-journal.md	^describe a 12-byte nonce and 16-byte tag\. The 2026-08-27 source audit later$	Historical correction records the superseded wording and immediately retracts it.
+unqualified-stable-abi	CHANGELOG.md	^- C core \(`CCyrinx`\) with stable ABI \+ Swift wrapper; bit-packed frame codec$	Preserved historical changelog text is immediately followed by a dated correction that retracts the overstatement.

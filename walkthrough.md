@@ -1,6 +1,13 @@
 # Cyrinx Android OFDM & Bidirectional HIL Walkthrough
 
 > [!IMPORTANT]
+> **Historical lab narrative; not current setup or product documentation.**
+> This file preserves an early HIL investigation, including failure logs and
+> commands tied to the legacy ultrasonic transport. It does not describe the
+> measured Cyrinx 2 bulk-PHY runtime, the simulator-only chat apps, or a
+> supported bidirectional SDK. Use `README.md`, `docs/IOS_HIL.md`, and
+> `Apps/HIL/README.md` for maintained status and setup guidance.
+>
 > **2026-06-09 correction and update.** The "Symmetrical 20+ kbps" claim later
 > in this document was a theoretical capacity computation, not a measurement;
 > the actually measured goodput of the system described below was under
@@ -17,9 +24,11 @@ This document outlines the design, implementation, and physical validation resul
 
 ---
 
-## 🚀 Historic Milestone: Symmetrical Bidirectional Success!
+## Historical observation: packet decodes in both directions
 
-We have successfully established a **100% working, bidirectional over-the-air acoustic link** between a MacBook Pro and a physical Pixel 7a! 
+This run produced packet decodes in both directions between one MacBook Pro and
+one Pixel 7a. It did not establish reliable message delivery, symmetric
+goodput, general placement tolerance, or a production session.
 
 During our fine-tuned sweet-spot trial:
 * **macOS Master** successfully received and decoded **3 distinct logical messages** over-the-air from the Android Slave:
@@ -36,7 +45,7 @@ During our fine-tuned sweet-spot trial:
 
 ---
 
-## 🚀 Core Work Completed
+## Historical implementation work
 
 ### 1. High-Performance Radix-2 Cooley-Tukey FFT in Kotlin
 To support real-time 1024-point forward and inverse Fourier transforms without introducing garbage collection pauses or thread stalls, we developed [FFT.kt](https://github.com/dweekly/cyrinx/blob/main/Apps/HIL/android/app/src/main/java/com/dweekly/cyrinxhil/FFT.kt) featuring:
@@ -44,7 +53,7 @@ To support real-time 1024-point forward and inverse Fourier transforms without i
 * **Precomputed Bit-Reversal Tables** computed once on instantiation to eliminate real-time bitwise operations.
 * **Precomputed Twiddle Factors** utilizing trigonometric symmetries to avoid dynamic `sin` and `cos` CPU calls during DSP callbacks.
 
-### 2. Complete Kotlin OFDM Modulator & Demodulator Port
+### 2. Kotlin OFDM modulator and demodulator experiment
 We ported the Swift/C physical layers into the Android companion app's [AcousticPhyLink.kt](https://github.com/dweekly/cyrinx/blob/main/Apps/HIL/android/app/src/main/java/com/dweekly/cyrinxhil/AcousticPhyLink.kt):
 * **Bin Mapping & Conjugate Symmetry**: Dynamically mapped raw active carrier bins according to configured frequency bands ($\Delta f = \frac{F_s}{N_{FFT}}$) and applied Hermite mirroring for real-valued time-domain signal generation.
 * **Modulation**: Integrated inverse FFT transforms, pre-pended a 96-sample Cyclic Prefix (CP) for multipath guard immunity, and enforced adaptive transmit-gain safety limits.
@@ -56,7 +65,8 @@ We ported the Swift/C physical layers into the Android companion app's [Acoustic
 ## 📊 Physical Validation Summary
 
 ### Phase 1: In-Memory Target Self-Test
-The Kotlin physical layer was validated via isolated, mathematical roundtrips directly on the Pixel 7a target. Triggers executed with **100% accuracy**:
+The Kotlin physical layer produced passing isolated mathematical-roundtrip logs
+on the Pixel 7a target in this run:
 ```
 [adb logcat -d -s CyrinxHILAndroid]
 self_test ok=true dcssOk=true (samples=16120) ofdmOk=true (samples=5560)
@@ -65,9 +75,11 @@ self_test ok=true dcssOk=true (samples=16120) ofdmOk=true (samples=5560)
 ### Phase 2: Over-The-Air (OTA) HIL Trials
 We evaluated the physical link over-the-air across two modes:
 
-#### 1. Air-Coupled Sweet Spot (`tx_gain = 0.20`, `sync_threshold = 0.16`) ➔ **BIDIRECTIONAL SUCCESS**
-* **Master ➔ Slave Link**: **100% Resilient Decodes**. The Slave successfully synchronized and parsed 22 individual packets.
-* **Slave ➔ Master Link**: **Successful Decodes**. The macOS Master successfully decoded 3 full data messages under ambient room noise.
+#### 1. Air-coupled selected pose (`tx_gain = 0.20`, `sync_threshold = 0.16`)
+* **Master ➔ Slave Link**: the slave synchronized and parsed 22 packets in the
+  retained log excerpt.
+* **Slave ➔ Master Link**: the macOS master decoded three messages in the
+  retained log excerpt. No controlled ambient-noise measurement was recorded.
 
 #### 2. Fully Coupled (Chassis Metal-to-Metal Contact) ➔ **CRC Failures**
 * When the phone was rested directly on the laptop keyboard/chassis, the speaker's physical vibrations conducted directly through the aluminum metal frame.
@@ -76,9 +88,11 @@ We evaluated the physical link over-the-air across two modes:
 
 ---
 
-## 🎯 Production Execution Guide
+## Historical reproduction commands
 
-To run a flawless bidirectional dynamic session:
+These commands record the configuration used by the legacy experiment. They
+are not a supported production procedure and may require revision against the
+current package and HIL applications.
 
 1. **Reposition the Devices**:
    * Hold the phone or rest it on a soft surface (mousepad, notebook, or cloth) immediately next to your MacBook (5–15 cm / 2–6 in distance).
@@ -126,9 +140,12 @@ We have successfully implemented and physically validated the complete closed-lo
   $$\text{THD}_{\text{pct}} = \sqrt{\frac{\sum_{n=2}^{M} |X(nf_0)|^2}{|X(f_0)|^2}} \times 100\%$$
 * Caps transmit gains cap if THD exceeds $5\%$ to keep hardware in its linear regions.
 
-### 4. Mathematical Validation Results
-* **Swift Stack**: **100% SUCCESS**. Unit test `testMIMOSVDAndTHD` executed 35/35 passing tests in `CyrinxAcousticPHYTests.swift` (`0 failures`).
-* **Android Stack**: **100% SUCCESS**. Gradle compiled and deployed safely, passing target self-tests upon application start on the Pixel 7a:
+### 4. Historical deterministic test results
+* **Swift Stack**: `testMIMOSVDAndTHD` was part of a 35/35 passing test run in
+  `CyrinxAcousticPHYTests.swift`.
+* **Android Stack**: Gradle compiled and the application emitted passing target
+  self-test logs on the Pixel 7a. These tests did not establish a measured 2x2
+  acoustic channel or a MIMO throughput result:
   ```
   05-22 20:30:52.418 I CyrinxHILAndroid: Preamble lock found! start=0 corr=0.762 snrDb=1.42
   05-22 20:30:52.440 I CyrinxHILAndroid: Preamble lock found! start=0 corr=0.998 snrDb=26.13
@@ -202,18 +219,26 @@ graph TD
 ---
 
 ### 4. POC 7: ECDH Cryptographic Key Exchange Envelope
-* **Goal**: Establish a mathematically secure, encrypted session out-of-band using ephemeral Elliptic-Curve Diffie-Hellman (ECDH) X25519 key exchanges and secure transmissions with an Encrypt-then-MAC (EtM) envelope.
+* **Historical goal**: Prototype an encrypted session using X25519 key
+  agreement and a custom encrypt-then-MAC envelope. The experiment did not
+  establish a secure protocol.
 * **Core Code**: [crypto_handshake.py](https://github.com/dweekly/cyrinx/blob/main/scratch/crypto_handshake.py)
 * **Physical Measurements & Results**:
-  * Programmed a zero-dependency, constant-time Montgomery Ladder X25519 point multiplication engine in pure Python.
+  * Programmed a zero-dependency Montgomery-ladder X25519 point-multiplication
+    experiment in pure Python. No constant-time audit was performed.
   * Alice and Bob generated ephemeral private scalars, successfully exchanged $u$-coordinates, and derived identical shared secrets mathematically.
-  * Secured a 10-byte Cyrinx control frame (`e1024c4f4...`) using SHA-256 in Counter Mode (CTR) and HMAC-SHA256. Tampered payloads (bit-flipping attacks) were instantly detected and blocked.
+  * Wrapped a 10-byte Cyrinx control frame (`e1024c4f4...`) with the custom
+    SHA-256-derived XOR stream and HMAC-SHA256. A test bit flip caused tag
+    verification to fail; this was not a protocol security evaluation.
 * **Scientific Critique**:
   * Ephemeral public key exchanges are completely vulnerable to active Man-in-the-Middle (MitM) attacks because acoustics lack a trusted certificate authority or rooted out-of-band anchors. An attacker can intercept and replace the keys silently.
 * **Follow-up Responsive Exploration**:
   * Developed [crypto_mitm_mitigation.py](https://github.com/dweekly/cyrinx/blob/main/scratch/crypto_mitm_mitigation.py) introducing a Short Authentication Code (SAC) commitment protocol.
   * **No MitM Case**: Alice and Bob computed matching commitment PINs (**1307**) and played identical ultrasonic signature melodies: `['18.7 kHz', '19.1 kHz', '18.5 kHz', '19.9 kHz']`.
-  * **MitM Active Intercept**: Mallory's injected keys shifted the shared secret, resulting in mismatched PINs (Alice: **9051** vs Bob: **6406**) and divergent acoustic melodies, instantly neutralizing the intercept.
+  * **MitM Active Intercept**: Mallory's injected keys shifted the shared
+    secret, resulting in mismatched PINs (Alice: **9051** vs Bob: **6406**) and
+    divergent acoustic melodies. This was a separate demonstration, not an
+    integrated authentication mechanism.
 
 ---
 
@@ -297,7 +322,8 @@ We have successfully designed, implemented, and mathematically validated the com
 * **C Core & Swift Stack**: All 41 Swift/C unit tests pass with **0 failures**. Specifically:
   * `testAmbientNoiseScannerPSD`: Verifies the FFT and moving-median filter correctly flags a simulated high-power spike (e.g., at 19.2 kHz) while leaving other bins unnotched.
   * `testClosedLoopNotchMaskApplication`: Modulates and demodulates a payload with notched subcarriers to verify 100% roundtrip accuracy, and validates that a mismatched notch mask correctly fails/mismatches.
-* **Android Kotlin Stack**: **100% SUCCESS**. The Android companion app compiles flawlessly, validating the identical Kotlin DSP spectrum scanner and the adaptive on-the-fly OFDM modulator/demodulator mapping.
+* **Android Kotlin Stack**: the Android companion app compiled in this run.
+  Compilation did not validate DSP equivalence or OTA behavior.
 
 
 ---
@@ -326,7 +352,7 @@ We have successfully implemented, verified, and integrated the **Multi-Variable 
 * **Time-Domain Amplitude Monitor**: To prevent digital clipping on boosted high-frequency carrier edges, we formulated and integrated a dynamic time-domain scaling safety cap.
 * **Mechanism**: If equalized time-domain peaks exceed the safe threshold of `0.95`, the baseline transmit gain is dynamically scaled down to guarantee that the boosted waveform stays perfectly within linear ranges.
 
-### 4. Rigorous Verification & 100% Symmetrical Test Coverage
+### 4. Historical deterministic test coverage
 * **`testMultiVariableCapabilityHandshake`**: Verifies that the C core safely packages, transmits, parses, and resolves 10-byte handshake payloads over our in-memory link wrapper.
 * **`testEqualizerPreEmphasisFilter`**: Verifies that the digital pre-emphasis filter correctly applies frequency-specific inverse boosts, stays within safe peak bounds under the safety cap, and demodulates 100% cleanly.
 * **Test Suite Success**: Executed `swift test` and confirmed all tests pass with `0 failures`!
@@ -335,20 +361,30 @@ We have successfully implemented, verified, and integrated the **Multi-Variable 
 
 ## 🔑 Curve25519 (ECDH) Ephemeral Key Exchange & Secure Encryption Envelope (Pillar D)
 
-We have successfully designed, implemented, and scientifically validated the complete **Curve25519 (ECDH) Ephemeral Key Exchange & Secure Encryption Envelope** (Pillar D) across all layers of the Cyrinx system.
+This work implemented a Curve25519 key-agreement and custom encryption-envelope
+prototype in the legacy HIL paths. It did not establish cryptographic security,
+identity authentication, replay protection, or complete cross-platform
+conformance.
 
 ### 1. Zero-Dependency Montgomery Ladder X25519 for Android Portability
 * **The API 33 Limitation**: Android's JCA (Java Cryptography Architecture) only introduced standard native `X25519` key agreements in API Level 33. Because the Cyrinx companion app targets `minSdk = 26`, standard solutions would crash on older targets.
-* **Pure-Kotlin Implementation**: We engineered [X25519.kt](https://github.com/dweekly/cyrinx/blob/main/Apps/HIL/android/app/src/main/java/com/dweekly/cyrinxhil/X25519.kt), a zero-dependency, constant-time Montgomery ladder point multiplication engine using standard Java `BigInteger` modulo $2^{255} - 19$. This guarantees absolute timing-attack immunity and 100% portability down to Android 8.0 (API 26).
+* **Pure-Kotlin Implementation**: [X25519.kt](https://github.com/dweekly/cyrinx/blob/main/Apps/HIL/android/app/src/main/java/com/dweekly/cyrinxhil/X25519.kt)
+  uses a Montgomery ladder with Java `BigInteger` modulo $2^{255} - 19$.
+  `BigInteger` is not a constant-time primitive, no side-channel audit was
+  performed, and compilation at the configured minimum SDK is not a guarantee
+  for every Android 8 device.
 
 ### 2. Expanded 56-Byte Capabilities Payload (`0xE1`) & Safe Fallback
 * Ephemeral 256-bit X25519 public keys are generated at startup on both Master (macOS) and Slave (Android) nodes.
 * The Capabilities packet payload is expanded to **56 bytes** (adding the 32-byte local public key after the 14-byte notch mask and 10-byte system metadata).
 * **Backward Compatibility**: If a legacy or unencrypted client exchanges a payload of length $< 56$ bytes, cryptography falls back to disabled safely (keys cleared to zeros) and transmission runs in plaintext. Handshake packets (stream `0`) are sent in plaintext, while subsequent logical application streams are automatically secured.
 
-### 3. Symmetrical SHA-256-CTR and Truncated HMAC Encryption Envelope
+### 3. Custom SHA-256-derived XOR and truncated-HMAC envelope
 * **HKDF Key Derivation**: Once public keys are exchanged, the system executes an ECDH point multiplication to obtain a shared secret. We run a standard HKDF-SHA256 key derivation to split the secret into a 32-byte encryption key (`k_enc`) and a 32-byte MAC key (`k_mac`).
-* **Counter Mode (CTR) Encryption**: Frame bodies are encrypted using a highly optimized SHA-256-CTR keystream. The 8-byte monotonic frame sequence number is incorporated directly into the CTR block hashing to guarantee that identical frames yield entirely distinct ciphertexts, preventing keystream reuse.
+* **Custom XOR stream**: frame bodies are XORed with
+  `SHA256(key || sequence || counter)` blocks. This is not AES-CTR or a standard
+  stream cipher. The sequence separates frames only while keys and counters are
+  managed correctly; the prototype defines no rekey or restart policy.
 * **Integrity Tag**: An HMAC-SHA256 authentication tag is computed over the sequence number and ciphertext, and truncated to **8 bytes** to minimize ultrasonic overhead, keeping total envelope overhead to a modest 16 bytes.
 
 ### 4. Rigorous Symmetrical Verification Results
@@ -358,4 +394,6 @@ We have successfully designed, implemented, and scientifically validated the com
   Test Suite 'cyrinxPackageTests.xctest' passed at 2026-05-24 08:28:24.924.
        Executed 42 tests, with 0 failures (0 unexpected) in 10.964 (10.967) seconds
   ```
-* **Android Kotlin Compilation**: Verified that the entire Android HIL companion app (including the new Kotlin JCA/Montgomery layer) compiles flawlessly with **zero errors**.
+* **Android Kotlin Compilation**: the Android HIL companion app, including the
+  Kotlin X25519 path, compiled with zero reported errors in that run. This is a
+  build result, not a security result.

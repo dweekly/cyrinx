@@ -142,10 +142,10 @@ referee, not a second shipping modem.
 | 5 | Sounding and negotiation | BENCH-SPIKE | 5a: 1,3; 5c: 4,5a/b | bidirectional measured setup |
 | 6 | Public API, adaptation, and ARQ | BENCH-SPIKE | 4–5 | peer transport across changing cells |
 | 7 | Packaged held-out qualification | BENCH-SPIKE | 1–6 | evidence-backed SDK defaults |
-| 8 | Single-stream waveform improvements | PLANNED-SPIKE | 5 | only promoted wins enter the bulk PHY |
+| 8 | Single-stream waveform improvements | BENCH-SPIKES STOPPED; no integration | 5 | only a newly preregistered win may enter the bulk PHY |
 | 9 | N-mic diversity | N=2 LIBRARY-SHIPPED; N>2 PLANNED-SPIKE | 2–5 | verified input arrays |
 | 10 | Directional/fixed-3-ft rates | DEFERRED | 5–8 | separate range profiles |
-| 11 | NxM beamforming and true MIMO | PLANNED-SPIKE | 3, 5, 7, 10 | conditional spatial gain or stop |
+| 11 | NxM beamforming and true MIMO | AUDIT STOPPED: NOT IDENTIFIABLE; acquisition unexecuted | 3, 5, 7, 10 | conditional spatial gain or stop |
 | 12 | Faster non-coherent floor | BENCH-SPIKE | 5–6 | only if real sessions materially use the floor |
 | 13 | Authentication/delivery/QoS | DEFERRED | 4–7 | negotiated secure transport |
 | 14 | Ultrasonic/asymmetric mode | BENCH-SPIKE | 5, 7 | qualified hardware-specific mode |
@@ -600,11 +600,22 @@ separate benchmark classes.
 
 ## Rank 8 — Single-stream goodput research portfolio
 
-These spikes have better near-term value-to-effort than true MIMO. They may run
-after Rank 5 supplies trustworthy measurements, but none enters the library
-until it independently clears its gate and then passes Rank 6/7 integration.
+**Current status:** all four frozen offline spikes ran and stopped without OTA
+or library integration. Spike 8a missed its continuation threshold and
+regressed the primary microphone on held-out/external replay
+([result](scratch/hw20k/spike_8a_preeq/README.md)). Spike 8b produced a net
+block loss and failed both offline continuation alternatives
+([result](scratch/hw20k/spike8b/REPORT.md)). Spike 8c reduced held-out q99.9
+crest factor by 2.7775 dB, below its 3 dB proceed gate
+([result](scratch/spikes/dfts_ofdm_8c/results/REPORT.md)). Spike 8d stopped
+because the retained corpus could not identify alternate loading-policy
+outcomes ([result](docs/spikes/spike-8d-effective-sinr-20260718.md)).
 
-### Spike 8a — Regularized per-speaker pre-equalization
+The sections below retain the frozen hypotheses and promotion gates as the
+historical experiment contracts. Reopening a branch requires a new
+preregistration and new evidence; none is active implementation work.
+
+### Spike 8a — Regularized per-speaker pre-equalization (offline stop)
 
 **Hypothesis:** a bounded inverse of the stable component of the measured
 end-to-end transfer recovers bins lost to smooth transducer roll-off without
@@ -638,7 +649,7 @@ oracle works, label it fixed-route precoding rather than creating a per-device
 database. Make acoustic-level/exposure comparisons only when calibrated
 LAeq/LCpeak/SPL instrumentation is present.
 
-### Spike 8b — Bracketing channel estimates
+### Spike 8b — Bracketing channel estimates (offline stop)
 
 **Hypothesis:** known full-band training before and after a longer data region,
 with temporal interpolation inspired by
@@ -671,7 +682,7 @@ regresses the first half, or endpoint interpolation does not predict the
 midpoint. Do not respond by adding an unbounded trainer sequence; fall back to
 shorter frames or a fixed known-pilot lattice.
 
-### Spike 8c — Localized DFT-spread OFDM
+### Spike 8c — Localized DFT-spread OFDM (offline stop)
 
 **Hypothesis:** lower PAPR avoids speaker/OS nonlinearities and produces more
 delivered bits at the same band and peak constraint than conventional OFDM.
@@ -695,7 +706,7 @@ after the two-pair screen if neither EVM/recovery nor distortion improves, or
 if protection/spectral regrowth appears; do not redesign pilots inside this
 spike.
 
-### Spike 8d — Effective-SINR loading and coding
+### Spike 8d — Effective-SINR loading and coding (not identifiable)
 
 **Hypothesis:** data-representative randomized QAM probes and Rank 5's
 effective-SINR/GMI estimator allocate bins more safely than stationary raw-PSD
@@ -804,6 +815,13 @@ radial motion and measured phase slope.
 True MIMO is conditional research, not an assumed twofold upgrade. The existing
 dual-preamble scalar SVD scaffold is not frequency-selective MIMO and must not
 be described as such.
+
+**Current status:** the retained-corpus audit ended `STOP_NOT_IDENTIFIABLE`.
+The checkout contains no tracked PCM, complete phase-coherent 2x2 matrix, or
+qualified second transmit column. The deterministic analyzer is validated only
+with synthetic input. A 15-capture, three-geometry acquisition is specified
+but has not run; therefore there is no measured MIMO/rank-2 gain and no OTA
+promotion ([audit and acquisition boundary](scratch/rank11a_mimo/README.md)).
 
 ### Spike 11a — Feasibility and capacity accounting
 
