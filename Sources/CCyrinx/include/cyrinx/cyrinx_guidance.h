@@ -19,22 +19,22 @@ extern "C" {
 
 /* Measured channel metrics (all from a single sounding/decode). */
 typedef struct {
-    double median_snr_db;    /* median per-bin SNR (dB) */
-    double rx_peak;          /* peak |sample| of the capture, 0..~1 (clip near 1) */
-    double delay_spread_ms;  /* -15 dB Schroeder delay spread (ms) */
-    double cp_ms;            /* current cyclic-prefix duration (ms) */
-    double hf_rolloff_db;    /* high-band minus low-band SNR (dB); negative = HF lost */
-    double coherence;        /* phase-coherence proxy 0..1 (1 = coherent) */
-    int ultrasonic;          /* nonzero if operating in the >18 kHz band */
+    double median_snr_db;   /* median per-bin SNR (dB) */
+    double rx_peak;         /* peak |sample| of the capture, 0..~1 (clip near 1) */
+    double delay_spread_ms; /* -15 dB Schroeder delay spread (ms) */
+    double cp_ms;           /* current cyclic-prefix duration (ms) */
+    double hf_rolloff_db;   /* high-band minus low-band SNR (dB); negative = HF lost */
+    double coherence;       /* phase-coherence proxy 0..1 (1 = coherent) */
+    int ultrasonic;         /* nonzero if operating in the >18 kHz band */
 } cyrinx_channel_metrics;
 
 typedef enum {
-    CYRINX_HINT_OK = 0,            /* link is healthy; no action needed */
-    CYRINX_HINT_MOVE_CLOSER,      /* too far / too quiet: move the devices closer */
-    CYRINX_HINT_SOFT_SURFACE,     /* reflective surface: use a soft surface / move from walls */
-    CYRINX_HINT_AIM_BOTTOM_EDGE,  /* directional loss: point the phone's bottom edge at the speaker */
-    CYRINX_HINT_LOWER_VOLUME,     /* clipping: lower volume or back off slightly */
-    CYRINX_HINT_USE_AUDIBLE       /* ultrasonic uplink is phase-incoherent: switch to audible mode */
+    CYRINX_HINT_OK = 0,          /* link is healthy; no action needed */
+    CYRINX_HINT_MOVE_CLOSER,     /* too far / too quiet: move the devices closer */
+    CYRINX_HINT_SOFT_SURFACE,    /* reflective surface: use a soft surface / move from walls */
+    CYRINX_HINT_AIM_BOTTOM_EDGE, /* directional loss: point the phone's bottom edge at the speaker */
+    CYRINX_HINT_LOWER_VOLUME,    /* clipping: lower volume or back off slightly */
+    CYRINX_HINT_USE_AUDIBLE      /* ultrasonic uplink is phase-incoherent: switch to audible mode */
 } cyrinx_reposition_hint;
 
 typedef struct {

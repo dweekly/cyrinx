@@ -1,0 +1,11 @@
+Component: KISS FFT
+Upstream: https://github.com/mborgerding/kissfft
+Revision: 5e5058275a72dfc9e474bf78c8daea0ff29c7eb2
+Revision date: 2026-06-05T11:10:11Z
+Local import: ee5a013fed5b8702a3ee316ce8dfc407259283a7
+License: BSD-3-Clause; see Sources/CCyrinx/kissfft/COPYING
+
+The seven files in kissfft.sha256 were compared byte-for-byte with the named
+upstream revision on 2026-08-27. Repository formatting excludes this snapshot.
+Any intentional vendor update must first update the upstream revision, then
+regenerate and review the checksum manifest as a vendor-update change.
