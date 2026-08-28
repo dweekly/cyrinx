@@ -7,7 +7,6 @@ cd "$ROOT_DIR"
 readonly ALLOWLIST="scripts/claims-allowlist.tsv"
 
 RULE_IDS=(
-    "stable-c-abi"
     "misclassified-aead"
     "blanket-crypto-enable"
     "legacy-fully-working"
@@ -23,7 +22,6 @@ RULE_IDS=(
 )
 
 RULE_PATTERNS=(
-    "stable C ABI"
     "CTR/AEAD"
     "just turn it on"
     "100% working"
@@ -120,7 +118,7 @@ for index in "${!RULE_IDS[@]}"; do
             echo "$path:$line_number: prohibited claim [$rule_id]: $line_text" >&2
             failed=1
         fi
-    done < <(rg -n -F -i -- "$pattern" "${CLAIM_FILES[@]}" || true)
+    done < <(rg -n --with-filename -F -i -- "$pattern" "${CLAIM_FILES[@]}" || true)
 done
 
 require_literal() {

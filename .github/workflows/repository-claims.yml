@@ -1,0 +1,27 @@
+name: repository-claims
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repository-claims-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  claims:
+    name: Documentation claims gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Verify negative fixtures
+        run: ./scripts/check-claims.sh --self-test
+      - name: Check repository claims
+        run: ./scripts/check-claims.sh

@@ -59,7 +59,7 @@ only the loss of application payload space when 16 envelope bytes occupy a PHY
 payload. It excludes public-key exchange, retransmission, session setup, and
 all security-processing time.
 
-| Illustrative tier | PHY payload | Nominal PHY goodput | Envelope / payload | Approx. application goodput |
+| Illustrative tier | Application payload | Nominal PHY goodput | Envelope / payload | Approx. application goodput |
 |---|---:|---:|---:|---:|
 | 16-QAM r3/4 | 19,200 B | 38.4 kbps | 0.083% | 38.368 kbps |
 | 16-QAM r1/2 | 12,800 B | 25.6 kbps | 0.125% | 25.568 kbps |

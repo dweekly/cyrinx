@@ -324,16 +324,20 @@ Merge of `acoustic-20kbps` (docs/ACOUSTIC_BULK_PHY.md).
 - 10-byte capabilities handshake; transducer-calibration EQ curves; programmatic
   acoustic gain staging.
 - Dynamic background room-tone noise notcher; closed-loop handshake.
-- Curve25519 ECDH key exchange plus custom SHA-256 XOR/HMAC envelope
-  (experimental, unaudited — see SECURITY.md).
+- Curve25519 ECDH key exchange + CTR/HMAC envelope (experimental, unaudited —
+  see SECURITY.md).
+  - Correction (2026-08-27): the implementation uses a custom SHA-256-derived
+    XOR stream and truncated HMAC, not a standard CTR construction.
 
 ## 2026-02-12 → 2026-05-08 — Ultrasonic transport stack (original strand)
 
-- C core (`CCyrinx`) with a public 2.x API and Swift wrapper; the general ABI
-  was not frozen. The stack also included a bit-packed frame codec
+- C core (`CCyrinx`) with stable ABI + Swift wrapper; bit-packed frame codec
   (CRC16/CRC32C), fragmentation/reassembly; half-duplex ping-pong MAC with ACK +
   selective retransmission; ARC gear state machine; stream-multiplexed transport
   API; in-memory linked transport for deterministic tests.
+  - Correction (2026-08-27): this historical bullet overstated the boundary.
+    The repository has a public 2.x API and versioned receiver contract, but the
+    general ABI was not frozen.
 - Apple audio scaffolds (RemoteIO iOS / AVAudioEngine macOS); Android HIL app
   with ADB automation; raw tone codecs (OOK/nibble/DTMF/Morse); vDSP OFDM-QPSK
   and D-CSS modulators; acoustic PHY bridge with dual-ZC sync.
