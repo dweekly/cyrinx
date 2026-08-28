@@ -36,8 +36,8 @@ Reviewed revision: `main@123a105`.
 2. Quarantine the existing cryptographic envelope in documentation now.
    Removal or replacement is separate security work.
 3. Reconstruct the bundled C3-02 through C3-05 work into independently gated
-   changes. Require patch equivalence to the reviewed branch tip or list every
-   divergence.
+   changes. Treat fresh implementation against approved contracts as the
+   default and precisely ledger every tip hunk that is reused.
 4. Replayable evidence blocks **new comparative headline claims**. It does not
    by itself block release qualification; internally retained evidence may be
    used for qualification if its provenance and limitations are explicit.
@@ -160,8 +160,9 @@ not merge. Release qualification may use non-public evidence, but must label it
 as such and cannot promote it into a new public comparative headline.
 
 **Gate:** `scripts/check-claims.sh` passes reproducibly, its negative
-self-tests prove each prohibited pattern is detected, documentation links
-resolve, and no production behavior changes are present.
+self-tests prove each prohibited pattern is detected, and no production
+behavior changes are present. General documentation-link validation remains a
+C3-02 deliverable; Phase 1 does not claim a link checker that it does not ship.
 
 ### Phase 2 — Make gate ownership explicit
 
@@ -207,11 +208,24 @@ changes with focused tests; they do not enter the lint-baseline change.
 **Gate:** `scripts/lint.sh` rejects a seeded new violation, accepts the exact
 checked-in baseline, and contains no behavioral source refactor.
 
+#### 2.3 Minimum repository CI enforcement
+
+PR #78 adds an unfiltered pull-request workflow for the claims gate. Format,
+vendor-integrity, and lint enforcement cannot be added on any one isolated
+prerequisite branch because their passing implementations are split across PRs
+#79 and #80.
+
+After PRs #78 through #80 are accepted and merged, the next independent change
+adds a minimum repo-wide workflow running claims, format/vendor integrity, and
+lint. It lands before any C3 reconstruction. Until then, claims are enforced by
+CI but format/vendor/lint remain locally validated and voluntary; this is an
+explicit temporary enforcement gap, not a green-CI claim.
+
 ### Phase 3 — Reconstruct and review C3-02 through C3-05
 
 **Current checkpoint:** branch-tip review is complete and implementation is
-paused for contract critique. The empirical findings, expected divergence
-ledger, and proposed reconstruction contracts are recorded in
+paused for contract critique. The empirical findings, branch dispositions,
+reuse-ledger rule, and proposed reconstruction contracts are recorded in
 [C3-02 through C3-05 branch-tip review](reviews/C3_02_05_TIP_REVIEW_2026-08-27.md).
 The review found promotion blockers in every bundled phase, including an
 off-by-one interleaved-stride calculation left by the tip fix, so no branch hunk
@@ -247,6 +261,9 @@ Review order:
 - ASan tests for primary/secondary length disagreement, non-unit strides,
   interleaved stereo, missing secondary pointers, zero/one-sample inputs, and
   consumed-sample accounting;
+- ASan/UBSan regression coverage that captures secondary-channel presence
+  before temporary storage is freed and never branches on an indeterminate
+  freed pointer value;
 - byte-vector profile-hash tests proving explicit big-endian serialization is
   independent of host endianness;
 - prefix-size, undersized-struct, oversized-struct, and ABI-version tests for
@@ -257,22 +274,25 @@ Review order:
 The fix commit removes runtime-session calls and substitutes simulated loopback
 behavior to eliminate Swift races. That is a semantic change, not automatically
 an acceptable race fix. It must either be justified by the C3-01 simulator
-contract or recorded as a divergence and replaced with an ownership-safe
-implementation.
+contract or recorded as deferred/rejected branch content and replaced with an
+ownership-safe implementation.
 
-#### Reconstruction equivalence
+#### Reconstruction provenance
 
 Reconstruct C3-02 through C3-05 as independently gated changes. Before
 promotion:
 
 1. record the merge base and the complete tip patch for `2370fe2`;
-2. compare the reconstructed C3 path diff with the tip diff;
-3. require patch-identical content where current `main` does not overlap; and
-4. check in an integration-divergence ledger listing every non-identical hunk,
-   its reason, reviewer, and validation consequence.
+2. treat fresh implementation against the approved contracts as the default;
+3. record the disposition of branch concerns at path/subsystem granularity; and
+4. check in a reuse ledger for every retained tip hunk, identifying its source
+   range, reconstructed commit, patch identity or reason for change, reviewer,
+   and validation consequence.
 
-An unlisted divergence fails the gate. Reconstruction may improve the branch,
-but it may not silently turn branch review into an undocumented rewrite.
+An unlisted reused tip hunk fails the gate. Code already classified as dropped
+or redesigned does not require line-by-line divergence bookkeeping; its
+replacement is reviewed against the accepted contract and mandatory regression
+targets.
 
 Other required checks:
 
@@ -284,13 +304,13 @@ Other required checks:
 - no weakening of the restored format, lint, or claims gates.
 
 **Gate:** C3-02 through C3-05 each meet their documented merge gate; mandatory
-`2370fe2` regressions pass; equivalence or divergence is fully accounted for;
-and the complete validation matrix is green after every integration step.
+`2370fe2` regressions pass; all reused branch code is accounted for; and the
+complete validation matrix is green after every integration step.
 
 **Stop conditions:** any unexplained 2.x ABI break, exact-size-only
 extensibility, platform-sized wire/API field, retained borrowed string,
 inconsistent metric meaning, binding-specific result, sanitizer finding,
-TSAN finding, or unlisted branch divergence.
+TSAN finding, or unlisted reuse of branch code.
 
 **Decisions required before implementation:** fixed-width ABI prefix/count
 representation, 32-byte SHA-256 versus a truthfully sized non-cryptographic
@@ -341,11 +361,12 @@ swift test --package-path Apps/Chat/CyrinxChatKit
 swift test --package-path Apps/Chat/apple/CyrinxChatApp
 ANDROID_HOME=<resolved-sdk> ./gradlew --no-daemon \
   check :app:testDebugUnitTest :app:assembleDebug
-sanitizer, TSAN, hash-vector, ABI, and equivalence probes added in Phase 3
+sanitizer, TSAN, hash-vector, ABI, and reconstruction-provenance probes added
+in Phase 3
 ```
 
-The final report lists warnings, environment prerequisites, divergences, and
-skipped platform checks, not only exit codes.
+The final report lists warnings, environment prerequisites, branch
+dispositions/reuse, and skipped platform checks, not only exit codes.
 
 ## Tranche completion definition
 
@@ -354,7 +375,7 @@ This tranche is complete when:
 1. PR #77 has passed review;
 2. claim, format, lint-baseline, API-inventory, Swift, and Android gates pass;
 3. C3-02 through C3-05 are integrated as separately reviewable changes with
-   branch-tip equivalence or explicit divergences;
+   all reused branch-tip code explicitly ledgered;
 4. the `2370fe2` vulnerability, endian, ABI, and race regressions pass; and
 5. the C3-08 through C3-10 gate specification is approved but C3-08
    implementation has not begun.

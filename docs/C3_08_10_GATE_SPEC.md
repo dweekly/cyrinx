@@ -52,6 +52,47 @@ local conventions. The C parser/batch targets run with ASan and UBSan. Swift
 ownership/concurrency paths run with TSAN where the target toolchain supports
 it. Any sanitizer suppression is symbol-specific, justified, and checked in.
 
+### Execution tiers and cost ceilings
+
+The checked-in support manifest enumerates applicable matrix cells; it does
+not construct nonsensical Cartesian products. Every conformance report names
+its execution tier and the selected cells, schedules, and seeds.
+
+- **Pull-request tier:** run every binding, backend, and registered profile on
+  at least one happy-path fixture. Use deterministic pairwise coverage across
+  channel layout, result class, and input fault, with every fault exercised at
+  least once. For streaming boundary schedules, exercise the first and last
+  split in every declared boundary class. The tier has a ceiling of 30 minutes
+  wall time per lane and 120 runner-minutes in aggregate.
+- **Nightly/full tier:** run every applicable cell in the support manifest,
+  every declared boundary split, the full random-seed budgets below, all
+  sanitizer jobs, and all supported on-device targets. The tier has a ceiling
+  of 120 minutes wall time per lane and 720 runner-minutes in aggregate.
+- **Release promotion:** requires a nightly/full report for the exact source,
+  manifest, fixture, and toolchain revisions being promoted. It may not
+  substitute the sampled pull-request tier.
+
+A run that exceeds its ceiling fails rather than silently sampling less. If the
+same tier exceeds its ceiling in two consecutive runs on the reference runner,
+the owner must optimize or split the jobs, or obtain an explicit amendment to
+the ceiling and support manifest before promotion.
+
+### Real-time-path proof mechanism
+
+Test builds route allocator/deallocator access, lock/wait acquisition, logging,
+FFT/correlation entry points, and application callbacks through injectable
+hooks or shims. A thread-local `inside_realtime_path` marker is set for the
+complete push/copy or render call. A forbidden hook observed while that marker
+is set records the symbol and call site and fails the gate.
+
+Direct platform calls that bypass the hooks are rejected by a checked-in static
+source/call-graph audit and, where the toolchain permits it, a link-symbol or
+interposition audit for allocator and lock primitives. Each platform gate has
+negative controls that deliberately perform one allocation, lock/wait, log,
+FFT/correlation operation, and application callback on the marked path. Every
+injection must fail for the intended symbol and call site. Passing only because
+the instrumentation missed the injected operation is a gate failure.
+
 ## C3-08 — cross-binding conformance and retained replay
 
 ### Required matrix
@@ -71,6 +112,10 @@ JNI is tested on every supported Android ABI declared by the support matrix.
 Accelerate applies only on Apple targets; its result is compared with KISS on
 the same Apple fixture and toolchain run.
 
+The table describes the full/nightly matrix. The pull-request tier selects the
+deterministic subset defined under execution tiers; release promotion requires
+the complete applicable matrix.
+
 ### Exact comparisons
 
 The following compare exactly unless the final C3-05 contract removes them:
@@ -84,6 +129,13 @@ The following compare exactly unless the final C3-05 contract removes them:
   monotonic start/end indices, and discontinuity outcome;
 - clipping and non-finite evidence counts; and
 - required-capacity values on `BUFFER_TOO_SMALL`.
+
+C3-08 approval is blocked until C3-05 reconciles block-validity storage with
+the maximum valid block count. If validity is caller-provided, conformance must
+exercise capacity negotiation and report every ordered value for a synthetic
+valid profile with more than 256 blocks. If a fixed maximum is chosen instead,
+that maximum is part of profile validation and the same synthetic profile must
+be rejected before processing with the agreed status and unchanged outputs.
 
 EVM, pilot residuals, timing, propagation delay, and other floating-point
 metrics use fixture-specific absolute and/or relative tolerances. The report
@@ -143,7 +195,10 @@ block and payload decisions as batch decode under:
 - one-sample pushes;
 - every boundary split around preamble, header, cyclic prefix, symbol, block,
   and tail positions;
-- 1,000 deterministic random chunk sequences per profile/layout;
+- deterministic random chunk sequences allocated across applicable
+  profile/layout pairs: 32 total in the pull-request tier and 1,000 total in
+  the nightly/full tier. Seeds are distributed round-robin, with every pair
+  exercised once before any pair repeats;
 - inserted zero-length process/drain calls;
 - zero-gap consecutive frames;
 - inserted silence, duplicated chunks, dropped chunks, explicit
@@ -164,7 +219,8 @@ bytes. Promotion then requires:
   buffer bound during a 1,000-frame continuous replay;
 - zero allocation, deallocation, lock acquisition, logging, FFT, correlation,
   or application callback on the real-time push/copy path, proved with an
-  instrumented allocator and callback-thread assertions;
+  instrumented allocator, the shared real-time hook/audit mechanism, and
+  callback-thread assertions;
 - bounded work per push proportional only to the supplied sample count; and
 - deterministic overflow behavior with an exact dropped range and explicit
   reacquisition state.
@@ -204,7 +260,10 @@ streaming transmitter with the frozen batch waveform under:
 
 - one-sample render buffers;
 - every split around preamble, gap, symbol, block, and tail boundaries;
-- 1,000 deterministic random render-size sequences;
+- deterministic random render-size sequences allocated across applicable
+  profile/payload-boundary pairs: 32 total in the pull-request tier and 1,000
+  total in the nightly/full tier. Seeds are distributed round-robin, with every
+  pair exercised once before any pair repeats;
 - consecutive queued messages with every legal profile transition; and
 - flush/reset after every legal partial-render state.
 
@@ -233,10 +292,11 @@ cannot retract already rendered samples; the result reports their exact range.
 ### Boundedness and callback safety
 
 The render path performs zero allocation/deallocation, blocking, lock
-acquisition, logging, or application callback. An instrumented allocator and
-callback-thread assertion must prove this for the complete waveform matrix and
-a 1,000-message soak. Queue memory remains within the declared message/byte
-limits, and reset returns retained memory to the documented baseline.
+acquisition, logging, or application callback. The shared real-time hook/audit
+mechanism, instrumented allocator, and callback-thread assertion must prove
+this for the complete waveform matrix and a 1,000-message soak. Queue memory
+remains within the declared message/byte limits, and reset returns retained
+memory to the documented baseline.
 
 The on-device throughput gate uses the same approved targets and reporting
 method as C3-09. Rendering must sustain the target sample rate with the chosen
@@ -264,7 +324,10 @@ PR:
 5. numeric C3-10 message/byte queue limits and minimum callback buffer;
 6. p95 and maximum callback deadline margins on each slowest target; and
 7. which retained captures may support internal release qualification but not a
-   public comparative headline.
+   public comparative headline; and
+8. caller-provided block-validity capacity versus a validated fixed maximum,
+   including the required C3-08 outcome for a synthetic valid profile with more
+   than 256 blocks.
 
 Approval of this specification ends the planned tranche. It does not authorize
 C3-08 implementation.
