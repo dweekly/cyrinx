@@ -4,8 +4,7 @@ models-used:
   - gpt-5.5
   - claude-fable-5
   - claude-opus-4.8
-  - gemini-pro-1.5
-  - gemini-ultra-1.0
+  - gemini (version unrecorded; Antigravity 2.0 sessions)
 providers:
   - OpenAI
   - Anthropic
@@ -13,14 +12,14 @@ providers:
 scope: |
   Fundamental research, DSP C core implementation, Swift library/test stubs, companion website, LaTeX whitepapers, and peer review validation were performed by AI agents under human direction. 
   The human operator provided the physical lab bench, device parameters, and final pull request review/approvals.
-last-updated: 2026-07-20
+last-updated: 2026-08-28
 ---
 
 # Cyrinx AI Agent Attribution & Disclosure
 
-This document discloses the governance, authorship, and peer-review process for `cyrinx` as of July 20, 2026. 
+This document discloses the governance, authorship, and peer-review process for `cyrinx` as of August 28, 2026. 
 
-This repository utilizes a project-specific machine-readable YAML frontmatter metadata format (detailed in the header above) to declare AI agent involvement, modeled on the emerging `ai-disclosure` repository convention.
+This repository utilizes a project-specific machine-readable YAML frontmatter metadata format (detailed in the header above) to declare AI agent involvement, modeled on the emerging [ai-content-disclosure](https://github.com/dweekly/ai-content-disclosure) convention.
 
 Cyrinx is a research prototype developed through a **human-directed multi-agent collaboration**. The fundamental research, DSP C core, Swift bindings, tests, companion website, and whitepapers were designed and written by a sequence of artificial intelligence agents under human direction. 
 
@@ -46,7 +45,7 @@ The division of labor between the human operator and the AI agents is defined as
 
 ## 2. Component-Level Agent Attribution
 
-Table 1 logs the contributions of each model era to the repository, verified through operators' session records and Git commit histories.
+Table 1 logs the contributions of each model era to the repository, verified through operators' session records and Git commit histories. Attribution evidence (session records, `Co-Authored-By` trailers) verifies *who wrote what*; the performance figures follow the separate evidence classification recorded in the repository's main documentation ([docs/PUBLICATION.md](docs/PUBLICATION.md)) — aggregate ledgers and hashes are tracked in-repo, but not every figure is independently replayable from the repository alone.
 
 ### Table 1: Development Eras, Model attributions, and Verification Status
 
@@ -57,7 +56,7 @@ Table 1 logs the contributions of each model era to the repository, verified thr
 | **June 10–12, 2026** | **Claude Opus 4.8** (Anthropic) | Portable C port, golden-vector test rig, adaptive CP, mic selection, MFSK floor, two-mic MRC validation. | Decoupled DSP from hardware platform dependencies. | **38.400 kbps** payload-normalized console aggregate; 68 bps floor (verifiable via `Co-Authored-By` commit trailers). |
 | **July 1–2, 2026** | **Claude Fable 5** (Anthropic) | C library port of MRC, RS-coded floor, adaptive loop, project website scaffolding. | Digital loopback validation. | Completed digital loopback validation; OTA deferred to next step (verifiable via `Co-Authored-By` commit trailers). |
 | **July 6–8, 2026** | **Claude Fable 5** (Anthropic) | Diversity stack OTA re-validation; floor erasures, floor combining, MRC-aware sounding. | Addressed defects invisible to digital loopbacks. | **138 bps** RS floor; **11.366 kbps** MRC-carried over the air (verifiable via `Co-Authored-By` commit trailers). |
-| **July 20, 2026** | **Antigravity 2.0** / **Gemini** (Google) | Cyrinx 3.0 versioned C ABI base, profile registry, batch capture contracts, and Swift Testing migration. | Define stable prefix-compatible ABI boundaries and batch decode/encode layouts. | Digital/in-memory loopback verification (session-record attribution). |
+| **July 20, 2026** | **Antigravity 2.0** / **Gemini** (Google) | Cyrinx 3.0 versioned C ABI base, profile registry, and batch capture contract experiments (branch `c3-02-05-batch-demod`, PR #71). | Define prefix-compatible ABI boundaries and batch decode/encode layouts. | **Branch-only; never merged.** Digital/in-memory loopback only (session-record attribution). The 2026-08-27 branch-tip review ([docs/reviews/C3_02_05_TIP_REVIEW_2026-08-27.md](docs/reviews/C3_02_05_TIP_REVIEW_2026-08-27.md)) found the work not promotable; reconstruction against reviewed contracts is pending. |
 
 ---
 
@@ -67,5 +66,5 @@ To prevent sycophancy and "AI psychosis" (where an agent generates plausible-sou
 
 1. **The Semantic Reference Oracle**: The original Python harness (`modem.py`) acts as the mathematical baseline. The C library must match the Python output at a tiered tolerance.
 2. **Deterministic Golden Vectors**: Pinned under `Tests/Fixtures/golden/` (including [golden_manifest.h](Tests/CGoldenVectors/golden_manifest.h)), these verify that any change to the C DSP core matches the expected bitstream (convolutional code, puncturing, QAM symbol maps) exactly.
-3. **Automated CI Gates**: Formatted with `.github/workflows/ci.yml` running formatters (`./scripts/format.sh`), linter checks (`./scripts/lint.sh`), and the entire test suite (`swift test`).
+3. **Automated Gates**: `.github/workflows/repository-claims.yml` runs the documentation claims gate (`./scripts/check-claims.sh`) on every pull request, rejecting prohibited over-claims outside explicitly historical contexts; `.github/workflows/chat-c3-28.yml` runs the chat-lane test suites. Repository-wide format (`./scripts/format-check.sh`, including vendored-source integrity), lint (`./scripts/lint.sh`, SwiftLint-baselined), and `swift test` run via `./scripts/check.sh`.
 4. **Agent Self-Critique**: Agents are instructed to proactively log all negative findings and structural failures in [NEGATIVE_FINDINGS.md](docs/NEGATIVE_FINDINGS.md) and [docs/releases/](docs/releases/).
