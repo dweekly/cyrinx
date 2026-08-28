@@ -29,8 +29,8 @@ defined extraction policy.
 | Language | Retain | Deprecate | Experimental | Replace | Total |
 |---|---:|---:|---:|---:|---:|
 | Swift | 53 | 126 | 79 | 115 | 373 |
-| C | 45 | 99 | 55 | 126 | 325 |
-| **Total** | **98** | **225** | **134** | **241** | **698** |
+| C | 45 | 99 | 165 | 126 | 435 |
+| **Total** | **98** | **225** | **244** | **241** | **808** |
 
 The Swift total includes 366 source-declared entries and seven source-less
 protocol-witness initializers emitted even with
@@ -52,6 +52,9 @@ The C total includes all declarations from every header in
 | `cyrinx_guidance.h` | 0 | 0 | 0 | 21 | 21 |
 | `cyrinx_phy.h` | 0 | 0 | 28 | 0 | 28 |
 | `cyrinx_sounder.h` | 0 | 0 | 1 | 18 | 19 |
+| `cyrinx_base.h` | 0 | 0 | 20 | 0 | 20 |
+| `cyrinx_profiles.h` | 0 | 0 | 47 | 0 | 47 |
+| `cyrinx_batch.h` | 0 | 0 | 43 | 0 | 43 |
 
 ## Reviewed Swift decisions
 

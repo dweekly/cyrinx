@@ -7,6 +7,19 @@ date-labelled.
 Detailed evidence for every claim is in the cited document and its reproduction
 commands or content hashes.
 
+## Unreleased — C3-03..05 reconstruction: versioned ABI, profile registry, batch contract
+
+- Reconstructed the rejected `c3-02-05-batch-demod` branch work fresh against
+  the reviewed contracts ([docs/reviews/C3_03_05_RECONSTRUCTION.md](docs/reviews/C3_03_05_RECONSTRUCTION.md)):
+  a fixed-width versioned ABI base (`cyrinx_base.h`), a profile registry with
+  SHA-256 wire identity over a domain-separated canonical serialization
+  proved against a checked-in JSON source (`cyrinx_profiles.h`), and a batch
+  capture contract with explicit strided channel views and caller-provided
+  block validity (`cyrinx_batch.h`). Digital loopback and boundary coverage
+  only; no OTA, streaming, or on-device claims. The new C surface is
+  classified `experimental` in the API inventory until the C3-05 review
+  freezes the v1 layouts.
+
 ## Unreleased — documentation and claim-boundary corrections
 
 - Replaced the unqualified C-ABI stability claim with the actual boundary: a
