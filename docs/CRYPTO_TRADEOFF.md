@@ -1,57 +1,81 @@
-# Optional Crypto Envelope — Cost / Security Tradeoff
+# Experimental Crypto Envelope — Implementation and Cost Boundary
 
-Fresh as of 2026-06-10. Cyrinx's confidentiality/integrity layer (X25519 ECDH →
-CTR/AEAD with a per-frame tag) is an **opt-in layer, OFF by default**, never a
-hard dependency of the bulk PHY. This page quantifies what it costs so an
-implementing app can choose plaintext-bulk vs authenticated-trickle **per the
-channel quality it actually has** and its own threat model. See also
-[SECURITY.md](../SECURITY.md) and [PUBLICATION.md](PUBLICATION.md) (PR 1.9).
+Fresh as of 2026-08-27. Status: **documentation quarantine**. The legacy Apple
+and Android HIL paths contain an opt-in confidentiality/integrity prototype,
+off by default. It is not a standard authenticated-encryption construction,
+has not undergone independent review, and must not be presented as a secure
+product feature. It is also not integrated with the measured Cyrinx 2 bulk-PHY
+path.
 
-## The model
+See [SECURITY.md](../SECURITY.md) for the supported security posture.
 
-- **One-time handshake** (per session): two 32-byte X25519 ephemeral public keys
-  + a 16-byte confirmation tag = **80 bytes**.
-- **Per-frame overhead**: a 12-byte nonce + a 16-byte authentication tag =
-  **28 bytes** added to each frame's payload.
+## Implementation record
 
-The per-frame tag as a fraction of goodput is just `28 / payload_bytes_per_frame`
-— so it shrinks on fat frames and balloons on tiny ones. The handshake is a
-fixed latency paid once.
+The Swift and Kotlin implementations currently perform:
 
-## Per-MCS overhead (computed from the real codec geometry, n_sym = 64)
+1. X25519 key agreement after the peer public key is supplied;
+2. HKDF-SHA256 expansion into separate 32-byte encryption and MAC keys;
+3. a custom XOR stream generated as
+   `SHA256(encryption_key || sequence_u64_be || counter_u32_be)`; and
+4. HMAC-SHA256 over `sequence || ciphertext`, truncated to eight bytes.
 
-| MCS tier              | payload/frame | PHY goodput | per-frame tag | net goodput | handshake latency |
-|-----------------------|--------------:|------------:|--------------:|------------:|------------------:|
-| 16-QAM r3/4 (fast)    | 19 200 B      | 38.4 kbps   | **0.15 %**    | 38.3 kbps   | 17 ms             |
-| 16-QAM r1/2 (medium)  | 12 800 B      | 25.6 kbps   | **0.22 %**    | 25.5 kbps   | 25 ms             |
-| QPSK r1/2 (robust)    |  6 400 B      | 12.8 kbps   | **0.44 %**    | 12.7 kbps   | 50 ms             |
-| BPSK r1/2 (floor)     |  3 072 B      |  6.1 kbps   | **0.91 %**    |  6.1 kbps   | 104 ms            |
-| MT-FSK floor (267 bps, 32-B frames) | 32 B | 0.267 kbps | **87.5 %** | 0.033 kbps | **2.4 s** |
+Despite the internal `encryptCTR` function name, step 3 is not AES-CTR. The
+combined construction is not a standard AEAD mode.
 
-(Numbers from `scratch/hw20k/clib.py` geometry; the MT-FSK floor uses the
-measured 267 bps and an illustrative 32-byte frame.)
+The encoded frame envelope is:
 
-## What this means for an implementing app
+```text
+8-byte sequence || ciphertext || 8-byte truncated HMAC tag
+```
 
-- **On the fast tiers, just turn it on.** At 38 kbps the tag is 0.15 % and the
-  handshake is 17 ms — encryption is effectively free; there's rarely a reason
-  to send the wideband bulk PHY in the clear.
-- **At the non-coherent floor, think hard.** With tiny frames the 28-byte tag can
-  *dominate* goodput (87.5 % in the illustrative case) and the handshake alone
-  costs seconds. Options, in order of preference:
-  1. **Batch larger floor frames** so the fixed tag amortizes (costs latency).
-  2. **Authenticate, don't encrypt** the whole stream — a single signed session
-     header + plaintext body, if integrity (not secrecy) is the requirement.
-  3. **Skip the envelope** and rely on application-layer security, accepting that
-     the acoustic medium is a broadcast anyone in earshot can receive.
-- **The choice is per-session and dynamic.** The adaptive sounder (PR 1.4) already
-  picks the MCS for the measured channel; the same decision point can flip the
-  envelope policy: encrypt on a clean near-field link, fall back to
-  authenticated-or-plaintext when the channel forces the slow tiers.
+It therefore consumes 16 bytes per protected frame, not 28. The code exchanges
+32-byte X25519 public keys through existing session fields, but no explicit
+key-confirmation message is implemented. Handshake airtime is transport- and
+schedule-dependent and is not quantified here.
 
-## Caveats
+## Security limitations
 
-- The envelope has **not** undergone independent cryptographic review; treat it
-  as experimental (see [SECURITY.md](../SECURITY.md)).
-- Acoustic links are inherently broadcast — confidentiality, if required, must
-  come from this layer or the application, never the medium.
+- Public keys are not authenticated or bound to a trusted identity. An active
+  attacker can substitute keys during exchange.
+- The receiver verifies the truncated tag but does not maintain a receive-side
+  replay window for envelope sequence numbers.
+- The construction has no external security analysis or standard test-vector
+  conformance suite.
+- Existing tests demonstrate successful in-memory key exchange and round-trip
+  operation. They do not establish tamper, replay, active-attacker,
+  cross-language, side-channel, or protocol-composition security.
+- A 64-bit truncated tag has a different forgery bound from a full-length tag;
+  no attempt budget or rekey policy is specified.
+
+These limitations are product-blocking for a security claim. Applications
+that require confidentiality, peer authentication, or replay protection must
+use a reviewed application-layer protocol rather than relying on this
+prototype.
+
+## Frame-space cost only
+
+The following table corrects the prior frame-overhead arithmetic. It estimates
+only the loss of application payload space when 16 envelope bytes occupy a PHY
+payload. It excludes public-key exchange, retransmission, session setup, and
+all security-processing time.
+
+| Illustrative tier | Application payload | Nominal PHY goodput | Envelope / payload | Approx. application goodput |
+|---|---:|---:|---:|---:|
+| 16-QAM r3/4 | 19,200 B | 38.4 kbps | 0.083% | 38.368 kbps |
+| 16-QAM r1/2 | 12,800 B | 25.6 kbps | 0.125% | 25.568 kbps |
+| QPSK r1/2 | 6,400 B | 12.8 kbps | 0.250% | 12.768 kbps |
+| BPSK r1/2 | 3,072 B | 6.1 kbps | 0.521% | 6.068 kbps |
+| 267 bps floor with 32 B application payload | 32 B | 0.267 kbps | 50.0% | 0.178 kbps |
+
+The percentages use `16 / application_payload_bytes`. Approximate application
+goodput uses
+`nominal_goodput * application_payload_bytes / (application_payload_bytes + 16)`.
+The table is capacity accounting, not a recommendation to enable the prototype.
+
+## Replacement boundary
+
+Selecting a standard construction, authenticating peer identity, defining
+nonces and replay behavior, adding cross-language vectors, and obtaining
+independent review are separate security work. Until that program completes,
+the public security status remains unauthenticated and the prototype remains
+off by default.

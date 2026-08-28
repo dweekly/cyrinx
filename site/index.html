@@ -199,13 +199,20 @@
   <div class="same-bench">
     <div>
       <p class="label">Controlled open-source comparison</p>
-      <h3>137× faster on the same MacBook-to-iPhone path</h3>
+      <h3>137× in the retained same-path aggregate comparison</h3>
       <p>
         Cyrinx 1.0 delivered 36.47 kbps; the fastest
         <a href="https://github.com/ggerganov/ggwave">ggwave</a> mode recovered
         on the same path delivered 0.267 kbps. Both used the same placement and
         payload-airtime accounting. The newer Pixel result is deliberately not
         used to inflate this ratio.
+      </p>
+      <p>
+        <strong>Evidence class: historical aggregate record, not public replay.</strong>
+        The tracked baseline summary records rates, geometry, and recovery, but
+        the raw ggwave capture and frozen decoder run are not included in the
+        public checkout. The ratio is therefore not independently replayable
+        from this repository.
       </p>
       <a href="/cyrinx-acoustic-link.pdf">See the controlled comparison</a>
     </div>

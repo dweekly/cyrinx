@@ -1,0 +1,10 @@
+{"eventSeq": 0, "virtualTimeMs": 50, "client": "A", "event": {"type": "peerFound", "peer": {"idHex": "beeb8da1", "displayName": "Peer-BEEB", "discoveredAtMs": 50}}}
+{"eventSeq": 0, "virtualTimeMs": 50, "client": "B", "event": {"type": "peerFound", "peer": {"idHex": "910a2dec", "displayName": "Peer-910A", "discoveredAtMs": 50}}}
+{"eventSeq": 1, "virtualTimeMs": 100, "client": "A", "event": {"type": "connectionChanged", "state": "connecting", "reason": null}}
+{"eventSeq": 2, "virtualTimeMs": 150, "client": "A", "event": {"type": "connectionChanged", "state": "connected", "reason": null}}
+{"eventSeq": 1, "virtualTimeMs": 150, "client": "B", "event": {"type": "connectionChanged", "state": "connected", "reason": null}}
+{"eventSeq": 3, "virtualTimeMs": 200, "client": "A", "event": {"type": "linkBudgetChanged", "budget": {"classification": "text", "txLowerBoundBps": null, "rxLowerBoundBps": null, "confidence": 0.7, "ageMs": 0}}}
+{"eventSeq": 4, "virtualTimeMs": 300, "client": "A", "event": {"type": "messageStatusChanged", "messageIdHex": "8a1233a1de59995ae7487b0d37491117", "status": "queued", "failureReason": null}}
+{"eventSeq": 5, "virtualTimeMs": 320, "client": "A", "event": {"type": "messageStatusChanged", "messageIdHex": "8a1233a1de59995ae7487b0d37491117", "status": "transmitting", "failureReason": null}}
+{"eventSeq": 2, "virtualTimeMs": 380, "client": "B", "event": {"type": "messageReceived", "message": {"idHex": "8a1233a1de59995ae7487b0d37491117", "sequence": 1, "direction": "incoming", "body": "hello", "senderPeerIdHex": "910a2dec", "sentAtWallClockMs": 380, "status": "delivered"}}}
+{"eventSeq": 6, "virtualTimeMs": 400, "client": "A", "event": {"type": "messageStatusChanged", "messageIdHex": "8a1233a1de59995ae7487b0d37491117", "status": "delivered", "failureReason": null}}

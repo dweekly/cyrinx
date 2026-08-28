@@ -23,10 +23,12 @@ the plan stage (e.g. `[1.1]`, `[0.2]`) it belongs to.
   truth; Swift/vDSP is an Apple acceleration backend; Android binds via JNI.
 - License **Apache-2.0**; website **cyrinx.org** (Cloudflare Pages, registered
   today); paper to **arXiv** (cs.NI / eess.SP) + PDF on site.
-- Crypto (X25519/CTR/HMAC) is an **opt-in layer, OFF by default**, with a
-  documented cost/security tradeoff table (overhead as % of goodput per MCS
-  tier — near-free at 36 kbps, dominant at the 267 bps MFSK floor). Apps choose
-  bandwidth-vs-security per observed channel quality.
+- Crypto was planned as an opt-in layer, off by default. A 2026-08-27
+  implementation audit found that the legacy HIL prototype is a custom
+  SHA-256-derived XOR/HMAC construction without authenticated identity or
+  replay protection, not a standard security control. The earlier
+  bandwidth-vs-security recommendation is withdrawn; see
+  `docs/CRYPTO_TRADEOFF.md`.
 - Added a consumer-facing **repositioning-guidance API** (plan 1.4b): turn
   sounder metrics into actionable user hints ("move closer", "soft surface",
   "point the bottom edge at the speaker", "too loud").
@@ -212,15 +214,13 @@ over the speaker, the Pixel records, and the **C codec decodes the capture**.
   [rate]`. The dylib is a build artifact (gitignored); rebuild line in clib.py.
 
 ### `[1.9-doc]` Crypto cost/security tradeoff documented
-`docs/CRYPTO_TRADEOFF.md`: the per-MCS overhead table, computed from the real
-codec geometry (`clib.py`). Per-frame AEAD tag (28 B) is **0.15 %** at 16-QAM
-r3/4 (38 kbps) but **87.5 %** at the MT-FSK floor with tiny frames; the 80-B
-handshake amortizes in 17 ms at the top tier vs 2.4 s at the floor. Guidance:
-turn it on for free on the fast tiers; at the floor, batch larger frames /
-authenticate-don't-encrypt / or skip it. The wiring of the envelope onto the
-bulk path (the code half of 1.9) remains; the *decision surface* — the thing the
-user emphasized (apps choose bandwidth-vs-security by channel) — is now
-documented. Cited from SECURITY.md.
+The original entry recorded a 28-byte frame envelope, an 80-byte handshake, and
+dynamic enablement guidance. A 2026-08-27 source audit showed those statements
+did not describe the implementation: the legacy frame envelope is 16 bytes,
+there is no explicit confirmation tag, and the prototype is not wired to the
+measured bulk path. The cost table and guidance were replaced with an
+implementation record and documentation quarantine. This paragraph retains
+the correction rather than silently rewriting the earlier decision history.
 
 ### `[roadmap]` Pleasant-sounding audible modes
 Added a ROADMAP exploration item (user idea): data-over-audio waveforms in the
@@ -343,8 +343,10 @@ trailing silence)" across abstract/summary, with the gross figure noted. (3)
 magnitude above deployed systems" → "~137× the best recovered open-source
 baseline on the same channel." (5) Elevated the single-geometry limitation to an
 explicit priority-next-step (a distance/orientation/surface sweep would teach
-more than another algorithm). (6) Security: "AEAD tag (28 B)" → "12-byte nonce +
-16-byte tag (encrypt-then-MAC)"; softened the "omit it" guidance.
+more than another algorithm). (6) Security wording was changed at the time to
+describe a 12-byte nonce and 16-byte tag. The 2026-08-27 source audit later
+showed that description was also wrong: the implemented envelope uses an
+eight-byte sequence and eight-byte truncated HMAC.
 
 Compiles clean: 20 pp, 0 warnings, 0 undefined refs, 0 overfull boxes,
 35/35 citations resolved.
