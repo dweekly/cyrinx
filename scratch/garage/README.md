@@ -4,10 +4,10 @@
 
 Two small pieces of the garage experiment program, described in
 [docs/research/garage-throughput-plan.md](../../docs/research/garage-throughput-plan.md).
-The first says exactly what radio settings the cautious baseline test uses, and
-why each number is what it is. The second measures how long the room keeps
-echoing, and — unlike the tool we already had — refuses to give you a number when
-the recording cannot actually support one.
+The first works out what radio settings a cautious link between two particular
+devices should use, from what each device can actually emit and hear. The second
+measures how long the room keeps echoing, and — unlike the tool we already had —
+refuses to give you a number when the recording cannot support one.
 
 Nothing here talks to hardware. The capture runner (G1) comes next.
 
@@ -45,14 +45,26 @@ view is still an open C3-04 merge gate, which would land a row with no JVM
 representation. A registry row is what a geometry earns *after* it wins a
 comparison, not what research needs to start.
 
-**There are two geometries, not one.** A single band shared by both directions
-would put the uplink arm of the baseline map into a region already measured as
-unusable: the Moto G speaker cliffs at 14 kHz (`scratch/hw20k/NOTES.md`, A5), the
-iPhone rolls off by 10–14 kHz (`docs/IOS_HIL.md`), and both tested phone speakers
-are phase-incoherent above ~18 kHz (`docs/NEGATIVE_FINDINGS.md` entry 9). The
-uplink geometry is therefore band-fitted to 600–14000 Hz — the intersection of
-what the phones on hand can emit — while the downlink keeps the registry's
-1100–23000 Hz.
+**Bands come from endpoint capability, not from a role.** There is no "uplink"
+or "downlink" geometry here. The occupied band is a property of the transmitting
+device's speaker and the receiving device's microphone, so it is computed as the
+intersection of the two, capped at 18 kHz when a phone is transmitting because
+both tested phone speakers are phase-incoherent above that
+(`docs/NEGATIVE_FINDINGS.md` entry 9).
+
+Naming the two ends "uplink" and "downlink" would bake in a topology — laptop
+strong, phone weak — that is wrong for a laptop pair, wrong for a phone pair, and
+wrong in an unpredictable direction for a high-end phone talking to a low-end
+one. The iPhone emits 600–11000 Hz and the Moto G emits 600–14000 Hz, so on that
+pair the cheaper phone carries the *wider* band; a role would get it backwards.
+C3-18's merge gate is that two symmetric peers converge on complementary roles
+elected at runtime, and capability travels in the beacon's capability hash, so
+this follows the contract the delivery plan already set.
+
+An endpoint that has not been characterized resolves to `UNKNOWN_ENDPOINT`, the
+narrowest band measured on any device here, so unknown degrades to conservative
+rather than optimistic. C3-20b replaces the measured table with per-endpoint
+self-characterization at association time.
 
 ## Why the validity states are against integrated noise
 
