@@ -274,7 +274,10 @@ this measurement.
 
 Budget-hardware generality run (Wi-Fi adb: the phone's USB data path was
 dead — charged fine, never enumerated on the bus, on a cable+port the Pixel
-passed; wireless debugging pair/connect worked immediately). Clean cell
+passed; wireless debugging pair/connect worked immediately, and it then
+autoconnects as serial `adb-ZT4226T9HB-5V6xZE._adb-tls-connect._tcp`, which is
+what `ANDROID_SERIAL` wants for this phone — the Pixel can stay on USB at the
+same time). Clean cell
 (`facedown_port_fnkey`), Mac M4:
 
 - **Downlink Mac→Moto: 46.915 kbps post-sounding ordered PHY payload rate,
