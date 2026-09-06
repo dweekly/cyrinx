@@ -12,7 +12,7 @@ providers:
 scope: |
   Fundamental research, DSP C core implementation, Swift library/test stubs, companion website, LaTeX whitepapers, and peer review validation were performed by AI agents under human direction. 
   The human operator provided the physical lab bench, device parameters, and final pull request review/approvals.
-last-updated: 2026-08-28
+last-updated: 2026-09-06
 ---
 
 # Cyrinx AI Agent Attribution & Disclosure
@@ -56,7 +56,7 @@ Table 1 logs the contributions of each model era to the repository, verified thr
 | **June 10–12, 2026** | **Claude Opus 4.8** (Anthropic) | Portable C port, golden-vector test rig, adaptive CP, mic selection, MFSK floor, two-mic MRC validation. | Decoupled DSP from hardware platform dependencies. | **38.400 kbps** payload-normalized console aggregate; 68 bps floor (verifiable via `Co-Authored-By` commit trailers). |
 | **July 1–2, 2026** | **Claude Fable 5** (Anthropic) | C library port of MRC, RS-coded floor, adaptive loop, project website scaffolding. | Digital loopback validation. | Completed digital loopback validation; OTA deferred to next step (verifiable via `Co-Authored-By` commit trailers). |
 | **July 6–8, 2026** | **Claude Fable 5** (Anthropic) | Diversity stack OTA re-validation; floor erasures, floor combining, MRC-aware sounding. | Addressed defects invisible to digital loopbacks. | **138 bps** RS floor; **11.366 kbps** MRC-carried over the air (verifiable via `Co-Authored-By` commit trailers). |
-| **July 20, 2026** | **Antigravity 2.0** / **Gemini** (Google) | Cyrinx 3.0 versioned C ABI base, profile registry, and batch capture contract experiments (branch `c3-02-05-batch-demod`, PR #71). | Define prefix-compatible ABI boundaries and batch decode/encode layouts. | **Branch-only; never merged.** Digital/in-memory loopback only (session-record attribution). The 2026-08-27 branch-tip review ([docs/reviews/C3_02_05_TIP_REVIEW_2026-08-27.md](docs/reviews/C3_02_05_TIP_REVIEW_2026-08-27.md)) found the work not promotable; reconstruction against reviewed contracts is pending. |
+| **July 20, 2026** | **Antigravity 2.0** / **Gemini** (Google) | Cyrinx 3.0 versioned C ABI base, profile registry, and batch capture contract experiments (PR #71, commit tagged `archive/c3-02-05-batch-demod-rejected`). | Define prefix-compatible ABI boundaries and batch decode/encode layouts. | **Branch-only; never merged.** Digital/in-memory loopback only (session-record attribution). The 2026-08-27 branch-tip review ([docs/reviews/C3_02_05_TIP_REVIEW_2026-08-27.md](docs/reviews/C3_02_05_TIP_REVIEW_2026-08-27.md)) found the work not promotable. The branch was deleted on 2026-09-06 and the tag is now the only reference that resolves; the work was reconstructed against the reviewed contracts and merged in PR #82. |
 
 ---
 
