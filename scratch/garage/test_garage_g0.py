@@ -87,8 +87,25 @@ def test_unknown_direction_is_rejected():
         geo.conservative("sideways")
 
 
-def test_geometry_builds_a_valid_config_the_c_codec_accepts():
-    clib = pytest.importorskip("clib", reason="C bulk codec not built")
+@pytest.fixture(scope="module")
+def codec():
+    """The C bulk codec, or a skip if the dylib is not built.
+
+    ``importorskip`` alone is not enough: ``clib`` imports fine and loads the
+    library lazily, so an absent dylib surfaces as FileNotFoundError from the
+    first call rather than as an ImportError. Only that error skips; a codec
+    that is present but wrong must fail.
+    """
+    clib = pytest.importorskip("clib", reason="clib not importable")
+    try:
+        clib.geometry(clib.make_cfg())
+    except FileNotFoundError as exc:
+        pytest.skip(f"C bulk codec not built: {exc}")
+    return clib
+
+
+def test_geometry_builds_a_valid_config_the_c_codec_accepts(codec):
+    clib = codec
     for direction in ("downlink", "uplink"):
         g = geo.conservative(direction)
         cfg = g.to_clib_cfg(clib)
@@ -97,9 +114,9 @@ def test_geometry_builds_a_valid_config_the_c_codec_accepts():
         assert geometry.payload_bytes > 0
 
 
-def test_round_trip_through_the_c_codec_is_byte_exact():
+def test_round_trip_through_the_c_codec_is_byte_exact(codec):
     """The plan requires a byte-exact digital round trip before any playback."""
-    clib = pytest.importorskip("clib", reason="C bulk codec not built")
+    clib = codec
     for direction in ("downlink", "uplink"):
         cfg = geo.conservative(direction).to_clib_cfg(clib)
         payload = np.random.default_rng(7).integers(
@@ -139,13 +156,51 @@ def test_recovers_a_known_decay_rate():
     assert out.usable_ms(-20.0) == pytest.approx(30.0, rel=0.15)
 
 
-def test_noise_floor_invalidates_the_deep_threshold_first():
-    """A noisy capture may support -10 dB while -20 dB is unreportable."""
-    ir, peak = synthetic_ir(decay_ms=60.0, noise_rms=0.05)
+def test_noise_invalidates_the_deep_threshold_first():
+    """A capture can support -10 dB while -20 dB is already in the noise.
+
+    The deep threshold fails first because the curve has less signal energy left
+    at its crossing while the integrated noise ahead of it has barely shrunk.
+    """
+    ir, peak = synthetic_ir(decay_ms=20.0, length_ms=300.0, noise_rms=0.002)
     out = ds.measure(ir, peak, SR)
+    assert out.at(-10.0).usable
     assert out.at(-20.0).status == ds.NOISE_LIMITED
     assert out.usable_ms(-20.0) is None
-    assert "noise floor" in out.at(-20.0).detail
+    assert "integrated noise" in out.at(-20.0).detail
+    assert out.status == ds.OK, "one usable threshold still makes the readout usable"
+
+
+def test_an_impulse_in_stationary_noise_is_not_a_long_delay_spread():
+    """The P1 from review: peak-to-noise cannot validate an integrated curve.
+
+    One impulse, no reflections, stationary noise 46 dB below the peak. The
+    Schroeder curve integrates that noise across the window and crosses -10 dB
+    at 38.8 ms; the noiseless answer is 0.02 ms. Accepting it would put a
+    reflection-free channel past the 16 ms guard budget and flip the stage 1G
+    gate the wrong way.
+    """
+    ir = np.random.default_rng(1).normal(0, 0.0055, 6000)
+    ir[240] = 1.0
+    out = ds.measure(ir, 240, SR)
+    assert out.peak_to_noise_db > 40.0, "the peak ratio looks excellent, and lies"
+    assert out.at(-10.0).status == ds.NOISE_LIMITED
+    assert out.usable_ms(-10.0) is None
+    assert ds.exceeds_guard_budget(
+        out.usable_ms(-10.0), geo.PRACTICAL_GUARD_BUDGET_MS
+    ) is None, "the gate must abstain, not conclude the guard is exceeded"
+
+    clean = np.zeros(6000)
+    clean[240] = 1.0
+    assert ds.measure(clean, 240, SR).usable_ms(-10.0) == pytest.approx(0.02, abs=0.01)
+
+
+def test_aggregate_status_does_not_blame_noise_for_a_window_limit():
+    """P2 from review: a noiseless truncated capture is not noise-limited."""
+    out = ds.measure(np.r_[np.zeros(240), np.ones(1920)], 240, SR)
+    assert all(r.status == ds.WINDOW_LIMITED for r in out.readings.values())
+    assert out.status == ds.WINDOW_LIMITED
+    assert "noise" not in out.detail
 
 
 def test_a_decay_longer_than_the_window_is_window_limited_not_a_number():

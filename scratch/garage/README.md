@@ -54,6 +54,20 @@ uplink geometry is therefore band-fitted to 600–14000 Hz — the intersection 
 what the phones on hand can emit — while the downlink keeps the registry's
 1100–23000 Hz.
 
+## Why the validity states are against integrated noise
+
+A peak-to-noise ratio cannot tell you whether a Schroeder crossing is real. The
+curve integrates noise across the whole remaining window while the peak is one
+sample, so a single impulse with no reflections at all, sitting in stationary
+noise 46 dB below it, produces a -10 dB "delay spread" of 38.8 ms where the
+noiseless answer is 0.02 ms. That is past the 16 ms guard budget, so accepting it
+would send a reflection-free position to stage 8.
+
+A crossing is therefore judged against the integrated noise energy still inside
+the window at that point, needing `NOISE_HEADROOM_DB` of margin over it, and
+`test_garage_g0.py` pins that case. The first version of this module checked the
+peak ratio instead and reported the 38.8 ms figure as `ok`.
+
 ## The guard budget
 
 `geometries.PRACTICAL_GUARD_BUDGET_MS` is 16.0 ms, equal to the 768-sample

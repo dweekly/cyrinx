@@ -33,11 +33,21 @@ existing tables. -15 dB is retained for that reason even though the stage 1G
 gate reads -10 and -20."""
 
 NOISE_HEADROOM_DB = 10.0
-"""Decibels of headroom a decay must have above the measurement noise floor
-before a threshold may be evaluated. ISO 3382-1 requires the evaluation range to
-sit 10 dB clear of the noise floor for a decay measurement to be reportable;
-the same requirement is applied per threshold here, so a -10 dB reading can be
-valid on a capture where the -20 dB reading is not."""
+"""Decibels by which the backward-integrated energy remaining at a threshold
+crossing must exceed the integrated *noise* energy still inside the window at
+that point, for the crossing to be reportable.
+
+The comparison is against integrated noise, not against the peak. A peak-to-
+noise ratio says nothing about whether a crossing is real, because the Schroeder
+curve integrates noise over the whole remaining window while the peak is a
+single sample: an impulse with no reflections at all, buried in stationary noise
+45 dB below it, produces a -10 dB "delay spread" of 38.8 ms where the noiseless
+answer is 0.02 ms. That is the failure this constant exists to prevent, and it
+lands on the wrong side of the guard budget, so it would flip the stage 1G gate.
+
+ISO 3382-1 asks for the evaluation range to sit 10 dB clear of the noise floor;
+10 dB is that requirement, applied per threshold against the integrated
+quantity, so a -10 dB reading can be valid on a capture where -20 dB is not."""
 
 MIN_NOISE_SAMPLES = 64
 """Samples required before the main tap to estimate the noise floor from the
@@ -147,36 +157,34 @@ def measure(ir, peak_idx, sr, thresholds_db=THRESHOLDS_DB):
             window_ms,
         )
 
-    noise_rms = float(np.sqrt(np.mean(ir[:peak_idx] ** 2)))
+    noise_variance = float(np.mean(ir[:peak_idx] ** 2))
     peak = float(np.max(np.abs(tail)))
     if peak <= 0.0:
         return _invalid("impulse response is silent after the main tap", window_ms)
     peak_to_noise_db = (
-        float("inf") if noise_rms <= 0.0 else 20.0 * np.log10(peak / noise_rms)
+        float("inf")
+        if noise_variance <= 0.0
+        else 10.0 * np.log10(peak**2 / noise_variance)
     )
 
     # Schroeder backwards-integrated energy decay, normalized to its own start.
-    # Same formulation as freqresp.delay_spread; test_delay_spread.py pins the
-    # two to identical figures on synthetic responses.
+    # Same formulation as freqresp.delay_spread; test_garage_g0.py pins the two
+    # to identical figures on synthetic responses.
     energy = tail**2
-    edc = np.cumsum(energy[::-1])[::-1]
-    edc = edc / (edc[0] + 1e-300)
+    remaining = np.cumsum(energy[::-1])[::-1]
+    edc = remaining / (remaining[0] + 1e-300)
     edc_db = 10.0 * np.log10(edc + 1e-300)
 
+    # Integrated noise still inside the window at each index, against which a
+    # candidate crossing is judged. See NOISE_HEADROOM_DB.
+    samples_remaining = len(tail) - np.arange(len(tail))
+    remaining_noise = samples_remaining * noise_variance
+    headroom = 10.0 ** (NOISE_HEADROOM_DB / 10.0)
+
     readings = {}
+    usable_span = int(WINDOW_USABLE_FRACTION * len(tail))
     for db in thresholds_db:
-        required_db = abs(db) + NOISE_HEADROOM_DB
-        if peak_to_noise_db < required_db:
-            readings[db] = Reading(
-                db,
-                NOISE_LIMITED,
-                None,
-                f"peak is {peak_to_noise_db:.1f} dB over the noise floor; "
-                f"{required_db:.1f} dB needed to evaluate {db:.0f} dB",
-            )
-            continue
         crossed = np.flatnonzero(edc_db < db)
-        usable_span = int(WINDOW_USABLE_FRACTION * len(tail))
         if len(crossed) == 0 or crossed[0] >= usable_span:
             readings[db] = Reading(
                 db,
@@ -186,11 +194,44 @@ def measure(ir, peak_idx, sr, thresholds_db=THRESHOLDS_DB):
                 f"{WINDOW_USABLE_FRACTION:.0%} of the {window_ms:.1f} ms window",
             )
             continue
-        readings[db] = Reading(db, OK, float(crossed[0] / sr * 1000.0))
+        at = int(crossed[0])
+        if remaining[at] < headroom * remaining_noise[at]:
+            readings[db] = Reading(
+                db,
+                NOISE_LIMITED,
+                None,
+                f"energy remaining at the {db:.0f} dB crossing is "
+                f"{10 * np.log10((remaining[at] + 1e-300) / (remaining_noise[at] + 1e-300)):.1f}"
+                f" dB over the integrated noise still in the window; "
+                f"{NOISE_HEADROOM_DB:.0f} dB needed",
+            )
+            continue
+        readings[db] = Reading(db, OK, float(at / sr * 1000.0))
 
-    status = OK if any(r.usable for r in readings.values()) else NOISE_LIMITED
-    detail = "" if status == OK else "no threshold produced a reportable figure"
-    return DelaySpread(readings, peak_to_noise_db, window_ms, status, detail)
+    return DelaySpread(
+        readings, peak_to_noise_db, window_ms, *_aggregate(readings)
+    )
+
+
+def _aggregate(readings):
+    """Aggregate status and detail for a set of per-threshold readings.
+
+    Precedence when nothing is usable: a shared status is reported as itself, and
+    a mix reports NOISE_LIMITED, because noise bounds what the window could show
+    even if a longer window were available. The detail always names the mix, so
+    the summary cannot claim insufficient SNR on a purely window-limited capture.
+    """
+    if any(r.usable for r in readings.values()):
+        return OK, ""
+    statuses = {r.status for r in readings.values()}
+    if len(statuses) == 1:
+        only = statuses.pop()
+        return only, f"every threshold is {only}"
+    status = NOISE_LIMITED if NOISE_LIMITED in statuses else sorted(statuses)[0]
+    breakdown = ", ".join(
+        f"{db:.0f} dB {readings[db].status}" for db in sorted(readings)
+    )
+    return status, f"no threshold produced a reportable figure ({breakdown})"
 
 
 def exceeds_guard_budget(reading_ms, budget_ms):
