@@ -365,6 +365,14 @@ swift run cyrinx-sim-bench --profile quiet --out artifacts/bench/sim-quiet.json
   [docs/publication-journal.md](docs/publication-journal.md).
 - [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) — the OTA measurement campaign and
   its live-bench findings.
+- [docs/research/acoustic-throughput-review-2026-09-04.md](docs/research/acoustic-throughput-review-2026-09-04.md)
+  — where the throughput actually goes: capacity bounds, what the current
+  receiver leaves unused, and which alternative waveforms are worth a controlled
+  comparison (fresh as of 2026-09-06).
+- [docs/research/garage-throughput-plan.md](docs/research/garage-throughput-plan.md)
+  — the staged garage experiment program that executes EXPERIMENTS.md Tier 1 with
+  no new measurement equipment, and hands its measured profiles to the Cyrinx 3.0
+  Phase D items (fresh as of 2026-09-06).
 - [docs/A1_AUTO_MRC.md](docs/A1_AUTO_MRC.md) — the executed plan for auto-MRC
   in the live adaptive loop (completed 2026-07-08, PR #52; kept as the
   worked example of a plan → bench → referee cycle).
