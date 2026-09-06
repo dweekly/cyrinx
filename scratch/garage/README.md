@@ -64,9 +64,9 @@ noiseless answer is 0.02 ms. That is past the 16 ms guard budget, so accepting i
 would send a reflection-free position to stage 8.
 
 A crossing is therefore judged against the integrated noise energy still inside
-the window at that point, needing `NOISE_HEADROOM_DB` of margin over it, and
-`test_garage_g0.py` pins that case. The first version of this module checked the
-peak ratio instead and reported the 38.8 ms figure as `ok`.
+the window at that point, needing `NOISE_HEADROOM_DB` of margin over it.
+`test_garage_g0.py` pins that case, and the peak ratio is kept only as a reported
+diagnostic.
 
 ## The guard budget
 
