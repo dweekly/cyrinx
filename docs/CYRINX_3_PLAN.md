@@ -55,13 +55,13 @@ criteria without delaying the critical path.
 ## Implementation status ledger
 
 This ledger records repository state, not intent. It is pinned to
-`main@123a105`; branch-only code is not a merged capability.
+`main@4174dcd`; branch-only code is not a merged capability.
 
 | Plan item | Status | Evidence and boundary |
 |---|---|---|
 | C3-01 | **MERGED** | Architecture, semantic contract, and API inventory merged in PR #75. |
 | C3-02 | **NOT MERGED** | The branch workflow was rejected by the branch-tip review; the CI baseline is rebuilt after the reconstructed contracts are accepted (execution plan Phase 2.3/Phase 3). |
-| C3-03 through C3-05 | **RECONSTRUCTION IN REVIEW** | The rejected bundled candidate (BRANCH-ONLY CANDIDATE `origin/c3-02-05-batch-demod@2370fe2`) was reconstructed fresh against the reviewed contracts with a reuse ledger — see [docs/reviews/C3_03_05_RECONSTRUCTION.md](reviews/C3_03_05_RECONSTRUCTION.md). Remaining promotion gates (Kotlin/JNI registry view, oracle parity fixtures, cross-ABI layout runs) are listed there. |
+| C3-03 through C3-05 | **MERGED, PROMOTION GATES OPEN** | The reconstruction merged in PR #82. The rejected bundled candidate it replaced (BRANCH-ONLY CANDIDATE, never merged) is the commit tagged `archive/c3-02-05-batch-demod-rejected` (`2370fe2`); its branch was deleted on 2026-09-06 and the tag is now the only reference that resolves. Reuse ledger and gate list: [docs/reviews/C3_03_05_RECONSTRUCTION.md](reviews/C3_03_05_RECONSTRUCTION.md). Still open before promotion: the Kotlin/JNI registry view with JVM conformance tests, batch-contract parity fixtures against the frozen Python oracle, cross-ABI layout runs, and the C3-02 CI baseline that would run them. |
 | C3-06 through C3-27 | **NOT MERGED** | No independently gated implementation is present on `main`. Incidental candidate code on another branch does not complete these tasks. |
 | C3-28 | **MERGED** | Cross-platform chat contract, envelope, deterministic simulator, and golden traces merged in PR #70. |
 | C3-29 | **MERGED, OFFLINE ONLY** | Apple simulator chat app merged in PR #73; it is not a live acoustic transport. |
