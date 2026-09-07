@@ -168,9 +168,16 @@ class Reading:
     ms: float = None
     ms_interval: tuple = None
     detail: str = ""
+    truncated: bool = False
 
     @property
     def usable(self):
+        """Whether the figure may be read at all. Not the same as gate-usable.
+
+        A truncated reading has a number worth reporting but no validated bound
+        on the energy truncation discarded, so `exceeds_guard_budget` abstains on
+        it separately.
+        """
         return self.status == OK and self.ms is not None and np.isfinite(self.ms)
 
 
@@ -308,9 +315,10 @@ def measure(acquisition, noise, thresholds_db=THRESHOLDS_DB):
         truncated = True
 
     primary = _crossings(integrand, sr)
-    # Sensitivity of each crossing to where the tail was cut. The interval is the
-    # honest uncertainty truncation introduces; the gate abstains when it
-    # straddles the budget rather than pretending the point estimate is exact.
+    # Sensitivity of each crossing to where the tail was cut. This is a
+    # diagnostic showing how much the cut point moves the answer -- it is NOT a
+    # bound on the energy truncation discarded, so the gate does not treat it as
+    # one; see exceeds_guard_budget.
     if truncated:
         span = max(1, int(0.1 * len(integrand)))
         shorter = _crossings(tail[: max(MIN_REGRESSION_BLOCKS, len(integrand) - span)], sr)
@@ -338,7 +346,9 @@ def measure(acquisition, noise, thresholds_db=THRESHOLDS_DB):
                 f"{observed_ms:.1f} ms analysed",
             )
         else:
-            readings[db] = Reading(db, OK, float(value), (float(lo), float(hi)))
+            readings[db] = Reading(
+                db, OK, float(value), (float(lo), float(hi)), truncated=truncated
+            )
 
     if any(r.usable for r in readings.values()):
         status = OK
@@ -377,6 +387,14 @@ def exceeds_guard_budget(reading, budget_ms):
             f"got {type(reading).__name__}"
         )
     if not reading.usable:
+        return None
+    if reading.truncated:
+        # The interval is a cut-point sensitivity, not a bound on the energy
+        # truncation removed, and truncation biases the figure short. Without a
+        # validated omitted-energy bound a truncated reading cannot support a
+        # budget decision in either direction. Truncation only engages when
+        # capture noise approaches the excitation amplitude, so this abstains on
+        # degenerate captures rather than on ordinary ones.
         return None
     lo, hi = reading.ms_interval or (reading.ms, reading.ms)
     if not (np.isfinite(lo) and np.isfinite(hi)):

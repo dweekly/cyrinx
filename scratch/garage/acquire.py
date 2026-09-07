@@ -106,13 +106,16 @@ def deconvolve(capture, inv, sr, horizon_ms=DEFAULT_HORIZON_MS, pre_tap_ms=PRE_T
     full = np.convolve(capture, inv, mode="full")
     peak = int(np.argmax(np.abs(full)))
 
-    # A tap at lag L is only observable if the recording contained the whole
-    # sweep convolved with it, so the deepest supported lag is the recording
-    # length minus the sweep length -- and the excitation and its inverse filter
-    # are the same length under Farina. Samples of the convolution beyond that
-    # are the filter ramping down, not the room, and analysing them would repeat
-    # the original defect in a new place.
-    supported = max(0, len(capture) - len(inv))
+    # Convolution output is fully overlapped -- every inverse-filter sample
+    # backed by a recorded sample -- only up to index len(capture) - 1. Past
+    # that the filter is ramping down, not the room, and analysing it would
+    # repeat the original defect in a new place.
+    #
+    # Measured from the main tap, not from the recording start: real playback
+    # has latency, so the tap sits later than the sweep does and the observable
+    # window after it is correspondingly shorter. Measuring from the start
+    # overstates support by exactly that latency.
+    supported = max(0, len(capture) - peak)
 
     pre = int(pre_tap_ms * sr / 1000.0)
     want = int(horizon_ms * sr / 1000.0)

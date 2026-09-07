@@ -369,3 +369,54 @@ def test_the_deep_threshold_needs_a_longer_horizon_than_the_shallow_one():
     assert deep[1] < geo.PRACTICAL_GUARD_BUDGET_MS < deep[-1], (
         "the 120 ms crop should land this capture on the wrong side of the budget"
     )
+
+
+# --- Merge-review P1 regressions ---------------------------------------------
+
+
+def test_playback_latency_does_not_overstate_supported_horizon():
+    """Support is measured from the main tap, not from the recording start.
+
+    Real playback has latency -- 154 ms on the MacBook path measured here -- so a
+    sweep sits later in the recording than it does in the excitation, and the
+    observable window after the main tap is shorter by exactly that much.
+    """
+    x, inv = F.make_ess()
+    latency = 720
+    capture = np.zeros(288960)
+    capture[latency : latency + len(x)] = x[: len(capture) - latency]
+    acq = acquire.deconvolve(capture, inv, SR, horizon_ms=20.0)
+    assert acq.support == acquire.SUPPORT_RECORDING_ENDED_EARLY
+    assert acq.horizon_ms == pytest.approx(5.0, abs=1.0), (
+        f"only ~5 ms is supported after the tap, adapter claimed {acq.horizon_ms}"
+    )
+
+
+def test_a_truncated_reading_never_decides_the_gate():
+    """The interval is a cut-point sensitivity, not an omitted-energy bound.
+
+    Reproduced from the merge review: a 99 ms decay reads 16.083 ms clean, and
+    under heavy noise reports [15.625, 16.000] -- an interval that sits wholly
+    below the 16 ms budget while the truth sits above it. Truncation biases
+    short, so without a validated bound a truncated reading cannot decide the
+    budget in either direction.
+    """
+    acq, noise = acquire_through(diffuse(99.0, seed=27), horizon_ms=500.0, seed=27)
+    clean = ds.measure(acq, noise).usable_ms(-10.0)
+    assert clean == pytest.approx(16.0833, abs=0.01)
+
+    acq, noise = acquire_through(diffuse(99.0, seed=27), noise_rms=2.0, horizon_ms=500.0, seed=27)
+    out = ds.measure(acq, noise)
+    reading = out.at(-10.0)
+    assert out.truncated and reading.truncated
+    assert ds.exceeds_guard_budget(reading, 16.0) is None, (
+        "a truncated reading must abstain, not answer"
+    )
+
+
+def test_an_untruncated_reading_still_decides_the_gate():
+    """The abstention above must not disable the gate on ordinary captures."""
+    acq, noise = real_acquisition()
+    out = ds.measure(acq, noise)
+    assert not out.truncated
+    assert ds.exceeds_guard_budget(out.at(-10.0), geo.PRACTICAL_GUARD_BUDGET_MS) is False

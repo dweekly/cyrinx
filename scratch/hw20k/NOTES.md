@@ -365,6 +365,9 @@ decisive 35.8 ms figure was quoted at −10 dB.
 
 **Bench numbers for this path:** capture rms 0.15 at sweep amplitude 0.5, peak
 0.62 (no clipping), room tone rms 0.0007–0.0034, capture peak-to-tone 58 dB.
+Playback-plus-capture latency is 7,387 samples, **154 ms**, which is subtracted
+from the observable window: a recording must retain the horizon *plus* the
+latency after the sweep ends, so the 1.0 s tail used here supports about 846 ms.
 Farina deconvolution against a 6 s sweep buys ~40 dB of processing gain, so
 integrated noise sits at 6.5e-08 of window energy and truncation never engages at
 this SNR.
