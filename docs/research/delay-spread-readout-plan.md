@@ -82,7 +82,33 @@ filter (ADR 0006 suggests ~2 s against a 6.0 s filter) must be handled by a
 declared convolution-boundary rule and only the fully-overlapped interior may be
 used for the power estimate.
 
-### 2. Plain truncation, with the bias reported as an interval
+### 2a. A crossing that sits on a tap step cannot decide the gate
+
+Three review rounds each found a differently-constructed sparse channel where the
+gate answered wrongly, which is the signature of a missing validity criterion
+rather than three bugs. The cause is that **crossing time is discontinuous in the
+energy fraction**: on a channel with discrete taps the fraction steps at each
+arrival, so a threshold falling just above or below a step lands on opposite
+sides of it and the reported time jumps by the whole tap separation. A two-tap
+channel leaving 9.8% of its energy after the first tap moves 30 ms on a hair of
+noise.
+
+Bounding that is not practical — it needs the signal-noise cross-term and the
+error in the noise estimate itself. So the readout does not model it. It perturbs
+each threshold by ±1 dB and asks the curve how stable its own answer is:
+
+| channel | −9 dB | −10 dB | −11 dB | spread |
+|---|---:|---:|---:|---:|
+| two taps, gain 0.33, with noise | 0.021 | 29.688 | 30.021 | **30.000 ms** |
+| two taps, gain 0.5, clean | 30.021 | 30.021 | 30.021 | 0.000 ms |
+| single tap | 0.021 | 0.021 | 0.021 | 0.000 ms |
+| real MacBook capture | 0.792 | 0.917 | 1.042 | 0.250 ms |
+
+Those perturbed crossings join the reading's interval, and the gate abstains when
+the interval straddles the budget. This needs no noise model and catches every
+reproduction, including two that a noise model had missed.
+
+### 2b. Plain truncation, with the bias reported as an interval
 
 Truncation biases the estimate *short*, and the bias is not negligible at this
 gate. For an exponential decay whose true −10 dB crossing is 16.500 ms,

@@ -91,6 +91,22 @@ MIN_REGRESSION_BLOCKS = 8
 regression is attempted. Fewer than this is not a low-SNR result; it is a
 response without enough diffuse decay to fit, reported as `unsupported-fit`."""
 
+THRESHOLD_SENSITIVITY_DB = 1.0
+"""How far each threshold is perturbed to test whether its crossing is stable.
+
+Crossing time is not a continuous function of the threshold. On a channel with
+discrete taps the energy fraction steps at each arrival, so a threshold falling
+just above or below a step lands on opposite sides of it and the reported time
+jumps by the whole tap separation. Measured on the fixtures here: a two-tap
+channel whose remaining energy sits at 9.8% moves 30.000 ms under this
+perturbation, while a clean two-tap channel and a single tap move 0.000 ms and a
+real MacBook capture moves 0.250 ms.
+
+That is the discriminator the gate needs, and unlike a noise model it needs no
+assumptions: it asks the curve directly whether its answer is stable. 1 dB is a
+fifth of the 5 dB spacing between reported thresholds -- large enough to expose a
+step, small enough not to conflate neighbouring thresholds."""
+
 MIN_DECAY_SLOPE_DB_PER_MS = 0.01
 """A fit must actually decay. A flat or rising regression means the response is
 not a decaying tail, so the crosspoint would be meaningless."""
@@ -167,6 +183,11 @@ class Reading:
     status: str
     ms: float = None
     ms_interval: tuple = None
+    """Crossings obtained under perturbations the measurement cannot resolve --
+    threshold sensitivity, noise correction, and cut-point sensitivity when
+    truncated. Not a statistical confidence interval: it is the range of answers
+    consistent with what was measured, and the gate abstains when it straddles
+    the budget."""
     detail: str = ""
     truncated: bool = False
     support: str = acquire.SUPPORT_OK
@@ -223,7 +244,7 @@ def _crossings(tail, sr):
     return freqresp.delay_spread(tail, 0, sr=sr)
 
 
-def _crossings_from_remaining(remaining, sr):
+def _crossings_from_remaining(remaining, sr, offset_db=0.0):
     """Crossing times from an already-computed backward-integrated curve.
 
     Mirrors `freqresp.delay_spread` exactly -- normalize to the curve's own
@@ -236,7 +257,7 @@ def _crossings_from_remaining(remaining, sr):
     edc_db = 10.0 * np.log10(edc + 1e-300)
     out = {}
     for db in THRESHOLDS_DB:
-        idx = np.flatnonzero(edc_db < db)
+        idx = np.flatnonzero(edc_db < db + offset_db)
         out[f"{int(db)}dB"] = (
             float(idx[0] / sr * 1000.0) if len(idx) else float(len(remaining) / sr * 1000.0)
         )
@@ -337,17 +358,24 @@ def measure(acquisition, noise, thresholds_db=THRESHOLDS_DB):
 
     primary = _crossings(integrand, sr)
 
-    # The measured curve contains the noise's own energy. Subtracting its
-    # expectation gives the signal-only curve, and the two bracket the truth.
-    # This matters even when integrated noise is small: near a discrete tap the
-    # crossing time is discontinuous in the energy fraction, so a channel whose
-    # remaining energy sits just under a threshold can jump tens of milliseconds
-    # on a hair of noise. A zero-width interval there would assert a precision
-    # the measurement does not have.
+    # Crossing time is discontinuous in the energy fraction: on a channel with
+    # discrete taps the fraction steps at each arrival, so a threshold sitting
+    # near a step lands on either side of it depending on perturbations far too
+    # small to model -- noise, its cross-term with the signal, estimation error
+    # in the noise reference itself. Rather than trying to bound those terms,
+    # perturb the threshold and ask the curve how stable its own answer is.
     observed = np.cumsum((integrand**2)[::-1])[::-1]
+    sensitivity = [
+        _crossings_from_remaining(observed, sr, offset_db=d)
+        for d in (-THRESHOLD_SENSITIVITY_DB, THRESHOLD_SENSITIVITY_DB)
+    ]
+
+    # Also carry the noise-corrected curve as one more candidate. Subtracting the
+    # noise's expected energy does not bound the truth -- the cross-term remains
+    # -- so it is a candidate that can only widen the interval, never a bound.
     expected_noise = noise.power * (len(integrand) - np.arange(len(integrand)))
     corrected = np.maximum(observed - expected_noise, 1e-300)
-    denoised = _crossings_from_remaining(corrected, sr)
+    sensitivity.append(_crossings_from_remaining(corrected, sr))
 
     # Sensitivity of each crossing to where the tail was cut. This is a
     # diagnostic showing how much the cut point moves the answer -- it is NOT a
@@ -365,7 +393,7 @@ def measure(acquisition, noise, thresholds_db=THRESHOLDS_DB):
     for db in thresholds_db:
         key = f"{int(db)}dB"
         value = primary[key]
-        candidates = (value, shorter[key], longer[key], denoised[key])
+        candidates = [value, shorter[key], longer[key]] + [c[key] for c in sensitivity]
         lo, hi = min(candidates), max(candidates)
         at_edge = value >= observed_ms - (1000.0 / sr)
         if at_edge and not truncated and support == acquire.SUPPORT_OK:

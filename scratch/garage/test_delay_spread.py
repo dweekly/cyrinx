@@ -473,3 +473,36 @@ def test_noise_uncertainty_widens_a_knife_edge_crossing():
     lo, hi = reading.ms_interval
     assert lo < 16.0 < hi, f"interval {reading.ms_interval} should span the budget"
     assert ds.exceeds_guard_budget(reading, 16.0) is None
+
+
+@pytest.mark.parametrize(
+    "gain,noise_rms,seed", [(0.33, 0.02, 11), (0.3303, 0.005, 5)]
+)
+def test_a_crossing_sitting_on_a_tap_step_never_decides_the_gate(gain, noise_rms, seed):
+    """Both knife-edge reproductions from review, and why a noise model cannot fix them.
+
+    Crossing time is discontinuous in the energy fraction: the fraction steps at
+    each tap arrival, so a threshold near a step lands on either side depending
+    on perturbations far too small to model. Rather than bounding those, the
+    readout perturbs the threshold and abstains when the curve's own answer moves.
+    """
+    acq, noise = acquire_through(
+        channel([(0.0, 1.0), (30.0, gain)]), noise_rms=noise_rms, horizon_ms=500.0, seed=seed
+    )
+    out = ds.measure(acq, noise)
+    reading = out.at(-10.0)
+    assert not out.truncated and out.support == acquire.SUPPORT_OK, (
+        "this must be caught on the ordinary path, not by truncation or support"
+    )
+    lo, hi = reading.ms_interval
+    assert lo < 16.0 < hi, f"interval {reading.ms_interval} should span the budget"
+    assert ds.exceeds_guard_budget(reading, 16.0) is None
+
+
+def test_a_stable_crossing_still_decides_the_gate():
+    """The abstention above must not disable the gate on well-conditioned channels."""
+    beyond, noise = acquire_through(channel([(0.0, 1.0), (30.0, 0.5)]), horizon_ms=500.0)
+    assert ds.exceeds_guard_budget(ds.measure(beyond, noise).at(-10.0), 16.0) is True
+
+    within, noise = acquire_through(channel([(0.0, 1.0)]), horizon_ms=500.0)
+    assert ds.exceeds_guard_budget(ds.measure(within, noise).at(-10.0), 16.0) is False
