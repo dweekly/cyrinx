@@ -319,3 +319,52 @@ same time). Clean cell
   `data/motog_a2m_16qam{,_r34}_bandfit.npy`. Downlink freqresp capture
   clipped (rx_peak 1.0) — magnitudes above 8 kHz suspect, SNR fine;
   re-sweep at lower amp if the downlink curve is ever needed precisely.
+
+## G0: MacBook self-calibration and the delay-spread horizon (2026-09-07)
+
+First measurements from the garage readout (`scratch/garage/`), on the MacBook
+Pro's own speaker-to-microphone path — ADR 0006's self-calibration and
+environmental-sampling phases for a single endpoint. Five swept-sine captures,
+one fixed geometry, ~4 minutes, `selfcal.py`; raw captures under
+`artifacts/garage/`.
+
+**The analysis horizon changes the answer, and the default crop is too short.**
+The energy decay curve normalizes to the energy inside the analysed window, so a
+short window inflates every remaining fraction and pulls crossings earlier.
+Measured on one capture:
+
+| horizon | 60 ms | 90 | 120 | 160 | 200 | 250 | 400 | 700 | 1000 |
+|---|---|---|---|---|---|---|---|---|---|
+| −10 dB | 0.917 | 0.917 | 0.917 | 0.917 | 0.917 | 0.917 | 0.917 | 0.917 | 0.917 |
+| −20 dB | 12.00 | 14.58 | 15.29 | 15.75 | 16.33 | 16.75 | 17.04 | 17.06 | 17.06 |
+
+At `freqresp.deconvolve_ir`'s fixed 120 ms crop this capture reads 15.29 ms at
+−20 dB, below the 16 ms guard budget; converged it reads 17.06 ms, above it. The
+crop alone flips a gate decision. Cells compared against one another must share a
+horizon, and the garage adapter now defaults to 500 ms.
+
+**−20 dB is not repeatable enough to decide a 16 ms budget; −10 dB is.** All five
+captures recomputed at one horizon, so the effect above cannot confound them:
+
+| threshold | min | max | range | range / median |
+|---|---|---|---|---|
+| −10 dB | 0.708 | 0.917 | 0.208 ms | 26% |
+| −15 dB | 1.792 | 2.271 | 0.479 ms | 26% |
+| −20 dB | 11.812 | 17.229 | 5.417 ms | 42% |
+
+The −20 dB figure moves 5.4 ms on an unchanged bench and straddles the budget in
+both directions. The −10 dB figure moves 0.2 ms against the same budget. The
+spread at −20 dB looked bimodal (two runs near 17.1, three near 12.0) rather than
+continuous, and did not track room-tone rms, which varied 5× across the same
+runs; the cause is not identified. n=5 in one window at one geometry — this wants
+a fresh-day repeat before being treated as settled.
+
+Consistent with entry 1 of NEGATIVE_FINDINGS, which already says to size the
+guard to the strong-tap spread rather than a deep point, and with entry 13, whose
+decisive 35.8 ms figure was quoted at −10 dB.
+
+**Bench numbers for this path:** capture rms 0.15 at sweep amplitude 0.5, peak
+0.62 (no clipping), room tone rms 0.0007–0.0034, capture peak-to-tone 58 dB.
+Farina deconvolution against a 6 s sweep buys ~40 dB of processing gain, so
+integrated noise sits at 6.5e-08 of window energy and truncation never engages at
+this SNR.

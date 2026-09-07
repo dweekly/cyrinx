@@ -1,8 +1,8 @@
 # Re-plan: a delay-spread readout the stage 1G gate can rely on
 
-Date: 2026-09-07. Status: proposed, replacing the readout on branch
-`research/garage-g0`. Reviewed once by Codex at high reasoning; findings folded
-in below, with declines noted.
+Date: 2026-09-07. Status: **built** on branch `research/garage-g0`; see the
+first measurements below. Reviewed once by Codex at high reasoning before
+implementation; findings folded in, with declines noted.
 
 ## In plain English
 
@@ -191,6 +191,27 @@ tip returns no P1. The acceptance command is explicit:
 
 `scripts/check.sh` does not run these; the command above is the gate until a
 dedicated hook exists.
+
+## What the first real measurements showed
+
+Built and exercised on the MacBook's own speaker-to-microphone path, five
+captures of one geometry (`scratch/hw20k/NOTES.md`, 2026-09-07). Two results
+changed decisions rather than confirming them:
+
+- **The crop defect is real on hardware, not only in construction.** The same
+  capture reads 15.292 ms at −20 dB through the 120 ms crop and 17.062 ms
+  converged, so the crop alone moves it across the 16 ms budget. The default
+  horizon is now 500 ms, past convergence for this path.
+- **The −20 dB figure cannot decide this gate.** It ranged 11.812–17.229 ms
+  across five captures of an unchanged bench, 42% of its median, straddling the
+  budget both ways; −10 dB ranged 0.208 ms. The garage plan's stage 1G now reads
+  −10 dB, which also matches what entry 1 has said all along.
+
+A third observation is smaller but shapes expectations: Farina deconvolution
+against a 6 s sweep buys about 40 dB of processing gain, so integrated noise sat
+at 6.5e-08 of window energy and truncation never engaged. Truncation is a safety
+net for degenerate captures, not the ordinary path, which bounds the truncation
+bias concern this plan was partly written to address.
 
 ## Where the work happens
 
