@@ -1,4 +1,4 @@
-name: repository-claims
+name: repository-gates
 
 on:
   push:
@@ -37,3 +37,25 @@ jobs:
         run: ./scripts/check-claims.sh --self-test
       - name: Check repository claims
         run: ./scripts/check-claims.sh
+
+  static-analysis:
+    name: Format, vendor integrity, and lint
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install static-analysis tools
+        run: brew install swift-format swiftlint clang-format shellcheck jq ripgrep
+      - name: Report tool versions
+        run: |
+          swift-format --version
+          swiftlint version
+          clang-format --version
+          shellcheck --version
+          jq --version
+          rg --version | head -n 1
+      - name: Check formatting and vendored sources
+        run: ./scripts/format-check.sh
+      - name: Check SwiftLint baseline and shell scripts
+        run: ./scripts/lint.sh
