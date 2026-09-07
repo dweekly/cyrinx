@@ -2,22 +2,23 @@
 
 ## In plain English
 
-Two small pieces of the garage experiment program, described in
-[docs/research/garage-throughput-plan.md](../../docs/research/garage-throughput-plan.md).
-The first works out what radio settings a cautious link between two particular
-devices should use, from what each device can actually emit and hear. The second
-measures how long the room keeps echoing, and — unlike the tool we already had —
-refuses to give you a number when the recording cannot support one.
+Two things. Working out what radio settings a cautious link between two
+particular devices should use, derived from what each device can actually emit
+and hear rather than from what kind of device it is. And measuring how long a
+room keeps echoing — refusing to give a number when the recording cannot support
+one, which turns out to matter more than the measurement itself.
 
-Nothing here talks to hardware. The capture runner (G1) comes next.
+Only `selfcal.py` talks to hardware; everything else is analysis.
 
 ## What is here
 
 | File | What it is |
 |---|---|
-| `geometries.py` | The frozen conservative configurations for the stage 1 baseline map, one per direction, with the source of every constant |
-| `delay_spread.py` | Schroeder delay spread with `ok` / `noise-limited` / `window-limited` / `invalid` states |
-| `test_garage_g0.py` | Offline tests for both, including a byte-exact digital round trip through the C codec |
+| `geometries.py` | Conservative link geometries, one per directed link, with the source of every constant |
+| `acquire.py` | Swept-sine acquisition with a declared observation horizon, and hardware capture helpers |
+| `delay_spread.py` | Schroeder delay spread by Lundeby truncation, with explicit validity states |
+| `selfcal.py` | Runs ADR 0006's two local phases: self-calibration and environmental sampling |
+| `test_geometries.py`, `test_delay_spread.py` | Offline tests, including a byte-exact round trip through the C codec and a retained real capture |
 
 ## Running the tests
 
@@ -28,7 +29,7 @@ clang -std=c11 -O2 -dynamiclib -Dkiss_fft_scalar=double \
   Sources/CCyrinx/cyrinx_bulk.c Sources/CCyrinx/cyrinx_fft.c \
   Sources/CCyrinx/kissfft/kiss_fft.c Sources/CCyrinx/kissfft/kiss_fftr.c \
   -o scratch/hw20k/libcyrinxbulk.dylib -lm
-.venv/bin/python3 -m pytest scratch/garage/test_garage_g0.py -q
+.venv/bin/python3 -m pytest scratch/garage/ -q
 ```
 
 The two C-codec tests skip if the dylib is absent; every other test runs without
@@ -36,18 +37,18 @@ it.
 
 ## Two decisions worth knowing about
 
-**These are not registry profiles, and G0 does not add a registry row.** The C
+**These are not registry profiles, and nothing here adds a registry row.** The C
 bulk codec takes a `cyrinx_bulk_config` directly, so host-side research never
 resolves a profile through `Sources/CCyrinx/cyrinx_profiles.c`. Adding a row
 would mean touching C3-04 contract surface — the canonical JSON fixture, the C
 table, identity expectations, and their tests — while the Kotlin/JNI registry
 view is still an open C3-04 merge gate, which would land a row with no JVM
 representation. A registry row is what a geometry earns *after* it wins a
-comparison, not what research needs to start.
+comparison.
 
-**Bands come from endpoint capability, not from a role.** There is no "uplink"
-or "downlink" geometry here. The occupied band is a property of the transmitting
-device's speaker and the receiving device's microphone, so it is computed as the
+**Bands come from endpoint capability, not from a role.** There is no "uplink" or
+"downlink" geometry. The occupied band is a property of the transmitting device's
+speaker and the receiving device's microphone, so it is computed as the
 intersection of the two, capped at 18 kHz when a phone is transmitting because
 both tested phone speakers are phase-incoherent above that
 (`docs/NEGATIVE_FINDINGS.md` entry 9).
@@ -66,25 +67,12 @@ narrowest band measured on any device here, so unknown degrades to conservative
 rather than optimistic. C3-20b replaces the measured table with per-endpoint
 self-characterization at association time.
 
-## The delay-spread readout is being rebuilt
-
-`delay_spread.py` cannot report on the acquisition primitive it was written for:
-`make_ess` -> `deconvolve_ir` with no noise and no reflections returns
-`noise-limited` on every threshold where `freqresp.delay_spread` returns
-0.020833 ms. Do not use it, and do not build on its validity rules.
-
-The replacement adopts Lundeby truncation with a raw-PCM noise reference
-processed through the same inverse filter, an explicit observation horizon, and a
-reported error interval. Its plan, acceptance criteria, and the reasoning behind
-each choice are in
-[docs/research/delay-spread-readout-plan.md](../../docs/research/delay-spread-readout-plan.md).
-
 ## The guard budget
 
 `geometries.PRACTICAL_GUARD_BUDGET_MS` is 16.0 ms, equal to the 768-sample
-cyclic prefix, and it is the number the plan's stage 1G gate compares measured
-late energy against. It is declared here, before the batch, so it cannot be
-argued afterwards. It is a spending decision, not a physical limit: the profile
-validator accepts any prefix up to the FFT size, and a position beyond the budget
-is recorded as one where further guard and MCS tuning is not justified by current
-evidence — not as one that cannot be recovered.
+cyclic prefix, and it is the number the garage plan's stage 1G gate compares
+measured late energy against. It is declared here, before any batch, so it cannot
+be argued afterwards. It is a spending decision, not a physical limit: the
+profile validator accepts any prefix up to the FFT size, and a position beyond
+the budget is recorded as one where further guard and MCS tuning is not justified
+by current evidence.

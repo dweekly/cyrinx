@@ -264,7 +264,8 @@ These total approximately 85–135 minutes of operator time if basic tooling wor
 
 | Work item | Concrete output | Verification before hardware use |
 |---|---|---|
-| G0 | Capability-derived conservative geometries **(landed)**; Schroeder readout with validity states **(re-planned, see [plan](delay-spread-readout-plan.md))** | Geometries: byte-exact digital round trip through the C codec on every pairing under test, no skips. Readout: the eleven acceptance criteria in its plan, physical cases run through `make_ess` and the garage deconvolution adapter |
+| G0a | Conservative link geometries derived from endpoint capability — **landed**, [scratch/garage/](../../scratch/garage/README.md) | Byte-exact digital round trip through the C codec on every pairing under test, with no skips |
+| G0b | Schroeder readout wired into garage acquisition with validity states — **built, awaiting review**, see its [plan](delay-spread-readout-plan.md) | The eleven acceptance criteria in that plan, physical cases run through `make_ess` and the garage deconvolution adapter, plus a retained real capture |
 | G1 | Capture manifest, runner, immutable attempt ledger, replay command, declared acquisition anchor with bounded non-overlapping slot windows | Existing fixtures, malformed capture, and scheduled-attribution checks, including a missing first frame with a surviving second frame |
 | G2 | Baseline report and per-symbol/per-band diagnostics | Compare exact decisions against the canonical C decoder |
 | G3 | One receiver-only candidate behind a research option | Generated channels and retained PCM; separate oracle from deployable policy |

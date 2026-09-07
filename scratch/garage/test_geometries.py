@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Offline tests for the G0 deliverables. No hardware, no audio devices.
+"""Offline tests for the conservative link geometries. No hardware, no audio devices.
 
-Run: .venv/bin/python3 -m pytest scratch/garage/test_garage_g0.py -q
+Run: .venv/bin/python3 -m pytest scratch/garage/ -q
 """
 
 import os
