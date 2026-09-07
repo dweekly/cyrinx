@@ -24,14 +24,26 @@ from dataclasses import dataclass
 
 import numpy as np
 
-DEFAULT_HORIZON_MS = 250.0
+DEFAULT_HORIZON_MS = 500.0
 """Observation horizon requested by default, in ms after the main tap.
 
-Chosen above the 120 ms `freqresp.deconvolve_ir` retains, because NF-13 measured
-a Schroeder spread of 82 ms at -20 dB in a reverberant desk geometry and a worse
-room is exactly what the gate is looking for. A horizon is a claim about what was
-observed, not about what exists: a reading is valid with respect to its horizon
-and promises nothing beyond it."""
+The energy decay curve normalizes to the energy inside the analysed window, so a
+shorter window inflates every remaining fraction and pulls crossings earlier.
+Measured on a real MacBook speaker-to-microphone capture, the -20 dB figure rises
+monotonically with horizon and only settles past about 400 ms:
+
+    horizon    60 ms   90    120    160    200    250    400    700   1000
+    -20 dB     12.00  14.58  15.29  15.75  16.33  16.75  17.04  17.06  17.06
+
+At the 120 ms `freqresp.deconvolve_ir` retains, that capture reads 15.29 ms --
+below the 16 ms guard budget -- while its converged value is 17.06 ms, above it.
+The crop alone flips the gate on real hardware. 500 ms is past convergence for
+this path with margin for a more reverberant one; NF-13 measured 82 ms at -20 dB
+in a reverberant desk geometry, and a worse room is what the gate is looking for.
+
+A horizon is a claim about what was observed, not about what exists: a reading is
+valid with respect to its horizon and promises nothing beyond it. Cells compared
+against each other must share one."""
 
 PRE_TAP_MS = 5.0
 """Samples retained before the main tap, matching `freqresp.deconvolve_ir`.

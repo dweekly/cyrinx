@@ -316,3 +316,56 @@ def test_malformed_responses_are_invalid():
         support=acq.support,
     )
     assert ds.measure(silent, noise).status == ds.INVALID
+
+
+# --- Real hardware fixture ----------------------------------------------------
+#
+# A deconvolved response from an actual MacBook Pro speaker-to-microphone
+# capture, retained so the readout's behaviour on real data is a regression
+# rather than a memory. Provenance is in the fixture; the raw capture stays in
+# the session's ignored artifacts directory.
+
+FIXTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "mac_selfcal_ir.npz")
+
+
+def real_acquisition(horizon_ms=None):
+    data = np.load(FIXTURE)
+    ir, peak, sr = data["ir"].astype(np.float64), int(data["peak_idx"]), int(data["sr"])
+    if horizon_ms is not None:
+        ir = ir[: peak + int(horizon_ms * sr / 1000.0)]
+    return (
+        acquire.Acquisition(
+            ir=ir, peak_idx=peak, sr=sr,
+            horizon_ms=1000.0 * (len(ir) - peak) / sr,
+            requested_horizon_ms=float(data["horizon_ms"]),
+            support=acquire.SUPPORT_OK,
+        ),
+        ds.NoiseReference(float(data["noise_power"]), 1, 8.0),
+    )
+
+
+def test_the_real_capture_reads_a_short_strong_tap_spread():
+    acq, noise = real_acquisition()
+    out = ds.measure(acq, noise)
+    assert out.at(-10.0).usable
+    assert out.usable_ms(-10.0) < 2.0, "a laptop's own speaker-to-mic path is short"
+    assert ds.exceeds_guard_budget(out.at(-10.0), geo.PRACTICAL_GUARD_BUDGET_MS) is False
+
+
+def test_the_deep_threshold_needs_a_longer_horizon_than_the_shallow_one():
+    """Measured on the real capture: -10 dB is horizon-insensitive, -20 dB is not.
+
+    The energy decay curve normalizes to the energy inside the analysed window,
+    so a shorter window inflates every remaining fraction and pulls crossings
+    earlier. The effect is negligible where the crossing is early and decisive
+    where it is late -- which is exactly where a guard-budget decision lives.
+    """
+    shallow = [ds.measure(*real_acquisition(h)).usable_ms(-10.0) for h in (60, 120, 250, 500)]
+    deep = [ds.measure(*real_acquisition(h)).usable_ms(-20.0) for h in (60, 120, 250, 500)]
+
+    assert max(shallow) - min(shallow) < 0.1, f"-10 dB should be stable, got {shallow}"
+    assert deep == sorted(deep), f"-20 dB should rise monotonically with horizon, got {deep}"
+    assert deep[-1] - deep[0] > 3.0, f"-20 dB should move materially, got {deep}"
+    assert deep[1] < geo.PRACTICAL_GUARD_BUDGET_MS < deep[-1], (
+        "the 120 ms crop should land this capture on the wrong side of the budget"
+    )
