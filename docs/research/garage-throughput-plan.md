@@ -38,7 +38,7 @@ The working method is: make recording easy, collect a small useful corpus, do mo
 |---:|---|---|---|
 | 0 | Minimal capture/replay runner, the conservative profile that does not yet exist, and simple placements | Prevent lost evidence and repeated setup work; the conservative half of the baseline map has no profile to run today | One 15–25 minute setup session |
 | 1 | Baseline map with per-cell delay spread, plus baseline-again comparisons | Learn where the existing system actually fails, and whether that failure is one this waveform class can address | Two 20–30 minute sessions; a short repeat on another day |
-| 1G | **Experiment-budget gate:** measured late energy against a predeclared practical guard budget, after replay diagnostics pass | Decides where the next hours go per position, Stages 3–4 or Stage 8 | None; a decision on already recorded data |
+| 1G | **Experiment-budget gate:** threshold-specific remaining-energy crossing times against a predeclared guard budget, after replay diagnostics pass | Decides where the next hours go per position, Stages 3–4 or Stage 8 | None; a decision on already recorded data |
 | 2 | Replay diagnostics and receiver-only changes | Many hypotheses can be tested on the same recording | Normally none |
 | 3 | Fresh channel tracking and time-scale correction | Address observed receiver mismatch and motion | One 15–25 minute finalist comparison |
 | 4 | One modern FEC family | Measure whether coding can recover reliability or enable a faster profile | One 15–25 minute finalist comparison |
@@ -262,7 +262,7 @@ These total approximately 85–135 minutes of operator time if basic tooling wor
 
 | Work item | Concrete output | Verification before hardware use |
 |---|---|---|
-| ~~G0~~ | ~~Conservative directional geometries in research code; Schroeder readout with validity states~~ **Landed:** [scratch/garage/](../../scratch/garage/) | Byte-exact digital round trip through the C codec both directions; readout validated against synthetic impulse responses with known decay rates and pinned to agree with `freqresp.delay_spread` |
+| G0 | Capability-derived conservative geometries **(landed)**; Schroeder readout with validity states **(re-planned, see [plan](delay-spread-readout-plan.md))** | Geometries: byte-exact digital round trip through the C codec on every pairing under test, no skips. Readout: the eleven acceptance criteria in its plan, physical cases run through `make_ess` and the garage deconvolution adapter |
 | G1 | Capture manifest, runner, immutable attempt ledger, replay command, declared acquisition anchor with bounded non-overlapping slot windows | Existing fixtures, malformed capture, and scheduled-attribution checks, including a missing first frame with a surviving second frame |
 | G2 | Baseline report and per-symbol/per-band diagnostics | Compare exact decisions against the canonical C decoder |
 | G3 | One receiver-only candidate behind a research option | Generated channels and retained PCM; separate oracle from deployable policy |

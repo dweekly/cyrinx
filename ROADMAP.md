@@ -725,6 +725,34 @@ below 2% or the Rank 5 predictor fails calibration; stop after the screen if
 signalling or loss-tail regressions erase the gain. LDPC or polar codes are not
 justified by headline rate alone.
 
+### Analysis band and measurement time reference for the stage 1G gate (G1/G2)
+
+The default ESS covers 60–23,500 Hz while the garage geometries occupy narrower,
+direction-specific bands, and the measurement's time reference is the largest
+peak in the deconvolved response. Those are two separate unstated assumptions in
+any delay-spread figure the gate reads. A reflection stronger than the direct
+arrival moves the anchor: through the real acquisition path that returns a −10 dB
+figure of 0.020833 ms, which follows the existing peak-relative convention but
+does not describe the channel's temporal extent.
+
+**Required before the gate is used operationally:** G1/G2 declare the gate's
+analysis band and reconcile the measurement anchor with the receiver's own timing
+reference, keeping historical peak-relative figures reported separately. The
+[readout re-plan](docs/research/delay-spread-readout-plan.md) records its
+assumptions rather than redesigning this.
+
+### Field validity of the room-tone reference (G1)
+
+The readout requires a noise reference captured at the same gain. Identical gain
+settings do not establish unchanged processing, route, or environmental noise
+between the two recordings, and transients, automatic processing, clipping, or
+clock drift can compromise the inferred response.
+
+**Required in G1 acquisition:** attach each room-tone capture to its matching
+direction, logical input, route, and acquisition configuration; retain raw PCM;
+and mark integrity failures before a capture is admitted to a gate evaluation.
+Hardware replay fixtures follow once captures exist.
+
 ### Spike 8e — Opportunistic edge probing (not started)
 
 **Hypothesis:** a transmitter can learn whether widening its occupied band would

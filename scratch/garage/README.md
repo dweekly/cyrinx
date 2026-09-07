@@ -66,19 +66,18 @@ narrowest band measured on any device here, so unknown degrades to conservative
 rather than optimistic. C3-20b replaces the measured table with per-endpoint
 self-characterization at association time.
 
-## Why the validity states are against integrated noise
+## The delay-spread readout is being rebuilt
 
-A peak-to-noise ratio cannot tell you whether a Schroeder crossing is real. The
-curve integrates noise across the whole remaining window while the peak is one
-sample, so a single impulse with no reflections at all, sitting in stationary
-noise 46 dB below it, produces a -10 dB "delay spread" of 38.8 ms where the
-noiseless answer is 0.02 ms. That is past the 16 ms guard budget, so accepting it
-would send a reflection-free position to stage 8.
+`delay_spread.py` cannot report on the acquisition primitive it was written for:
+`make_ess` -> `deconvolve_ir` with no noise and no reflections returns
+`noise-limited` on every threshold where `freqresp.delay_spread` returns
+0.020833 ms. Do not use it, and do not build on its validity rules.
 
-A crossing is therefore judged against the integrated noise energy still inside
-the window at that point, needing `NOISE_HEADROOM_DB` of margin over it.
-`test_garage_g0.py` pins that case, and the peak ratio is kept only as a reported
-diagnostic.
+The replacement adopts Lundeby truncation with a raw-PCM noise reference
+processed through the same inverse filter, an explicit observation horizon, and a
+reported error interval. Its plan, acceptance criteria, and the reasoning behind
+each choice are in
+[docs/research/delay-spread-readout-plan.md](../../docs/research/delay-spread-readout-plan.md).
 
 ## The guard budget
 
