@@ -254,7 +254,8 @@ These total approximately 85–135 minutes of operator time if basic tooling wor
 
 | Work item | Concrete output | Verification before hardware use |
 |---|---|---|
-| G0 | Experimental registry profile(s) with explicit classification; `freqresp.py` Schroeder readout wired into garage acquisition with validity states | Registry serialization, layout, and identity tests plus a byte-exact digital round trip; readout validated against synthetic impulse responses with known energy distribution, not only the two historical figures |
+| G0a | Conservative link geometries derived from endpoint capability — **landed**, [scratch/garage/](../../scratch/garage/README.md) | Byte-exact digital round trip through the C codec on every pairing under test, with no skips |
+| G0b | Schroeder readout wired into garage acquisition with validity states | Validated against synthetic impulse responses with known decay rates and against a retained real capture, not only the historical figures |
 | G1 | Capture manifest, runner, immutable attempt ledger, replay command, declared acquisition anchor with bounded non-overlapping slot windows | Existing fixtures, malformed capture, and scheduled-attribution checks, including a missing first frame with a surviving second frame |
 | G2 | Baseline report and per-symbol/per-band diagnostics | Compare exact decisions against the canonical C decoder |
 | G3 | One receiver-only candidate behind a research option | Generated channels and retained PCM; separate oracle from deployable policy |
