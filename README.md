@@ -369,6 +369,10 @@ swift run cyrinx-sim-bench --profile quiet --out artifacts/bench/sim-quiet.json
   — where the throughput actually goes: capacity bounds, what the current
   receiver leaves unused, and which alternative waveforms are worth a controlled
   comparison (fresh as of 2026-09-06).
+- [docs/research/delay-spread-readout-plan.md](docs/research/delay-spread-readout-plan.md)
+  — the re-plan for the stage 1G delay-spread measurement, adopting Lundeby
+  truncation after two review passes rejected two home-grown validity rules
+  (fresh as of 2026-09-07).
 - [docs/research/garage-throughput-plan.md](docs/research/garage-throughput-plan.md)
   — the staged garage experiment program that executes EXPERIMENTS.md Tier 1 with
   no new measurement equipment, and hands its measured profiles to the Cyrinx 3.0

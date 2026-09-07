@@ -725,6 +725,36 @@ below 2% or the Rank 5 predictor fails calibration; stop after the screen if
 signalling or loss-tail regressions erase the gain. LDPC or polar codes are not
 justified by headline rate alone.
 
+### Spike 8e — Opportunistic edge probing (not started)
+
+**Hypothesis:** a transmitter can learn whether widening its occupied band would
+help without paying for a full out-of-band sweep, by spending a small fraction of
+its symbols on low-rate probe energy in adjacent unoccupied bins while ordinary
+traffic continues. This is the one question ADR 0006's tier 1 data-aided tracking
+structurally cannot answer, and band width is the dominant throughput lever on an
+asymmetric device pair.
+
+**Prior art:** DMT DSL bit-swapping continuously equalises SNR margin across
+tones during showtime and reallocates bits without retraining
+([Cioffi, *The Essential Merit of Bit-Swapping*](http://web.stanford.edu/~cioffi/pdf/short.pdf)).
+That monitors tones already carrying bits; the extension proposed here is
+deliberate probe energy in bins carrying none.
+
+**Experiment:** on retained captures first. Measure what fraction of symbols must
+carry edge probes before the widening decision is reliable, and what that
+fraction costs in scheduled payload. Then compare, on fresh captures, the band
+chosen from edge probes against the band chosen from a full sweep, on pairs whose
+usable bands differ (iPhone/Moto is the measured asymmetric pair).
+
+**Promote only if:** edge probing selects the same band as a full sweep on at
+least 7 of 8 fresh comparisons, and the probe overhead is smaller than the
+amortised sweep cost for the transfer sizes in the session mix. Two prior results
+gate this: Negative Finding 11 measured naive per-bin loading underperforming
+uniform, and Negative Finding 12 records mixed maps containing 1-bit bins as
+broken (open bug #4), so any allocation this feeds must keep a QPSK floor. Spike
+8d already stopped once for want of an identifiable corpus; preregister the
+holdout before collecting.
+
 ## Rank 9 — Generalized N-microphone diversity
 
 **Outcome:** generalize the proven two-input C MRC/selection path to any set of
