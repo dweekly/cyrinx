@@ -15,9 +15,14 @@ then the two take turns making test noises at each other.
 All of that is worth doing, and it is allowed to be slow — but not
 unconditionally. Measured from numbers already in this repository, a full
 two-way characterization costs about 30 seconds, which is twice the entire
-budget we have set for delivering a 4 KiB message. So initiation is staged: get
-to a usable cautious link quickly, and spend the expensive measurement only when
-what you are about to send is big enough to earn it back.
+budget we have set for delivering a 4 KiB message.
+
+So it is a ladder rather than a gate. Two devices first establish only that the
+other is there and can exchange small messages, which is quick. Ordinary traffic
+then keeps refining what each side knows about the path, for free, as it flows.
+The expensive listening happens when someone actually asks for it — normally
+because a large transfer is about to start and the setup cost will be earned
+back.
 
 ## Context
 
@@ -78,12 +83,34 @@ capability: a laptop pair is wide in both directions, a phone pair narrow in
 both, and a mixed pair asymmetric in whichever direction the measurements say.
 An uncharacterized endpoint resolves to the most conservative known band.
 
-**Initiation cost is bounded by what it enables.** A pair must reach a usable
-conservative bearer without completing phase 3. Full mutual characterization is
-spent when the expected payload airtime justifies it, amortized across a long
-transfer, or refreshed from recent evidence; it is not a precondition for
-sending. Concretely, an implementation may not make a small message wait on a
-measurement that costs more than the message.
+**Initiation cost is bounded by what it enables, and escalates on demand.** A
+pair must reach a usable conservative bearer without completing phase 3.
+Characterization is a ladder, and each rung is entered because of the question
+being asked, not merely because of payload size:
+
+| Tier | What it costs | What it can answer | Owner |
+|---|---|---|---|
+| 0 — association | one beacon exchange | is there a peer, which version, which capabilities, what security posture | C3-18 |
+| 1 — data-aided tracking | free, continuous | phase, timing drift, and per-symbol reliability *within the band already occupied* | receiver, extended by plan stage 3 |
+| 2 — in-band probe | ~4 s, one conservative frame | delay spread and per-bin quality within the occupied band | C3-21 |
+| 3 — out-of-band sweep | ~30 s mutual | whether a *different* band or guard would be better | C3-20a/C3-21 |
+
+Small messages ride tier 0 immediately. Either endpoint may request escalation,
+and a large transfer is the ordinary reason to ask for tier 3; the request and
+its outcome are observable negotiated transitions, not an implicit policy
+choice. An implementation may not make a small message wait on a tier it did not
+need.
+
+**Tier 1 is not hypothetical and its limit is the reason tier 3 exists.** The
+receiver already fits phase slope and common phase error from known pilots on
+every data symbol (`cyrinx_fit_pilot_phase` in `cyrinx_bulk.c`, with odd pilot
+ordinals held out for scoring), so ordinary traffic already refines the channel
+estimate as it flows. What it cannot do is say anything about subcarriers the
+transmitter is not currently using: an estimate derived from occupied bins is
+silent about whether widening from 11 kHz to 14 kHz would help. Because band
+width is the dominant throughput lever on an asymmetric pair, that question is
+exactly the one worth 30 s — and it is the only question that genuinely requires
+transmitting outside current occupancy.
 
 **Version and security posture are settled at association.** Both are negotiated
 properties of the connection, carried in the beacon's capability hash and
@@ -113,6 +140,18 @@ rather than being negotiated down — the fail-closed direction is deliberate, a
 **Monolithic heavyweight initiation.** Simpler to reason about, and it makes the
 bulk case optimal. Rejected on the measured cost: 30 s of setup cannot precede a
 message with a 15 s deadline.
+
+**Replacing explicit sounding entirely with data-aided estimation.** Attractive,
+and partly what tier 1 already is, but it cannot answer the band-widening
+question above. Worth noting that 802.11 went the other way for its own reasons:
+802.11n defined both staggered sounding, embedded in ordinary data preambles,
+and dedicated null data packets, and 802.11ac then dropped staggered sounding in
+favour of NDP alone — for MU-MIMO precoder accuracy, immediate SIFS feedback,
+and eliminating interoperability variants. None of those three motives apply
+here: Cyrinx has no MU-MIMO, no SIFS-scale turnaround, and no third-party
+implementations to interoperate with. So the trajectory is informative but not
+binding, and tier 1 deserves more weight here than Wi-Fi's history would
+suggest.
 
 **CSMA on the established link.** Carrier sense earns its complexity when an
 unknown number of transmitters contend. A two-node associated pair has a
