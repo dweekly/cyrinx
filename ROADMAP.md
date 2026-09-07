@@ -725,6 +725,64 @@ below 2% or the Rank 5 predictor fails calibration; stop after the screen if
 signalling or loss-tail regressions erase the gain. LDPC or polar codes are not
 justified by headline rate alone.
 
+### Analysis band and measurement time reference for the stage 1G gate (G1/G2)
+
+The default ESS covers 60–23,500 Hz while the garage geometries occupy narrower,
+direction-specific bands, and the measurement's time reference is the largest
+peak in the deconvolved response. Those are two separate unstated assumptions in
+any delay-spread figure the gate reads. A reflection stronger than the direct
+arrival moves the anchor: through the real acquisition path that returns a −10 dB
+figure of 0.020833 ms, which follows the existing peak-relative convention but
+does not describe the channel's temporal extent.
+
+**Required before the gate is used operationally:** G1/G2 declare the gate's
+analysis band and reconcile the measurement anchor with the receiver's own timing
+reference, keeping historical peak-relative figures reported separately. The
+[readout re-plan](docs/research/delay-spread-readout-plan.md) records its
+assumptions rather than redesigning this.
+
+### Field validity of the room-tone reference (G1)
+
+The readout requires a noise reference captured at the same gain. Identical gain
+settings do not establish unchanged processing, route, or environmental noise
+between the two recordings, and transients, automatic processing, clipping, or
+clock drift can compromise the inferred response.
+
+**Required in G1 acquisition:** attach each room-tone capture to its matching
+direction, logical input, route, and acquisition configuration; retain raw PCM;
+and mark integrity failures before a capture is admitted to a gate evaluation.
+Hardware replay fixtures follow once captures exist.
+
+### Spike 8e — Opportunistic edge probing (not started)
+
+**Hypothesis:** a transmitter can learn whether widening its occupied band would
+help without paying for a full out-of-band sweep, by spending a small fraction of
+its symbols on low-rate probe energy in adjacent unoccupied bins while ordinary
+traffic continues. This is the one question ADR 0006's tier 1 data-aided tracking
+structurally cannot answer, and band width is the dominant throughput lever on an
+asymmetric device pair.
+
+**Prior art:** DMT DSL bit-swapping continuously equalises SNR margin across
+tones during showtime and reallocates bits without retraining
+([Cioffi, *The Essential Merit of Bit-Swapping*](http://web.stanford.edu/~cioffi/pdf/short.pdf)).
+That monitors tones already carrying bits; the extension proposed here is
+deliberate probe energy in bins carrying none.
+
+**Experiment:** on retained captures first. Measure what fraction of symbols must
+carry edge probes before the widening decision is reliable, and what that
+fraction costs in scheduled payload. Then compare, on fresh captures, the band
+chosen from edge probes against the band chosen from a full sweep, on pairs whose
+usable bands differ (iPhone/Moto is the measured asymmetric pair).
+
+**Promote only if:** edge probing selects the same band as a full sweep on at
+least 7 of 8 fresh comparisons, and the probe overhead is smaller than the
+amortised sweep cost for the transfer sizes in the session mix. Two prior results
+gate this: Negative Finding 11 measured naive per-bin loading underperforming
+uniform, and Negative Finding 12 records mixed maps containing 1-bit bins as
+broken (open bug #4), so any allocation this feeds must keep a QPSK floor. Spike
+8d already stopped once for want of an identifiable corpus; preregister the
+holdout before collecting.
+
 ## Rank 9 — Generalized N-microphone diversity
 
 **Outcome:** generalize the proven two-input C MRC/selection path to any set of

@@ -2,18 +2,23 @@
 
 ## In plain English
 
-Working out what radio settings a cautious link between two particular devices
-should use, derived from what each device can actually emit and hear rather than
-from what kind of device it is.
+Two things. Working out what radio settings a cautious link between two
+particular devices should use, derived from what each device can actually emit
+and hear rather than from what kind of device it is. And measuring how long a
+room keeps echoing — refusing to give a number when the recording cannot support
+one, which turns out to matter more than the measurement itself.
 
-Nothing here talks to hardware.
+Only `selfcal.py` talks to hardware; everything else is analysis.
 
 ## What is here
 
 | File | What it is |
 |---|---|
 | `geometries.py` | Conservative link geometries, one per directed link, with the source of every constant |
-| `test_geometries.py` | Offline tests, including a byte-exact digital round trip through the C codec |
+| `acquire.py` | Swept-sine acquisition with a declared observation horizon, and hardware capture helpers |
+| `delay_spread.py` | Schroeder delay spread by Lundeby truncation, with explicit validity states |
+| `selfcal.py` | Runs ADR 0006's two local phases: self-calibration and environmental sampling |
+| `test_geometries.py`, `test_delay_spread.py` | Offline tests, including a byte-exact round trip through the C codec and a retained real capture |
 
 ## Running the tests
 
