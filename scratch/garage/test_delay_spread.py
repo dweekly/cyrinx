@@ -420,3 +420,56 @@ def test_an_untruncated_reading_still_decides_the_gate():
     out = ds.measure(acq, noise)
     assert not out.truncated
     assert ds.exceeds_guard_budget(out.at(-10.0), geo.PRACTICAL_GUARD_BUDGET_MS) is False
+
+
+def test_denoised_crossings_match_freqresp_when_there_is_no_noise():
+    """One source of truth: the local helper and freqresp must not drift."""
+    acq, _ = acquire_through(diffuse(90.0, seed=31))
+    tail = acq.tail
+    remaining = np.cumsum((tail**2)[::-1])[::-1]
+    ours = ds._crossings_from_remaining(remaining, SR)
+    theirs = F.delay_spread(tail, 0, sr=SR)
+    for key in ("-10dB", "-15dB", "-20dB"):
+        assert ours[key] == pytest.approx(theirs[key], abs=1e-9)
+
+
+def test_a_recording_that_missed_the_horizon_never_decides_the_gate():
+    """A short reading from a short recording looks like a short room.
+
+    The channel has a 150 ms reflection. Keeping only 20 ms of tail hides it
+    entirely, and the -10 dB figure drops from 150.02 ms to 0.02 ms -- from one
+    side of the budget to the other -- with nothing in the number to say so.
+    """
+    x, inv = F.make_ess()
+    ch = channel([(0.0, 1.0), (150.0, 0.5)])
+    short = np.convolve(x, ch)[: len(x) + int(0.02 * SR)]
+    acq = acquire.deconvolve(short, inv, SR, horizon_ms=500.0)
+    out = ds.measure(acq, ds.NoiseReference.negligible())
+    assert acq.support == acquire.SUPPORT_RECORDING_ENDED_EARLY
+    assert out.at(-10.0).ms == pytest.approx(0.020833, abs=1e-6)
+    assert ds.exceeds_guard_budget(out.at(-10.0), 16.0) is None
+
+    full, noise = acquire_through(ch, horizon_ms=500.0)
+    assert ds.measure(full, noise).usable_ms(-10.0) == pytest.approx(150.020833, abs=1e-6)
+
+
+def test_noise_uncertainty_widens_a_knife_edge_crossing():
+    """Near a discrete tap the crossing is discontinuous in the energy fraction.
+
+    Two taps at gain 1.0 and 0.33 leave 9.8% of the energy after the first --
+    just under the -10 dB threshold -- so a hair of noise pushes the crossing
+    past the second tap and the answer jumps 25 ms. The interval must span that,
+    and the gate must abstain rather than pick a side.
+    """
+    clean, noise = acquire_through(channel([(0.0, 1.0), (30.0, 0.33)]), horizon_ms=500.0)
+    assert ds.measure(clean, noise).usable_ms(-10.0) == pytest.approx(4.229167, abs=1e-5)
+
+    acq, noise = acquire_through(
+        channel([(0.0, 1.0), (30.0, 0.33)]), noise_rms=0.02, horizon_ms=500.0, seed=11
+    )
+    out = ds.measure(acq, noise)
+    reading = out.at(-10.0)
+    assert not out.truncated, "this is the negligible-noise path, and it still must not be exact"
+    lo, hi = reading.ms_interval
+    assert lo < 16.0 < hi, f"interval {reading.ms_interval} should span the budget"
+    assert ds.exceeds_guard_budget(reading, 16.0) is None

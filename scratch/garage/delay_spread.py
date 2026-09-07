@@ -169,6 +169,7 @@ class Reading:
     ms_interval: tuple = None
     detail: str = ""
     truncated: bool = False
+    support: str = acquire.SUPPORT_OK
 
     @property
     def usable(self):
@@ -220,6 +221,26 @@ def _all(status, detail, horizon_ms, support, noise_power, **kw):
 def _crossings(tail, sr):
     """Threshold crossing times, via freqresp so the arithmetic has one home."""
     return freqresp.delay_spread(tail, 0, sr=sr)
+
+
+def _crossings_from_remaining(remaining, sr):
+    """Crossing times from an already-computed backward-integrated curve.
+
+    Mirrors `freqresp.delay_spread` exactly -- normalize to the curve's own
+    start, find the first sample below each threshold, and fall back to the
+    window length when none is reached. It exists so a *noise-corrected* curve
+    can be crossed the same way; `test_delay_spread.py` pins it to freqresp on an
+    uncorrected curve so the two cannot drift.
+    """
+    edc = remaining / (remaining[0] + 1e-300)
+    edc_db = 10.0 * np.log10(edc + 1e-300)
+    out = {}
+    for db in THRESHOLDS_DB:
+        idx = np.flatnonzero(edc_db < db)
+        out[f"{int(db)}dB"] = (
+            float(idx[0] / sr * 1000.0) if len(idx) else float(len(remaining) / sr * 1000.0)
+        )
+    return out
 
 
 def _fit_decay(tail, sr, noise_power):
@@ -315,6 +336,19 @@ def measure(acquisition, noise, thresholds_db=THRESHOLDS_DB):
         truncated = True
 
     primary = _crossings(integrand, sr)
+
+    # The measured curve contains the noise's own energy. Subtracting its
+    # expectation gives the signal-only curve, and the two bracket the truth.
+    # This matters even when integrated noise is small: near a discrete tap the
+    # crossing time is discontinuous in the energy fraction, so a channel whose
+    # remaining energy sits just under a threshold can jump tens of milliseconds
+    # on a hair of noise. A zero-width interval there would assert a precision
+    # the measurement does not have.
+    observed = np.cumsum((integrand**2)[::-1])[::-1]
+    expected_noise = noise.power * (len(integrand) - np.arange(len(integrand)))
+    corrected = np.maximum(observed - expected_noise, 1e-300)
+    denoised = _crossings_from_remaining(corrected, sr)
+
     # Sensitivity of each crossing to where the tail was cut. This is a
     # diagnostic showing how much the cut point moves the answer -- it is NOT a
     # bound on the energy truncation discarded, so the gate does not treat it as
@@ -331,8 +365,8 @@ def measure(acquisition, noise, thresholds_db=THRESHOLDS_DB):
     for db in thresholds_db:
         key = f"{int(db)}dB"
         value = primary[key]
-        lo = min(value, shorter[key], longer[key])
-        hi = max(value, shorter[key], longer[key])
+        candidates = (value, shorter[key], longer[key], denoised[key])
+        lo, hi = min(candidates), max(candidates)
         at_edge = value >= observed_ms - (1000.0 / sr)
         if at_edge and not truncated and support == acquire.SUPPORT_OK:
             readings[db] = Reading(
@@ -347,7 +381,8 @@ def measure(acquisition, noise, thresholds_db=THRESHOLDS_DB):
             )
         else:
             readings[db] = Reading(
-                db, OK, float(value), (float(lo), float(hi)), truncated=truncated
+                db, OK, float(value), (float(lo), float(hi)),
+                truncated=truncated, support=support,
             )
 
     if any(r.usable for r in readings.values()):
@@ -387,6 +422,12 @@ def exceeds_guard_budget(reading, budget_ms):
             f"got {type(reading).__name__}"
         )
     if not reading.usable:
+        return None
+    if reading.support != acquire.SUPPORT_OK:
+        # The recording did not cover the requested horizon, or the response was
+        # cropped before analysis. Energy the gate exists to find may simply not
+        # be in the data, and a short reading from a short recording looks
+        # exactly like a short reading from a short room.
         return None
     if reading.truncated:
         # The interval is a cut-point sensitivity, not a bound on the energy
