@@ -371,3 +371,118 @@ latency after the sweep ends, so the 1.0 s tail used here supports about 846 ms.
 Farina deconvolution against a 6 s sweep buys ~40 dB of processing gain, so
 integrated noise sits at 6.5e-08 of window energy and truncation never engages at
 this SNR.
+
+## G0: first cross-device characterization, Pixel 7a at ~1 ft (2026-09-08)
+
+Mutual channel characterization (ADR 0006 phase 3) with `scratch/garage/crosscal.py`.
+Pixel 7a over Wi-Fi adb, face up on the desk about a foot to the right of the
+MacBook, both devices stationary. Sweep amplitude 0.5, phone media volume 25/25,
+500 ms horizon, room tone captured on each receiver at the same gain.
+
+| directed link | −10 dB | −15 dB | −20 dB | beyond the 16 ms budget |
+|---|---|---|---|---|
+| Mac speaker → Pixel mic | 48.271 ms | 87.292 ms | 136.521 ms | yes, at every threshold |
+| Pixel speaker → Mac mic | 82.333 ms | 141.896 ms | 200.354 ms | yes, at every threshold |
+
+Both readings are well clear of noise — raw capture 22.6 dB and 19.9 dB above
+room tone, impulse-response peak-to-noise 75.3 dB and 64.2 dB, integrated-noise
+fraction an order of magnitude below the threshold at which truncation would
+engage — so these are measurements of the channel, not of the noise floor. No
+clipping: raw peaks 0.018 and 0.148.
+
+Two things worth carrying forward.
+
+**This is NF-13's regime, reached at one foot.** Entry 13 recorded coherent
+CP-OFDM decoding zero blocks at every MCS in a geometry whose strong-tap spread
+was 35.8 ms. These directed links measure 48 ms and 82 ms at the same threshold,
+so no guard the profile format can express covers them. The delay-spread evidence
+alone does not prove a link attempt fails here — that needs an actual decode —
+but it is the evidence stage 1G reads, and it points at stage 8 rather than at
+guard and MCS tuning.
+
+**The two directions differ by 34 ms at −10 dB**, which is a reminder that a
+directed link is its own channel: different speaker, different microphone,
+different radiation pattern. Averaging them would describe neither.
+
+Repeatability at −10 dB was good on this path: two Mac→Pixel runs read 47.208 and
+48.271 ms, about 2%, against the 26% seen on the laptop's own chassis path. A
+longer, more diffuse decay is better conditioned than a short one dominated by a
+few taps.
+
+### Harness gotcha: reused capture request ids read the previous run's result
+
+`harness.android_record_finish` waits on a logcat line naming the request id, and
+`logcat -d` returns the whole buffer. A request id reused from an earlier run
+matches *that* run's completion line immediately, so the file is pulled while the
+new recording is still being written — the second run of this session pulled an
+empty capture and only failed because the deconvolution refused an empty array.
+`crosscal.py` gives every capture a per-run id and rejects an empty or all-zero
+capture rather than analysing one. Any new Android capture code should do the
+same, or clear the buffer first.
+
+### Pixel 7a shell has no `media` command
+
+`harness.android_prepare(media_volume=...)` shells out to `media volume`, which
+this device answers with "media: inaccessible or not found".
+`cmd media_session volume --stream 3 --get/--set` works. `crosscal.py` handles the
+level locally rather than changing shared harness code for one device, and
+defaults to reading and recording the current level rather than setting one.
+
+### Conservative coherent link at ~1 ft: zero blocks, with a passing control
+
+`scratch/garage/linkprobe.py`, same geometry and session as the characterization
+above. Two frames per direction with a declared 250 ms gap and 0.4 s of trailing
+silence, payloads independently seeded and verified at their scheduled block
+positions, decoded host-side by the C codec.
+
+| link | band | chirp peak/mean | best EVM | ordered blocks | verified payload |
+|---|---|---|---|---|---|
+| Mac → Pixel, QPSK r1/2, CP 768 | 300–23000 Hz | 135.6 | 1.102 | **0 / 52** | 0 bps |
+| Pixel → Mac, QPSK r1/2, CP 768 | 300–17000 Hz | 72.9 | 1.944 | **0 / 38** | 0 bps |
+| Mac → Mac, same profile (control) | 300–23000 Hz | 138.4 | 0.136 | **52 / 52** | 12,312 bps |
+
+Acquisition is measured by correlating against the 4,096-sample chirp
+(`CYRINX_BULK_CHIRP_LEN`) and nothing else. Correlating against a longer prefix
+measures whether the transmitted waveform is present in the capture, which is a
+different question and answers yes even on a burst with every chirp zeroed.
+
+The control is the point. The same code, codec, scoring and payload verification
+carry 52 of 52 blocks on the laptop's own path, whose strong-tap spread is 0.9 ms
+against the 16 ms budget. So an all-zero cross-device result is a property of
+those channels, not of the apparatus.
+
+Both failing directions acquire, and acquire well: chirp peak over mean of 135.6
+and 72.9, no capture empty, silent, or clipping, and the same configuration
+decodes 26/26 in digital loopback at several frame offsets. What fails is the
+coherent demodulation itself, at EVM 1.1 and 1.9 against the control's 0.136.
+
+That is NEGATIVE_FINDINGS entry 13's signature reached at one foot — entry 13 had
+sync locking at peak/mean 104 while QPSK r1/2 decoded zero blocks at EVM ~2, and
+Mac → Pixel here locks *better* than that while carrying nothing — and
+the delay-spread readout said so first, measuring 48 ms and 82 ms of strong-tap
+spread against a guard no expressible cyclic prefix can extend far enough to
+cover.
+
+**This is the first position where stage 1G's two conditions both hold**: a
+conservative link that fails, and valid evidence of substantial energy beyond the
+declared budget. The plan directs such a position to stage 8 waveform-class
+screening rather than to further guard and MCS tuning.
+
+Scope: one position, one device pair, one run per direction. It says nothing yet
+about closer spacings, other rooms, or other devices. What it establishes is that
+the gate's prediction was tested against a real decode, with a passing control in
+the same run, and held.
+
+#### Scoring gotcha: the receiver locks the strongest chirp in the buffer
+
+The first version of this probe scored the control at 26/52 while both frames
+were in fact perfect. The C receiver acquires the *strongest* chirp inside the
+buffer it is handed, so a search window spanning two frames decodes the stronger
+one and the other scores zero however good it was. A window must therefore hold
+at most one frame, and the search step must be smaller than the window's slack so
+that some window starts just before each frame's chirp — otherwise a present
+frame falls between two windows and reads as a failure.
+
+Both mistakes understate. Any multi-frame capture scored by sliding a window past
+a self-acquiring receiver needs the same care, and needs a positive control in
+the same run to notice when it does not have it.

@@ -506,3 +506,32 @@ def test_a_stable_crossing_still_decides_the_gate():
 
     within, noise = acquire_through(channel([(0.0, 1.0)]), horizon_ms=500.0)
     assert ds.exceeds_guard_budget(ds.measure(within, noise).at(-10.0), 16.0) is False
+
+
+def test_acquisition_evidence_measures_the_chirp_and_nothing_else(codec):
+    """Correlating against more than the chirp answers a different question.
+
+    From the merge review: with the whole first frame as the template the metric
+    reports strong acquisition on a burst whose chirps have been zeroed out --
+    it is then measuring whether the transmitted waveform is present, not whether
+    a receiver could acquire it.
+    """
+    import linkprobe as LP
+
+    link = geo.conservative_link(geo.MACBOOK_PRO_M4, geo.PIXEL_7A, amp=0.5)
+    cfg = link.to_clib_cfg(codec)
+    wave, _, geom = LP.build(cfg, seed=11)
+
+    intact = LP.acquisition_evidence(wave, wave)["peak_over_mean"]
+
+    without_chirps = np.array(wave, dtype=np.float64)
+    gap = int(LP.GAP_S * SR)
+    for frame in range(LP.N_FRAMES):
+        start = frame * (geom.frame_samples + gap)
+        without_chirps[start : start + LP.CHIRP_LEN] = 0.0
+    stripped = LP.acquisition_evidence(without_chirps, wave)["peak_over_mean"]
+
+    assert intact > 10 * stripped, (
+        f"removing every chirp barely moved the metric ({intact:.1f} -> {stripped:.1f}), "
+        "so it is not measuring acquisition"
+    )
