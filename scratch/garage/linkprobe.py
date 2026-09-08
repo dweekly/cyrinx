@@ -41,6 +41,16 @@ N_FRAMES = 2
 GAP_S = 0.25
 """Declared inter-frame gap, counted in the schedule rather than assumed away."""
 
+SEARCH_SLACK = 12000
+"""Extra samples beyond one frame in each search window. Enough to absorb
+acquisition latency and a little drift, small enough that a second frame's chirp
+cannot fall inside the same window."""
+
+SEARCH_STEP = 4000
+"""Search stride. Must be smaller than SEARCH_SLACK so that some window starts in
+the interval just before each frame's chirp; otherwise a present frame can fall
+between two windows and score zero."""
+
 TAIL_S = 0.4
 """Trailing silence. NEGATIVE_FINDINGS entry 5: the macOS output chain tapers the
 last ~10 ms when a stream stops, which kills the final OFDM symbol, so the
@@ -86,26 +96,26 @@ def acquisition_evidence(rx, wave):
 
 def score(cfg, rx, payloads, geom):
     """Ordered verified blocks across the capture, per frame, payload-independent."""
-    total = 0
-    per_frame = []
+    # The C receiver acquires the *strongest* chirp inside the buffer it is
+    # given, so a window spanning two frames scores the stronger one and hides
+    # the other entirely -- the positive control decoded 26/52 that way while
+    # both frames were in fact perfect. The window therefore holds at most one
+    # frame, and the step is fine enough that some window starts just before each
+    # frame's chirp.
+    window = geom.frame_samples + SEARCH_SLACK
+    step = SEARCH_STEP
+    best = [0] * len(payloads)
     best_evm = None
-    window = geom.frame_samples + 8000
-    for payload in payloads:
-        best = 0
-        # The C receiver acquires its own chirp, so hand it overlapping windows
-        # and keep the best-scoring one for this payload.
-        for start in range(0, max(1, len(rx) - window), geom.frame_samples // 4):
-            decoded = clib.decode(cfg, rx[start : start + window])
-            if decoded is None:
-                continue
-            verified = clib.ordered_verified_blocks(decoded, payload)
-            best = max(best, verified)
-            evm = decoded.get("evm")
-            if evm is not None and np.isfinite(evm) and (best_evm is None or evm < best_evm):
-                best_evm = float(evm)
-        per_frame.append(best)
-        total += best
-    return total, per_frame, best_evm
+    for start in range(0, max(1, len(rx) - geom.frame_samples), step):
+        decoded = clib.decode(cfg, rx[start : start + window])
+        if decoded is None:
+            continue
+        evm = decoded.get("evm")
+        if evm is not None and np.isfinite(evm) and (best_evm is None or evm < best_evm):
+            best_evm = float(evm)
+        for i, payload in enumerate(payloads):
+            best[i] = max(best[i], clib.ordered_verified_blocks(decoded, payload))
+    return sum(best), best, best_evm
 
 
 def probe(name, cfg, wave, payloads, geom, send):
@@ -133,12 +143,41 @@ def probe(name, cfg, wave, payloads, geom, send):
     }, rx
 
 
+def self_loop(a):
+    """Positive control: the Mac's own speaker to its own microphone.
+
+    An all-fail map cannot be distinguished from broken tooling without a cell
+    that is expected to pass. This path measures 0.9 ms of strong-tap spread
+    against the 16 ms budget, so the same code, the same codec and the same
+    scoring must carry it. If this fails, nothing else in the run means anything.
+    """
+    link = geo.conservative_link(geo.MACBOOK_PRO_M4, geo.MACBOOK_PRO_M4, amp=a.amp)
+    cfg = link.to_clib_cfg(clib)
+    wave, payloads, geom = build(cfg, seed=21)
+    print(f"\n{link.label}: {link.f_lo_hz:.0f}-{link.f_hi_hz:.0f} Hz, "
+          f"{geom.n_blocks} blocks/frame")
+
+    def send(w):
+        return acquire.play_and_record(
+            w, F.SR, acquire.MAC_SPEAKERS, acquire.MAC_MICROPHONE, tail_s=1.0
+        )[:, 0]
+
+    return probe("Mac -> Mac, conservative QPSK r1/2 (positive control)",
+                 cfg, wave, payloads, geom, send)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--label", default="linkprobe")
     ap.add_argument("--amp", type=float, default=0.5)
     ap.add_argument("--outdir", default="artifacts/garage")
+    ap.add_argument("--control-only", action="store_true",
+                    help="run just the Mac self-loop control; needs no phone")
     a = ap.parse_args()
+
+    if a.control_only:
+        self_loop(a)
+        return
 
     serial = H.validated_android_serial()
     level, readback = crosscal.media_volume()
@@ -178,6 +217,8 @@ def main():
 
     results["phone_to_mac"], rx_up = probe("Pixel -> Mac, conservative QPSK r1/2", cfg_up,
                                            wave_up, payloads_up, geom_up, send_up)
+
+    results["mac_self_loop"], _ = self_loop(a)
 
     os.makedirs(a.outdir, exist_ok=True)
     base = os.path.join(a.outdir, f"linkprobe-{a.label}-{time.strftime('%Y%m%dT%H%M%S')}")

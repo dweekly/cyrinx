@@ -428,38 +428,56 @@ this device answers with "media: inaccessible or not found".
 level locally rather than changing shared harness code for one device, and
 defaults to reading and recording the current level rather than setting one.
 
-### Conservative coherent link at ~1 ft: zero blocks, both directions
+### Conservative coherent link at ~1 ft: zero blocks, with a passing control
 
 `scratch/garage/linkprobe.py`, same geometry and session as the characterization
 above. Two frames per direction with a declared 250 ms gap and 0.4 s of trailing
 silence, payloads independently seeded and verified at their scheduled block
 positions, decoded host-side by the C codec.
 
-| directed link | band | matched-filter peak/mean | best EVM | ordered blocks |
-|---|---|---|---|---|
-| Mac → Pixel, QPSK r1/2, CP 768 | 300–23000 Hz | 42.7 | 1.884 | **0 / 52** |
-| Pixel → Mac, QPSK r1/2, CP 768 | 300–17000 Hz | 28.8 | — | **0 / 38** |
+| link | band | peak/mean | best EVM | ordered blocks | verified payload |
+|---|---|---|---|---|---|
+| Mac → Pixel, QPSK r1/2, CP 768 | 300–23000 Hz | 43.2 | 1.102 | **0 / 52** | 0 bps |
+| Pixel → Mac, QPSK r1/2, CP 768 | 300–17000 Hz | 30.8 | 1.944 | **0 / 38** | 0 bps |
+| Mac → Mac, same profile (control) | 300–23000 Hz | 130.7 | 0.136 | **52 / 52** | 12,312 bps |
 
-The capture-integrity checks the plan requires before reading anything into this
-all pass. The same configuration decodes 26/26 blocks in digital loopback at
-several frame offsets, so the codec and the geometry are sound. The signal
-arrives and is acquirable in both directions — matched-filter peak over mean of
-42.7 and 28.8 against a floor of 1 — and neither capture is empty, silent, or
-clipping. So this is not a routing, level, or tooling failure.
+The control is the point. The same code, codec, scoring and payload verification
+carry 52 of 52 blocks on the laptop's own path, whose strong-tap spread is 0.9 ms
+against the 16 ms budget. So an all-zero cross-device result is a property of
+those channels, not of the apparatus.
 
-It is the entry 13 signature, reached at one foot. Entry 13 recorded sync locking
-cleanly at peak/mean 104 while QPSK r1/2 decoded zero blocks at EVM ~2; this
-reads EVM 1.884 and zero blocks with sync locked. The delay-spread readout said
-so first: 48 ms and 82 ms of strong-tap spread against a 16 ms guard that no
-expressible cyclic prefix can cover.
+Both failing directions acquire: matched-filter peak over mean of 43.2 and 30.8
+against a floor of 1, no capture empty, silent, or clipping, and the same
+configuration decodes 26/26 in digital loopback at several frame offsets. What
+fails is the coherent demodulation itself, at EVM 1.1 and 1.9 against the
+control's 0.136.
 
-**This is the first position where stage 1G's two conditions both hold** — a
-conservative link that keeps failing, and valid evidence of substantial energy
-beyond the declared budget. The plan directs such a position to stage 8
-waveform-class screening rather than to further guard and MCS tuning, and that is
-the recommendation for this geometry.
+That is NEGATIVE_FINDINGS entry 13's signature reached at one foot — entry 13 had
+sync locking at peak/mean 104 while QPSK r1/2 decoded zero blocks at EVM ~2 — and
+the delay-spread readout said so first, measuring 48 ms and 82 ms of strong-tap
+spread against a guard no expressible cyclic prefix can extend far enough to
+cover.
+
+**This is the first position where stage 1G's two conditions both hold**: a
+conservative link that fails, and valid evidence of substantial energy beyond the
+declared budget. The plan directs such a position to stage 8 waveform-class
+screening rather than to further guard and MCS tuning.
 
 Scope: one position, one device pair, one run per direction. It says nothing yet
-about closer spacings, other rooms, or other devices, and the plan's baseline map
-is what fills that in. What it does establish is that the gate's prediction was
-tested against a real decode rather than assumed, and held.
+about closer spacings, other rooms, or other devices. What it establishes is that
+the gate's prediction was tested against a real decode, with a passing control in
+the same run, and held.
+
+#### Scoring gotcha: the receiver locks the strongest chirp in the buffer
+
+The first version of this probe scored the control at 26/52 while both frames
+were in fact perfect. The C receiver acquires the *strongest* chirp inside the
+buffer it is handed, so a search window spanning two frames decodes the stronger
+one and the other scores zero however good it was. A window must therefore hold
+at most one frame, and the search step must be smaller than the window's slack so
+that some window starts just before each frame's chirp — otherwise a present
+frame falls between two windows and reads as a failure.
+
+Both mistakes understate. Any multi-frame capture scored by sliding a window past
+a self-acquiring receiver needs the same care, and needs a positive control in
+the same run to notice when it does not have it.
