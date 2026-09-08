@@ -22,7 +22,7 @@ Date: 2026-09-04. Revised 2026-09-06 after a repository cross-check, and 2026-09
 | Pixel → Mac | 82.3 ms | 72.9 | 1.944 | 0 / 38 |
 | Mac → Mac (control) | 0.9 ms | 138.4 | 0.136 | 52 / 52 |
 
-Both directions acquire and fail in the demodulator, against a 16 ms guard budget no expressible cyclic prefix can extend to cover. The delay-spread readout predicted it before either link was attempted, and the same tooling carries 52 of 52 blocks on the control, so this is a property of the channels rather than of the apparatus.
+Both directions acquire and fail in the demodulator, with measured strong-tap spreads well beyond the declared 16 ms practical guard budget. Longer prefixes are expressible — the validator accepts any prefix up to the FFT size — so the budget is what these spreads exceed, not a physical limit; entry 13 measured NFFT 4096 with a 43 ms guard recovering zero blocks, which is why widening it is not the answer being reached for. The delay-spread readout predicted it before either link was attempted, and the same tooling carries 52 of 52 blocks on the control, so this is a property of the channels rather than of the apparatus.
 
 **What this changes about the sequence below.** The map was written expecting a mix of easy, marginal, and failing positions, with the failing ones the exception. The first off-chassis cell at one foot is a stage 8 referral, which makes two questions more urgent than the rest of the stage list:
 
