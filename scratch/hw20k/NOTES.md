@@ -427,3 +427,39 @@ this device answers with "media: inaccessible or not found".
 `cmd media_session volume --stream 3 --get/--set` works. `crosscal.py` handles the
 level locally rather than changing shared harness code for one device, and
 defaults to reading and recording the current level rather than setting one.
+
+### Conservative coherent link at ~1 ft: zero blocks, both directions
+
+`scratch/garage/linkprobe.py`, same geometry and session as the characterization
+above. Two frames per direction with a declared 250 ms gap and 0.4 s of trailing
+silence, payloads independently seeded and verified at their scheduled block
+positions, decoded host-side by the C codec.
+
+| directed link | band | matched-filter peak/mean | best EVM | ordered blocks |
+|---|---|---|---|---|
+| Mac → Pixel, QPSK r1/2, CP 768 | 300–23000 Hz | 42.7 | 1.884 | **0 / 52** |
+| Pixel → Mac, QPSK r1/2, CP 768 | 300–17000 Hz | 28.8 | — | **0 / 38** |
+
+The capture-integrity checks the plan requires before reading anything into this
+all pass. The same configuration decodes 26/26 blocks in digital loopback at
+several frame offsets, so the codec and the geometry are sound. The signal
+arrives and is acquirable in both directions — matched-filter peak over mean of
+42.7 and 28.8 against a floor of 1 — and neither capture is empty, silent, or
+clipping. So this is not a routing, level, or tooling failure.
+
+It is the entry 13 signature, reached at one foot. Entry 13 recorded sync locking
+cleanly at peak/mean 104 while QPSK r1/2 decoded zero blocks at EVM ~2; this
+reads EVM 1.884 and zero blocks with sync locked. The delay-spread readout said
+so first: 48 ms and 82 ms of strong-tap spread against a 16 ms guard that no
+expressible cyclic prefix can cover.
+
+**This is the first position where stage 1G's two conditions both hold** — a
+conservative link that keeps failing, and valid evidence of substantial energy
+beyond the declared budget. The plan directs such a position to stage 8
+waveform-class screening rather than to further guard and MCS tuning, and that is
+the recommendation for this geometry.
+
+Scope: one position, one device pair, one run per direction. It says nothing yet
+about closer spacings, other rooms, or other devices, and the plan's baseline map
+is what fills that in. What it does establish is that the gate's prediction was
+tested against a real decode rather than assumed, and held.
