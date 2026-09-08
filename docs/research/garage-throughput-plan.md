@@ -8,7 +8,30 @@ This plan finds out, in a garage, with equipment we already own: a laptop, the p
 
 The first thing it measures is not speed. It is how long the room keeps echoing, because if the echo outlasts the gap our signal leaves between symbols, then faster codes and better error correction cannot help and we need a different kind of signal entirely. That decision comes early, on purpose, so we do not spend weeks tuning something that was never going to work at that distance.
 
-Date: 2026-09-04. Revised 2026-09-06 after a repository cross-check. Status: proposed research and implementation sequence.
+Date: 2026-09-04. Revised 2026-09-06 after a repository cross-check, and 2026-09-08 after the first measurements. Status: G0 landed, first baseline cell measured.
+
+## State of play, 2026-09-08
+
+**G0a and G0b are on `main`** (PRs #89, #87): capability-derived link geometries, a Schroeder delay-spread readout with explicit validity, the acquisition adapter, self-calibration, and cross-device characterization, under [scratch/garage/](../../scratch/garage/README.md).
+
+**The first real baseline cell is measured, and stage 1G fired on it.** A Pixel 7a face up about a foot from the MacBook, both stationary ([notebook](../../scratch/hw20k/NOTES.md), 2026-09-08):
+
+| link | strong-tap spread | chirp peak/mean | best EVM | ordered blocks |
+|---|---|---|---|---|
+| Mac → Pixel | 48.3 ms | 135.6 | 1.102 | 0 / 52 |
+| Pixel → Mac | 82.3 ms | 72.9 | 1.944 | 0 / 38 |
+| Mac → Mac (control) | 0.9 ms | 138.4 | 0.136 | 52 / 52 |
+
+Both directions acquire and fail in the demodulator, with measured strong-tap spreads well beyond the declared 16 ms practical guard budget. Longer prefixes are expressible — the validator accepts any prefix up to the FFT size — so the budget is what these spreads exceed, not a physical limit; entry 13 measured NFFT 4096 with a 43 ms guard recovering zero blocks, which is why widening it is not the answer being reached for. The delay-spread readout predicted it before either link was attempted, and the same tooling carries 52 of 52 blocks on the control, so this is a property of the channels rather than of the apparatus.
+
+**What this changes about the sequence below.** The map was written expecting a mix of easy, marginal, and failing positions, with the failing ones the exception. The first off-chassis cell at one foot is a stage 8 referral, which makes two questions more urgent than the rest of the stage list:
+
+1. **Where is the boundary?** The working geometry is contact through cloth and the failing one is a foot of air; the plan's C0 at 10 cm is untested and is now the most informative single cell available. Run the distance ladder inwards from one foot before anything else.
+2. **Does the non-coherent bearer carry this cell?** Entry 13's only surviving waveform was MFSK at 89–267 bps. If a foot of air is a product requirement, that is the path, and C3-11/C3-12's bootstrap bearer is where it lands rather than a tuned OFDM profile.
+
+Stages 2 through 4 remain correct for positions that pass the gate. They should not be spent on positions that do not.
+
+**Next implementation task is G1**, the capture runner, which the three ad-hoc scripts under `scratch/garage/` now describe the requirements for by example.
 
 **Where the work happens.** Branch `docs/garage-throughput-plan`, worktree `~/dev/cyrinx-WORKTREE/garage-plan`, tracked by its own pull request. Research code lands under `scratch/garage/`. Anything that changes the profile registry, the C receiver, or a published contract leaves `scratch/` and goes through the ordinary Cyrinx 3.0 pull-request rules.
 
@@ -265,7 +288,7 @@ These total approximately 85–135 minutes of operator time if basic tooling wor
 | Work item | Concrete output | Verification before hardware use |
 |---|---|---|
 | G0a | Conservative link geometries derived from endpoint capability — **landed**, [scratch/garage/](../../scratch/garage/README.md) | Byte-exact digital round trip through the C codec on every pairing under test, with no skips |
-| G0b | Schroeder readout wired into garage acquisition with validity states — **built, awaiting review**, see its [plan](delay-spread-readout-plan.md) | The eleven acceptance criteria in that plan, physical cases run through `make_ess` and the garage deconvolution adapter, plus a retained real capture |
+| G0b | Schroeder readout wired into garage acquisition with validity states — **landed**, see its [plan](delay-spread-readout-plan.md) | The eleven acceptance criteria in that plan, physical cases run through `make_ess` and the garage deconvolution adapter, plus a retained real capture |
 | G1 | Capture manifest, runner, immutable attempt ledger, replay command, declared acquisition anchor with bounded non-overlapping slot windows | Existing fixtures, malformed capture, and scheduled-attribution checks, including a missing first frame with a surviving second frame |
 | G2 | Baseline report and per-symbol/per-band diagnostics | Compare exact decisions against the canonical C decoder |
 | G3 | One receiver-only candidate behind a research option | Generated channels and retained PCM; separate oracle from deployable policy |
