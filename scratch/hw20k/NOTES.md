@@ -371,3 +371,59 @@ latency after the sweep ends, so the 1.0 s tail used here supports about 846 ms.
 Farina deconvolution against a 6 s sweep buys ~40 dB of processing gain, so
 integrated noise sits at 6.5e-08 of window energy and truncation never engages at
 this SNR.
+
+## G0: first cross-device characterization, Pixel 7a at ~1 ft (2026-09-08)
+
+Mutual channel characterization (ADR 0006 phase 3) with `scratch/garage/crosscal.py`.
+Pixel 7a over Wi-Fi adb, face up on the desk about a foot to the right of the
+MacBook, both devices stationary. Sweep amplitude 0.5, phone media volume 25/25,
+500 ms horizon, room tone captured on each receiver at the same gain.
+
+| directed link | −10 dB | −15 dB | −20 dB | beyond the 16 ms budget |
+|---|---|---|---|---|
+| Mac speaker → Pixel mic | 48.271 ms | 87.292 ms | 136.521 ms | yes, at every threshold |
+| Pixel speaker → Mac mic | 82.333 ms | 141.896 ms | 200.354 ms | yes, at every threshold |
+
+Both readings are well clear of noise — raw capture 22.6 dB and 19.9 dB above
+room tone, impulse-response peak-to-noise 75.3 dB and 64.2 dB, integrated-noise
+fraction an order of magnitude below the threshold at which truncation would
+engage — so these are measurements of the channel, not of the noise floor. No
+clipping: raw peaks 0.018 and 0.148.
+
+Two things worth carrying forward.
+
+**This is NF-13's regime, reached at one foot.** Entry 13 recorded coherent
+CP-OFDM decoding zero blocks at every MCS in a geometry whose strong-tap spread
+was 35.8 ms. These directed links measure 48 ms and 82 ms at the same threshold,
+so no guard the profile format can express covers them. The delay-spread evidence
+alone does not prove a link attempt fails here — that needs an actual decode —
+but it is the evidence stage 1G reads, and it points at stage 8 rather than at
+guard and MCS tuning.
+
+**The two directions differ by 34 ms at −10 dB**, which is a reminder that a
+directed link is its own channel: different speaker, different microphone,
+different radiation pattern. Averaging them would describe neither.
+
+Repeatability at −10 dB was good on this path: two Mac→Pixel runs read 47.208 and
+48.271 ms, about 2%, against the 26% seen on the laptop's own chassis path. A
+longer, more diffuse decay is better conditioned than a short one dominated by a
+few taps.
+
+### Harness gotcha: reused capture request ids read the previous run's result
+
+`harness.android_record_finish` waits on a logcat line naming the request id, and
+`logcat -d` returns the whole buffer. A request id reused from an earlier run
+matches *that* run's completion line immediately, so the file is pulled while the
+new recording is still being written — the second run of this session pulled an
+empty capture and only failed because the deconvolution refused an empty array.
+`crosscal.py` gives every capture a per-run id and rejects an empty or all-zero
+capture rather than analysing one. Any new Android capture code should do the
+same, or clear the buffer first.
+
+### Pixel 7a shell has no `media` command
+
+`harness.android_prepare(media_volume=...)` shells out to `media volume`, which
+this device answers with "media: inaccessible or not found".
+`cmd media_session volume --stream 3 --get/--set` works. `crosscal.py` handles the
+level locally rather than changing shared harness code for one device, and
+defaults to reading and recording the current level rather than setting one.
