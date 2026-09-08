@@ -148,23 +148,6 @@ def test_amplitude_is_a_session_parameter_and_is_range_checked():
             g.at_amplitude(bad)
 
 
-@pytest.fixture(scope="module")
-def codec():
-    """The C bulk codec, or a skip if the dylib is not built.
-
-    ``importorskip`` alone is not enough: ``clib`` imports fine and loads the
-    library lazily, so an absent dylib surfaces as FileNotFoundError from the
-    first call rather than as an ImportError. Only that error skips; a codec
-    that is present but wrong must fail.
-    """
-    clib = pytest.importorskip("clib", reason="clib not importable")
-    try:
-        clib.geometry(clib.make_cfg())
-    except FileNotFoundError as exc:
-        pytest.skip(f"C bulk codec not built: {exc}")
-    return clib
-
-
 PAIRS_UNDER_TEST = (
     (LAPTOP, PIXEL), (PIXEL, LAPTOP),
     (LAPTOP, LAPTOP), (MOTO, IPHONE), (IPHONE, MOTO),
