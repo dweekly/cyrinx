@@ -41,6 +41,15 @@ N_FRAMES = 2
 GAP_S = 0.25
 """Declared inter-frame gap, counted in the schedule rather than assumed away."""
 
+CHIRP_LEN = 4096
+"""Length of the acquisition chirp, from CYRINX_BULK_CHIRP_LEN in
+Sources/CCyrinx/include/cyrinx/cyrinx_bulk.h:303.
+
+Acquisition evidence must correlate against this and nothing more. Correlating
+against a longer prefix measures whether the transmitted waveform is present in
+the capture, which is a different question and answers yes even when the chirps
+have been removed entirely."""
+
 SEARCH_SLACK = 12000
 """Extra samples beyond one frame in each search window. Enough to absorb
 acquisition latency and a little drift, small enough that a second frame's chirp
@@ -85,7 +94,7 @@ def acquisition_evidence(rx, wave):
     """
     if len(rx) < len(wave):
         return {"peak_over_mean": None, "detail": "capture shorter than the transmission"}
-    mf = np.abs(np.correlate(rx, wave[: min(len(wave), 4 * F.SR)], mode="valid"))
+    mf = np.abs(np.correlate(rx, wave[:CHIRP_LEN], mode="valid"))
     if not len(mf) or mf.mean() <= 0:
         return {"peak_over_mean": None, "detail": "no correlation support"}
     return {

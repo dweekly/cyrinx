@@ -101,11 +101,16 @@ def media_volume(value=None):
     raise RuntimeError(f"could not parse media volume from: {out!r}")
 
 
-def _report(name, acq, noise):
+def _report(name, acq, noise, capture=None):
     out = ds.measure(acq, noise)
     print(f"\n{name}")
-    print(f"  capture peak {np.max(np.abs(acq.ir)):.3f}"
-          + ("   WARNING: clipping" if np.max(np.abs(acq.ir)) >= 0.99 else ""))
+    if capture is not None:
+        # Raw PCM amplitude. The deconvolved response is normalized by the
+        # inverse filter and is not on the full-scale axis, so comparing it
+        # against 1.0 would warn about clipping that never happened.
+        peak = float(np.max(np.abs(capture)))
+        print(f"  raw capture peak {peak:.4f}"
+              + ("   WARNING: clipping" if peak >= 0.99 else ""))
     print(f"  horizon {out.horizon_ms:.1f} ms ({out.support}); "
           f"noise power {out.noise_power:.3e}; truncated={out.truncated}")
     for db in ds.THRESHOLDS_DB:
@@ -170,11 +175,11 @@ def main():
 
     token = run_token()
     acq, noise, cap, tone = mac_to_phone(x, inv, a.amp, token)
-    results["mac_to_phone"] = _report("Mac speaker -> phone microphone", acq, noise)
+    results["mac_to_phone"] = _report("Mac speaker -> phone microphone", acq, noise, cap)
     blobs["mac_to_phone"] = (cap, tone)
 
     acq, noise, cap, tone = phone_to_mac(x, inv)
-    results["phone_to_mac"] = _report("phone speaker -> Mac microphone", acq, noise)
+    results["phone_to_mac"] = _report("phone speaker -> Mac microphone", acq, noise, cap)
     blobs["phone_to_mac"] = (cap, tone)
 
     os.makedirs(a.outdir, exist_ok=True)

@@ -435,25 +435,30 @@ above. Two frames per direction with a declared 250 ms gap and 0.4 s of trailing
 silence, payloads independently seeded and verified at their scheduled block
 positions, decoded host-side by the C codec.
 
-| link | band | peak/mean | best EVM | ordered blocks | verified payload |
+| link | band | chirp peak/mean | best EVM | ordered blocks | verified payload |
 |---|---|---|---|---|---|
-| Mac → Pixel, QPSK r1/2, CP 768 | 300–23000 Hz | 43.2 | 1.102 | **0 / 52** | 0 bps |
-| Pixel → Mac, QPSK r1/2, CP 768 | 300–17000 Hz | 30.8 | 1.944 | **0 / 38** | 0 bps |
-| Mac → Mac, same profile (control) | 300–23000 Hz | 130.7 | 0.136 | **52 / 52** | 12,312 bps |
+| Mac → Pixel, QPSK r1/2, CP 768 | 300–23000 Hz | 135.6 | 1.102 | **0 / 52** | 0 bps |
+| Pixel → Mac, QPSK r1/2, CP 768 | 300–17000 Hz | 72.9 | 1.944 | **0 / 38** | 0 bps |
+| Mac → Mac, same profile (control) | 300–23000 Hz | 138.4 | 0.136 | **52 / 52** | 12,312 bps |
+
+Acquisition is measured by correlating against the 4,096-sample chirp
+(`CYRINX_BULK_CHIRP_LEN`) and nothing else. Correlating against a longer prefix
+measures whether the transmitted waveform is present in the capture, which is a
+different question and answers yes even on a burst with every chirp zeroed.
 
 The control is the point. The same code, codec, scoring and payload verification
 carry 52 of 52 blocks on the laptop's own path, whose strong-tap spread is 0.9 ms
 against the 16 ms budget. So an all-zero cross-device result is a property of
 those channels, not of the apparatus.
 
-Both failing directions acquire: matched-filter peak over mean of 43.2 and 30.8
-against a floor of 1, no capture empty, silent, or clipping, and the same
-configuration decodes 26/26 in digital loopback at several frame offsets. What
-fails is the coherent demodulation itself, at EVM 1.1 and 1.9 against the
-control's 0.136.
+Both failing directions acquire, and acquire well: chirp peak over mean of 135.6
+and 72.9, no capture empty, silent, or clipping, and the same configuration
+decodes 26/26 in digital loopback at several frame offsets. What fails is the
+coherent demodulation itself, at EVM 1.1 and 1.9 against the control's 0.136.
 
 That is NEGATIVE_FINDINGS entry 13's signature reached at one foot — entry 13 had
-sync locking at peak/mean 104 while QPSK r1/2 decoded zero blocks at EVM ~2 — and
+sync locking at peak/mean 104 while QPSK r1/2 decoded zero blocks at EVM ~2, and
+Mac → Pixel here locks *better* than that while carrying nothing — and
 the delay-spread readout said so first, measuring 48 ms and 82 ms of strong-tap
 spread against a guard no expressible cyclic prefix can extend far enough to
 cover.
