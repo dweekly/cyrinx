@@ -1,0 +1,14 @@
+[SIM] NFFT 2048 CP 768 (16.0 ms) desk candidate IR (ds10 38.3)    -> 0/26 evm=3.949
+[SIM] NFFT 2048 CP 768 (16.0 ms) Polack ds10=24.0 DRR=0.0         -> 0/26 evm=0.891
+[SIM] NFFT 2048 CP 768 (16.0 ms) Polack ds10=24.0 DRR=6.0         -> 0/26 evm=0.896
+[SIM] NFFT 2048 CP 768 (16.0 ms) Polack ds10=35.8 DRR=0.0         -> 0/26 evm=1.061
+[SIM] NFFT 2048 CP 768 (16.0 ms) Polack ds10=35.8 DRR=6.0         -> 0/26 evm=0.865
+[SIM] NFFT 2048 CP 768 (16.0 ms) Polack ds10=48.3 DRR=0.0         -> 0/26 evm=1.552
+[SIM] NFFT 2048 CP 768 (16.0 ms) Polack ds10=48.3 DRR=6.0         -> 0/26 evm=0.852
+[SIM] NFFT 4096 CP 2048 (42.7 ms) desk candidate IR (ds10 38.3)    -> 0/26 evm=2.256
+[SIM] NFFT 4096 CP 2048 (42.7 ms) Polack ds10=24.0 DRR=0.0         -> 26/26 evm=0.376
+[SIM] NFFT 4096 CP 2048 (42.7 ms) Polack ds10=24.0 DRR=6.0         -> 26/26 evm=0.380
+[SIM] NFFT 4096 CP 2048 (42.7 ms) Polack ds10=35.8 DRR=0.0         -> 26/26 evm=0.612
+[SIM] NFFT 4096 CP 2048 (42.7 ms) Polack ds10=35.8 DRR=6.0         -> 26/26 evm=0.637
+[SIM] NFFT 4096 CP 2048 (42.7 ms) Polack ds10=48.3 DRR=0.0         -> 13/26 evm=0.777
+[SIM] NFFT 4096 CP 2048 (42.7 ms) Polack ds10=48.3 DRR=6.0         -> 0/26 evm=0.929
