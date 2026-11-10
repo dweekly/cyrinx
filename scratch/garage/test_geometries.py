@@ -59,7 +59,7 @@ def link(tx, rx):
 def test_every_conservative_link_is_qpsk_rate_half():
     for tx, rx in ((LAPTOP, PIXEL), (PIXEL, LAPTOP), (MOTO, IPHONE)):
         g = link(tx, rx)
-        assert g.bits_per_bin == 2, "NF-12: 1-bit bins are broken, QPSK is the floor"
+        assert g.bits_per_bin == 2, "QPSK is the floor until BPSK is measured over the air"
         assert g.code_rate == "1/2"
 
 

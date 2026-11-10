@@ -141,7 +141,9 @@ _QAM_NORM = {1: 1.0, 2: np.sqrt(2), 4: np.sqrt(10), 6: np.sqrt(42), 8: np.sqrt(1
 def qam_map(bits, nbits):
     """bits: (n, nbits) -> complex symbols, unit average power, Gray mapping."""
     if nbits == 1:
-        return (1 - 2 * bits[:, 0]).astype(complex)
+        # Float arithmetic on purpose: bits arrive as uint8, and under NumPy 2
+        # `1 - 2 * uint8(1)` stays uint8 and wraps to 255 instead of -1.
+        return (1.0 - 2.0 * bits[:, 0]).astype(complex)
     na = nbits // 2
     lv, order = _gray_levels(na)
     w = (1 << np.arange(na - 1, -1, -1))

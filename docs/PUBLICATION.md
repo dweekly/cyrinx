@@ -260,9 +260,10 @@ assertions at the tiered tolerance above.
 
 ## Phase 2 — Open bugs & research (parallel; not all gate v1.0)
 
-- [ ] **2.1** Fix BPSK 1-bit per-bin loading bug (issue #4): instrument
-      fine-sync window placement on BPSK vs QPSK frames. Non-blocking for v1.0
-      (worked around by QPSK floor); fixing it unlocks the bottom loading rung.
+- [x] **2.1** Fix BPSK 1-bit per-bin loading bug (issue #4). The cause was a
+      `uint8` wraparound in the Python reference's BPSK mapping, not fine-sync
+      window placement (Negative Finding 12). BPSK decodes in loopback in both
+      implementations; it is unmeasured over the air.
 - [ ] **2.2** Spread-spectrum / D-CSS floor tier below OFDM-BPSK (issue #6).
 - [ ] **2.3** Challenged-environment goodput research (issue #5) — ongoing;
       feeds the paper, does not gate the release.

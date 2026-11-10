@@ -69,9 +69,9 @@ reliability weighting is what the receiver leans on, so thinning pilots is a
 later experiment, not a starting point."""
 
 BITS_PER_BIN = 2
-"""QPSK. NF-12 records that mixed maps containing 1-bit (BPSK) bins are broken
-even in clean digital loopback (open bug, issue #4), worked around with a QPSK
-floor, so 2 is the lowest order that may be used here."""
+"""QPSK. 1-bit (BPSK) bins decode in digital loopback (NF-12 was a Python
+reference bug, fixed) but have never been measured over the air, so 2 is the
+lowest order this plan uses until they have."""
 
 CODE_RATE = "1/2"
 """The most robust rate the C codec exposes. registry rows use 3/4, 2/3, and
