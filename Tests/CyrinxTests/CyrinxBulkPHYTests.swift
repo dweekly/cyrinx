@@ -573,3 +573,43 @@ private func scaleEveryDataPilot(
         }
     }
 }
+
+/// BPSK through the C codec, and the coarse chirp search over long captures.
+final class CyrinxBulkPHYSyncTests: XCTestCase {
+    /// 1 bit per bin through the C codec. The Python reference had a BPSK mapping
+    /// bug (NF-12); this pins that the C side round-trips it.
+    func testRoundTripBPSK() throws {
+        let phy = BulkPHY(configuration: .init(bitsPerBin: 1, rate: "1/2", symbolCount: 8))
+        let geo = try XCTUnwrap(phy.geometry())
+        let payload = Data((0..<geo.payloadBytes).map { UInt8(($0 * 31 + 7) & 0xFF) })
+        let wave = try XCTUnwrap(phy.encode(payload))
+        let rx = [Float](repeating: 0, count: 3000) + wave + [Float](repeating: 0, count: 2000)
+        let decoded = try XCTUnwrap(phy.decode(rx))
+        XCTAssertTrue(decoded.isComplete, "blocks \(decoded.blocksOK)/\(decoded.blockCount)")
+        XCTAssertEqual(decoded.payload, payload)
+    }
+
+    /// The coarse chirp search runs over the whole capture. A frame late in a
+    /// long, noisy capture must be found and decoded exactly, wherever it sits.
+    func testFrameIsFoundAnywhereInALongNoisyCapture() throws {
+        let phy = BulkPHY(configuration: .init(bitsPerBin: 2, rate: "1/2", symbolCount: 8))
+        let geo = try XCTUnwrap(phy.geometry())
+        let payload = Data((0..<geo.payloadBytes).map { UInt8(($0 * 13 + 5) & 0xFF) })
+        let wave = try XCTUnwrap(phy.encode(payload))
+
+        var state: UInt64 = 0x9E37_79B9_7F4A_7C15
+        func noise() -> Float {
+            state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+            return (Float(state >> 40) / Float(1 << 24) - 0.5) * 0.004
+        }
+        for lead in [0, 1, 4_095, 4_096, 16_384, 123_457, 300_001] {
+            var rx = (0..<(lead + wave.count + 48_000)).map { _ in noise() }
+            for (i, sample) in wave.enumerated() {
+                rx[lead + i] += sample
+            }
+            let decoded = try XCTUnwrap(phy.decode(rx), "decode nil at lead \(lead)")
+            XCTAssertTrue(decoded.isComplete, "lead \(lead): \(decoded.blocksOK)/\(decoded.blockCount)")
+            XCTAssertEqual(decoded.payload, payload, "payload at lead \(lead)")
+        }
+    }
+}
