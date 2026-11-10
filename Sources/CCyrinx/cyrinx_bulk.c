@@ -992,6 +992,7 @@ static int cyrinx_matched_filter(const double *sig, int sig_len, const double *r
 
         double best_est = -1.0;
         double max_block_energy = 0.0;
+        int finite = 1; /* a NaN or Inf sample poisons a whole FFT block */
         for (int lag0 = 0; lag0 < n_lags; lag0 += block_lags) {
             int avail = sig_len - (start + lag0);
             int take = avail < nfft ? avail : nfft;
@@ -1003,6 +1004,10 @@ static int cyrinx_matched_filter(const double *sig, int sig_len, const double *r
             }
             if (take < nfft)
                 memset(tbuf + take, 0, (size_t)(nfft - take) * sizeof(double));
+            if (!isfinite(energy)) {
+                finite = 0;
+                break;
+            }
             if (energy > max_block_energy)
                 max_block_energy = energy;
             cyrinx_rfft(fwd, tbuf, x_re, x_im);
@@ -1022,7 +1027,11 @@ static int cyrinx_matched_filter(const double *sig, int sig_len, const double *r
             }
         }
 
-        if (max_block_energy == 0.0) {
+        if (!finite) {
+            /* The direct loop skips only the lags that touch the bad sample,
+             * so it still finds a frame elsewhere in the capture. */
+            result = -1;
+        } else if (max_block_energy == 0.0) {
             result = start; /* all-zero input: every lag ties at 0, earliest wins */
         } else {
             double tol = CYRINX_MF_TIE_TOLERANCE * sqrt(ref_energy * max_block_energy);
@@ -1058,7 +1067,7 @@ static int cyrinx_matched_filter(const double *sig, int sig_len, const double *r
     free(x_re);
     free(x_im);
     free(est);
-    if (result < 0) /* allocation failure or degenerate input */
+    if (result < 0) /* allocation failure, non-finite or degenerate input */
         return cyrinx_matched_filter_direct(sig, sig_len, ref, ref_len, start);
     return result;
 }

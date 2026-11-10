@@ -612,4 +612,19 @@ final class CyrinxBulkPHYSyncTests: XCTestCase {
             XCTAssertEqual(decoded.payload, payload, "payload at lead \(lead)")
         }
     }
+
+    /// A NaN sample in the padding must not hide an intact frame: only the
+    /// search positions that overlap it are unusable. (An infinite sample does
+    /// hide the frame, on the direct search too; that is tracked separately.)
+    func testNaNSampleInPaddingDoesNotHideTheFrame() throws {
+        let phy = BulkPHY(configuration: .init(bitsPerBin: 4, rate: "3/4", symbolCount: 1))
+        let geo = try XCTUnwrap(phy.geometry())
+        let payload = Data((0..<geo.payloadBytes).map { UInt8($0 % 256) })
+        let wave = try XCTUnwrap(phy.encode(payload))
+        var rx = [Float](repeating: 0, count: 1000) + wave + [Float](repeating: 0, count: 100)
+        rx[100] = .nan
+        let decoded = try XCTUnwrap(phy.decode(rx))
+        XCTAssertTrue(decoded.isComplete, "\(decoded.blocksOK)/\(decoded.blockCount)")
+        XCTAssertEqual(decoded.payload, payload)
+    }
 }
