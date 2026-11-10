@@ -778,8 +778,10 @@ usable bands differ (iPhone/Moto is the measured asymmetric pair).
 least 7 of 8 fresh comparisons, and the probe overhead is smaller than the
 amortised sweep cost for the transfer sizes in the session mix. Two prior results
 gate this: Negative Finding 11 measured naive per-bin loading underperforming
-uniform, and Negative Finding 12 records mixed maps containing 1-bit bins as
-broken (open bug #4), so any allocation this feeds must keep a QPSK floor. Spike
+uniform, and 1-bit (BPSK) bins, although they now decode in digital loopback
+(Negative Finding 12 was a Python reference bug, since fixed), have not been
+measured over the air, so any allocation this feeds keeps a QPSK floor until
+they have. Spike
 8d already stopped once for want of an identifiable corpus; preregister the
 holdout before collecting.
 

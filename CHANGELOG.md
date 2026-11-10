@@ -7,6 +7,22 @@ date-labelled.
 Detailed evidence for every claim is in the cited document and its reproduction
 commands or content hashes.
 
+## Unreleased — audit fixes: BPSK mapping, chirp search cost, Android X25519
+
+- Fixed the Python reference modem's BPSK mapping (`uint8` wraparound under
+  NumPy 2 sent a 1 bit as +255). This was the whole of the "1-bit bins are
+  broken" failure in issue #4; Negative Finding 12 is corrected. Digital
+  loopback only; BPSK is unmeasured over the air.
+- The C coarse chirp search now uses block FFT cross-correlation and then
+  evaluates the few candidate lags exactly, so it returns the same lag as the
+  direct loop it replaces. On an Apple M4, searching 10 s of 48 kHz audio fell
+  from about 1,069 ms to about 7 ms. Not measured on a phone.
+- Fixed the Android HIL `X25519`: the ladder used the wrong term with the
+  curve constant, so it never produced RFC 7748 output and could not have
+  agreed a key with the Apple side; it also threw on the all-zero private key
+  the config holds when the envelope is off. It now passes the RFC 7748
+  vectors. The envelope remains an unreviewed, off-by-default prototype.
+
 ## Unreleased — C3-03..05 reconstruction: versioned ABI, profile registry, batch contract
 
 - Reconstructed the rejected `c3-02-05-batch-demod` branch work fresh against

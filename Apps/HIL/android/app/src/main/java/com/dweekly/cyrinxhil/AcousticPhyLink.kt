@@ -218,10 +218,12 @@ class AcousticPhyLink(private val config: SessionConfig) {
             }
             
             peerPublicKey = key
-            val privKey = config.localPrivateKey
-            val sharedSecret = X25519.scalarMult(privKey, key)
-            
+            // With the envelope off there is no local key pair (the config holds
+            // zeros), so there is nothing to derive and frames stay plaintext.
+            if (!config.enableCrypto) return
+
             try {
+                val sharedSecret = X25519.scalarMult(config.localPrivateKey, key)
                 val derived = hkdfSHA256(sharedSecret, "CyrinxEncryptionSalt".toByteArray(Charsets.UTF_8), 64)
                 kEnc = derived.copyOfRange(0, 32)
                 kMac = derived.copyOfRange(32, 64)

@@ -100,19 +100,33 @@ loopback; numbers are quoted as measured.
     must track measured FEC coding gain, not a flat SNR margin; pairing
     aggressive loading with a weaker code rate is a double hit.
 
-12. **Mixed per-bin maps containing 1-bit (BPSK) bins are BROKEN (open bug,
-    issue #4).** Fails even in clean digital loopback (uniform BPSK EVM ~125;
-    failure scales with the count of 1-bit bins; mix {2,4} fine, mix {1,2}
-    fails). Disproved: not PAPR, not clip shape, not peak-vs-RMS normalization
-    (all reverted after measuring no fix). Sharp symptom: in a BPSK-heavy frame
-    the sync symbols give |H| = 0.055 at the pilot bins while the data-symbol
-    pilots arrive at |Y| = 4.27 (77× discrepancy), even noiseless — a
-    receiver-side frame-alignment/windowing issue specific to BPSK, not a TX
-    scaling problem. Worked around with a QPSK floor (no 1-bit bins).
+12. **The "1-bit (BPSK) bins are broken" failure was a bug in the Python
+    reference modem, not a property of the waveform or the receiver (issue #4,
+    fixed).** `qam_map` in `scratch/hw20k/modem.py` computed `1 - 2 * bits` on
+    a `uint8` array. Under NumPy 2 that arithmetic stays `uint8` and wraps, so
+    a 1 bit was transmitted as +255 instead of −1. Every BPSK data bin was
+    therefore up to 255× too large, the frame's peak normalization shrank the
+    sync symbols to match, and the receiver saw the recorded 77× mismatch
+    between sync-derived |H| and data-symbol pilots. Before the fix, digital
+    loopback gave uniform BPSK 0/2 blocks (EVM 78.7) and a {1,2} mix 0/3; after
+    it, 2/2 and 3/3 with EVM about 0.011, and the C codec and the Python
+    reference decode each other's BPSK frames
+    (`scratch/garage/test_bpsk_parity.py`). The C codec maps BPSK in floating
+    point and never had the bug. What this entry used to conclude was wrong on
+    two counts: it was a transmit scaling problem, and it was not a
+    receiver-side windowing issue. The PAPR, clip-shape and normalization
+    experiments in entry 3 were measured against the broken mapping. Lesson: a
+    failure that survives noiseless loopback is a code defect until the
+    constellation itself has been printed and checked. BPSK is now usable in
+    loopback; it has **not** been measured over the air, so a QPSK floor in a
+    plan is a choice awaiting that measurement, no longer a workaround.
 
 13. **Coherent CP-OFDM cannot link in a reverberant desk geometry, at ANY
     MCS.** Phone off-chassis on a desk ~7″ from an elevated (5″ stand) laptop:
-    16-QAM r3/4 → 0/375; QPSK r1/2 → 0 (EVM ~2); BPSK r1/2 + 32 ms CP → 0/125;
+    16-QAM r3/4 → 0/375; QPSK r1/2 → 0 (EVM ~2); BPSK r1/2 + 32 ms CP → 0/125
+    (this cell is not evidence: if it was sent by the Python reference it
+    carried the entry 12 mapping bug, and which implementation sent it was not
+    recorded);
     NFFT 4096 / CP 2048 (43 ms) → 0 (EVM ~1.0). Not signal loss — chirp sync
     locks cleanly (matched-filter peak/mean 104) and broadband power is
     present. Cause: Schroeder delay spread 35.8 ms at −10 dB (82 ms at −20 dB),

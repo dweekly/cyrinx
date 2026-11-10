@@ -926,8 +926,11 @@ static void cyrinx_viterbi(const double *llr0, const double *llr1, int n, int n_
 }
 
 /* Cross-correlation matched filter (np.correlate valid): returns argmax |sum
- * sig[i+k]*ref[k]| over i in [0, sig_len-ref_len]. */
-static int cyrinx_matched_filter(const double *sig, int sig_len, const double *ref, int ref_len, int start) {
+ * sig[i+k]*ref[k]| over i in [start, sig_len-ref_len], earliest lag on a tie.
+ * Direct evaluation: ref_len multiply-adds per lag. This is the definition the
+ * FFT path below must agree with. */
+static int cyrinx_matched_filter_direct(const double *sig, int sig_len, const double *ref, int ref_len,
+                                        int start) {
     int best_i = start;
     double best = -1.0;
     for (int i = start; i + ref_len <= sig_len; ++i) {
@@ -941,6 +944,132 @@ static int cyrinx_matched_filter(const double *sig, int sig_len, const double *r
         }
     }
     return best_i;
+}
+
+/* Below this many multiply-adds the direct loop is cheaper than planning FFTs. */
+#define CYRINX_MF_DIRECT_MAX_WORK 8000000.0
+/* A lag is re-evaluated exactly when its FFT estimate is within this fraction of
+ * sqrt(ref energy * block energy) of the best estimate. Double-precision FFT
+ * correlation error is orders of magnitude below it. */
+#define CYRINX_MF_TIE_TOLERANCE 1e-9
+/* More near-ties than this means a degenerate input (e.g. a constant); the
+ * direct loop then decides, so the answer never depends on FFT rounding. */
+#define CYRINX_MF_MAX_CANDIDATES 64
+
+/* Same result as cyrinx_matched_filter_direct, computed by block FFT
+ * cross-correlation: the FFT finds the few lags that could be the maximum and
+ * those are then evaluated exactly, so the returned lag is the direct loop's.
+ * Cost per second of audio drops from ref_len multiply-adds per sample to a
+ * few transforms. */
+static int cyrinx_matched_filter(const double *sig, int sig_len, const double *ref, int ref_len, int start) {
+    int n_lags = sig_len - ref_len - start + 1;
+    if (n_lags <= 1 || ref_len <= 0 || (double)n_lags * (double)ref_len <= CYRINX_MF_DIRECT_MAX_WORK)
+        return cyrinx_matched_filter_direct(sig, sig_len, ref, ref_len, start);
+
+    int nfft = 1;
+    while (nfft < 4 * ref_len)
+        nfft <<= 1;
+    int half = nfft / 2 + 1;
+    int block_lags = nfft - ref_len + 1; /* lags per block that do not wrap */
+
+    cyrinx_rfft_plan *fwd = cyrinx_rfft_create(nfft);
+    cyrinx_irfft_plan *inv = cyrinx_irfft_create(nfft);
+    double *tbuf = (double *)malloc((size_t)nfft * sizeof(double));
+    double *ref_re = (double *)malloc((size_t)half * sizeof(double));
+    double *ref_im = (double *)malloc((size_t)half * sizeof(double));
+    double *x_re = (double *)malloc((size_t)half * sizeof(double));
+    double *x_im = (double *)malloc((size_t)half * sizeof(double));
+    double *est = (double *)malloc((size_t)n_lags * sizeof(double));
+    int result = -1;
+    if (fwd && inv && tbuf && ref_re && ref_im && x_re && x_im && est) {
+        double ref_energy = 0.0;
+        memset(tbuf, 0, (size_t)nfft * sizeof(double));
+        for (int k = 0; k < ref_len; ++k) {
+            tbuf[k] = ref[k];
+            ref_energy += ref[k] * ref[k];
+        }
+        cyrinx_rfft(fwd, tbuf, ref_re, ref_im);
+
+        double best_est = -1.0;
+        double max_block_energy = 0.0;
+        int finite = 1; /* a NaN or Inf sample poisons a whole FFT block */
+        for (int lag0 = 0; lag0 < n_lags; lag0 += block_lags) {
+            int avail = sig_len - (start + lag0);
+            int take = avail < nfft ? avail : nfft;
+            double energy = 0.0;
+            for (int j = 0; j < take; ++j) {
+                double v = sig[start + lag0 + j];
+                tbuf[j] = v;
+                energy += v * v;
+            }
+            if (take < nfft)
+                memset(tbuf + take, 0, (size_t)(nfft - take) * sizeof(double));
+            if (!isfinite(energy)) {
+                finite = 0;
+                break;
+            }
+            if (energy > max_block_energy)
+                max_block_energy = energy;
+            cyrinx_rfft(fwd, tbuf, x_re, x_im);
+            for (int b = 0; b < half; ++b) { /* X * conj(R) */
+                double re = x_re[b] * ref_re[b] + x_im[b] * ref_im[b];
+                double im = x_im[b] * ref_re[b] - x_re[b] * ref_im[b];
+                x_re[b] = re;
+                x_im[b] = im;
+            }
+            cyrinx_irfft(inv, x_re, x_im, tbuf);
+            int n_here = n_lags - lag0 < block_lags ? n_lags - lag0 : block_lags;
+            for (int j = 0; j < n_here; ++j) {
+                double a = fabs(tbuf[j]);
+                est[lag0 + j] = a;
+                if (a > best_est)
+                    best_est = a;
+            }
+        }
+
+        if (!finite) {
+            /* The direct loop skips only the lags that touch the bad sample,
+             * so it still finds a frame elsewhere in the capture. */
+            result = -1;
+        } else if (max_block_energy == 0.0) {
+            result = start; /* all-zero input: every lag ties at 0, earliest wins */
+        } else {
+            double tol = CYRINX_MF_TIE_TOLERANCE * sqrt(ref_energy * max_block_energy);
+            double floor_est = best_est - 2.0 * tol;
+            int n_candidates = 0;
+            for (int i = 0; i < n_lags && n_candidates <= CYRINX_MF_MAX_CANDIDATES; ++i) {
+                if (est[i] >= floor_est)
+                    ++n_candidates;
+            }
+            if (n_candidates <= CYRINX_MF_MAX_CANDIDATES) {
+                double best = -1.0;
+                for (int i = 0; i < n_lags; ++i) {
+                    if (est[i] < floor_est)
+                        continue;
+                    double acc = 0.0;
+                    const double *s = sig + start + i;
+                    for (int k = 0; k < ref_len; ++k)
+                        acc += s[k] * ref[k];
+                    double a = fabs(acc);
+                    if (a > best) {
+                        best = a;
+                        result = start + i;
+                    }
+                }
+            }
+        }
+    }
+    cyrinx_rfft_destroy(fwd);
+    cyrinx_irfft_destroy(inv);
+    free(tbuf);
+    free(ref_re);
+    free(ref_im);
+    free(x_re);
+    free(x_im);
+    free(est);
+    if (result < 0) /* allocation failure, non-finite or degenerate input */
+        return cyrinx_matched_filter_direct(sig, sig_len, ref, ref_len, start);
+    return result;
 }
 
 static void cyrinx_init_diversity_diagnostics(cyrinx_bulk_diversity_diagnostics *diagnostics) {
