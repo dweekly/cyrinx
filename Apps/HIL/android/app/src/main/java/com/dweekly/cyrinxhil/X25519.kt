@@ -21,9 +21,15 @@ object X25519 {
         return clamped
     }
 
+    /**
+     * RFC 7748 X25519. The scalar is clamped here, as section 5 requires, so the
+     * result does not depend on the caller having clamped it: an unclamped or
+     * all-zero scalar would otherwise leave the ladder with z = 0 and throw from
+     * modInverse. The top bit of u is masked for the same section.
+     */
     fun scalarMult(scalar: ByteArray, u: ByteArray): ByteArray {
-        val k = bytesLEToBigInt(scalar)
-        val uVal = bytesLEToBigInt(u)
+        val k = bytesLEToBigInt(clamp(scalar))
+        val uVal = bytesLEToBigInt(u).clearBit(255)
         val result = ladder(k, uVal)
         return bigIntToBytesLE(result)
     }
@@ -83,7 +89,8 @@ object X25519 {
             z3 = u.multiply(DA.subtract(CB).pow(2)).mod(P)
             x2 = AA.multiply(BB).mod(P)
             val E = AA.subtract(BB).mod(P)
-            z2 = E.multiply(BB.add(BigInteger.valueOf(121665).multiply(E))).mod(P)
+            // RFC 7748: z_2 = E * (AA + a24 * E), a24 = 121665. (With BB the constant would be 121666.)
+            z2 = E.multiply(AA.add(BigInteger.valueOf(121665).multiply(E))).mod(P)
 
             if (kt == 1) {
                 var temp = x2; x2 = x3; x3 = temp
