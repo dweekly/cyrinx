@@ -32,7 +32,7 @@ actually playing and listening, and then tried three further ideas.
    playing the same signal. At about one frequency in ten, the phone receives a quarter
    or less of what the better speaker alone would deliver. Aligning the two speakers'
    phase per frequency would recover that; sending two separate streams (2x2 MIMO)
-   has a theoretical ceiling about a third above one stream here, not double.
+   has a theoretical ceiling about 60% above one stream here, not double.
 
 What this is not. It is one desk position on one evening with nothing moving. The
 receiver is research code beside the shipped decoder and decodes on the laptop from
@@ -220,18 +220,21 @@ needs the receiver to report the channel to the transmitter; this was not built.
 
 Shannon bounds, in bits per bin averaged over 500–22800 Hz. Noise is **assumed** equal
 and white on both microphones, set so the median bin from the left speaker to mic 0
-has 16 dB (the afternoon's measured median). Each speaker is limited in amplitude, so
-two streams each get half of each speaker's power. These are ceilings for comparing
-arrangements, not predictions of decoder rates.
+has 16 dB (the afternoon's measured median). Every arrangement with both speakers has
+the same budget, each speaker at full amplitude: the same signal on both, one stream
+with the right speaker's phase turned per frequency, or one independent stream per
+speaker. These are ceilings for comparing arrangements, not predictions of decoder
+rates.
 
 | Arrangement | Bits per bin |
 |---|---|
 | Left speaker only, mic 0 / mic 1 / both mics | 5.16 / 6.33 / 7.22 |
 | Both speakers same signal, mic 0 / mic 1 / both mics | 6.05 / 7.36 / 8.23 |
-| Both speakers, phase aligned per frequency, both mics | 8.44 |
-| Two independent streams, both mics | 11.27 |
+| Both speakers, phase aligned per frequency, both mics | 9.29 |
+| Two independent streams, one per speaker, both mics | 13.15 |
 
-Two streams are about 37% above today's arrangement with both microphones, not double;
+Phase alignment is about 13% above today's arrangement with both microphones, and two
+streams about 60% above it, not double;
 the median ratio between the matrix's two singular values is 10.8 dB. One measurement,
 one position. A 2x2 link would also need per-speaker training symbols and a joint
 detector, neither of which exists.
@@ -263,6 +266,9 @@ detector, neither of which exists.
 - Noise was not measured per microphone for the Shannon bounds.
 - No transmitter change was made for the two-speaker findings: no phase alignment, no
   delay diversity, no left-only comparison of decode results.
+- The first version of the Shannon table gave the phase-aligned and two-stream rows
+  half the transmit power of the same-signal row, understating them (8.44 and 11.27);
+  review caught it and the table above uses one budget throughout.
 - The first ranging attempt and the first speaker-matrix analysis both produced wrong
   output before their self-checks caught it (chirp pairs matched one period apart;
   the sweep anchor on the loudest instead of the first sweep). The retained captures

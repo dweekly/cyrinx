@@ -157,8 +157,7 @@ def analyse(capture, resample, snr_db=16.0):
                 "phase_aligned": float(np.mean(p_aligned < np.median(p_aligned) / 10))},
         }
     # Shannon bounds. Noise is set so the median left-speaker, first-microphone bin
-    # has the stated SNR at full single-speaker amplitude; each speaker is limited
-    # in amplitude, so two streams each get half of each speaker's power.
+    # has the stated SNR at full single-speaker amplitude.
     noise = np.median(np.abs(H[0, 0]) ** 2) / 10 ** (snr_db / 10)
     cap = {}
     for name, w in (("left only", np.array([1, 0])), ("right only", np.array([0, 1])),
@@ -168,8 +167,15 @@ def analyse(capture, resample, snr_db=16.0):
             cap[f"{name} / {label}"] = float(np.mean(np.log2(1 + np.sum(np.abs(eff[rows]) ** 2, axis=0) / noise)))
     Hb = np.moveaxis(H, 2, 0)  # [bin, mic, speaker]
     sv = np.linalg.svd(Hb, compute_uv=False)
-    cap["both, phase aligned per bin for both mics / both mics"] = float(np.mean(np.log2(1 + sv[:, 0] ** 2 / noise)))
-    cap["two streams / both mics"] = float(np.mean(np.sum(np.log2(1 + sv ** 2 / (2 * noise)), axis=1)))
+    # Every arrangement gets the same budget: each speaker at full amplitude.
+    # One stream, phase aligned: the right speaker's phase is turned, per bin,
+    # to make the two speakers add best across both microphones.
+    left, right = H[:, 0, :], H[:, 1, :]
+    aligned = (np.sum(np.abs(left) ** 2, axis=0) + np.sum(np.abs(right) ** 2, axis=0)
+               + 2 * np.abs(np.sum(np.conj(left) * right, axis=0)))
+    cap["both, phase aligned per bin for both mics / both mics"] = float(np.mean(np.log2(1 + aligned / noise)))
+    # Two streams: each speaker carries its own, at full amplitude.
+    cap["two streams, one per speaker / both mics"] = float(np.mean(np.sum(np.log2(1 + sv ** 2 / noise), axis=1)))
     summary["shannon_bits_per_bin_at_snr_db"] = {"snr_db": snr_db, **cap}
     summary["median_condition_number_db"] = float(np.median(20 * np.log10(sv[:, 0] / sv[:, 1])))
     return summary, {"freqs": freqs[band], "H": H}

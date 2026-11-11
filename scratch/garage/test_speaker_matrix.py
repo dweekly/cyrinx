@@ -67,3 +67,15 @@ def test_measured_response_matches_the_path_that_made_it(resample):
         got = np.abs(arrays["H"][mic, speaker])
         got = got * (np.sum(truth * got) / np.sum(got * got))  # the sweep's own gain is not of interest
         assert np.sum((got - truth) ** 2) / np.sum(truth ** 2) < 0.05
+
+
+def test_bounds_use_one_power_budget_for_every_arrangement(resample):
+    """With both speakers at full amplitude throughout, aligning their phase can
+    only help against playing the same signal, and two streams over a
+    well-conditioned matrix carry more than one."""
+    capture, _ = _capture(resample, 0.0)
+    summary, _ = M.analyse(capture, resample)
+    c = summary["shannon_bits_per_bin_at_snr_db"]
+    same = c["both, same signal / both mics"]
+    assert c["both, phase aligned per bin for both mics / both mics"] >= same
+    assert c["two streams, one per speaker / both mics"] > same
