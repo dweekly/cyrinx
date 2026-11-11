@@ -568,3 +568,7 @@ phone was face up on the table for all of 2026-11-10. Owner's note: many earlier
 sessions were face down, and which microphone is better depends on orientation, so
 no channel is to be assumed primary; record all and decide from what each hears.
 Raw phone pulls now land in `~/dev/cyrinx-artifacts/garage/raw-phone-pcm/`.
+
+Pose on 2026-11-10 (owner, 2026-11-11): face up, top edge towards the laptop, bottom
+edge with the USB-C cable plugged in pointing away. The stronger channel 1 is the
+microphone at the end nearer the laptop.
