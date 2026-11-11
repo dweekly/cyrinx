@@ -493,3 +493,41 @@ frame falls between two windows and reads as a failure.
 Both mistakes understate. Any multi-frame capture scored by sliding a window past
 a self-acquiring receiver needs the same care, and needs a positive control in
 the same run to notice when it does not have it.
+
+## Range ladder at 2.5 ft: long guards plus clock correction decode (2026-11-10)
+
+Pixel 7a about 2.5 ft from the MacBook, both stationary, Wi-Fi adb, Mac output
+56%, phone media 25/25, amplitude 0.5. Captures retained in
+`~/dev/cyrinx-artifacts/garage/` (`crosscal-`, `linkprobe-`, `ladder-desk-2p5ft-*`).
+Full record with tables and limits:
+[docs/research/range-ladder-2026-11-10.md](../../docs/research/range-ladder-2026-11-10.md).
+
+- The September result reproduced: conservative QPSK r1/2 at a 16 ms guard decoded
+  0/52 and 0/38, Mac self-loop control 52/52. Spreads at −10 dB: 44.8/50.3 ms
+  Mac → Pixel, 98.8/110.0 ms Pixel → Mac.
+- The echo is band-dependent: about 100 ms at 2–8 kHz in both directions, about
+  30–35 ms at 16–23 kHz Mac → Pixel (`band_spread.py`).
+- The devices' clocks differ by about 28 ppm (+28 Mac → Pixel, −27.4 Pixel → Mac),
+  fitted independently on every capture (`genie_sinr.py`).
+- Full-band captures that decoded zero held 9–16 dB of usable signal once the
+  guard was 43–171 ms. Resampling by the clock offset before the unmodified C
+  decoder turned 0/42 into 41/42 and 0/32 into 32/32; the wrong sign broke
+  working cells (`resample_replay.py`).
+- Five-run repeats with correction: Mac → Pixel 16-QAM r1/2 300–23000 Hz,
+  NFFT 16384, 171 ms guard, 373/390 blocks, 16.8 kbps (and 8–23 kHz, NFFT 8192,
+  85 ms guard, 258/270, 12.3 kbps); Pixel → Mac QPSK r1/2 300–17000 Hz,
+  NFFT 16384, 171 ms guard, 140/140 blocks, 6.3 kbps. Two single-run leads did
+  not survive five repeats.
+- The correction is offline, on real captures. The failure is present from the
+  first data symbol, and undoing only the slide between symbols recovers the
+  171 ms cell (15/16) but not the 85 ms cell (0/21, against 18/21 resampled), so
+  time-domain resampling is the fix to build (`slide_experiment.py`, Python
+  reference, downlink only).
+
+### Tooling gotcha: a fixed-gain fit needs the clock offset removed first
+
+The first version of `genie_sinr.py` fitted one gain per bin across a 3.5 s frame
+and reported −20 dB for cells that had decoded every block. A 28 ppm offset slides
+the last symbol about 4.7 samples against the first, which is several radians at
+20 kHz. Any analysis that averages across a frame has to fit and remove the offset
+first, and should be checked against a cell known to decode.

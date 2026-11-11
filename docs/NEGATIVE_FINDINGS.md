@@ -135,6 +135,20 @@ loopback; numbers are quoted as measured.
     *strong* delay spread exceeds the CP cap, stop climbing the OFDM ladder and
     switch waveform class (non-coherent MFSK / spread-spectrum), or reposition.
 
+    **Amended 2026-11-10: "at ANY MCS" no longer stands, and the lesson is too
+    strong.** At 2.5 ft on a desk (Mac ↔ Pixel 7a, −10 dB spreads of 45–50 ms
+    and 99–110 ms) the same failure reproduced: 0 blocks at 16 ms and 43 ms
+    guards, full band, EVM near 1.0. But with a guard of 85–171 ms **and** the
+    capture resampled to remove a 28 ppm clock offset between the devices,
+    coherent OFDM carried verified payload in both directions, repeated five
+    times (up to about 17 kbps Mac → Pixel, about 6 kbps Pixel → Mac). The failed
+    captures held 9–16 dB of usable signal-to-interference once the guard
+    reached 43–171 ms; the decoder does not account for the clock offset on
+    long symbols, and that, not a lack of signal, is what failed. The clock correction was applied offline to real
+    captures, at one stationary position. Record and limits:
+    [docs/research/range-ladder-2026-11-10.md](research/range-ladder-2026-11-10.md).
+    What still holds: guards of 43 ms and below decode nothing full-band here.
+
 14. **`minimodem` above 300 baud fails over this acoustic channel.** Same-
     hardware baseline: 300 baud decodes (237 bps), but 600/1200/2400 baud
     return 1–2 garbage bytes — single-carrier FSK with no FEC/equalization dies
