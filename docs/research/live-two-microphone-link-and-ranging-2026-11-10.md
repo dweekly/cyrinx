@@ -110,6 +110,18 @@ the bottom edge; channel 1 is `builtin_mic_2`, address `back`, 145.6 mm up, at t
 of the phone. This is the manufacturer's metadata and was not checked against the
 hardware. The phone was lying face up on the table throughout.
 
+**How the phone was lying (owner, 2026-11-11).** Face up, with its top edge pointing
+towards the laptop and its bottom edge, with a USB-C charging cable plugged in,
+pointing away. So the stronger channel is the microphone at the end nearer the
+laptop, and the weaker one is at the far end, facing away, beside the cable. That
+agrees in sign with the ranging in section 4, which put channel 0 about 6 cm farther
+from the Mac than channel 1; the phone reports the two microphones 14 cm apart along
+its length, so the phone's axis was not pointing straight at the speaker, or channel
+0's weak first arrival was timed late, or both. The 16 dB difference is more than
+the extra distance explains (about 0.6 dB for 99.6 cm against 93.4 cm). Shadowing by the phone
+body and the direction the bottom port faces are the likely causes; neither was
+tested.
+
 **This result is specific to that pose (owner, 2026-11-11).** Which microphone hears
 the far end better depends on how the phone is lying or held. Many earlier sessions
 had the phone face down, where the relation between the two was never measured, so
