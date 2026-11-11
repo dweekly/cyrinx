@@ -531,3 +531,17 @@ and reported −20 dB for cells that had decoded every block. A 28 ppm offset sl
 the last symbol about 4.7 samples against the first, which is several radians at
 20 kHz. Any analysis that averages across a frame has to fit and remove the offset
 first, and should be checked against a cell known to decode.
+
+## The pilot timing fit was the larger fault; blind replay decodes the 2.5 ft captures (2026-11-10, evening)
+
+Offline, on the captures above. One failing frame showed the per-symbol pilot
+fit reporting slides near one sample with a phase line pivoting mid-band, which
+a delay cannot produce: slope error from averaging neighbouring-pilot phase
+steps across about 970 pilots. A fit that maximizes the coherent pilot sum
+(research build, `scratch/garage/clock_offset.c`) plus a clock offset estimated
+from the two training symbols decodes ten of eleven repeated cells in full or all but one block with nothing
+hinted (the eleventh 314/350):
+389/390 at 17.5 kbps down, 280/280 at 12.6 kbps up. White noise alone
+reproduces the shipped fit's loss in simulation, including about 1 to 2 dB on
+the near-field frame shapes (not yet tested on near-field captures). Full
+record: `docs/research/pilot-fit-and-blind-clock-correction-2026-11-10.md`.

@@ -18,12 +18,14 @@ Only `selfcal.py` talks to hardware; everything else is analysis.
 | `acquire.py` | Swept-sine acquisition with a declared observation horizon, and hardware capture helpers |
 | `delay_spread.py` | Schroeder delay spread by Lundeby truncation, with explicit validity states |
 | `selfcal.py` | Runs ADR 0006's two local phases: self-calibration and environmental sampling |
-| `ladder.py` | Over-the-air ladder of coherent settings (band, guard, modulation), scored like `linkprobe.py`, optionally after clock-offset correction chosen by pilot EVM |
+| `ladder.py` | Over-the-air ladder of coherent settings (band, guard, modulation), scored like `linkprobe.py`, optionally after clock-offset correction chosen by pilot EVM, and with `--blind` also by the research receiver. `--loopback` runs the whole path with no hardware |
 | `ladder_summary.py` | Aggregates ladder results by cell across repeats |
 | `band_spread.py` | Delay spread and guard-window signal-to-echo ratio per frequency band, from retained `crosscal.py` captures |
 | `genie_sinr.py` | Per-bin signal-to-interference of a retained ladder capture against its regenerated transmit waveform, after fitting the clock offset |
 | `resample_replay.py` | Replays retained ladder captures through the C decoder after resampling by a clock offset |
 | `slide_experiment.py` | Separates the between-symbol and within-symbol effects of a clock offset, in a patched copy of the Python reference receiver |
+| `clock_offset.c`, `clock_offset.py`, `build_clock_dylib.sh` | Research decoder built beside the unmodified codec: estimates a frame's clock offset from its training symbols, resamples, decodes; and a switchable pilot timing fit that uses all pilots coherently. Not part of the public C surface |
+| `blind_replay.py` | Replays retained ladder captures through the research decoder with nothing hinted, in five columns: live, hinted, fit only, blind clock, both |
 | `retain.py` | Decides where captures are kept: `~/dev/cyrinx-artifacts/garage/` unless `--outdir` or `$CYRINX_GARAGE_ARTIFACTS` says otherwise, and never inside a linked git worktree, which is deleted with its ignored files when removed |
 | `test_geometries.py`, `test_delay_spread.py` | Offline tests, including a byte-exact round trip through the C codec and a retained real capture |
 
@@ -49,6 +51,15 @@ clang -std=c11 -O2 -dynamiclib -Dkiss_fft_scalar=double \
 
 The two C-codec tests skip if the dylib is absent; every other test runs without
 it.
+
+`test_clock_offset.py` needs the research dylib loaded as the codec, so that its
+pilot-fit switch reaches the decoder, and skips otherwise:
+
+```sh
+scratch/garage/build_clock_dylib.sh
+CYRINX_BULK_CODEC_PATH=$PWD/scratch/garage/libcyrinxclock.dylib \
+  .venv/bin/python3 -m pytest scratch/garage/ -q
+```
 
 ## Two decisions worth knowing about
 

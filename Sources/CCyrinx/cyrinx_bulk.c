@@ -149,6 +149,14 @@ static void cyrinx_fit_pilot_phase(double *ewr, double *ewi, const double *weigh
     *cpe_out = atan2(si, sr);
 }
 
+/* Every call site names the fit through this macro. A build that leaves it
+ * undefined gets the fit above and is token-for-token the same decoder; the
+ * research build in scratch/garage/clock_offset.c points it at a dispatcher so
+ * an alternative fit can be compared on the same captures. */
+#ifndef CYRINX_PILOT_PHASE_FIT
+#define CYRINX_PILOT_PHASE_FIT cyrinx_fit_pilot_phase
+#endif
+
 /* Smooth residual power over nearby known pilots only. Replicate the endpoint
  * pilot at the band edges (numpy.pad(mode="edge") followed by an 11-tap
  * boxcar in the frozen replay prototype), so every output has the same window
@@ -1228,7 +1236,7 @@ static int cyrinx_select_auto_v1_receiver(const cyrinx_bulk_config *cfg, const c
                 training_index++;
             }
             double slope = 0.0, phase = 0.0;
-            cyrinx_fit_pilot_phase(training_re, training_im, training_weights, training_count,
+            CYRINX_PILOT_PHASE_FIT(training_re, training_im, training_weights, training_count,
                                    cfg->pilot_every * 2, &slope, &phase);
             for (int m = 1; m < n_pilots; m += 2) {
                 int k = m * cfg->pilot_every;
@@ -1561,7 +1569,7 @@ static long cyrinx_bulk_demod_impl(const cyrinx_bulk_config *cfg, const float *r
             ewi[m] = Zi[k] * pil_re[m] - Zr[k] * pil_im[m];
         }
         double slope_tot = 0.0, ph0 = 0.0;
-        cyrinx_fit_pilot_phase(ewr, ewi, pilot_weights, np, cfg->pilot_every, &slope_tot, &ph0);
+        CYRINX_PILOT_PHASE_FIT(ewr, ewi, pilot_weights, np, cfg->pilot_every, &slope_tot, &ph0);
         for (int k = 0; k < n_used; ++k) {
             double ang = -(ph0 + slope_tot * (double)k);
             double cr = cos(ang), ci = sin(ang);
