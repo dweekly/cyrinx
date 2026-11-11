@@ -18,7 +18,7 @@ Only `selfcal.py` talks to hardware; everything else is analysis.
 | `acquire.py` | Swept-sine acquisition with a declared observation horizon, and hardware capture helpers |
 | `delay_spread.py` | Schroeder delay spread by Lundeby truncation, with explicit validity states |
 | `selfcal.py` | Runs ADR 0006's two local phases: self-calibration and environmental sampling |
-| `ladder.py` | Over-the-air ladder of coherent settings (band, guard, modulation), scored like `linkprobe.py`, optionally after clock-offset correction chosen by pilot EVM |
+| `ladder.py` | Over-the-air ladder of coherent settings (band, guard, modulation), scored like `linkprobe.py`, optionally after clock-offset correction chosen by pilot EVM, and with `--blind` also by the research receiver. `--loopback` runs the whole path with no hardware |
 | `ladder_summary.py` | Aggregates ladder results by cell across repeats |
 | `band_spread.py` | Delay spread and guard-window signal-to-echo ratio per frequency band, from retained `crosscal.py` captures |
 | `genie_sinr.py` | Per-bin signal-to-interference of a retained ladder capture against its regenerated transmit waveform, after fitting the clock offset |

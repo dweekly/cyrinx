@@ -539,7 +539,8 @@ fit reporting slides near one sample with a phase line pivoting mid-band, which
 a delay cannot produce: slope error from averaging neighbouring-pilot phase
 steps across about 970 pilots. A fit that maximizes the coherent pilot sum
 (research build, `scratch/garage/clock_offset.c`) plus a clock offset estimated
-from the two training symbols decodes every repeated cell with nothing hinted:
+from the two training symbols decodes ten of eleven repeated cells in full or all but one block with nothing
+hinted (the eleventh 314/350):
 389/390 at 17.5 kbps down, 280/280 at 12.6 kbps up. White noise alone
 reproduces the shipped fit's loss in simulation, including about 1 to 2 dB on
 the near-field frame shapes (not yet tested on near-field captures). Full

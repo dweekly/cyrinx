@@ -25,7 +25,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(_HERE), "hw20k"))
 sys.path.insert(0, _HERE)
 
 import acquire  # noqa: E402
+import blind_replay  # noqa: E402
 import clib  # noqa: E402
+import clock_offset  # noqa: E402
 import crosscal  # noqa: E402
 import freqresp as F  # noqa: E402
 import harness as H  # noqa: E402
@@ -104,6 +106,28 @@ UP3 = [
     cell("qpsk-lo-8k-g171-n16k", 2, 300, 8000, 16384, 8192),
 ]
 
+DOWN4 = [  # fourth pass: denser settings and shorter guards, for the blind research receiver
+    cell("16qam-full-g171-n16k", 4, 300, 23000, 16384, 8192),
+    cell("64qam-full-g171-n16k", 6, 300, 23000, 16384, 8192),
+    cell("16qam-r34-full-g171-n16k", 4, 300, 23000, 16384, 8192, rate="3/4"),
+    cell("64qam-full-g171", 6, 300, 23000, 8192, 8192),
+    cell("16qam-full-g85", 4, 300, 23000, 8192, 4096),
+    cell("16qam-full-g85-n16k", 4, 300, 23000, 16384, 4096),
+    cell("64qam-hi8-23-g85", 6, 8000, 23000, 8192, 4096),
+    cell("16qam-full-g43", 4, 300, 23000, 8192, 2048),
+    cell("qpsk-full-g43", 2, 300, 23000, 8192, 2048),
+    cell("16qam-hi12-23-g43", 4, 12000, 23000, 4096, 2048),
+]
+
+UP4 = [
+    cell("16qam-full-g171-n16k", 4, 300, 17000, 16384, 8192),
+    cell("16qam-r34-full-g171-n16k", 4, 300, 17000, 16384, 8192, rate="3/4"),
+    cell("64qam-full-g171-n16k", 6, 300, 17000, 16384, 8192),
+    cell("16qam-full-g85-n16k", 4, 300, 17000, 16384, 4096),
+    cell("qpsk-full-g85-n16k", 2, 300, 17000, 16384, 4096),
+    cell("qpsk-full-g43", 2, 300, 17000, 8192, 2048),
+]
+
 UP = [  # phone speaker -> Mac microphone
     cell("base-qpsk-full-g16", 2, 300, 17000, 2048, 768),
     cell("qpsk-full-g43", 2, 300, 17000, 4096, 2048),
@@ -121,11 +145,17 @@ UP = [  # phone speaker -> Mac microphone
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--direction", choices=("down", "up"), required=True)
-    ap.add_argument("--set", choices=("first", "second", "third"), default="first")
+    ap.add_argument("--set", choices=("first", "second", "third", "fourth"), default="first")
     ap.add_argument("--repeat", type=int, default=1, help="run the selected cells this many times")
     ap.add_argument("--ppm", default=None,
                     help="comma-separated clock offsets (ppm) to try on each capture; the one with "
                          "the lowest decoder pilot EVM is scored. The choice never sees the payload.")
+    ap.add_argument("--blind", action="store_true",
+                    help="also score each capture with the research receiver (clock offset estimated "
+                         "from the frame, coherent pilot fit); needs the research dylib as the codec")
+    ap.add_argument("--loopback", action="store_true",
+                    help="no hardware: the 'capture' is the transmitted waveform with a 28 ppm clock "
+                         "offset and noise at 20 dB. Exercises build, scoring and retention only")
     ap.add_argument("--label", required=True)
     ap.add_argument("--amp", type=float, default=0.5)
     ap.add_argument("--cells", default=None, help="comma-separated cell names; default all")
@@ -133,11 +163,18 @@ def main():
     a = ap.parse_args()
     outdir = retain.session_dir(a.outdir)
 
-    serial = H.validated_android_serial()
-    level, readback = crosscal.media_volume()
+    if a.blind and os.path.realpath(clib.loaded_library_path()) != os.path.realpath(
+            clock_offset.library_path()):
+        raise SystemExit(f"--blind needs {clib.CODEC_PATH_ENV} set to {clock_offset.library_path()}")
+    if a.loopback:
+        serial, level, readback = "loopback (no hardware)", None, "n/a"
+    else:
+        serial = H.validated_android_serial()
+        level, readback = crosscal.media_volume()
     cells = {("down", "first"): DOWN, ("up", "first"): UP,
              ("down", "second"): DOWN2, ("up", "second"): UP2,
-             ("down", "third"): DOWN3, ("up", "third"): UP3}[(a.direction, a.set)]
+             ("down", "third"): DOWN3, ("up", "third"): UP3,
+             ("down", "fourth"): DOWN4, ("up", "fourth"): UP4}[(a.direction, a.set)]
     if a.cells:
         wanted = a.cells.split(",")
         cells = [c for c in cells if c["name"] in wanted]
@@ -178,11 +215,28 @@ def main():
                 H.android_to_mac(w.astype(np.float32), channels=1, post_s=1.0), dtype=np.float64
             ).reshape(-1)
 
+        def send_loopback(w):
+            rng = np.random.default_rng(i)
+            x = np.concatenate([np.zeros(4000), w, np.zeros(4000)])
+            x = np.asarray(clock_offset.resample(x, -28.0), dtype=np.float64)
+            return x + rng.normal(size=len(x)) * np.sqrt(np.mean(w ** 2) / 100.0)
+
         title = (f"[{i + 1}/{len(cells)}] {c['name']}: {c['f_lo']}-{c['f_hi']} Hz, "
                  f"{c['bits_per_bin']} bit/bin r{c['rate']}, NFFT {c['nfft']} CP {c['cp']} "
                  f"({c['cp'] / F.SR * 1e3:.1f} ms), {c['n_sym']} sym, {geom.n_blocks} blocks/frame")
         result, rx = linkprobe.probe(title, cfg, wave, payloads, geom,
-                                     send_down if a.direction == "down" else send_up)
+                                     send_loopback if a.loopback
+                                     else send_down if a.direction == "down" else send_up)
+        if a.blind:
+            clock_offset.set_pilot_fit(clock_offset.FIT_COHERENT)
+            try:
+                v, per_frame, evm, ppm = blind_replay.score(cfg, rx, payloads, geom)
+            finally:
+                clock_offset.set_pilot_fit(clock_offset.FIT_SHIPPED)
+            result["blind"] = {"verified": v, "per_frame": per_frame, "best_evm": evm, "ppm": ppm,
+                               "bps": v * 256 * 8 / result["airtime_s"]}
+            print(f"  blind research receiver: {v}/{result['scheduled']} blocks -> "
+                  f"{result['blind']['bps']:.0f} bps, clock estimate per frame {ppm}")
         if a.ppm:
             best = None
             for ppm in [float(p) for p in a.ppm.split(",")]:

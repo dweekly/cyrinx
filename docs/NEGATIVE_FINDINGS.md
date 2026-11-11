@@ -155,8 +155,8 @@ loopback; numbers are quoted as measured.
     loses whole frames on wide, long symbols; it reproduces in simulation with
     white noise alone. With a research fit that uses all pilots coherently,
     and a clock offset estimated from each frame's own training symbols,
-    every five-times-repeated cell decodes all or all but one of its blocks
-    with nothing hinted (17.5 kbps Mac → Pixel, 12.6 kbps Pixel → Mac), and
+    ten of eleven five-times-repeated cells decode all or all but one of
+    their blocks with nothing hinted and the eleventh decodes 314 of 350 (17.5 kbps Mac → Pixel, 12.6 kbps Pixel → Mac), and
     full-band QPSK decodes with no clock correction at all. Offline replay of
     one desk session; the research fit is not in the shipped decoder. Full-band
     43 ms guards now decode a minority of blocks; 16 ms still decodes nothing.

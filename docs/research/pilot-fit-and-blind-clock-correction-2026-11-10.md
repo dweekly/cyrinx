@@ -31,8 +31,9 @@ Two things were built, as research code beside the shipped decoder, which is unc
 
 Replaying this afternoon's recordings through both, with nothing hinted:
 
-- Every setting that was repeated five times now decodes every block or all but one,
-  in both directions. The best laptop-to-phone setting carries 17.5 thousand bits per
+- Ten of the eleven settings that were repeated five times now decode every block or
+  all but one, in both directions. The eleventh decodes 314 of 350, with most of the
+  loss in one frame of one run. The best laptop-to-phone setting carries 17.5 thousand bits per
   second (389 of 390 blocks). The best phone-to-laptop setting doubles to 12.6 thousand
   (280 of 280 blocks; it was 145 of 280 this afternoon).
 - The two settings recorded this afternoon as "did not hold" now hold.

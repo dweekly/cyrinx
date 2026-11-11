@@ -14,8 +14,8 @@ commands or content hashes.
   white-noise simulation as well as on hardware captures. A research build
   (`scratch/garage/clock_offset.c`) adds a coherent fit and a receiver that
   estimates and removes the clock offset from each frame's training symbols.
-  With both, every five-times-repeated cell of that session decodes all or all
-  but one block with nothing hinted. Replay of one desk session, not a live
+  With both, ten of the eleven five-times-repeated cells of that session decode
+  all or all but one block with nothing hinted; the eleventh decodes 314 of 350. Replay of one desk session, not a live
   link ([record](docs/research/pilot-fit-and-blind-clock-correction-2026-11-10.md)).
 - The shipped decoder is unchanged in behaviour: its two pilot-fit call sites
   now go through a macro that defaults to the existing fit.
