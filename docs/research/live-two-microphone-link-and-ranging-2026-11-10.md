@@ -304,6 +304,53 @@ What this does not show: that the right speaker is better in general. Which spea
 closer to or better aimed at the phone is a property of this placement. Each cell is
 three runs. Transmit level was not equalised between one speaker and two.
 
+## 7. The phone turned end for end (2026-11-11, morning)
+
+In plain terms: the owner turned the phone 180 degrees in the same spot, so its bottom
+edge faced the laptop, and unplugged its cable. The two microphones swapped which was
+nearer, as expected, and the settings that decoded almost every block the night before
+now decoded about a fifth. A heater was running and the laptop fan came on during the
+run, so this is not a clean test of pose.
+
+| Measurement | Evening, top edge toward laptop | Morning, rotated |
+|---|---|---|
+| Range, microphone 0 (bottom) / 1 (top) | 99.6 / 93.4 cm | 95.1 / 102.1 cm (three runs) |
+| Direct sound, microphone 0 / 1 | -51.4 / -40.4 dB | -47.3 / -47.6 dB |
+| In-band signal in the ladder, 0 / 1 | -54.6 / -49.4 dB | -54.4 / -51.5 dB |
+| In-band noise before the frame, 0 / 1 | -90 / -89.5 dB | -85 to -90 / -84 to -89 dB |
+| 64-QAM r3/4, both microphones | 867/870 | 169/870 |
+| 256-QAM r1/2, both microphones | 778/780 | 197/780 |
+| Either microphone alone, both cells | 0 to 220 | 0 |
+| Lowest pilot EVM per run, both microphones | 0.09 to 0.11 | 0.12 to 0.40 |
+
+Five runs per cell, same transmit settings (amplitude 0.5, Mac volume 56%, phone media
+volume 25). The other ten cells of the set decoded 0 to 100 blocks each. One 64-QAM run
+decoded 166/174 and one 256-QAM run 114/156; the rest were near zero.
+
+What can and cannot be said:
+
+- The nearer microphone follows the nearer end. The ranges swapped, and the 11 dB
+  direct-sound gap between microphones closed to nothing. This supports the owner's
+  rule that neither microphone is to be assumed better.
+- The decode loss began with the first run at 10:29, ten minutes before the laptop
+  fan came on, so the fan did not cause the early failures. This direction is laptop
+  to phone, so the fan is not near the listener.
+- Louder steady noise does not by itself explain it. Signal over noise was still 31
+  to 37 dB, and the quietest run (noise -89.6 / -88.8 dB) decoded 0/156 while a
+  noisier one decoded 114/156.
+- Not separated: the pose, the heater (noise, and moving air that could change the
+  path during a frame; untested), and the phone running on battery. The estimated
+  clock offset read 28.5 to 30.6 ppm against 27.1 to 28.4 the evening before.
+
+To separate them: repeat the two cells in this pose with the heater off, then turn
+the phone back and repeat with the heater on. Captures:
+`ladder-desk-rotated-repeat6-down-20261111T102846`, `rangefind-desk-rotated-20261111T102530`,
+`crosscal-desk-rotated-run1-20261111T102735`, `speakermatrix-desk-rotated-20261111T102757`.
+
+The same morning a Homebrew update removed Python 3.14 while the ladder was running.
+The run completed; `.venv` was repointed at Python 3.15.2 and its packages reinstalled
+(numpy 2.5.4, scipy 1.18.1). The garage tests pass on it (107 passed).
+
 ## What was built
 
 | File | What it is |
