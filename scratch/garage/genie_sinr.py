@@ -35,6 +35,7 @@ sys.path.insert(0, _HERE)
 import clib  # noqa: E402
 import freqresp as F  # noqa: E402
 import linkprobe  # noqa: E402
+import resample_replay  # noqa: E402
 
 CHIRP = 4096
 BANDS = [(300, 2000), (2000, 8000), (8000, 12000), (12000, 16000), (16000, 20000), (20000, 23000)]
@@ -107,7 +108,7 @@ def analyse(row, rx, guard):
     sinr_split = (fit(X[:half], Yd[:half]) + fit(X[half:], Yd[half:])) / 2
     best = (None, early, sinr, sinr_split)
     _, early, sinr, sinr_split = best
-    out = {"cell": row["name"], "verified": row["verified"], "scheduled": row["scheduled"],
+    out = {"cell": resample_replay.capture_key(row), "verified": row["verified"], "scheduled": row["scheduled"],
            "decoder_evm": row["best_evm"], "window_early_samples": early, "clock_offset_ppm": float(ppm),
            "mean_sinr_db": float(10 * np.log10(sinr.mean())),
            "median_sinr_db": float(10 * np.log10(np.median(sinr))),
@@ -134,7 +135,7 @@ def main():
     for row in rows:
         if "error" in row:
             continue
-        r = analyse(row, np.asarray(captures[row["name"]], float), a.guard)
+        r = analyse(row, np.asarray(captures[resample_replay.capture_key(row)], float), a.guard)
         results.append(r)
         bands = "  ".join(f"{k.split('-')[0]}:{v:5.1f}" for k, v in r["bands"].items())
         print(f"{r['cell']:<22}{r['verified']:>4}/{r['scheduled']:<3}{r['decoder_evm']:>7.2f}{r['median_sinr_db']:>8.1f}"

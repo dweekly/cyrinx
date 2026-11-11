@@ -15,6 +15,7 @@ The patch is applied to the source of scratch/hw20k/modem.py at import time, so
 this file fails loudly if that receiver changes shape.
 
 Usage: slide_experiment.py <ladder-*.jsonl> <ppm> <cell> [<cell> ...]
+A cell from a repeated run is named cell#run, e.g. qpsk-full-g85#2.
 """
 
 import json
@@ -70,7 +71,7 @@ def patched_modem():
 
 def main(path, ppm, names):
     M = patched_modem()
-    rows = {json.loads(line)["name"]: json.loads(line) for line in open(path)}
+    rows = {resample_replay.capture_key(row): row for row in map(json.loads, open(path))}
     captures = np.load(path[:-6] + ".npz")
     for name in names:
         row = rows[name]

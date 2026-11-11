@@ -200,7 +200,7 @@ def main():
                "seed": 100 + i, "amp": a.amp, "media_volume": level, **result}
         with open(base + ".jsonl", "a") as fh:
             fh.write(json.dumps(row) + "\n")
-        captures[c["name"] + (f"#{c['run']}" if "run" in c else "")] = rx.astype(np.float32)
+        captures[resample_replay.capture_key(c)] = rx.astype(np.float32)
         np.savez_compressed(base + ".npz", **captures)
         elapsed = time.time() - started
         print(f"  elapsed {elapsed:.0f} s, about {elapsed / (i + 1) * (len(cells) - i - 1):.0f} s left")

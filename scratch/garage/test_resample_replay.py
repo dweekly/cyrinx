@@ -34,3 +34,9 @@ def test_amplitude_is_preserved_up_to_20_khz():
         x = np.sin(2 * np.pi * f * np.arange(sr) / sr)
         y = resample_replay.resample(x, 28.0)[2000:-2000]
         assert np.sqrt(np.mean(y ** 2)) == pytest.approx(np.sqrt(0.5), rel=0.01), f
+
+
+def test_capture_key_matches_how_ladder_stores_repeats():
+    assert resample_replay.capture_key({"name": "qpsk-full-g85"}) == "qpsk-full-g85"
+    assert resample_replay.capture_key({"name": "qpsk-full-g85", "run": 0}) == "qpsk-full-g85#0"
+    assert resample_replay.capture_key({"name": "qpsk-full-g85", "run": 3}) == "qpsk-full-g85#3"

@@ -26,6 +26,14 @@ import clib  # noqa: E402
 import linkprobe  # noqa: E402
 
 
+def capture_key(row):
+    """The name a ladder row's capture is stored under in the .npz.
+
+    A repeated run stores each pass as ``name#run``; a single run stores ``name``.
+    """
+    return row["name"] + (f"#{row['run']}" if "run" in row else "")
+
+
 def resample(rx, ppm):
     """Read rx at times scaled by (1 + ppm * 1e-6), by band-limited (sinc) interpolation."""
     if ppm == 0:
@@ -60,14 +68,14 @@ def main():
                             f_lo=row["f_lo"], f_hi=row["f_hi"], nfft=row["nfft"], cp=row["cp"],
                             amp=row["amp"], pilot_every=row["pilot_every"])
         _, payloads, geom = linkprobe.build(cfg, seed=row["seed"])
-        rx = np.asarray(captures[row["name"]], float)
+        rx = np.asarray(captures[capture_key(row)], float)
         cells = []
         for ppm in ppms:
             verified, per_frame, evm = linkprobe.score(cfg, resample(rx, ppm), payloads, geom)
             cells.append({"ppm": ppm, "verified": verified, "per_frame": per_frame, "best_evm": evm})
-        results.append({"cell": row["name"], "scheduled": row["scheduled"], "live": row["verified"],
+        results.append({"cell": capture_key(row), "scheduled": row["scheduled"], "live": row["verified"],
                         "airtime_s": row["airtime_s"], "replays": cells})
-        print(f"{row['name']:<22}{row['verified']:>5}/{row['scheduled']:<3}"
+        print(f"{capture_key(row):<22}{row['verified']:>5}/{row['scheduled']:<3}"
               + "".join(f"{c['verified']:>6}/{row['scheduled']:<3}{c['best_evm'] or float('nan'):5.2f}" for c in cells),
               flush=True)
     with open(a.jsonl[:-6] + ".resample.json", "w") as fh:
