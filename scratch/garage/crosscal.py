@@ -35,6 +35,7 @@ import delay_spread as ds  # noqa: E402
 import freqresp as F  # noqa: E402
 import geometries as geo  # noqa: E402
 import harness as H  # noqa: E402
+import retain  # noqa: E402
 
 ROOM_TONE_S = 8.0
 """Longer than the 6.0 s inverse filter so NoiseReference has a fully overlapped
@@ -62,8 +63,13 @@ def run_token():
     return time.strftime("%H%M%S")
 
 
-def _pull_capture(out_name, channels=2):
-    """Pull an Android capture and refuse an empty or silent one."""
+def _pull_capture(out_name, channels=2, all_channels=False):
+    """Pull an Android capture and refuse an empty or silent one.
+
+    Returns the first microphone as float64, or with ``all_channels`` the whole
+    (frames, channels) array, so a caller can retain every microphone while the
+    analysis keeps reading the first.
+    """
     path = os.path.join(H.DATA, out_name)
     captured = H.load_pcm16(path, channels=channels)
     if len(captured) == 0:
@@ -71,6 +77,8 @@ def _pull_capture(out_name, channels=2):
     mono = captured[:, 0].astype(np.float64)
     if float(np.max(np.abs(mono))) == 0.0:
         raise RuntimeError(f"{out_name}: Android capture is all zeros (app not foreground?)")
+    if all_channels:
+        return np.asarray(captured, dtype=np.float64)
     return mono
 
 
@@ -129,7 +137,8 @@ def mac_to_phone(x, inv, amp, token):
     """Mac speaker -> phone microphone. Room tone recorded on the phone."""
     tone_name = f"ct_tone_{token}.pcm"
     H.android_record(ROOM_TONE_S, channels=2, out_name=tone_name)
-    tone = _pull_capture(tone_name)
+    tone_all = _pull_capture(tone_name, all_channels=True)
+    tone = tone_all[:, 0]
 
     sweep_name = f"ct_m2p_{token}.pcm"
     dur = len(x) / F.SR + 0.7 + TAIL_S + 8.0
@@ -137,10 +146,12 @@ def mac_to_phone(x, inv, amp, token):
     time.sleep(0.7)
     acquire.play_and_record(x, F.SR, acquire.MAC_SPEAKERS, acquire.MAC_MICROPHONE, tail_s=TAIL_S)
     H.android_record_finish(dur, out_name=sweep_name)
-    captured = _pull_capture(sweep_name)
+    captured_all = _pull_capture(sweep_name, all_channels=True)
+    captured = captured_all[:, 0]
 
     acq = acquire.deconvolve(captured, inv, F.SR, horizon_ms=HORIZON_MS)
-    return acq, ds.NoiseReference.from_pcm(tone, inv, F.SR), captured, tone
+    raw = {"capture_all_mics": captured_all, "tone_all_mics": tone_all}
+    return acq, ds.NoiseReference.from_pcm(tone, inv, F.SR), captured, tone, raw
 
 
 def phone_to_mac(x, inv):
@@ -152,7 +163,18 @@ def phone_to_mac(x, inv):
     captured = np.asarray(captured, dtype=np.float64).reshape(-1)
 
     acq = acquire.deconvolve(captured, inv, F.SR, horizon_ms=HORIZON_MS)
-    return acq, ds.NoiseReference.from_pcm(tone, inv, F.SR), captured, tone
+    return acq, ds.NoiseReference.from_pcm(tone, inv, F.SR), captured, tone, {}
+
+
+def retained_arrays(blobs):
+    """Flatten per-direction arrays into the names stored in the .npz.
+
+    ``blobs`` maps a direction to a dict of named arrays. ``capture`` and
+    ``tone`` are the first microphone, as analysed; ``*_all_mics`` hold every
+    microphone as (frames, channels) where the capture had more than one.
+    """
+    return {f"{direction}_{name}": np.asarray(array, dtype=np.float32)
+            for direction, arrays in blobs.items() for name, array in arrays.items()}
 
 
 def main():
@@ -161,8 +183,10 @@ def main():
     ap.add_argument("--amp", type=float, default=F.AMP)
     ap.add_argument("--media-volume", type=int, default=None,
                     help="set the phone media level; omit to use and record its current level")
-    ap.add_argument("--outdir", default="artifacts/garage")
+    ap.add_argument("--outdir", default=None,
+                    help=f"where captures are retained (default ${retain.ENV_VAR} or {retain.DEFAULT_DIR})")
     a = ap.parse_args()
+    outdir = retain.session_dir(a.outdir)  # before any audio: fail early, not after the capture
 
     serial = H.validated_android_serial()
     provenance = H.collect_android_target_provenance()
@@ -174,22 +198,17 @@ def main():
     results, blobs = {}, {}
 
     token = run_token()
-    acq, noise, cap, tone = mac_to_phone(x, inv, a.amp, token)
+    acq, noise, cap, tone, raw = mac_to_phone(x, inv, a.amp, token)
     results["mac_to_phone"] = _report("Mac speaker -> phone microphone", acq, noise, cap)
-    blobs["mac_to_phone"] = (cap, tone)
+    blobs["mac_to_phone"] = {"capture": cap, "tone": tone, **raw}
 
-    acq, noise, cap, tone = phone_to_mac(x, inv)
+    acq, noise, cap, tone, raw = phone_to_mac(x, inv)
     results["phone_to_mac"] = _report("phone speaker -> Mac microphone", acq, noise, cap)
-    blobs["phone_to_mac"] = (cap, tone)
+    blobs["phone_to_mac"] = {"capture": cap, "tone": tone, **raw}
 
-    os.makedirs(a.outdir, exist_ok=True)
     stamp = time.strftime("%Y%m%dT%H%M%S")
-    base = os.path.join(a.outdir, f"crosscal-{a.label}-{stamp}")
-    np.savez_compressed(
-        base + ".npz",
-        **{f"{k}_{n}": v.astype(np.float32)
-           for k, (c, t) in blobs.items() for n, v in (("capture", c), ("tone", t))},
-    )
+    base = os.path.join(outdir, f"crosscal-{a.label}-{stamp}")
+    np.savez_compressed(base + ".npz", **retained_arrays(blobs))
     meta = {
         "label": a.label, "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "sr": F.SR, "sweep_amp": a.amp,

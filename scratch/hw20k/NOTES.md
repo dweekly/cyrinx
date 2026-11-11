@@ -325,8 +325,15 @@ same time). Clean cell
 First measurements from the garage readout (`scratch/garage/`), on the MacBook
 Pro's own speaker-to-microphone path — ADR 0006's self-calibration and
 environmental-sampling phases for a single endpoint. Five swept-sine captures,
-one fixed geometry, ~4 minutes, `selfcal.py`; raw captures under
-`artifacts/garage/`.
+one fixed geometry, ~4 minutes, `selfcal.py`.
+
+> **The raw captures from this session and from 2026-09-08 no longer exist.**
+> They were written to a gitignored `artifacts/garage/` inside the git
+> worktrees the scripts ran from, and were deleted with those worktrees when
+> their pull requests merged. Searched 2026-11-10 on the three machines this
+> repo is checked out on; no backup is known. The numbers in these two entries
+> stand as recorded and cannot be re-derived. Captures now go to
+> `~/dev/cyrinx-artifacts/garage/` (`scratch/garage/retain.py`).
 
 **The analysis horizon changes the answer, and the default crop is too short.**
 The energy decay curve normalizes to the energy inside the analysed window, so a

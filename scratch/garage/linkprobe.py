@@ -34,6 +34,7 @@ import crosscal  # noqa: E402
 import freqresp as F  # noqa: E402
 import geometries as geo  # noqa: E402
 import harness as H  # noqa: E402
+import retain  # noqa: E402
 
 N_FRAMES = 2
 """The plan's normal research burst: two data frames with a declared gap."""
@@ -179,10 +180,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--label", default="linkprobe")
     ap.add_argument("--amp", type=float, default=0.5)
-    ap.add_argument("--outdir", default="artifacts/garage")
+    ap.add_argument("--outdir", default=None,
+                    help=f"where captures are retained (default ${retain.ENV_VAR} or {retain.DEFAULT_DIR})")
     ap.add_argument("--control-only", action="store_true",
                     help="run just the Mac self-loop control; needs no phone")
     a = ap.parse_args()
+    outdir = retain.session_dir(a.outdir)  # before any audio: fail early, not after the capture
 
     if a.control_only:
         self_loop(a)
@@ -229,8 +232,7 @@ def main():
 
     results["mac_self_loop"], _ = self_loop(a)
 
-    os.makedirs(a.outdir, exist_ok=True)
-    base = os.path.join(a.outdir, f"linkprobe-{a.label}-{time.strftime('%Y%m%dT%H%M%S')}")
+    base = os.path.join(outdir, f"linkprobe-{a.label}-{time.strftime('%Y%m%dT%H%M%S')}")
     np.savez_compressed(base + ".npz", mac_to_phone=rx_down.astype(np.float32),
                         phone_to_mac=rx_up.astype(np.float32))
     with open(base + ".json", "w") as fh:
