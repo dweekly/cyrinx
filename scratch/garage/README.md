@@ -28,16 +28,53 @@ Only `selfcal.py` talks to hardware; everything else is analysis.
 | `blind_replay.py` | Replays retained ladder captures through the research decoder with nothing hinted, in five columns: live, hinted, fit only, blind clock, both |
 | `rangefind.py` | Two-way acoustic ranging between the Mac and the phone with no shared clock; needs the phone app's play-and-record command |
 | `speaker_matrix.py` | Measures the path from each Mac speaker to each phone microphone in one clock-corrected recording, checks itself, and summarises what phase alignment or two streams could gain |
-| `retain.py` | Decides where captures are kept: `~/dev/cyrinx-artifacts/garage/` unless `--outdir` or `$CYRINX_GARAGE_ARTIFACTS` says otherwise, and never inside a linked git worktree, which is deleted with its ignored files when removed |
+| `retain.py` | Decides where captures are kept: `~/dev/cyrinx-artifacts/garage/` unless `--outdir` or `$CYRINX_GARAGE_ARTIFACTS` says otherwise, and never inside a linked git worktree, which is deleted with its ignored files when removed. Also points the harness's raw phone pulls at that directory |
 | `test_geometries.py`, `test_delay_spread.py` | Offline tests, including a byte-exact round trip through the C codec and a retained real capture |
 
 ## Where captures go
 
 Raw captures cannot be regenerated, so they are kept outside every checkout, in
 `~/dev/cyrinx-artifacts/garage/`. The captures from the first two sessions were
-lost because they were written inside worktrees that were later removed. That
-directory is not backed up by anything in this repo; copy it somewhere durable
-after a session.
+lost because they were written inside worktrees that were later removed.
+
+The raw files pulled from the phone go to `raw-phone-pcm/` inside that directory
+(`retain.stage_phone_pulls`), not to `scratch/hw20k/data/` in the checkout. Each
+tool writes its `.npz` only after its last capture, so until then the raw file is
+the only copy.
+
+Nothing in this repo backs the directory up. After a session, mirror it to the
+Linux server, which on 2026-11-10 was done with:
+
+```sh
+rsync -a ~/dev/cyrinx-artifacts/garage/ trogdor:cyrinx-artifacts/garage/
+```
+
+That is a second copy on the same network, not an off-site backup.
+
+## Working practices from the 2026-11-10 sessions
+
+Proposed by the agent that ran the sessions, except where marked; not yet
+confirmed by the owner.
+
+- **Question the rig's defaults before tuning the modem.** The two largest gains
+  that day came from defaults nobody had examined: decoding from phone channel 0
+  only, and the Mac playing one signal on both speakers.
+- **Make no assumption about which microphone is better (owner, 2026-11-11).** It
+  depends on how the phone is lying or held. Record all of them and decide from
+  what each hears.
+- **Settle arrangement questions by decoded blocks.** The path-matrix measurement
+  suggested the two speakers interfere; only paired decode runs showed which
+  arrangement wins.
+- **State the power budget beside any capacity comparison.** A phase-alignment
+  bound was first reported at about 35% and was 13% once every arrangement was
+  given the same per-speaker budget.
+- **Write summary sentences from the table.** "Every repeated setting" was wrong by
+  one cell and had been copied into four files.
+- **When the blind result is worse than the hinted one, find out why.** Blind clock
+  correction first decoded 242 blocks against 373 hinted; the cause was the pilot
+  timing fit, which was the larger finding.
+- **Exercise a harness mode when it is added.** The phone app's play-and-record
+  command had never been able to start.
 
 ## Running the tests
 

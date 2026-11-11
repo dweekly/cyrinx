@@ -210,6 +210,7 @@ def main():
     ap.add_argument("--outdir", default=None)
     a = ap.parse_args()
     outdir = retain.session_dir(a.outdir)
+    retain.stage_phone_pulls(H, outdir)
 
     if a.blind and os.path.realpath(clib.loaded_library_path()) != os.path.realpath(
             clock_offset.library_path()):

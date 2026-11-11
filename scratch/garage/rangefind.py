@@ -249,6 +249,7 @@ def main():
     if not a.label:
         ap.error("--label is required for a live run")
     outdir = retain.session_dir(a.outdir)
+    retain.stage_phone_pulls(H, outdir)
     serial = H.validated_android_serial()
     base = os.path.join(outdir, f"rangefind-{a.label}-{time.strftime('%Y%m%dT%H%M%S')}")
     mac_wave = train(True, MAC_CHIRPS, 0.5, a.amp).astype(np.float32)

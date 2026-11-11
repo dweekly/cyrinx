@@ -557,3 +557,14 @@ millimetre repeatability, self-distances assumed. Mono playback drives both
 speakers with the same signal; about 10% of bins are 6 dB or more below the
 better single speaker. Full record:
 `docs/research/live-two-microphone-link-and-ranging-2026-11-10.md`.
+
+## Which phone microphone is which; orientation (2026-11-11)
+
+The Pixel 7a describes its microphones as: channel 0 `builtin_mic_1`, address
+`bottom`, 5.8 mm from the bottom edge; channel 1 `builtin_mic_2`, address `back`,
+145.6 mm up. Read from the test app's `rec_pcm microphone` log lines on a
+one-second recording; manufacturer metadata, not checked against the hardware. The
+phone was face up on the table for all of 2026-11-10. Owner's note: many earlier
+sessions were face down, and which microphone is better depends on orientation, so
+no channel is to be assumed primary; record all and decide from what each hears.
+Raw phone pulls now land in `~/dev/cyrinx-artifacts/garage/raw-phone-pcm/`.

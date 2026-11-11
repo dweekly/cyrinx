@@ -7,6 +7,25 @@ date-labelled.
 Detailed evidence for every claim is in the cited document and its reproduction
 commands or content hashes.
 
+## Unreleased — local gates run on the current toolchain; simulator plan
+
+- **Swift Format advanced to 604.0.0.** The tree needed no reformatting under
+  the new version.
+- **API inventory checker no longer depends on a build engine's private
+  file.** Swift 6.4's default build engine does not write the
+  `description.json` the checker read its compiler flags from, so it now
+  extracts the Swift surface with `swift package dump-symbol-graph`. The
+  inventory is regenerated on Swift 6.4.2: 808 symbols as before, nine
+  declarations respelled by the compiler (nested types no longer qualified
+  with `BulkPHY.`), no API change.
+- Capture tools pull raw phone recordings into the retained directory instead
+  of the checkout.
+- Recorded that microphone choice depends on phone orientation and must come
+  from listening to every microphone (roadmap rank 9, live record section 3),
+  with the phone's own description of which channel is which.
+- Roadmap entry and a first plan for a measured-channel replay simulator.
+  Nothing built.
+
 ## Unreleased — research: live two-microphone link, ranging, speaker matrix
 
 - Live at 2.5 ft with the research receiver: combining the phone's two

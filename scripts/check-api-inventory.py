@@ -718,42 +718,6 @@ def toolchain_drift_diagnostic(
     return "\n".join(lines)
 
 
-def find_swift_command(description: dict[str, Any]) -> dict[str, Any]:
-    commands = description.get("swiftCommands", {})
-    if not isinstance(commands, dict):
-        raise InventoryError("SwiftPM description has no swiftCommands object")
-    matches = [
-        command
-        for command in commands.values()
-        if isinstance(command, dict) and command.get("moduleName") == "Cyrinx"
-    ]
-    if len(matches) != 1:
-        raise InventoryError(
-            f"expected one SwiftPM command for Cyrinx, found {len(matches)}"
-        )
-    return matches[0]
-
-
-def find_symbolgraph_extractor() -> str:
-    configured = os.environ.get("SWIFT_SYMBOLGRAPH_EXTRACT")
-    if configured:
-        return configured
-    discovered = shutil.which("swift-symbolgraph-extract")
-    if discovered:
-        return discovered
-    xcrun = shutil.which("xcrun")
-    if xcrun:
-        result = run(
-            [xcrun, "--find", "swift-symbolgraph-extract"],
-            capture=True,
-        )
-        if result:
-            return result
-    raise InventoryError(
-        "swift-symbolgraph-extract was not found in PATH or the active Xcode toolchain"
-    )
-
-
 def find_clang() -> str:
     configured = os.environ.get("CLANG") or shutil.which("clang")
     if not configured:
@@ -1381,84 +1345,47 @@ def enforce_c_macro_union_policy(headers: list[Path], graph_path: Path) -> None:
         )
 
 
-def forwarded_swift_arguments(arguments: list[str]) -> tuple[str, list[str]]:
-    target: str | None = None
-    forwarded: list[str] = []
-    paired = {"-sdk", "-F", "-I", "-L", "-plugin-path"}
-    index = 0
-    while index < len(arguments):
-        argument = arguments[index]
-        if argument == "-target":
-            if index + 1 >= len(arguments):
-                raise InventoryError("SwiftPM emitted -target without a value")
-            target = arguments[index + 1]
-            index += 2
-            continue
-        if argument in paired:
-            if index + 1 >= len(arguments):
-                raise InventoryError(f"SwiftPM emitted {argument} without a value")
-            forwarded.extend((argument, arguments[index + 1]))
-            index += 2
-            continue
-        if argument == "-Xcc":
-            if index + 1 >= len(arguments):
-                raise InventoryError("SwiftPM emitted -Xcc without a value")
-            forwarded.extend((argument, arguments[index + 1]))
-            index += 2
-            continue
-        index += 1
-
-    if target is None:
-        raise InventoryError("SwiftPM command did not declare a compilation target")
-    return target, forwarded
-
-
 def extract_swift_symbol_graph(
     temporary_directory: Path,
     environment: dict[str, str],
 ) -> Path:
-    enforce_macos_union_policy()
-    run(
-        ["swift", "build", "--disable-sandbox", "--target", "Cyrinx"],
-        environment=environment,
-    )
-    binary_path = Path(
-        run(
-            ["swift", "build", "--show-bin-path"],
-            environment=environment,
-            capture=True,
-        )
-    )
-    description_path = binary_path / "description.json"
-    description = load_json(description_path)
-    command = find_swift_command(description)
-    target, forwarded = forwarded_swift_arguments(command.get("otherArguments", []))
+    """Extract the public Swift symbol graph through SwiftPM itself.
 
+    `swift package dump-symbol-graph` builds the package and runs the
+    toolchain's symbol-graph extractor with SwiftPM's own compiler flags, so
+    the checker does not depend on a build engine's private files (the native
+    engine's `description.json` is absent under the Swift Build engine that
+    Swift 6.4 uses by default).
+    """
+
+    enforce_macos_union_policy()
+    output = run(
+        [
+            "swift",
+            "package",
+            "--disable-sandbox",
+            "dump-symbol-graph",
+            "--minimum-access-level",
+            "public",
+            "--skip-synthesized-members",
+        ],
+        environment=environment,
+        capture=True,
+    )
+    match = re.search(r"^Files written to (.+)$", output, re.MULTILINE)
+    if match is None:
+        raise InventoryError(
+            "swift package dump-symbol-graph did not report an output directory"
+        )
+    produced = Path(match.group(1).strip()) / "Cyrinx.symbols.json"
+    if not produced.is_file():
+        raise InventoryError(
+            "Swift symbol extraction did not produce Cyrinx.symbols.json"
+        )
     output_directory = temporary_directory / "swift-symbols"
     output_directory.mkdir(parents=True)
-    module_cache = temporary_directory / "swift-symbol-cache"
-    extractor = find_symbolgraph_extractor()
-    arguments = [
-        extractor,
-        "-module-name",
-        "Cyrinx",
-        "-target",
-        target,
-        "-module-cache-path",
-        str(module_cache),
-        "-I",
-        str(command["importPath"]),
-        *forwarded,
-        "-minimum-access-level",
-        "public",
-        "-skip-synthesized-members",
-        "-output-dir",
-        str(output_directory),
-    ]
-    run(arguments, environment=environment)
     graph_path = output_directory / "Cyrinx.symbols.json"
-    if not graph_path.is_file():
-        raise InventoryError("Swift symbol extraction did not produce Cyrinx.symbols.json")
+    shutil.copyfile(produced, graph_path)
     return graph_path
 
 
@@ -2652,7 +2579,7 @@ def write_surface(
             "swiftModule": "Cyrinx",
             "cHeaders": "Sources/CCyrinx/include/cyrinx/*.h",
             "swiftExtraction": (
-                "swift-symbolgraph-extract --minimum-access-level public "
+                "swift package dump-symbol-graph --minimum-access-level public "
                 "--skip-synthesized-members"
             ),
             "cExtraction": (
@@ -2676,7 +2603,7 @@ def write_surface(
         "symbols": merged,
     }
     INVENTORY_PATH.write_text(
-        json.dumps(output, indent=2, sort_keys=False) + "\n",
+        json.dumps(output, indent=1, sort_keys=False) + "\n",
         encoding="utf-8",
     )
     try:
