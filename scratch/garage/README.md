@@ -26,6 +26,8 @@ Only `selfcal.py` talks to hardware; everything else is analysis.
 | `slide_experiment.py` | Separates the between-symbol and within-symbol effects of a clock offset, in a patched copy of the Python reference receiver |
 | `clock_offset.c`, `clock_offset.py`, `build_clock_dylib.sh` | Research decoder built beside the unmodified codec: estimates a frame's clock offset from its training symbols, resamples, decodes; and a switchable pilot timing fit that uses all pilots coherently. Not part of the public C surface |
 | `blind_replay.py` | Replays retained ladder captures through the research decoder with nothing hinted, in five columns: live, hinted, fit only, blind clock, both |
+| `rangefind.py` | Two-way acoustic ranging between the Mac and the phone with no shared clock; needs the phone app's play-and-record command |
+| `speaker_matrix.py` | Measures the path from each Mac speaker to each phone microphone in one clock-corrected recording, checks itself, and summarises what phase alignment or two streams could gain |
 | `retain.py` | Decides where captures are kept: `~/dev/cyrinx-artifacts/garage/` unless `--outdir` or `$CYRINX_GARAGE_ARTIFACTS` says otherwise, and never inside a linked git worktree, which is deleted with its ignored files when removed |
 | `test_geometries.py`, `test_delay_spread.py` | Offline tests, including a byte-exact round trip through the C codec and a retained real capture |
 

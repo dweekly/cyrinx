@@ -545,3 +545,15 @@ hinted (the eleventh 314/350):
 reproduces the shipped fit's loss in simulation, including about 1 to 2 dB on
 the near-field frame shapes (not yet tested on near-field captures). Full
 record: `docs/research/pilot-fit-and-blind-clock-correction-2026-11-10.md`.
+
+## Live at 2.5 ft: blind receiver, two microphones, ranging, speaker matrix (2026-11-10, late evening)
+
+Lid open, Pixel back on adb, same position to within half an inch. Blind research
+receiver live, mic 0: 389/390 at 17.5 kbps down, 280/280 at 12.6 kbps up. Mic 0
+hears the Mac's direct sound about 16 dB below mic 1; maximal-ratio combining of
+both carried 64-QAM r3/4 at 867/870 (39.0 kbps) and 256-QAM r1/2 at 778/780
+(35.0 kbps), five runs each. Two-way ranging: 93.4 cm (mic 1), 99.6 cm (mic 0),
+millimetre repeatability, self-distances assumed. Mono playback drives both
+speakers with the same signal; about 10% of bins are 6 dB or more below the
+better single speaker. Full record:
+`docs/research/live-two-microphone-link-and-ranging-2026-11-10.md`.

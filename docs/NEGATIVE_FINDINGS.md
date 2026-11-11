@@ -162,6 +162,11 @@ loopback; numbers are quoted as measured.
     43 ms guards now decode a minority of blocks; 16 ms still decodes nothing.
     Record:
     [docs/research/pilot-fit-and-blind-clock-correction-2026-11-10.md](research/pilot-fit-and-blind-clock-correction-2026-11-10.md).
+    Run live later the same evening, the same receiver repeated those figures
+    on new transmissions, and combining the phone's two microphones carried
+    39.0 kbps Mac → Pixel (867 of 870 blocks, five runs) and 16-QAM in full at
+    a 43 ms guard on a single run:
+    [docs/research/live-two-microphone-link-and-ranging-2026-11-10.md](research/live-two-microphone-link-and-ranging-2026-11-10.md).
 
 14. **`minimodem` above 300 baud fails over this acoustic channel.** Same-
     hardware baseline: 300 baud decodes (237 bps), but 600/1200/2400 baud
