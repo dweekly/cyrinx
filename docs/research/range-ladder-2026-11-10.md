@@ -1,6 +1,6 @@
 # Off-contact range ladder at 2.5 ft: longer guards and clock correction carry data
 
-Session record, 2026-11-10, about 17:33 to 18:40 local. MacBook Pro M4 and Pixel 7a,
+Session record, 2026-11-10, about 17:33 to 18:55 local; the results are from 17:33 to 18:40. MacBook Pro M4 and Pixel 7a,
 both stationary on a desk about 2.5 ft (76 cm) apart, Pixel over Wi-Fi adb. Mac output
 volume 56%, phone media volume 25/25, transmit amplitude 0.5. Every capture is retained
 in `~/dev/cyrinx-artifacts/garage/` (names below); tools are in `scratch/garage/`.
@@ -272,6 +272,27 @@ and the downlink 16–23 kHz cell's EVM from 0.68 to 0.47. These are single runs
 a later result that clock correction alone changes far more, so this neither confirms
 nor rules out the chirp-echo effect.
 
+## 8. Volume test: inconclusive, and how the session ended
+
+The best downlink and uplink cells were run at transmit amplitudes 0.25, 0.125 and 0.06,
+three runs each, between 18:41 and 18:48. The downlink results were erratic: 78, 0, 0
+of 78 blocks at 0.25; 9, 0, 62 at 0.125; 32, 26, 0 at 0.06. Received level scaled as
+expected (capture peaks 0.011, 0.0066, 0.0038), so the transmissions happened, but these
+runs overlapped with a code review and offline analysis loading the same machine, and
+whole runs at zero beside whole runs at 78 is not what falling signal-to-noise alone
+looks like. No conclusion is drawn about how quiet the link can be. On the uplink the
+received level did not scale with the requested amplitude (peaks 0.26, 0.14, 0.14 at
+0.25 against 0.16 at 0.5 earlier), so that path does not test what it was meant to.
+
+At about 18:48 the MacBook's lid was closed (the system reports clamshell mode). That
+disconnects its built-in microphone and puts the speakers under the lid. From then on
+the phone-to-Mac capture is silent, the Mac-to-phone level is about 16 dB lower, and a
+sweep reads a 104 ms spread on the downlink (`crosscal-desk-2p5ft-after-level-drop-*`).
+A clean re-run of the volume test at 18:49 to 18:54 decoded nothing at any amplitude,
+including the 0.5 control, for that reason (`ladder-desk-2p5ft-quiet-amp*`). Everything
+reported in sections 1 to 7 was captured before 18:41 with the lid open; the Mac
+self-loop control at 17:37 and every uplink capture confirm the microphone was live.
+
 ## What did not work or was not done
 
 - Nothing was decoded by a live receiver with clock correction; the correction is an
@@ -289,6 +310,9 @@ nor rules out the chirp-echo effect.
 - The mechanism by which a 28 ppm offset defeats the decoder is only partly identified (section 5), and only on the downlink.
 - The Python reference and the C codec disagree on two uplink captures; not investigated.
 - The MFSK floor was not run in this position.
+- How low the transmit level can go is not known (section 8).
+- Any capture analysis running on the Mac during a live cell may disturb it; the ladder
+  should not share the machine with other load.
 
 ## Where this points
 
