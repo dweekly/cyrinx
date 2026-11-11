@@ -141,7 +141,7 @@ loopback; numbers are quoted as measured.
     guards, full band, EVM near 1.0. But with a guard of 85–171 ms **and** the
     capture resampled to remove a 28 ppm clock offset between the devices,
     coherent OFDM carried verified payload in both directions, repeated five
-    times (about 12 kbps Mac → Pixel, about 6 kbps Pixel → Mac). The failed
+    times (up to about 17 kbps Mac → Pixel, about 6 kbps Pixel → Mac). The failed
     captures held 9–16 dB of usable signal-to-interference once the guard
     reached 43–171 ms; the decoder does not account for the clock offset on
     long symbols, and that, not a lack of signal, is what failed. The clock correction was applied offline to real

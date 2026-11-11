@@ -513,9 +513,11 @@ Full record with tables and limits:
   guard was 43–171 ms. Resampling by the clock offset before the unmodified C
   decoder turned 0/42 into 41/42 and 0/32 into 32/32; the wrong sign broke
   working cells (`resample_replay.py`).
-- Five-run repeats with correction: Mac → Pixel 16-QAM r1/2 8–23 kHz, NFFT 8192,
-  85 ms guard, 258/270 blocks, 12.3 kbps; Pixel → Mac QPSK r1/2 300–17000 Hz,
-  NFFT 16384, 171 ms guard, 140/140 blocks, 6.3 kbps.
+- Five-run repeats with correction: Mac → Pixel 16-QAM r1/2 300–23000 Hz,
+  NFFT 16384, 171 ms guard, 373/390 blocks, 16.8 kbps (and 8–23 kHz, NFFT 8192,
+  85 ms guard, 258/270, 12.3 kbps); Pixel → Mac QPSK r1/2 300–17000 Hz,
+  NFFT 16384, 171 ms guard, 140/140 blocks, 6.3 kbps. Two single-run leads did
+  not survive five repeats.
 - The correction is offline, on real captures. The failure is present from the
   first data symbol, and undoing only the slide between symbols recovers the
   171 ms cell (15/16) but not the 85 ms cell (0/21, against 18/21 resampled), so

@@ -1,6 +1,6 @@
 # Off-contact range ladder at 2.5 ft: longer guards and clock correction carry data
 
-Session record, 2026-11-10, about 17:33 to 18:35 local. MacBook Pro M4 and Pixel 7a,
+Session record, 2026-11-10, about 17:33 to 18:40 local. MacBook Pro M4 and Pixel 7a,
 both stationary on a desk about 2.5 ft (76 cm) apart, Pixel over Wi-Fi adb. Mac output
 volume 56%, phone media volume 25/25, transmit amplitude 0.5. Every capture is retained
 in `~/dev/cyrinx-artifacts/garage/` (names below); tools are in `scratch/garage/`.
@@ -21,9 +21,9 @@ fast kind of signal work at that distance:
    multi-second frame it is enough to make the receiver lose track. Stretching the
    recording by that amount before decoding fixes it.
 
-With both, the laptop-to-phone direction delivered about 12 thousand bits per second of
-checked data, and the phone-to-laptop direction about 6 thousand, each repeated five
-times. For comparison, the slow fallback is 138 bits per second, and the touching-
+With both, the laptop-to-phone direction delivered about 17 thousand bits per second of
+checked data at its best setting, and the phone-to-laptop direction about 6 thousand,
+each repeated five times. For comparison, the slow fallback is 138 bits per second, and the touching-
 through-cloth record is about 66 thousand.
 
 What this is not: the clock correction was applied on the laptop after each recording,
@@ -51,7 +51,7 @@ be decoded there, not that a finished product does so.
 | Slide between symbols versus stretch within a symbol | `slide_experiment.py` | printed only |
 | Second ladder, clock-corrected scoring | `ladder.py --set second --ppm …` | `ladder-desk-2p5ft-pass2-*` |
 | Five repeats of the best cells | `ladder.py --repeat 5` | `ladder-desk-2p5ft-repeat-*` |
-| Third ladder, single exploratory runs | `ladder.py --set third` | `ladder-desk-2p5ft-pass3-*` |
+| Third ladder, single exploratory runs, then repeats | `ladder.py --set third` | `ladder-desk-2p5ft-pass3-*`, `-repeat3-*` |
 
 "Down" is Mac speaker to phone microphone; "up" is phone speaker to Mac microphone.
 Every cell is two frames with independently seeded payloads, a declared 250 ms gap and
@@ -225,7 +225,41 @@ Single-run cells from the second ladder that did not hold: 16-QAM full band at 8
 (20 / 84), 16-QAM r3/4 full band at 171 ms (25 / 96), 64-QAM full band at 171 ms
 (41 / 96), and uplink 16-QAM at 171 ms (22 / 46 full band, 3 / 32 below 12 kHz).
 
-THIRD_PASS_PLACEHOLDER
+### Third ladder: single exploratory runs, then repeats of the best
+
+One run per cell, clock-corrected, around the cells that had repeated well:
+
+| Direction | Cell | Blocks | Verified rate |
+|---|---|---|---|
+| Down | 16-QAM r1/2, 300–23000 Hz, NFFT 16384, 171 ms | 77 / 78 | 17.3 kbps |
+| Down | 16-QAM r1/2, 4–23 kHz, NFFT 8192, 85 ms | 67 / 70 | 16.0 kbps |
+| Down | 16-QAM r1/2, 8–23 kHz, NFFT 16384, 85 ms | 61 / 68 | 13.2 kbps |
+| Down | 16-QAM r1/2, 12–23 kHz, NFFT 8192, 85 ms | 40 / 40 | 9.5 kbps |
+| Down | 16-QAM r1/2, 8–23 kHz, NFFT 8192, 171 ms | 42 / 42 | 9.5 kbps |
+| Down | 64-QAM r1/2, 8–23 kHz, NFFT 8192, 85 ms | 31 / 82 | 7.4 kbps |
+| Down | 16-QAM r3/4, 8–23 kHz, NFFT 8192, 85 ms | 25 / 82 | 6.0 kbps |
+| Down | 16-QAM r1/2, 12–23 kHz, NFFT 4096, 43 ms | 2 / 42 | 0.5 kbps |
+| Up | 16-QAM r1/2, 300–17000 Hz, NFFT 16384, 171 ms | 51 / 56 | 11.5 kbps |
+| Up | QPSK r1/2, 300–17000 Hz, NFFT 16384, 341 ms | 22 / 22 | 4.3 kbps |
+| Up | QPSK r1/2, 300–8000 Hz, NFFT 16384, 171 ms | 12 / 12 | 2.7 kbps |
+| Up | QPSK r1/2, 300–17000 Hz, NFFT 16384, 85 ms | 11 / 38 | 2.4 kbps |
+| Up | QPSK r3/4, 300–17000 Hz, NFFT 16384, 171 ms | 5 / 42 | 1.1 kbps |
+| Up | 16-QAM r1/2, 300–12000 Hz, NFFT 16384, 171 ms | 0 / 40 | 0 |
+
+Five repeats of the three most promising, plus one long-guard uplink cell:
+
+| Direction | Cell | Blocks | Per-run blocks | Mean verified rate |
+|---|---|---|---|---|
+| Down | 16-QAM r1/2, 300–23000 Hz, NFFT 16384, 171 ms | 373 / 390 | 68, 78, 75, 76, 76 | 16.8 kbps |
+| Down | 16-QAM r1/2, 4–23 kHz, NFFT 8192, 85 ms | 157 / 350 | 26, 44, 49, 10, 28 | 7.5 kbps |
+| Up | 16-QAM r1/2, 300–17000 Hz, NFFT 16384, 171 ms | 145 / 280 | 15, 29, 21, 52, 28 | 6.5 kbps |
+| Up | QPSK r1/2, 300–17000 Hz, NFFT 16384, 341 ms | 110 / 110 | 22 ×5 | 4.3 kbps |
+
+The full-band NFFT 16384 downlink cell held and is the best repeated result of the
+session. The other two single-run leads did not hold: the 4–23 kHz downlink cell and
+16-QAM on the uplink each lost about half their blocks over five runs. That is why
+single runs in this record are leads and not results. Uncorrected, these same captures
+decoded 0 / 390, 0 / 350, 0 / 280 and 30 / 110.
 
 ## 7. A longer silence after the chirp: inconclusive
 
@@ -242,6 +276,9 @@ nor rules out the chirp-echo effect.
 
 - Nothing was decoded by a live receiver with clock correction; the correction is an
   offline step on real captures.
+- The offline resampler is a 32-tap windowed sinc. It is flat to 20 kHz and droops above
+  (about 0.2 dB at 22 kHz, up to 1.4 dB at 23 kHz), so corrected results are slightly
+  pessimistic at the top of the downlink band.
 - Guards of 16 ms and 43 ms decode nothing full-band, corrected or not.
 - Higher-order or higher-rate cells mostly failed, as listed above.
 - Only the phone's first microphone was used for decoding. `crosscal.py` retained both;
