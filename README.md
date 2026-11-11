@@ -377,6 +377,12 @@ swift run cyrinx-sim-bench --profile quiet --out artifacts/bench/sim-quiet.json
   — the staged garage experiment program that executes EXPERIMENTS.md Tier 1 with
   no new measurement equipment, and hands its measured profiles to the Cyrinx 3.0
   Phase D items (fresh as of 2026-09-06).
+- [docs/research/range-ladder-2026-11-10.md](docs/research/range-ladder-2026-11-10.md)
+  — the session record for the off-contact ladder at 2.5 ft: per-band echo
+  length, which guard lengths and bands decode, the clock-offset correction that
+  rescues the failed captures, five-run repeats, and what was not done (fresh as
+  of 2026-11-10; revisit when clock correction runs inside the receiver or the
+  ladder is repeated at another distance).
 - [docs/research/encoding-literature-review-2026-11-10.md](docs/research/encoding-literature-review-2026-11-10.md)
   — a literature review of modulation, equalization, synchronization and coding
   options for the off-contact range cliff and the near-field block loss, ranked,

@@ -30,6 +30,7 @@ import crosscal  # noqa: E402
 import freqresp as F  # noqa: E402
 import harness as H  # noqa: E402
 import linkprobe  # noqa: E402
+import resample_replay  # noqa: E402
 import retain  # noqa: E402
 
 TARGET_FRAME_S = 3.5
@@ -57,6 +58,52 @@ DOWN = [  # Mac speaker -> phone microphone
     cell("qpsk-full-g171", 2, 300, 23000, 8192, 8192),
 ]
 
+DOWN2 = [  # second pass, scored with clock-offset correction
+    cell("qpsk-full-g85", 2, 300, 23000, 8192, 4096),
+    cell("16qam-full-g85", 4, 300, 23000, 8192, 4096),
+    cell("16qam-full-g171", 4, 300, 23000, 8192, 8192),
+    cell("16qam-r34-full-g171", 4, 300, 23000, 8192, 8192, rate="3/4"),
+    cell("64qam-full-g171", 6, 300, 23000, 8192, 8192),
+    cell("qpsk-r34-full-g85", 2, 300, 23000, 8192, 4096, rate="3/4"),
+    cell("qpsk-full-g43", 2, 300, 23000, 4096, 2048),
+    cell("qpsk-full-g64", 2, 300, 23000, 8192, 3072),
+    cell("16qam-hi8-23-g85", 4, 8000, 23000, 8192, 4096),
+    cell("16qam-r34-hi16-23-g85", 4, 16000, 23000, 4096, 4096, rate="3/4"),
+    cell("64qam-hi16-23-g85", 6, 16000, 23000, 4096, 4096),
+    cell("qpsk-full-g85-n16k", 2, 300, 23000, 16384, 4096),
+]
+
+UP2 = [
+    cell("qpsk-full-g85", 2, 300, 17000, 8192, 4096),
+    cell("qpsk-full-g171", 2, 300, 17000, 8192, 8192),
+    cell("bpsk-full-g85", 1, 300, 17000, 8192, 4096),
+    cell("qpsk-lo-12k-g171", 2, 300, 12000, 8192, 8192),
+    cell("qpsk-lo-12k-g85", 2, 300, 12000, 8192, 4096),
+    cell("16qam-lo-12k-g171", 4, 300, 12000, 8192, 8192),
+    cell("qpsk-full-g171-n16k", 2, 300, 17000, 16384, 8192),
+    cell("16qam-full-g171", 4, 300, 17000, 8192, 8192),
+]
+
+DOWN3 = [  # third pass: single exploratory runs around the cells that repeated well
+    cell("16qam-hi8-23-g171", 4, 8000, 23000, 8192, 8192),
+    cell("16qam-full-g171-n16k", 4, 300, 23000, 16384, 8192),
+    cell("16qam-hi8-23-g85-n16k", 4, 8000, 23000, 16384, 4096),
+    cell("64qam-hi8-23-g85", 6, 8000, 23000, 8192, 4096),
+    cell("16qam-r34-hi8-23-g85", 4, 8000, 23000, 8192, 4096, rate="3/4"),
+    cell("16qam-hi4-23-g85", 4, 4000, 23000, 8192, 4096),
+    cell("16qam-hi12-23-g85", 4, 12000, 23000, 8192, 4096),
+    cell("16qam-hi12-23-g43", 4, 12000, 23000, 4096, 2048),
+]
+
+UP3 = [
+    cell("16qam-full-g171-n16k", 4, 300, 17000, 16384, 8192),
+    cell("qpsk-r34-full-g171-n16k", 2, 300, 17000, 16384, 8192, rate="3/4"),
+    cell("qpsk-full-g85-n16k", 2, 300, 17000, 16384, 4096),
+    cell("qpsk-full-g341-n16k", 2, 300, 17000, 16384, 16384),
+    cell("16qam-lo-12k-g171-n16k", 4, 300, 12000, 16384, 8192),
+    cell("qpsk-lo-8k-g171-n16k", 2, 300, 8000, 16384, 8192),
+]
+
 UP = [  # phone speaker -> Mac microphone
     cell("base-qpsk-full-g16", 2, 300, 17000, 2048, 768),
     cell("qpsk-full-g43", 2, 300, 17000, 4096, 2048),
@@ -74,6 +121,11 @@ UP = [  # phone speaker -> Mac microphone
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--direction", choices=("down", "up"), required=True)
+    ap.add_argument("--set", choices=("first", "second", "third"), default="first")
+    ap.add_argument("--repeat", type=int, default=1, help="run the selected cells this many times")
+    ap.add_argument("--ppm", default=None,
+                    help="comma-separated clock offsets (ppm) to try on each capture; the one with "
+                         "the lowest decoder pilot EVM is scored. The choice never sees the payload.")
     ap.add_argument("--label", required=True)
     ap.add_argument("--amp", type=float, default=0.5)
     ap.add_argument("--cells", default=None, help="comma-separated cell names; default all")
@@ -83,10 +135,14 @@ def main():
 
     serial = H.validated_android_serial()
     level, readback = crosscal.media_volume()
-    cells = DOWN if a.direction == "down" else UP
+    cells = {("down", "first"): DOWN, ("up", "first"): UP,
+             ("down", "second"): DOWN2, ("up", "second"): UP2,
+             ("down", "third"): DOWN3, ("up", "third"): UP3}[(a.direction, a.set)]
     if a.cells:
         wanted = a.cells.split(",")
         cells = [c for c in cells if c["name"] in wanted]
+    if a.repeat > 1:
+        cells = [{**c, "run": r} for r in range(a.repeat) for c in cells]
     stamp = time.strftime("%Y%m%dT%H%M%S")
     base = os.path.join(outdir, f"ladder-{a.label}-{a.direction}-{stamp}")
     print(f"phone {serial}; media volume {readback}; {len(cells)} cells -> {base}.jsonl")
@@ -127,12 +183,24 @@ def main():
                  f"({c['cp'] / F.SR * 1e3:.1f} ms), {c['n_sym']} sym, {geom.n_blocks} blocks/frame")
         result, rx = linkprobe.probe(title, cfg, wave, payloads, geom,
                                      send_down if a.direction == "down" else send_up)
+        if a.ppm:
+            best = None
+            for ppm in [float(p) for p in a.ppm.split(",")]:
+                v, per_frame, evm = linkprobe.score(cfg, resample_replay.resample(rx, ppm), payloads, geom)
+                if evm is not None and (best is None or evm < best[0]):
+                    best = (evm, ppm, v, per_frame)
+            if best is not None:
+                evm, ppm, v, per_frame = best
+                result["corrected"] = {"ppm": ppm, "best_evm": evm, "verified": v, "per_frame": per_frame,
+                                       "bps": v * 256 * 8 / result["airtime_s"]}
+                print(f"  clock-corrected ({ppm:+.1f} ppm, chosen by pilot EVM {evm:.3f}): "
+                      f"{v}/{result['scheduled']} blocks -> {result['corrected']['bps']:.0f} bps")
         row = {**c, "direction": a.direction, "blocks_per_frame": geom.n_blocks,
                "payload_bytes": geom.payload_bytes, "frame_s": geom.frame_samples / F.SR,
                "seed": 100 + i, "amp": a.amp, "media_volume": level, **result}
         with open(base + ".jsonl", "a") as fh:
             fh.write(json.dumps(row) + "\n")
-        captures[c["name"]] = rx.astype(np.float32)
+        captures[c["name"] + (f"#{c['run']}" if "run" in c else "")] = rx.astype(np.float32)
         np.savez_compressed(base + ".npz", **captures)
         elapsed = time.time() - started
         print(f"  elapsed {elapsed:.0f} s, about {elapsed / (i + 1) * (len(cells) - i - 1):.0f} s left")

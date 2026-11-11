@@ -8,7 +8,7 @@ This plan finds out, in a garage, with equipment we already own: a laptop, the p
 
 The first thing it measures is not speed. It is how long the room keeps echoing, because if the echo outlasts the gap our signal leaves between symbols, then faster codes and better error correction cannot help and we need a different kind of signal entirely. That decision comes early, on purpose, so we do not spend weeks tuning something that was never going to work at that distance.
 
-Date: 2026-09-04. Revised 2026-09-06 after a repository cross-check, and 2026-09-08 after the first measurements. Status: G0 landed, first baseline cell measured.
+Date: 2026-09-04. Revised 2026-09-06 after a repository cross-check, 2026-09-08 after the first measurements, and 2026-11-10 after the 2.5 ft range ladder. Status: G0 landed, first baseline cell measured, and re-measured with settings that decode.
 
 ## State of play, 2026-09-08
 
@@ -23,6 +23,8 @@ Date: 2026-09-04. Revised 2026-09-06 after a repository cross-check, and 2026-09
 | Mac → Mac (control) | 0.9 ms | 138.4 | 0.136 | 52 / 52 |
 
 Both directions acquire and fail in the demodulator, with measured strong-tap spreads well beyond the declared 16 ms practical guard budget. Longer prefixes are expressible — the validator accepts any prefix up to the FFT size — so the budget is what these spreads exceed, not a physical limit; entry 13 measured NFFT 4096 with a 43 ms guard recovering zero blocks, which is why widening it is not the answer being reached for. The delay-spread readout predicted it before either link was attempted, and the same tooling carries 52 of 52 blocks on the control, so this is a property of the channels rather than of the apparatus.
+
+**2026-11-10: the cell was re-measured at 2.5 ft and coherent signalling decodes there after all.** The conservative profile again carried nothing, with a passing control. A guard of 85–171 ms plus correction of a 28 ppm clock offset between the two devices carried verified payload in both directions, repeated five times: about 12 kbps Mac → Pixel and about 6 kbps Pixel → Mac. The correction was applied offline to retained captures at one stationary position, so this is evidence that the waveform class works off-contact, not a finished link. It changes question 2 below: the stage 8 referral to a different kind of signal is premature until clock correction and long guards have been run across the distance ladder. Full record: [range ladder, 2026-11-10](range-ladder-2026-11-10.md).
 
 **The raw captures behind that table are gone (found 2026-11-10).** They were written inside the worktrees the scripts ran from and were deleted when those worktrees were removed after merge. The figures stand as recorded but cannot be re-analysed, so anything that needs the measured room responses — per-band echo length, replay through the decoder, a replay simulator ([simulator exploration](acoustic-simulation-exploration-2026-11-10.md), [literature review](encoding-literature-review-2026-11-10.md)) — starts with re-capturing this cell. `crosscal.py` now also keeps every phone microphone, not only the first.
 
