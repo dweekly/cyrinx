@@ -19,8 +19,10 @@ actually playing and listening, and then tried three further ideas.
    phone to laptop (12.6 thousand), each over five runs. The shipped decoder returned
    zero on every one of these.
 2. **Using both of the phone's microphones roughly doubles the laptop-to-phone rate.**
-   The phone has two microphones. The one the project has always decoded with turns
-   out to hear the laptop's direct sound about six times more faintly than the other.
+   The phone has two microphones. With the phone lying face up, the one the project
+   has always decoded with heard the laptop's direct sound about six times more
+   faintly than the other. That is a fact about this placement, not about the
+   microphones: face down or in a hand it may reverse.
    Combining the two, the link carried **39 thousand bits per second** (867 of 870
    blocks over five runs), and a second setting 35 thousand (778 of 780). For
    comparison, the project's touching-distance record is about 66 thousand, and this
@@ -99,8 +101,24 @@ The ranging and speaker-matrix captures show the Mac's direct sound at the phone
 first microphone (channel 0 of the `UNPROCESSED` stereo capture, the one every earlier
 decode used) about 16 dB below the second, and arriving after it: on channel 0 the
 strongest arrival of a Mac sweep is a reflection 9.5 ms later than channel 1's direct
-sound, and one comparably strong follows 17 ms later. Which physical microphone each
-channel is was not established.
+sound, and one comparably strong follows 17 ms later.
+
+**Which microphone is which (added 2026-11-11).** The phone's own description of its
+microphones, logged by the test app at each recording
+(`MicrophoneInfo`), is: channel 0 is `builtin_mic_1`, address `bottom`, 5.8 mm from
+the bottom edge; channel 1 is `builtin_mic_2`, address `back`, 145.6 mm up, at the top
+of the phone. This is the manufacturer's metadata and was not checked against the
+hardware. The phone was lying face up on the table throughout.
+
+**This result is specific to that pose (owner, 2026-11-11).** Which microphone hears
+the far end better depends on how the phone is lying or held. Many earlier sessions
+had the phone face down, where the relation between the two was never measured, so
+nothing here says the earlier choice of channel 0 was wrong for those sessions, and
+nothing says channel 1 is the one to prefer. The rule that follows is to make no
+assumption: record every available microphone and choose or combine from what each
+hears. The accelerometer can report orientation, which is worth recording with each
+capture and testing as a predictor, but it does not replace listening. The test app
+does not report it yet.
 
 The codec already has a two-microphone maximal-ratio combiner
 (`cyrinx_bulk_demodulate2`). `cyrinx_research_demodulate2_clock_corrected` estimates

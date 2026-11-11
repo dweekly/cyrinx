@@ -69,3 +69,27 @@ def test_crosscal_retains_every_phone_microphone(monkeypatch):
         "mac_to_phone_capture_all_mics", "mac_to_phone_tone_all_mics",
         "phone_to_mac_capture", "phone_to_mac_tone",
     }
+
+
+def test_phone_pulls_are_staged_in_the_retained_directory(tmp_path, monkeypatch):
+    import types
+
+    import crosscal
+
+    harness = types.SimpleNamespace(DATA="/inside/a/worktree/scratch/hw20k/data")
+    raw = retain.stage_phone_pulls(harness, str(tmp_path))
+    assert harness.DATA == raw == str(tmp_path / retain.RAW_SUBDIR)
+    assert (tmp_path / retain.RAW_SUBDIR).is_dir()
+
+    # The pull helper must read the staging directory at call time, not at import.
+    monkeypatch.setattr(crosscal.H, "DATA", raw)
+    seen = {}
+
+    def fake_load(path, channels=2):
+        seen["path"] = path
+        return __import__("numpy").ones((4, channels), dtype="int16")
+
+    monkeypatch.setattr(crosscal.H, "load_pcm16", fake_load)
+    crosscal._pull_capture("x.pcm")
+    assert seen["path"] == str(tmp_path / retain.RAW_SUBDIR / "x.pcm")
+

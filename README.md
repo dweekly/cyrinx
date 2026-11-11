@@ -409,6 +409,13 @@ swift run cyrinx-sim-bench --profile quiet --out artifacts/bench/sim-quiet.json
   validation gate against hardware results, and a simulated feasibility spike
   (scripts in `scratch/spikes/sim_feasibility/`); simulated numbers only (fresh
   as of 2026-11-10; revisit when garage impulse responses are retained on disk).
+- [docs/research/replay-simulator-plan-2026-11-11.md](docs/research/replay-simulator-plan-2026-11-11.md)
+  — a first plan for a simulator that replays the project's own measured rooms:
+  what the retained desk captures allow, the build order, the checks against
+  hardware results that each kind of question must pass, the captures that
+  would widen it, and what is out of scope; nothing built (fresh as of
+  2026-11-11; revisit when the first replay check is run, or when captures at
+  another phone orientation or position exist).
 - [docs/A1_AUTO_MRC.md](docs/A1_AUTO_MRC.md) — the executed plan for auto-MRC
   in the live adaptive loop (completed 2026-07-08, PR #52; kept as the
   worked example of a plan → bench → referee cycle).

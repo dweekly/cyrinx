@@ -187,6 +187,7 @@ def main():
                     help=f"where captures are retained (default ${retain.ENV_VAR} or {retain.DEFAULT_DIR})")
     a = ap.parse_args()
     outdir = retain.session_dir(a.outdir)  # before any audio: fail early, not after the capture
+    retain.stage_phone_pulls(H, outdir)
 
     serial = H.validated_android_serial()
     provenance = H.collect_android_target_provenance()

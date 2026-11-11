@@ -810,6 +810,20 @@ full MRC, per-band subset selection, and noise-covariance-aware combining.
 per-input evidence, selected subset, weights, and rejection reasons. Do not
 expose physical-microphone claims that the OS route cannot verify.
 
+**Off-contact evidence, 2026-11-10 (BENCH-SPIKE, one pose):** at about 0.95 m,
+phone lying face up, the research receiver decoded 64-QAM r3/4 at 867/870
+blocks with both Pixel microphones combined, against 17.5 kbps on the single
+microphone every earlier decode used
+([record](docs/research/live-two-microphone-link-and-ranging-2026-11-10.md)).
+That microphone heard the Mac about 16 dB below the other in this pose.
+
+**Constraint (owner, 2026-11-11):** which microphone is better depends on how
+the phone is lying or held, and earlier sessions had it face down. Make no
+assumption about which input is primary: record every available microphone and
+choose or combine from what each one hears (pilot EVM or equivalent, never the
+payload). Device orientation from the accelerometer may be recorded and tested
+as a predictor, but is not a substitute for listening.
+
 ## Rank 10 — Directional and fixed-3-ft throughput program
 
 This is deliberately separate from Cyrinx 2's optimized near-field result.
@@ -882,6 +896,15 @@ qualified second transmit column. The deterministic analyzer is validated only
 with synthetic input. A 15-capture, three-geometry acquisition is specified
 but has not run; therefore there is no measured MIMO/rank-2 gain and no OTA
 promotion ([audit and acquisition boundary](scratch/rank11a_mimo/README.md)).
+
+**2026-11-10 (BENCH-SPIKE, one pose, outside that acquisition spec):** one
+phase-coherent capture of each Mac speaker to each Pixel microphone now exists
+at a single desk position, with a self-check, and transmitting from the right
+speaker alone decoded more blocks than both speakers with the same signal in
+all twelve paired runs
+([record, sections 5 and 6](docs/research/live-two-microphone-link-and-ranging-2026-11-10.md)).
+The two-stream figure there is a Shannon bound under an equal per-speaker
+budget, not a measured gain. Nothing two-stream is built.
 
 ### Spike 11a — Feasibility and capacity accounting
 
@@ -1066,6 +1089,36 @@ if none clears both rate and recovery; stop masked audio if the data must become
 audible above the cover or materially worsens its rating. Until the stronger
 human gate passes, call a result “more tolerable,” not “pleasant.” A technically
 successful masked mode remains labeled cover-dependent.
+
+## Research tool — measured-channel replay simulator
+
+**Maturity:** PLANNED-SPIKE. Nothing is built. Not on the library critical
+path; it exists to screen candidates for ranks 8–11 before hardware time is
+spent.
+
+**Outcome:** replay the modem's transmit waveform through impulse responses,
+room tone and clock offsets that this project measured, for each microphone
+and each speaker, and decode with the same scoring as the over-the-air
+ladder. Synthetic or geometric rooms do not drive decisions: the
+[exploration](docs/research/acoustic-simulation-exploration-2026-11-10.md)
+found a synthetic channel that predicted full decode where hardware measured
+zero.
+
+**Why now:** the 2026-11-10 desk sessions retained what replay needs for one
+cell (sweeps in both directions, both phone microphones, each Mac speaker
+separately, and thirty ladder recordings with known results). The questions
+now open are arrangement questions that need many trials: microphone choice by
+phone orientation, speaker arrangement, guard length, two streams.
+
+**Gate:** the simulator is trusted for one kind of question only after it
+reproduces, without retuning, the hardware results of that kind; a held-out
+position is required before any claim beyond the measured cell. Simulated rows
+carry an evidence class and support no product claim
+([first plan, with the checks as commands](docs/research/replay-simulator-plan-2026-11-11.md)).
+
+**Needs from hardware:** a pose sweep (face up, face down, upright, handheld),
+each with a sweep, a speaker-matrix capture and a short ladder, because replay
+cannot invent a pose nobody measured.
 
 ## Explicit deferrals
 

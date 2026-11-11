@@ -51,3 +51,22 @@ def session_dir(outdir=None):
         )
     os.makedirs(path, exist_ok=True)
     return path
+
+
+RAW_SUBDIR = "raw-phone-pcm"
+
+
+def stage_phone_pulls(harness, outdir):
+    """Make the harness pull raw phone recordings into the retained directory.
+
+    ``harness.DATA`` defaults to ``scratch/hw20k/data`` inside the checkout the
+    script runs from. The tools here keep their arrays in an ``.npz`` under
+    ``outdir``, but they write it after the last capture, so until then the raw
+    file in the checkout is the only copy, and in a linked worktree it is deleted
+    with the worktree. On 2026-11-10 a hundred such files had to be copied out by
+    hand. Pulling them straight into ``outdir`` removes the step.
+    """
+    raw = os.path.join(outdir, RAW_SUBDIR)
+    os.makedirs(raw, exist_ok=True)
+    harness.DATA = raw
+    return raw

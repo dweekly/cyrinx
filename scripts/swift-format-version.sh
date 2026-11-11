@@ -5,7 +5,7 @@
 # Why keep an exact tool version: issue #25 — the format gate silently drifted
 # to ~900 violations because the version used to write the code diverged from
 # the version available locally. `swift-format`'s rule set can change across
-# releases (Homebrew `swift-format` 603.0.0 vs. the Xcode-bundled toolchain binary,
+# releases (Homebrew `swift-format` 604.0.0 vs. the Xcode-bundled toolchain binary,
 # which can self-report a different version for the same Xcode toolchain —
 # `xcrun --find swift-format` resolves a *different* binary than the one on
 # PATH via Homebrew). Pinning to one canonical version keeps `swift-format
@@ -15,10 +15,10 @@
 # strict Sources/Tests gate; it is not a compatibility dependency on an older
 # formatter.
 #
-# Verified clean at 0 violations against .swift-format on 2026-07-17 with:
-#   $ brew info swift-format   # 603.0.0 installed
-#   $ swift-format --version   # 603.0.0
-readonly CYRINX_SWIFT_FORMAT_VERSION="603.0.0"
+# Verified clean at 0 violations against .swift-format on 2026-11-11 with:
+#   $ brew info swift-format   # 604.0.0 installed
+#   $ swift-format --version   # 604.0.0
+readonly CYRINX_SWIFT_FORMAT_VERSION="604.0.0"
 
 check_swift_format_version() {
   if ! command -v swift-format >/dev/null 2>&1; then
