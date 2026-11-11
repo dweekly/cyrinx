@@ -37,6 +37,24 @@ import retain  # noqa: E402
 
 TARGET_FRAME_S = 3.5
 
+SPEAKER_DELAY_SAMPLES = 8
+"""For --speakers delay: the right speaker plays this many samples (0.17 ms)
+after the left. Far inside every guard, so the receiver sees one channel whose
+two paths no longer cancel at the same frequencies as when they play together."""
+
+
+def speaker_program(wave, arrangement):
+    """The stereo buffer for one downlink waveform under a named speaker arrangement."""
+    w = np.asarray(wave, dtype=np.float32)
+    out = np.zeros((len(w) + SPEAKER_DELAY_SAMPLES, 2), dtype=np.float32)
+    if arrangement in ("both", "left", "delay"):
+        out[:len(w), 0] = w
+    if arrangement in ("both", "right"):
+        out[:len(w), 1] = w
+    if arrangement == "delay":
+        out[SPEAKER_DELAY_SAMPLES:, 1] = w
+    return out
+
 
 def cell(name, bits, f_lo, f_hi, nfft, cp, rate="1/2", pilot_every=8):
     sym_s = (nfft + cp) / F.SR
@@ -182,6 +200,10 @@ def main():
     ap.add_argument("--loopback", action="store_true",
                     help="no hardware: the 'capture' is the transmitted waveform with a 28 ppm clock "
                          "offset and noise at 20 dB. Exercises build, scoring and retention only")
+    ap.add_argument("--speakers", default=None,
+                    help="downlink only: comma-separated arrangements of the Mac's two speakers to "
+                         "send each cell with, from both,left,right,delay. Default: the mono stream, "
+                         "which plays the same signal on both")
     ap.add_argument("--label", required=True)
     ap.add_argument("--amp", type=float, default=0.5)
     ap.add_argument("--cells", default=None, help="comma-separated cell names; default all")
@@ -205,6 +227,16 @@ def main():
     if a.cells:
         wanted = a.cells.split(",")
         cells = [c for c in cells if c["name"] in wanted]
+    arrangements = a.speakers.split(",") if a.speakers else [None]
+    for name in arrangements:
+        if name not in (None, "both", "left", "right", "delay"):
+            ap.error(f"unknown speaker arrangement {name}")
+    if a.speakers and a.direction != "down":
+        ap.error("--speakers applies to the downlink")
+    if a.speakers:
+        # Arrangements alternate within each repeat, so drift over the session
+        # does not favour one of them.
+        cells = [{**c, "name": f"{c['name']}+{name}", "speakers": name} for c in cells for name in arrangements]
     if a.repeat > 1:
         cells = [{**c, "run": r} for r in range(a.repeat) for c in cells]
     stamp = time.strftime("%Y%m%dT%H%M%S")
@@ -232,8 +264,15 @@ def main():
             dur = len(w) / F.SR + 0.7 + 1.0 + 8.0
             H.android_record_start(dur, channels=2, source="unprocessed", out_name=name)
             time.sleep(0.7)
-            acquire.play_and_record(w, F.SR, acquire.MAC_SPEAKERS, acquire.MAC_MICROPHONE,
-                                    tail_s=1.0)
+            if c.get("speakers"):
+                import sounddevice as sd
+                program = np.concatenate([speaker_program(w, c["speakers"]),
+                                          np.zeros((F.SR, 2), dtype=np.float32)])
+                sd.play(program, samplerate=F.SR, blocking=True,
+                        device=acquire._device_index(acquire.MAC_SPEAKERS, "output"))
+            else:
+                acquire.play_and_record(w, F.SR, acquire.MAC_SPEAKERS, acquire.MAC_MICROPHONE,
+                                        tail_s=1.0)
             H.android_record_finish(dur, out_name=name)
             both_mics.append(crosscal._pull_capture(name, all_channels=True))
             return both_mics[-1][:, 0]

@@ -32,7 +32,9 @@ actually playing and listening, and then tried three further ideas.
    playing the same signal. At about one frequency in ten, the phone receives a quarter
    or less of what the better speaker alone would deliver. Aligning the two speakers'
    phase per frequency would recover that; sending two separate streams (2x2 MIMO)
-   has a theoretical ceiling about 60% above one stream here, not double.
+   has a theoretical ceiling about 60% above one stream here, not double. Tried
+   directly on settings at the edge of working, the right speaker alone got more data
+   through than both together in all twelve paired runs.
 
 What this is not. It is one desk position on one evening with nothing moving. The
 receiver is research code beside the shipped decoder and decodes on the laptop from
@@ -239,6 +241,39 @@ the median ratio between the matrix's two singular values is 10.8 dB. One measur
 one position. A 2x2 link would also need per-speaker training symbols and a joint
 detector, neither of which exists.
 
+## 6. Speaker arrangements compared by decoded blocks
+
+Added about 23:10 to 23:40, same position. `ladder.py --speakers` sends each cell
+through a stereo stream with a named arrangement of the Mac's two speakers: both with
+the same signal (what the mono stream does), left only, right only, or both with the
+right delayed by 8 samples (0.17 ms). Arrangements alternate within each repeat. Cells
+were chosen to be marginal, so that a difference shows. Blind receiver, both phone
+microphones, the lower-pilot-EVM arrangement of the two; three runs each.
+
+| Cell | Both, same signal | Left only | Right only | Right delayed |
+|---|---|---|---|---|
+| 256-QAM r2/3, 171 ms guard | 428 / 624 (140, 148, 140) | 405 (121, 133, 151) | **531** (172, 169, 190) | 484 (144, 165, 175) |
+| 64-QAM r1/2, 43 ms guard | 391 / 522 (117, 135, 139) | 356 (111, 121, 124) | **497** (166, 168, 163) | 449 (152, 148, 149) |
+| 256-QAM r3/4, 171 ms guard | 57 / 702 (17, 23, 17) | not run | **311** (89, 134, 88) | not run |
+| 64-QAM r3/4, 85 ms guard | 123 / 702 (28, 47, 48) | not run | **339** (137, 107, 95) | not run |
+
+The right speaker alone decoded more blocks than both speakers with the same signal in
+all twelve paired runs, while radiating half the acoustic power. Delaying one speaker
+by 8 samples also beat the same signal in all six of its paired runs. The left speaker
+alone did not: it was below the same signal in five of six. So in this placement the
+same signal on both speakers is worse than the right speaker alone and worse than a
+delayed pair, which agrees with section 5's measurement that it gains only the doubled
+power and cancels in about a tenth of the band.
+
+Verified rates on these marginal cells with the right speaker alone were 39.8 kbps
+(256-QAM r2/3, 85% of blocks) and 36.3 kbps (64-QAM at a 43 ms guard, 95% of blocks).
+Neither is as reliable as section 3's 64-QAM r3/4 at 39.0 kbps and 99.7% of blocks,
+which was sent with both speakers and was not repeated with the right alone.
+
+What this does not show: that the right speaker is better in general. Which speaker is
+closer to or better aimed at the phone is a property of this placement. Each cell is
+three runs. Transmit level was not equalised between one speaker and two.
+
 ## What was built
 
 | File | What it is |
@@ -264,8 +299,10 @@ detector, neither of which exists.
 - Which physical microphone is channel 0 was not established, nor why its direct path
   is so weak in this placement; it may be specific to this placement.
 - Noise was not measured per microphone for the Shannon bounds.
-- No transmitter change was made for the two-speaker findings: no phase alignment, no
-  delay diversity, no left-only comparison of decode results.
+- For the two-speaker findings, single-speaker and delayed arrangements were compared
+  by decoded blocks (section 6), three runs each on marginal cells. Phase alignment
+  with feedback and two-stream transmission were not built. The best reliable cell was
+  not re-run with the right speaker alone.
 - The first version of the Shannon table gave the phase-aligned and two-stream rows
   half the transmit power of the same-signal row, understating them (8.44 and 11.27);
   review caught it and the table above uses one budget throughout.
@@ -283,9 +320,11 @@ Proposed by the agent that ran the session; not yet reviewed.
 1. **Two-microphone combining belongs in any off-contact receiver**, with the
    synchronization microphone chosen by pilot EVM. It is the largest gain of the day
    after the pilot fit.
-2. **Try the cheap transmitter fixes for the speaker cancellation before MIMO**: left
-   speaker only, and a few samples of delay on one speaker, compared by decoded blocks
-   on the same cells. Phase alignment with feedback is next; two streams last.
+2. **Stop playing the same signal on both speakers.** Section 6 shows one speaker, or
+   a small delay on one, decoding more than both together here. Which speaker is
+   placement-specific, so the choice should come from a measurement such as section 5's
+   or from pilot EVM on a probe frame. Re-run the best reliable cells that way. Phase
+   alignment with feedback is next; two streams last.
 3. **Use ranging as an input to configuration**: at a known distance the guard and
    band could be chosen before the first data frame. Check it against a tape measure
    and measure the self-distances first.

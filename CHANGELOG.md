@@ -16,6 +16,9 @@ commands or content hashes.
   ([record](docs/research/live-two-microphone-link-and-ranging-2026-11-10.md)).
 - Added two-way acoustic ranging and a per-speaker path-matrix measurement
   under `scratch/garage/`.
+- `ladder.py --speakers` compares arrangements of the Mac's two speakers. In
+  this placement the right speaker alone decoded more blocks than both playing
+  the same signal in all twelve paired runs on marginal cells.
 - Fixed the Android HIL `playrec_pcm` command, which rejected a static output
   track before its buffer was written and so never ran.
 
