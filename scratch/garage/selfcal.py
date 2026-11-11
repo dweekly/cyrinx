@@ -29,6 +29,7 @@ sys.path.insert(
 import acquire  # noqa: E402
 import delay_spread as ds  # noqa: E402
 import freqresp as F  # noqa: E402
+import retain  # noqa: E402
 
 ROOM_TONE_S = 8.0
 """Longer than the 6.0 s inverse filter, so NoiseReference has a fully
@@ -110,6 +111,7 @@ if __name__ == "__main__":
     ap.add_argument("--amp", type=float, default=F.AMP)
     ap.add_argument("--label", default="mac-selfcal")
     ap.add_argument("--horizon-ms", type=float, default=acquire.DEFAULT_HORIZON_MS)
-    ap.add_argument("--outdir", default="artifacts/garage")
+    ap.add_argument("--outdir", default=None,
+                    help=f"where captures are retained (default ${retain.ENV_VAR} or {retain.DEFAULT_DIR})")
     a = ap.parse_args()
-    run(a.amp, a.label, a.horizon_ms, a.outdir)
+    run(a.amp, a.label, a.horizon_ms, retain.session_dir(a.outdir))

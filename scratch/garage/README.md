@@ -18,7 +18,16 @@ Only `selfcal.py` talks to hardware; everything else is analysis.
 | `acquire.py` | Swept-sine acquisition with a declared observation horizon, and hardware capture helpers |
 | `delay_spread.py` | Schroeder delay spread by Lundeby truncation, with explicit validity states |
 | `selfcal.py` | Runs ADR 0006's two local phases: self-calibration and environmental sampling |
+| `retain.py` | Decides where captures are kept: `~/dev/cyrinx-artifacts/garage/` unless `--outdir` or `$CYRINX_GARAGE_ARTIFACTS` says otherwise, and never inside a linked git worktree, which is deleted with its ignored files when removed |
 | `test_geometries.py`, `test_delay_spread.py` | Offline tests, including a byte-exact round trip through the C codec and a retained real capture |
+
+## Where captures go
+
+Raw captures cannot be regenerated, so they are kept outside every checkout, in
+`~/dev/cyrinx-artifacts/garage/`. The captures from the first two sessions were
+lost because they were written inside worktrees that were later removed. That
+directory is not backed up by anything in this repo; copy it somewhere durable
+after a session.
 
 ## Running the tests
 
