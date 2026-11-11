@@ -959,8 +959,10 @@ class MainActivity : ComponentActivity() {
                     AudioManager.AUDIO_SESSION_ID_GENERATE,
                 )
                 track = player
+                // A static track reports STATE_NO_STATIC_DATA until its buffer is
+                // written, which happens just below; only UNINITIALIZED is a failure.
                 if (recorder.state != AudioRecord.STATE_INITIALIZED ||
-                    player.state != AudioTrack.STATE_INITIALIZED
+                    player.state == AudioTrack.STATE_UNINITIALIZED
                 ) {
                     appendLog(
                         "playrec_pcm failed: request=$requestId init " +

@@ -51,6 +51,12 @@ def lib():
             ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_double),
             ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t, ctypes.POINTER(ctypes.c_double)]
         library.cyrinx_research_demodulate_clock_corrected.restype = ctypes.c_long
+        library.cyrinx_research_demodulate2_clock_corrected.argtypes = [
+            ctypes.POINTER(clib.Cfg), _F, _F, ctypes.c_size_t, ctypes.c_double, ctypes.c_int,
+            ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t, ctypes.POINTER(ctypes.c_int),
+            ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_double),
+            ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t, ctypes.POINTER(ctypes.c_double)]
+        library.cyrinx_research_demodulate2_clock_corrected.restype = ctypes.c_long
         library.cyrinx_research_set_pilot_fit.argtypes = [ctypes.c_int]
         library.cyrinx_research_set_pilot_fit.restype = ctypes.c_int
         _LIB = library
@@ -106,6 +112,29 @@ def decode(cfg, rx, max_abs_ppm=MAX_ABS_PPM, passes=PASSES):
     n = lib().cyrinx_research_demodulate_clock_corrected(
         ctypes.byref(cfg), src.ctypes.data_as(_F), len(src), max_abs_ppm, passes, out,
         geom.payload_bytes, ctypes.byref(ok), ctypes.byref(total), ctypes.byref(evm), mask,
+        geom.n_blocks, ctypes.byref(ppm))
+    if n < 0:
+        return None
+    return {"payload": bytes(out), "blocks_ok": ok.value, "blocks_total": total.value,
+            "block_valid": [bool(mask[i]) for i in range(geom.n_blocks)], "evm": evm.value,
+            "ppm": ppm.value}
+
+
+def decode2(cfg, rx, rx2, max_abs_ppm=MAX_ABS_PPM, passes=PASSES):
+    """Two-microphone decode: clock offset from rx, both resampled, then the codec's
+    maximal-ratio combiner. rx carries synchronization. Same result shape as decode."""
+    geom = clib.geometry(cfg)
+    a = np.ascontiguousarray(rx, dtype=np.float32)
+    b = np.ascontiguousarray(rx2, dtype=np.float32)
+    if len(a) != len(b):
+        raise ValueError("the two captures must be the same length")
+    out = (ctypes.c_uint8 * geom.payload_bytes)()
+    mask = (ctypes.c_uint8 * geom.n_blocks)()
+    ok, total = ctypes.c_int(0), ctypes.c_int(0)
+    evm, ppm = ctypes.c_double(0.0), ctypes.c_double(0.0)
+    n = lib().cyrinx_research_demodulate2_clock_corrected(
+        ctypes.byref(cfg), a.ctypes.data_as(_F), b.ctypes.data_as(_F), len(a), max_abs_ppm, passes,
+        out, geom.payload_bytes, ctypes.byref(ok), ctypes.byref(total), ctypes.byref(evm), mask,
         geom.n_blocks, ctypes.byref(ppm))
     if n < 0:
         return None

@@ -128,6 +128,32 @@ UP4 = [
     cell("qpsk-full-g43", 2, 300, 17000, 8192, 2048),
 ]
 
+DOWN5 = [  # fifth pass: denser still, for the phone's better microphone
+    cell("64qam-full-g171-n16k", 6, 300, 23000, 16384, 8192),
+    cell("64qam-r23-full-g171-n16k", 6, 300, 23000, 16384, 8192, rate="2/3"),
+    cell("64qam-r34-full-g171-n16k", 6, 300, 23000, 16384, 8192, rate="3/4"),
+    cell("256qam-full-g171-n16k", 8, 300, 23000, 16384, 8192),
+    cell("64qam-full-g85-n16k", 6, 300, 23000, 16384, 4096),
+    cell("16qam-r34-full-g85-n16k", 4, 300, 23000, 16384, 4096, rate="3/4"),
+    cell("16qam-full-g43-n16k", 4, 300, 23000, 16384, 2048),
+    cell("16qam-full-g43", 4, 300, 23000, 8192, 2048),
+]
+
+DOWN6 = [  # sixth pass: what two combined microphones can carry
+    cell("64qam-r34-full-g171-n16k", 6, 300, 23000, 16384, 8192, rate="3/4"),
+    cell("256qam-full-g171-n16k", 8, 300, 23000, 16384, 8192),
+    cell("256qam-r23-full-g171-n16k", 8, 300, 23000, 16384, 8192, rate="2/3"),
+    cell("256qam-r34-full-g171-n16k", 8, 300, 23000, 16384, 8192, rate="3/4"),
+    cell("64qam-r34-full-g85-n16k", 6, 300, 23000, 16384, 4096, rate="3/4"),
+    cell("256qam-full-g85-n16k", 8, 300, 23000, 16384, 4096),
+    cell("64qam-full-g43-n16k", 6, 300, 23000, 16384, 2048),
+    cell("64qam-r34-full-g43-n16k", 6, 300, 23000, 16384, 2048, rate="3/4"),
+    cell("64qam-full-g43", 6, 300, 23000, 8192, 2048),
+    cell("16qam-full-g21", 4, 300, 23000, 8192, 1024),
+    cell("64qam-full-g21-n16k", 6, 300, 23000, 16384, 1024),
+    cell("16qam-full-g16-n4k", 4, 300, 23000, 4096, 768),
+]
+
 UP = [  # phone speaker -> Mac microphone
     cell("base-qpsk-full-g16", 2, 300, 17000, 2048, 768),
     cell("qpsk-full-g43", 2, 300, 17000, 4096, 2048),
@@ -145,7 +171,7 @@ UP = [  # phone speaker -> Mac microphone
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--direction", choices=("down", "up"), required=True)
-    ap.add_argument("--set", choices=("first", "second", "third", "fourth"), default="first")
+    ap.add_argument("--set", choices=("first", "second", "third", "fourth", "fifth", "sixth"), default="first")
     ap.add_argument("--repeat", type=int, default=1, help="run the selected cells this many times")
     ap.add_argument("--ppm", default=None,
                     help="comma-separated clock offsets (ppm) to try on each capture; the one with "
@@ -174,7 +200,8 @@ def main():
     cells = {("down", "first"): DOWN, ("up", "first"): UP,
              ("down", "second"): DOWN2, ("up", "second"): UP2,
              ("down", "third"): DOWN3, ("up", "third"): UP3,
-             ("down", "fourth"): DOWN4, ("up", "fourth"): UP4}[(a.direction, a.set)]
+             ("down", "fourth"): DOWN4, ("up", "fourth"): UP4,
+             ("down", "fifth"): DOWN5, ("down", "sixth"): DOWN6}[(a.direction, a.set)]
     if a.cells:
         wanted = a.cells.split(",")
         cells = [c for c in cells if c["name"] in wanted]
@@ -198,6 +225,7 @@ def main():
                 fh.write(json.dumps(row) + "\n")
             continue
         token = crosscal.run_token()
+        both_mics = []  # the phone's whole capture, every microphone, when the phone is the receiver
 
         def send_down(w):
             name = f"ld_{token}_{i}.pcm"
@@ -207,7 +235,8 @@ def main():
             acquire.play_and_record(w, F.SR, acquire.MAC_SPEAKERS, acquire.MAC_MICROPHONE,
                                     tail_s=1.0)
             H.android_record_finish(dur, out_name=name)
-            return crosscal._pull_capture(name)
+            both_mics.append(crosscal._pull_capture(name, all_channels=True))
+            return both_mics[-1][:, 0]
 
         def send_up(w):
             H.android_prepare(media_volume=None)
@@ -237,6 +266,33 @@ def main():
                                "bps": v * 256 * 8 / result["airtime_s"]}
             print(f"  blind research receiver: {v}/{result['scheduled']} blocks -> "
                   f"{result['blind']['bps']:.0f} bps, clock estimate per frame {ppm}")
+            if both_mics and both_mics[0].shape[1] > 1:
+                # Score each further microphone the same way. Which one a receiver
+                # would use is decided by pilot EVM, which never sees the payload.
+                per_mic = [{"mic": 0, **result["blind"]}]
+                clock_offset.set_pilot_fit(clock_offset.FIT_COHERENT)
+                try:
+                    for mic in range(1, both_mics[0].shape[1]):
+                        v, per_frame, evm, ppm = blind_replay.score(cfg, both_mics[0][:, mic], payloads, geom)
+                        per_mic.append({"mic": mic, "verified": v, "per_frame": per_frame, "best_evm": evm,
+                                        "ppm": ppm, "bps": v * 256 * 8 / result["airtime_s"]})
+                    # Both microphones combined, synchronizing on each in turn.
+                    for sync in range(2):
+                        v, per_frame, evm, ppm = blind_replay.score(
+                            cfg, both_mics[0][:, sync], payloads, geom, rx2=both_mics[0][:, 1 - sync])
+                        per_mic.append({"mic": f"both, sync on {sync}", "verified": v,
+                                        "per_frame": per_frame, "best_evm": evm, "ppm": ppm,
+                                        "bps": v * 256 * 8 / result["airtime_s"]})
+                finally:
+                    clock_offset.set_pilot_fit(clock_offset.FIT_SHIPPED)
+                chosen = min((m for m in per_mic if m["best_evm"] is not None),
+                             key=lambda m: m["best_evm"], default=per_mic[0])
+                result["blind_per_mic"] = per_mic
+                result["blind_chosen_mic"] = chosen["mic"]
+                print("  per microphone: " + ", ".join(
+                    f"{m['mic']}: {m['verified']}/{result['scheduled']} (EVM "
+                    f"{m['best_evm'] if m['best_evm'] is None else round(m['best_evm'], 3)})" for m in per_mic)
+                    + f"; lowest pilot EVM is [{chosen['mic']}]: {chosen['bps']:.0f} bps")
         if a.ppm:
             best = None
             for ppm in [float(p) for p in a.ppm.split(",")]:
@@ -255,6 +311,8 @@ def main():
         with open(base + ".jsonl", "a") as fh:
             fh.write(json.dumps(row) + "\n")
         captures[resample_replay.capture_key(c)] = rx.astype(np.float32)
+        if both_mics:
+            captures[resample_replay.capture_key(c) + "@all-mics"] = both_mics[0].astype(np.float32)
         np.savez_compressed(base + ".npz", **captures)
         elapsed = time.time() - started
         print(f"  elapsed {elapsed:.0f} s, about {elapsed / (i + 1) * (len(cells) - i - 1):.0f} s left")

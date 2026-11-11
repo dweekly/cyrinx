@@ -118,3 +118,29 @@ def test_both_fits_agree_on_a_clean_standard_frame(research, codec):
         results.append(codec.decode(cfg, x)["payload"])
     research.set_pilot_fit(research.FIT_SHIPPED)
     assert results[0] == results[1] == payload
+
+
+def test_two_microphones_decode_what_neither_decodes_alone(research, codec):
+    """Two captures of one frame with independent noise at 10 dB: each alone loses
+    blocks and the pair combined loses fewer (three seeds: 116 of 117 combined
+    when this was written)."""
+    research.set_pilot_fit(research.FIT_COHERENT)
+    try:
+        alone, together, scheduled = 0, 0, 0
+        for seed in range(3):
+            cfg, payload, x = _frame(codec, seed, **LONG)
+            first = np.asarray(research.resample(_noisy(x, 10, seed), -28.0), float)
+            second = np.asarray(research.resample(_noisy(x, 10, seed + 50), -28.0), float)
+            alone += max(codec.ordered_verified_blocks(research.decode(cfg, m), payload) for m in (first, second))
+            together += codec.ordered_verified_blocks(research.decode2(cfg, first, second), payload)
+            scheduled += codec.geometry(cfg).n_blocks
+    finally:
+        research.set_pilot_fit(research.FIT_SHIPPED)
+    assert together >= 0.98 * scheduled
+    assert together > alone
+
+
+def test_two_microphone_decode_rejects_unequal_lengths(research, codec):
+    cfg, _, x = _frame(codec, 1, **LONG)
+    with pytest.raises(ValueError):
+        research.decode2(cfg, x, x[:-10])

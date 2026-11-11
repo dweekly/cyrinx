@@ -7,6 +7,18 @@ date-labelled.
 Detailed evidence for every claim is in the cited document and its reproduction
 commands or content hashes.
 
+## Unreleased — research: live two-microphone link, ranging, speaker matrix
+
+- Live at 2.5 ft with the research receiver: combining the phone's two
+  microphones carried 39.0 kbps Mac → Pixel (867 of 870 blocks, five runs);
+  one microphone carried 17.5 kbps down and 12.6 kbps up. One desk position,
+  two-frame bursts, decoded on the Mac
+  ([record](docs/research/live-two-microphone-link-and-ranging-2026-11-10.md)).
+- Added two-way acoustic ranging and a per-speaker path-matrix measurement
+  under `scratch/garage/`.
+- Fixed the Android HIL `playrec_pcm` command, which rejected a static output
+  track before its buffer was written and so never ran.
+
 ## Unreleased — research: pilot timing fit and blind clock correction
 
 - Offline replay of the retained 2.5 ft captures found that the decoder's

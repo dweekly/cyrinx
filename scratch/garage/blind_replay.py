@@ -32,15 +32,20 @@ import linkprobe  # noqa: E402
 import resample_replay  # noqa: E402
 
 
-def score(cfg, rx, payloads, geom, correct_clock=True):
-    """linkprobe.score through the research dylib: (verified, per_frame, best_evm, ppm per frame)."""
+def score(cfg, rx, payloads, geom, correct_clock=True, rx2=None):
+    """linkprobe.score through the research dylib: (verified, per_frame, best_evm, ppm per frame).
+
+    With rx2, the two microphones are combined (rx carries synchronization)."""
     window = geom.frame_samples + linkprobe.SEARCH_SLACK
     best = [0] * len(payloads)
     ppm = [None] * len(payloads)
     best_evm = None
     for start in range(0, max(1, len(rx) - geom.frame_samples), linkprobe.SEARCH_STEP):
         segment = rx[start:start + window]
-        decoded = clock_offset.decode(cfg, segment) if correct_clock else clib.decode(cfg, segment)
+        if rx2 is not None:
+            decoded = clock_offset.decode2(cfg, segment, rx2[start:start + window])
+        else:
+            decoded = clock_offset.decode(cfg, segment) if correct_clock else clib.decode(cfg, segment)
         if decoded is None:
             continue
         evm = decoded["evm"]

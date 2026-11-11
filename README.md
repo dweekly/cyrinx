@@ -390,6 +390,14 @@ swift run cyrinx-sim-bench --profile quiet --out artifacts/bench/sim-quiet.json
   the same fit on near-field frame shapes, and what was not done (fresh as of
   2026-11-10; revisit when the research fit is promoted or rejected, or when
   the near-field campaign captures are replayed with it).
+- [docs/research/live-two-microphone-link-and-ranging-2026-11-10.md](docs/research/live-two-microphone-link-and-ranging-2026-11-10.md)
+  — live session record at 2.5 ft: the blind research receiver on new
+  transmissions, decoding with both phone microphones combined, two-way acoustic
+  ranging, the measured path from each Mac speaker to each phone microphone
+  with Shannon bounds for phase alignment and two streams, and what was not
+  done (fresh as of 2026-11-10; revisit when a transmitter change for the two
+  speakers is tried, ranging is checked against a tape measure, or the session
+  is repeated at another distance).
 - [docs/research/encoding-literature-review-2026-11-10.md](docs/research/encoding-literature-review-2026-11-10.md)
   — a literature review of modulation, equalization, synchronization and coding
   options for the off-contact range cliff and the near-field block loss, ranked,

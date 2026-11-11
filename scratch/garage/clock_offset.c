@@ -393,3 +393,63 @@ long cyrinx_research_demodulate_clock_corrected(const cyrinx_bulk_config *cfg, c
     free(work);
     return n;
 }
+
+/* Two-microphone form of the decode above. The clock offset is estimated on
+ * `rx` (the microphone that also carries synchronization), both captures are
+ * resampled by it, and the pair goes to the codec's unmodified two-microphone
+ * maximal-ratio decoder. Both captures must be the same length. */
+long cyrinx_research_demodulate2_clock_corrected(const cyrinx_bulk_config *cfg, const float *rx,
+                                                 const float *rx2, size_t rx_len, double max_abs_ppm,
+                                                 int passes, uint8_t *out_payload, size_t out_cap,
+                                                 int *blocks_ok, int *blocks_total, double *evm_rms,
+                                                 uint8_t *block_valid_out, size_t block_valid_cap,
+                                                 double *ppm_out) {
+    if (ppm_out != NULL)
+        *ppm_out = 0.0;
+    if (rx == NULL || rx2 == NULL || passes < 1 || passes > 4)
+        return -1;
+    float *work = (float *)malloc(rx_len * sizeof(float));
+    float *work2 = (float *)malloc(rx_len * sizeof(float));
+    if (work == NULL || work2 == NULL) {
+        free(work);
+        free(work2);
+        return -1;
+    }
+    const float *current = rx, *current2 = rx2;
+    double total_ppm = 0.0;
+    for (int pass = 0; pass < passes; ++pass) {
+        double step_ppm = 0.0;
+        if (cyrinx_research_estimate_clock_offset(cfg, current, rx_len, max_abs_ppm, &step_ppm, NULL) != 0)
+            break;
+        total_ppm += step_ppm;
+        if (fabs(total_ppm) < CYRINX_CLOCK_MIN_APPLY_PPM) {
+            total_ppm = 0.0;
+            current = rx;
+            break;
+        }
+        if (cyrinx_research_resample(rx, rx_len, total_ppm, work, rx_len) < 0) {
+            free(work);
+            free(work2);
+            return -1;
+        }
+        current = work;
+        if (fabs(step_ppm) < CYRINX_CLOCK_MIN_APPLY_PPM)
+            break;
+    }
+    if (current != rx) {
+        if (cyrinx_research_resample(rx2, rx_len, total_ppm, work2, rx_len) < 0) {
+            free(work);
+            free(work2);
+            return -1;
+        }
+        current2 = work2;
+    }
+    if (ppm_out != NULL)
+        *ppm_out = current == rx ? 0.0 : total_ppm;
+    long n = cyrinx_bulk_demodulate2_with_block_validity(cfg, current, rx_len, current2, rx_len, out_payload,
+                                                         out_cap, blocks_ok, blocks_total, evm_rms,
+                                                         block_valid_out, block_valid_cap);
+    free(work);
+    free(work2);
+    return n;
+}
