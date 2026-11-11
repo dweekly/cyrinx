@@ -5,6 +5,14 @@ both stationary on a desk about 2.5 ft (76 cm) apart, Pixel over Wi-Fi adb. Mac 
 volume 56%, phone media volume 25/25, transmit amplitude 0.5. Every capture is retained
 in `~/dev/cyrinx-artifacts/garage/` (names below); tools are in `scratch/garage/`.
 
+> **Superseded in part, same evening.** Replaying these recordings found that the
+> decoder's per-symbol pilot timing fit, not the clock offset, was the main reason they
+> failed, and that a receiver which estimates the clock offset itself decodes them with
+> nothing hinted. The measurements below stand. Conclusions 1 and 2 under "Where this
+> points", the "did not hold" verdicts in section 6, and the "inconclusive" verdict in
+> section 8 are revised in
+> [pilot-fit-and-blind-clock-correction-2026-11-10.md](pilot-fit-and-blind-clock-correction-2026-11-10.md).
+
 ## In plain English
 
 Until today the project's record said that the fast kind of signal cannot work once the

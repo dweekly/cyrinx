@@ -383,6 +383,13 @@ swift run cyrinx-sim-bench --profile quiet --out artifacts/bench/sim-quiet.json
   rescues the failed captures, five-run repeats, and what was not done (fresh as
   of 2026-11-10; revisit when clock correction runs inside the receiver or the
   ladder is repeated at another distance).
+- [docs/research/pilot-fit-and-blind-clock-correction-2026-11-10.md](docs/research/pilot-fit-and-blind-clock-correction-2026-11-10.md)
+  — offline replay of the 2.5 ft captures: how the decoder's per-symbol pilot
+  timing fit loses frames on wide, long symbols, a research fit and a
+  self-estimating clock correction, five-column replay tables, simulation of
+  the same fit on near-field frame shapes, and what was not done (fresh as of
+  2026-11-10; revisit when the research fit is promoted or rejected, or when
+  the near-field campaign captures are replayed with it).
 - [docs/research/encoding-literature-review-2026-11-10.md](docs/research/encoding-literature-review-2026-11-10.md)
   — a literature review of modulation, equalization, synchronization and coding
   options for the off-contact range cliff and the near-field block loss, ranked,

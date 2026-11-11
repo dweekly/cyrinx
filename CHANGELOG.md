@@ -7,6 +7,19 @@ date-labelled.
 Detailed evidence for every claim is in the cited document and its reproduction
 commands or content hashes.
 
+## Unreleased — research: pilot timing fit and blind clock correction
+
+- Offline replay of the retained 2.5 ft captures found that the decoder's
+  per-symbol pilot timing fit loses whole frames on wide, long symbols, in
+  white-noise simulation as well as on hardware captures. A research build
+  (`scratch/garage/clock_offset.c`) adds a coherent fit and a receiver that
+  estimates and removes the clock offset from each frame's training symbols.
+  With both, every five-times-repeated cell of that session decodes all or all
+  but one block with nothing hinted. Replay of one desk session, not a live
+  link ([record](docs/research/pilot-fit-and-blind-clock-correction-2026-11-10.md)).
+- The shipped decoder is unchanged in behaviour: its two pilot-fit call sites
+  now go through a macro that defaults to the existing fit.
+
 ## Unreleased — audit fixes: BPSK mapping, chirp search cost, Android X25519
 
 - Fixed the Python reference modem's BPSK mapping (`uint8` wraparound under

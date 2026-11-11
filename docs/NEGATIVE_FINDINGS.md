@@ -149,6 +149,20 @@ loopback; numbers are quoted as measured.
     [docs/research/range-ladder-2026-11-10.md](research/range-ladder-2026-11-10.md).
     What still holds: guards of 43 ms and below decode nothing full-band here.
 
+    **Amended again 2026-11-10 (evening): the decoder, more than the clock, was
+    what failed.** Replaying the same captures showed the per-symbol pilot
+    timing fit reporting slides of up to a sample that were not there, which
+    loses whole frames on wide, long symbols; it reproduces in simulation with
+    white noise alone. With a research fit that uses all pilots coherently,
+    and a clock offset estimated from each frame's own training symbols,
+    every five-times-repeated cell decodes all or all but one of its blocks
+    with nothing hinted (17.5 kbps Mac → Pixel, 12.6 kbps Pixel → Mac), and
+    full-band QPSK decodes with no clock correction at all. Offline replay of
+    one desk session; the research fit is not in the shipped decoder. Full-band
+    43 ms guards now decode a minority of blocks; 16 ms still decodes nothing.
+    Record:
+    [docs/research/pilot-fit-and-blind-clock-correction-2026-11-10.md](research/pilot-fit-and-blind-clock-correction-2026-11-10.md).
+
 14. **`minimodem` above 300 baud fails over this acoustic channel.** Same-
     hardware baseline: 300 baud decodes (237 bps), but 600/1200/2400 baud
     return 1–2 garbage bytes — single-carrier FSK with no FEC/equalization dies
