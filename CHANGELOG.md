@@ -10,7 +10,7 @@ commands or content hashes.
 ## Unreleased — layout checked on four Android ABIs; released waveforms pinned
 
 - **The C structures' layout assertions now compile for arm64-v8a,
-  armeabi-v7a, x86_64 and x86** (`scripts/check-abi-layout.py`). They hold
+  armeabi-v7a, x86_64 and x86** (`.venv/bin/python scripts/check-abi-layout.py`). They hold
   on the first three. 32-bit x86 is refused at compile time: the batch
   channel view is 28 bytes there, not 32
   ([NEGATIVE_FINDINGS entry 27](docs/NEGATIVE_FINDINGS.md)). The supported
