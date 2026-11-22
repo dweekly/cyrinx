@@ -117,7 +117,14 @@ CYRINX_API cyrinx_abi_status_t cyrinx_batch_decode(const cyrinx_profile_t *profi
 /* Encode one frame. A payload shorter than the profile's frame payload is
  * zero-padded to the frame boundary (documented contract, mirrored by the
  * decode side returning the padded frame payload). Writes the frame's samples
- * to out_samples and, when out_result is non-NULL, the produced counts. */
+ * to out_samples and, when out_result is non-NULL, the produced counts.
+ *
+ * Caution: the bulk codec has no scrambler. In digital loopback on every
+ * registered profile, an all-zero frame and a 128-byte payload padded this way
+ * decoded no CRC-valid blocks, including the block holding the payload. Longer
+ * payloads can survive the padding; the boundary is uncharacterized. Callers
+ * that need a short payload recovered should fill the frame with varied bytes
+ * themselves. See docs/NEGATIVE_FINDINGS.md entry 26. */
 CYRINX_API cyrinx_abi_status_t cyrinx_batch_encode(const cyrinx_profile_t *profile, const uint8_t *payload,
                                                    size_t payload_len, float *out_samples, size_t out_cap,
                                                    cyrinx_batch_result_t *out_result);

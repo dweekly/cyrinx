@@ -416,6 +416,8 @@ swift run cyrinx-sim-bench --profile quiet --out artifacts/bench/sim-quiet.json
   would widen it, and what is out of scope; nothing built (fresh as of
   2026-11-11; revisit when the first replay check is run, or when captures at
   another phone orientation or position exist).
+- [Using the Swift batch PHY](docs/BATCH_PHY.md): how to encode and decode one frame with `BatchPHY`, the move from `BulkPHY`, payload size and content rules, raw C codes and channel layouts. (updated 2026-11-22; update when: the `BatchPHY` surface changes, a scrambler lands, or C3-06 passes its merge gate)
+- [Batch replay on macOS and Android](Tests/BatchReplay/README.md): how to run the C, Swift and Kotlin/JNI replay comparison on host and on arm64 phones, what it checks, and where each fixture came from. (updated 2026-11-22; update when: a fixture, binding or compared field is added, or the runner's toolchain requirements change)
 - [docs/A1_AUTO_MRC.md](docs/A1_AUTO_MRC.md) — the executed plan for auto-MRC
   in the live adaptive loop (completed 2026-07-08, PR #52; kept as the
   worked example of a plan → bench → referee cycle).

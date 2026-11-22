@@ -7,6 +7,23 @@ date-labelled.
 Detailed evidence for every claim is in the cited document and its reproduction
 commands or content hashes.
 
+## Unreleased — Swift batch binding candidate and cross-binding replay
+
+- **`BatchPHY`, an experimental Swift binding to the C batch contract**, with a
+  migration example in [docs/BATCH_PHY.md](docs/BATCH_PHY.md). It is a
+  candidate for plan item C3-06 whose merge gate remains open.
+- **Cross-binding replay.** Nine fixtures give the same ordered block mask,
+  receiver selection and payload bytes through direct C, Swift and Kotlin/JNI
+  on both FFT backends. CI runs the digital subset and a reversed-mask
+  negative control. Partial work toward C3-07 and C3-08; see the status ledger
+  in [docs/CYRINX_3_PLAN.md](docs/CYRINX_3_PLAN.md).
+- **Negative finding: sparse, zero-padded payloads did not decode.** With no
+  scrambler in the codec, an all-zero frame and a 128-byte record followed by
+  zeros recovered no blocks in digital loopback on all five registered profiles
+  ([NEGATIVE_FINDINGS entry 26](docs/NEGATIVE_FINDINGS.md)). `BatchPHY.encode`
+  rejects a short payload; the C entry point still zero-pads. No scrambler
+  has been built.
+
 ## Unreleased — local gates run on the current toolchain; simulator plan
 
 - **Swift Format advanced to 604.0.0.** The tree needed no reformatting under

@@ -1,0 +1,4 @@
+module ReplayProfiles {
+    header "Profiles.h"
+    export *
+}
