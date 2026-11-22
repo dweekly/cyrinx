@@ -61,6 +61,8 @@ def aligned_ack(samples, chirp, frame_samples):
 
 def replay(trial, tools, cfg):
     ledger = json.loads((trial / "transfer.json").read_text())
+    policy = ledger.get("ack_policy", "single")
+    require(policy in ("single", "repeat-mrc-v1"), f"{trial}: unknown ACK policy")
     token = bytes.fromhex(ledger["token"])
     source = (trial / "sent.bin").read_bytes()
     digest = hashlib.sha256(source).hexdigest()
@@ -106,17 +108,25 @@ def replay(trial, tools, cfg):
                                              invented_chunks=sorted(control - local) if control is not None else [],
                                              equals_current=control == local, equals_previous=control == prior_bitmap))
             prior_window, prior_bitmap = current, local
+            method = "single" if recorded is not None else "miss"
+            attempted = False
             if recorded is None:
                 if current is not None and previous_failure is not None and previous_failure[1] == expected:
+                    attempted = True
                     decoded = clock_offset.decode2(cfg, previous_failure[0], current)
                     candidate = ack_bitmap(decoded, token)
                     accepted = candidate is not None and known <= candidate <= known.union(expected)
                     combined_attempts.append(dict(turn=turn["turn"], elapsed_s=turn["elapsed"],
                                                   accepted=accepted, matches_receiver=accepted and candidate == local,
                                                   confirms_file=accepted and len(candidate) == CHUNKS))
-                previous_failure = (current, expected) if current is not None else None
+                    if accepted and policy == "repeat-mrc-v1":
+                        recorded, method = candidate, "combined"
+                previous_failure = (current, expected) if recorded is None and current is not None else None
             else:
                 previous_failure = None
+            if policy == "repeat-mrc-v1":
+                require(method == turn["ack_method"] and attempted == turn["combine_attempted"],
+                        f"{label}: live ACK method differs from replay")
             require((recorded is not None) == turn["ack_ok"], f"{label}: ACK availability changed")
             prior = len(known)
             if recorded is not None:
@@ -150,6 +160,7 @@ def replay(trial, tools, cfg):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("archive", type=Path)
+    parser.add_argument("--batches", nargs="+", type=int, choices=(1, 2, 4), default=[1, 2, 4])
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
     rows = []
@@ -158,7 +169,7 @@ def main():
         build(tools)
         cfg = clib.make_cfg(f_lo=300, f_hi=11000, bits_per_bin=2, rate="1/2", nfft=16384, cp=8192, n_sym=3)
         for phone in ("pixel", "moto"):
-            for batch in (1, 2, 4):
+            for batch in args.batches:
                 trial = args.archive / f"{phone}-{batch}"
                 row = replay(trial, tools, cfg)
                 require((row["phone"], row["batch"]) == (phone, batch), f"{trial}: mislabeled ledger")

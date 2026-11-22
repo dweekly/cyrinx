@@ -6,7 +6,7 @@ A Mac sent a different random 64 KiB file to each of two Android phones. Each ph
 
 Reprocessing old recordings also showed where two proposed receiver changes help. Estimating changes in room echoes recovered some missing pieces. Using the new estimate on its own lost pieces elsewhere. Keeping verified pieces from the first decode and trying again only on an incomplete frame gave the best result on the archived recordings.
 
-In a follow-up sweep, sending up to four frames before waiting for the phone’s reply gave the fastest verified delivery on both phones. The Pixel took 69 seconds and the Moto took 117 seconds for the same 64 KiB file. Each setting was tried once on each phone. Combining two missed phone replies during offline replay also recovered a correct completion message.
+In a follow-up sweep, sending up to four frames before waiting for the phone’s reply gave the fastest verified delivery on both phones. The Pixel took 69 seconds and the Moto took 117 seconds for the same 64 KiB file. Reversing the order of the one- and four-frame settings reproduced the advantage on both phones. In a separate physical test, combining two individually unreadable replies recovered the correct bitmap on each return path.
 
 ## Receiver experiments
 
@@ -96,4 +96,38 @@ As a separate stress test, the offline runner also combined 35 adjacent pairs wh
 
 The batch replay runner exercises direct C, Swift C interop and Kotlin/JNI on macOS with both KISS FFT and Accelerate. Nine fixtures produced 54 matching sets of discrete decisions. One retained Pixel desk frame recovered eight of ten blocks with the ordered mask `1111110101`, while the next frame recovered all ten. On the November 22 return path, the shipped decoder recovered zero of four control blocks on each phone's retained first probe. The separate clock-corrected research receiver recovered the four transmitted blocks in each recording. The digital cases also cover periodic dropouts, complementary microphones, swapped inputs and duplicated input. Intentionally reversing the Kotlin mask failed on the dropout fixture even though the recovered block count stayed the same.
 
-The manifest and runner instructions are in [Batch replay](../../Tests/BatchReplay/README.md). This evidence covers the host probes. C3-06 public Swift value types, the C3-07 Android NDK binding and the remaining C3-08 conformance matrix still precede the streaming receiver milestone.
+The initial check covered host probes. The later repeat below extends it to the public Swift binding and two Android runtimes. [Batch replay instructions](../../Tests/BatchReplay/README.md)
+
+## Counterbalanced repeat and live ACK combining
+
+The repeat used the same 65,536 source bytes, fixed modulation, device positions and volumes as the first sweep. Each phone saw the one- and four-frame settings in the opposite order from its first run. Both Pixel runs sent eight data frames. Increasing the burst length reduced the return turns from eight to two.
+
+| Mac → phone | Max frames per ACK | First sweep kbps | Repeat kbps | Repeat elapsed seconds | Repeat acoustic ACKs |
+|---|---:|---:|---:|---:|---:|
+| Pixel 7a | 1 | 3.01 | 4.17 | 125.59 | 8/8 |
+| Pixel 7a | 4 | 7.55 | 8.23 | 63.67 | 2/2 |
+| Moto G (2026) | 1 | 2.02 | 2.17 | 241.22 | 15/16 |
+| Moto G (2026) | 4 | 4.48 | 3.64 | 143.84 | 4/5 |
+
+Four frames per ACK was fastest in both orders on both devices. In the repeat it improved the Pixel's file goodput by a factor of 1.97 and the Moto's by 1.68. The first Moto four-frame ACK was missed, so four data frames were repeated before the sender learned the receiver's state. This illustrates the retransmission cost of a longer burst when the return path fails. The repeat enabled combining consecutive failed ACKs for the same retry list. Both misses were isolated. The file transfers completed without invoking the combiner. USB scheduled the turns, host load was uncontrolled, and each device and spacing has two observations across the sweeps.
+
+### Controlled return-path experiment
+
+Each phone played eight scheduled control slots to the Mac. An unmodified ACK carried a bitmap of 254 chunks. For the next two copies, the transmitter attenuated alternating frequency bands on the training and data symbols, reversing the affected bands on the second copy while preserving the acquisition chirp. Three controls used a changed bitmap, a different session token and two silent slots. These were physical speaker-to-microphone trials with deliberately imposed spectral losses. Reference bytes and the scoring schedule were available to the verifier.
+
+| Return condition | Pixel → Mac | Moto → Mac |
+|---|---|---|
+| Unmodified positive control | Exact 254-chunk bitmap | Exact 254-chunk bitmap |
+| Same bitmap, complementary losses | Both individual decodes missed. Combining recovered the exact bitmap. | Both individual decodes missed. Combining recovered the exact bitmap. |
+| Changed bitmap, complementary losses | No accepted bitmap | No accepted bitmap |
+| Stale session | Stale token decoded, current session rejected it | Stale token decoded, current session rejected it |
+| Two silent slots | No accepted bitmap | No accepted bitmap |
+
+The sender-side combiner ran live during the file trials. The control probe scored the captured sequences immediately after each playback. These outcomes establish a recoverable loss case and exercise three rejection cases. They do not estimate a false-ACK rate or time saved during live file delivery. Replay reconstructed all four files and reproduced the sender decisions for all 31 turns. The repeat archive is `ack-repeat-20261122-a`. Its 79-entry hash manifest has SHA-256 `84cd2d93528e3cb6ac668fb874ba7a63d009a40666a73b83a325d22ef90aa444`.
+
+### Public batch binding and payload sensitivity
+
+Swift package tests and host and Android JNI tests round-tripped all five registered profiles. Nine fixtures agreed across direct C, the public Swift decoder and host Kotlin/JNI on KISS FFT and Accelerate, and in Kotlin/JNI on both Android devices using KISS. The runner produced 72 cross-binding outcomes plus two separately scored research-decoder outcomes. Android used an NDK-built native library under ART. Streaming callbacks and autonomous acoustic turn scheduling remain open. [Swift migration example](../BATCH_PHY.md)
+
+Empty Swift input encoded to the same waveform as a full, zero-padded input. Digital loopback through the underlying C codec revealed a payload-dependent weakness on registry geometry 1. An all-zero payload recovered 0/75 CRC-valid blocks. Constant bytes 0x01, 0x11, 0x71 and 0xff and a seeded pseudorandom payload each recovered 75/75. This was measured without audio hardware.
+A paired experiment then applied a known pseudorandom XOR mask to application bytes before encoding and reversed it after decoding. Across the five registry geometries, each pattern scheduled 560 blocks. With the current codec, all-zero frames, 128-byte random records padded with zeros, and eight random bytes per otherwise-zero block each recovered 0/560. With whitening, each recovered 560/560 original blocks. A constant 0x71 payload and dense pseudorandom data recovered 560/560 with either setting. Every CRC-valid block matched its application input. The run used the shipped C sources, one deterministic mask, and clean digital waveforms. The fixed mask is an experimental data transformation. A compatible production design needs a negotiated wire version and an independent hardware comparison. [Reproducible whitening experiment](../../scratch/garage/payload_whitening.py)
