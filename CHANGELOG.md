@@ -12,7 +12,7 @@ commands or content hashes.
 - **Every binding now reports the whole decode result**, and the replay
   runner compares it field by field: status, identity, decisions and counts
   exactly, and the EVM and pilot residuals against a tolerance declared per
-  fixture. Twelve fixtures give 108 cross-binding outcomes on a Mac and two
+  fixture. Thirteen fixtures give 117 cross-binding outcomes on a Mac and two
   phones, plus the two research outcomes.
 - **The C core runs under AddressSanitizer and UndefinedBehaviorSanitizer** on
   every fixture. Neither reported anything.

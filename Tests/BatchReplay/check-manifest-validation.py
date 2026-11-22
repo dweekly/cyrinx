@@ -41,6 +41,7 @@ def main():
         "decode failure as a status-only case": changed("truncated-capture", status=-10),
         "decode failure that names a mask": changed("late-chirp", mask="1"),
         "decode failure with no block count": changed("late-chirp", blocks=None),
+        "decode failure with no metrics": changed("late-chirp", metrics=None),
         "status that is neither a refusal nor a failed decode": changed("truncated-capture", status=-3),
         "decode with no metrics": changed("digital-qpsk", metrics=None),
         "metric with no tolerance": changed("digital-qpsk", metrics={

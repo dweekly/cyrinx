@@ -203,18 +203,20 @@ def compare(case, expected, record):
     for field, value in expected.items():
         if record[field] != value:
             raise Mismatch(f"{field}: expected {value}, observed {record[field]}")
-    observed_exact = {field: record[field] for field in EXACT if field != "status"}
-    if expected["status"] == DECODE_FAILURE:
-        return observed_exact  # Kept in the report: a failure's evidence is a result.
-    if expected["status"]:
+    if expected["status"] == INVALID_ARGUMENT:
         return {}
-    mask, payload = record["mask"], record["payload"]
-    ordered = "".join(str(v) for v in mask)
-    if any(v > 1 for v in mask) or ordered != case["mask"] or len(payload) != 256 * len(mask):
-        raise Mismatch(f"mask: expected mask {case['mask']}, observed {ordered}, {len(payload)} payload bytes")
-    valid = b"".join(payload[i * 256:(i + 1) * 256] for i, v in enumerate(mask) if v)
-    if sha(valid) != case["valid_payload_sha256"]:
-        raise Mismatch("payload: decoded bytes differ from the transmitted blocks")
+    outcome = {field: record[field] for field in EXACT if field != "status"}
+    if expected["status"] == 0:
+        mask, payload = record["mask"], record["payload"]
+        ordered = "".join(str(v) for v in mask)
+        if any(v > 1 for v in mask) or ordered != case["mask"] or len(payload) != 256 * len(mask):
+            raise Mismatch(f"mask: expected mask {case['mask']}, observed {ordered}, {len(payload)} payload bytes")
+        valid = b"".join(payload[i * 256:(i + 1) * 256] for i, v in enumerate(mask) if v)
+        if sha(valid) != case["valid_payload_sha256"]:
+            raise Mismatch("payload: decoded bytes differ from the transmitted blocks")
+        outcome.update(mask=ordered, valid_payload_sha256=sha(valid))
+    # A failed decode has no mask or payload, but its metrics are evidence too and are held to
+    # the same declared values: a binding must not report a measurement the decoder never made.
     metrics, failure = {}, None
     for field in METRICS:
         target, tolerance, observed = case["metrics"][field]["value"], case["metrics"][field]["tolerance"], record[field]
@@ -227,7 +229,7 @@ def compare(case, expected, record):
                               tolerance=tolerance, passed=passed)
         if not passed and failure is None:
             failure = f"{field}: expected {target} within {tolerance}, observed {plain(observed)}"
-    outcome = dict(observed_exact, mask=ordered, valid_payload_sha256=sha(valid), metrics=metrics)
+    outcome["metrics"] = metrics
     if failure:
         raise Mismatch(failure, outcome)  # The row is kept, with the failed comparison in it.
     return outcome
@@ -240,7 +242,7 @@ def same_decision(first, second):
 
 def mutate(packet, field, case):
     """Deliberately change one field of a record, for the negative controls."""
-    if case.get("status", 0) == INVALID_ARGUMENT or ("mask" not in case and field in ("payload", "mask", "evm_rms")):
+    if case.get("status", 0) == INVALID_ARGUMENT or ("mask" not in case and field in ("payload", "mask")):
         raise ValueError(f"{case['name']} has no {field} to change")
     data = bytearray(packet)
     offsets = dict(identity=4, blocks_ok=52, payload_required=68, logical_samples=84, evm_rms=100)
@@ -279,13 +281,14 @@ def validate_report(report):
         decoded = row.get("status") == 0 and report["status"] == "passed"
         if decoded and not set(EXACT) | {"mask", "valid_payload_sha256", "metrics"} <= row.keys():
             raise ValueError("report: a decoded result lacks an observed field")
-        if row.get("status") == DECODE_FAILURE and report["status"] == "passed" and not set(EXACT) <= row.keys():
+        failed = row.get("status") == DECODE_FAILURE and report["status"] == "passed"
+        if failed and not set(EXACT) | {"metrics"} <= row.keys():
             raise ValueError("report: a failed decode lacks its observed evidence")
 
 
 REPORT_SCHEMA = "cyrinx-batch-replay-report/2"
 IDENTITY_FIELDS = {"name", "profile", "pcm_sha256"}
-FAILURE_FIELDS = {"blocks", "receiver", "reason", "clipping", "nonfinite"}
+FAILURE_FIELDS = {"blocks", "receiver", "reason", "clipping", "nonfinite", "metrics"}
 DECODED_FIELDS = {"mask", "receiver", "reason", "valid_payload_sha256", "clipping", "nonfinite", "metrics"}
 FILE_FIELDS = {"path"}, {"secondary_path", "dropout", "gain", "nonfinite_at", "truncate", "delay", "status"}
 RECORDING_FIELDS = {"archive", "source_sha256", "start", "samples"}, {"member", "research"}
@@ -321,11 +324,13 @@ def validate_case(case, profile_count):
     if type(profile) is not int or not 0 <= profile < profile_count:
         raise ValueError(f"{name}: unknown profile {profile!r}")
     if not rejected:
-        mask, metrics = case["mask"], case["metrics"]
+        mask = case["mask"]
         if not isinstance(mask, str) or not mask or set(mask) - {"0", "1"}:
             raise ValueError(f"{name}: the mask is a string of 0 and 1")
         if any(type(case[key]) is not int or case[key] < 0 for key in ("clipping", "nonfinite")):
             raise ValueError(f"{name}: clipping and nonfinite are counts")
+    if not rejected or failed:
+        metrics = case["metrics"]
         if (not isinstance(metrics, dict) or metrics.keys() != set(METRICS) or not all(
                 isinstance(m, dict) and m.keys() == {"value", "tolerance"}
                 and (m["value"] in ("inf", "-inf", "nan") if isinstance(m["value"], str)
@@ -333,7 +338,7 @@ def validate_case(case, profile_count):
                 and type(m["tolerance"]) in (int, float) and math.isfinite(m["tolerance"]) and m["tolerance"] >= 0
                 for m in metrics.values())):
             raise ValueError(f"{name}: metrics needs a value and a tolerance for each of {', '.join(METRICS)}")
-    if failed and any(type(case[key]) is not int or case[key] < 0 for key in FAILURE_FIELDS):
+    if failed and any(type(case[key]) is not int or case[key] < 0 for key in FAILURE_FIELDS - {"metrics"}):
         raise ValueError(f"{name}: a failed decode's evidence fields are counts and codes")
     if failed and case["blocks"] < 1:
         raise ValueError(f"{name}: blocks is the profile's block count")

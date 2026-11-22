@@ -349,7 +349,21 @@
       "reason": 0,
       "clipping": 0,
       "nonfinite": 0,
-      "pcm_sha256": "2bee489064513920e7e8936263c8128189fcfda687d44ceef46ae5a82bc07384"
+      "pcm_sha256": "2bee489064513920e7e8936263c8128189fcfda687d44ceef46ae5a82bc07384",
+      "metrics": {
+        "evm_rms": {
+          "value": 0.0,
+          "tolerance": 1e-09
+        },
+        "primary_holdout_pilot_rms": {
+          "value": "inf",
+          "tolerance": 0
+        },
+        "mrc_holdout_pilot_rms": {
+          "value": "inf",
+          "tolerance": 0
+        }
+      }
     }
   ]
 }
