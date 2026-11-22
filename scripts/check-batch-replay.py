@@ -132,6 +132,7 @@ EXACT = ("status", "identity", "profile_id", "receiver", "reason", "blocks_total
          "validity_required", "clipping", "nonfinite", "payload_required", "frame_samples",
          "logical_samples", "payload_bytes")
 FIXTURE_ID_BASE = 0xF000  # Tests/BatchReplay/Profiles.h
+INVALID_ARGUMENT = -1  # CYRINX_STATUS_ERR_INVALID_ARGUMENT
 METRICS = ("evm_rms", "primary_holdout_pilot_rms", "mrc_holdout_pilot_rms")
 
 
@@ -224,6 +225,8 @@ def mutate(packet, field, case):
         raise ValueError(f"{case['name']} is a rejected capture; a negative control needs a decoded record")
     data = bytearray(packet)
     offsets = dict(identity=4, blocks_ok=52, payload_required=68, logical_samples=84, evm_rms=100)
+    if field == "payload" and "1" not in case["mask"]:
+        raise ValueError(f"{case['name']} has no valid block, so there is no payload byte to change")
     if field == "payload":
         data[HEADER.size + len(case["mask"]) + 256 * case["mask"].index("1")] ^= 1
     elif field == "mask":
@@ -282,6 +285,11 @@ def validate_case(case, profile_count):
     rejected = case.get("status", 0) != 0
     if type(case.get("status", 0)) is not int:
         raise ValueError(f"{name}: status is a whole number")
+    if rejected and case["status"] != INVALID_ARGUMENT:
+        # A status-only case compares nothing else. That is right for an input the decoder
+        # refuses before reading it, which writes no result. A decode failure does write
+        # evidence, and this runner does not compare it yet, so it cannot pass as verified.
+        raise ValueError(f"{name}: a status-only case is the invalid-argument status {INVALID_ARGUMENT}")
     required = required | IDENTITY_FIELDS | (set() if rejected else DECODED_FIELDS)
     if not required <= case.keys() <= required | optional:
         odd = sorted((required - case.keys()) | (case.keys() - required - optional))
@@ -361,7 +369,9 @@ def retained_research(build, cases, windows, rows, observe):
 def execute(args, report):
     if sys.byteorder != "little":
         raise ValueError("replay adapters require a little-endian host")
-    if args.observe and args.mutate:
+    if args.mutate is not None and ":" not in args.mutate:
+        raise ValueError("--mutate names a record and a field as BACKEND/BINDING/FIXTURE:FIELD")
+    if args.observe and args.mutate is not None:
         raise ValueError("--mutate changes a record and --observe records it as seen; use one at a time")
     manifest = json.loads(args.manifest.read_bytes())
     if manifest["version"] != 1:
@@ -413,7 +423,7 @@ def execute(args, report):
             label = f"{backend}/{binding}/{case['name']}"
             report["checking"] = label
             row = {"binding": binding, "backend": backend, "fixture": case["name"]}
-            if args.mutate and args.mutate.rsplit(":", 1)[0] == label:
+            if args.mutate is not None and args.mutate.rsplit(":", 1)[0] == label:
                 packet = mutate(packet, args.mutate.rsplit(":", 1)[1], case)
                 mutated.append(label)
             try:
@@ -471,7 +481,7 @@ def execute(args, report):
             report["checking"] = "research control frames"
             retained_research(build, cases, windows, report["results"], args.observe)
         # 3. A negative control that names no record this run produced has tested nothing.
-        if args.mutate and not mutated:
+        if args.mutate is not None and not mutated:
             raise ValueError(f"--mutate {args.mutate}: no record matched, so nothing was changed")
     report.pop("checking", None)
 

@@ -44,6 +44,15 @@ def main():
                 raise
         else:
             raise RuntimeError("an unmatched negative control was reported as a pass")
+        # An empty target changes nothing and must not pass either.
+        sys.argv = [str(runner), "--digital-only", "--report", str(report), "--mutate", ""]
+        try:
+            replay.main()
+        except ValueError as error:
+            if "BACKEND/BINDING/FIXTURE:FIELD" not in str(error):
+                raise
+        else:
+            raise RuntimeError("an empty negative control was reported as a pass")
         # Nor may a control run while observations are being recorded for a new list.
         sys.argv = [str(runner), "--digital-only", "--report", str(report), "--observe", "--mutate",
                     f"{LABEL}:blocks_ok"]
