@@ -14,6 +14,7 @@
 - `./scripts/format-check.sh`: verify formatting without changing files.
 - `./scripts/lint.sh`: run SwiftLint and ShellCheck.
 - `./scripts/check.sh`: full local gate: format check, lint, and tests.
+- `./scripts/test-sanitizers.sh`: run the whole test suite under AddressSanitizer and ThreadSanitizer, after checking that both catch a known defect.
 - `./scripts/hil-generate.sh`: regenerate the HIL Xcode project from `Apps/HIL/project.yml`.
 - `cd Apps/HIL/android && ./gradlew assembleDebug`: build the Android HIL app.
 
