@@ -96,8 +96,11 @@ def patterns(length):
     dense = np.frombuffer(np.random.default_rng(112223).bytes(length), dtype=np.uint8)
     short = np.zeros(length, dtype=np.uint8)
     short[:128] = dense[:128]
+    sparse = np.zeros(length, dtype=np.uint8).reshape(-1, 256)  # Eight data bytes in every block.
+    sparse[:, :8] = dense.reshape(-1, 256)[:, :8]
     return {"zero": np.zeros(length, dtype=np.uint8), "0xff": np.full(length, 0xFF, dtype=np.uint8),
-            "short-128": short, "0x71": np.full(length, 0x71, dtype=np.uint8), "random": dense}
+            "short-128": short, "sparse-8": sparse.ravel(), "0x71": np.full(length, 0x71, dtype=np.uint8),
+            "random": dense}
 
 
 def measure(shipped, relaxed, profile):

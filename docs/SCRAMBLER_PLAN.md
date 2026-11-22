@@ -13,9 +13,10 @@ with no microphone or room involved.
 
 The usual cure is a scrambler: the sender mixes the message with a fixed
 pseudorandom pattern before turning it into sound, and the receiver removes the
-same pattern afterwards. The sound then looks much the same whatever the
-message is. Because this changes the sound on the wire, a receiver built
-before the change cannot decode it. This plan adds scrambled formats beside
+same pattern afterwards. The goal is to keep common inputs such as
+zero-padded messages from producing tall spikes; a fixed pattern cannot
+prevent them for every message. Because this changes the sound on the wire,
+a receiver built before the change cannot decode it. This plan adds scrambled formats beside
 the existing ones and leaves the existing ones exactly as released.
 
 ## Why
@@ -92,9 +93,16 @@ Everything in this section is proposed by an agent and not yet confirmed.
    the mode invalidates the digest.
 5. **Registry.** Profiles 6 to 10 are copies of 1 to 5 with the scrambler on,
    classified experimental.
-6. **2.x symbols.** `cyrinx_bulk_config` and the 2.x entry points keep their
-   layout and behavior. The scrambler mode reaches the modulator and
-   demodulator through an internal entry point that the batch layer calls.
+6. **How a v2 profile reaches encode and decode.** The public batch entry
+   points take the v1 profile type and run v1 validation, so a v2 profile
+   cannot pass through them, and Swift sizes its buffers by calling one of
+   them. New v2 batch encode and decode entry points take the v2 type, run v2
+   validation, and keep the existing capacity query: called with too small a
+   buffer they report the required sizes. Swift and JNI route scrambled
+   profiles through them. The v1 batch symbols, `cyrinx_bulk_config` and the
+   2.x entry points keep their layout and behavior; the scrambler mode
+   reaches the modulator and demodulator through an internal entry point that
+   the v2 batch layer calls.
 7. **Short payloads.** The C contract keeps zero-padding. On a scrambled
    profile `BatchPHY.encode` accepts 0 to `payloadByteCount` bytes, exposes
    the scrambler mode, and returns the same waveform as explicit zero padding.
@@ -208,6 +216,8 @@ captured transmit reference for the released profiles; the over-the-air
 screen restated for the geometry it would use; a per-row identity scheme;
 exact short-input behavior; wrong-mode and partial-recovery tests; and the
 corrected statements about repeated bytes and the worst-case payload.
+A code review of this document then added the v2 batch entry points (item
+6): without them a scrambled profile could be looked up and never used.
 Folded in from Gemini: named statuses for the two refusals; the 136-byte size
 on every target; a small committed golden case and the reason a full
 registered one is not committed; the call sites that assume five v1 profiles;

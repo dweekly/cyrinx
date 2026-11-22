@@ -9,8 +9,8 @@ commands or content hashes.
 
 ## Unreleased — why sparse payloads fail; scrambler plan
 
-- **The zero-payload failure is the transmitter's amplitude clip.** A constant
-  fill puts about 95% of data bins on one constellation point, the
+- **The zero-payload failure is the transmitter's amplitude clip.** An
+  all-zero fill puts about 95% of data bins on one constellation point, the
   peak-to-RMS ratio rises from about 4.6 to 26 to 28, and the 3.3-sigma clip
   removes the peaks. With the clip off every tested pattern recovers every
   block on all five profiles. An all-0xff frame fails on profiles 3 to 5 as
