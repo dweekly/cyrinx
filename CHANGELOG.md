@@ -7,6 +7,20 @@ date-labelled.
 Detailed evidence for every claim is in the cited document and its reproduction
 commands or content hashes.
 
+## Unreleased — layout checked on four Android ABIs; released waveforms pinned
+
+- **The C structures' layout assertions now compile for arm64-v8a,
+  armeabi-v7a, x86_64 and x86** (`scripts/check-abi-layout.py`). They hold
+  on the first three. 32-bit x86 is refused at compile time: the batch
+  channel view is 28 bytes there, not 32
+  ([NEGATIVE_FINDINGS entry 27](docs/NEGATIVE_FINDINGS.md)). The supported
+  matrix is arm64, so nothing shipped is affected.
+- **Each released profile's transmitted waveform is pinned by digest**
+  (`Tests/CyrinxTests/ReleasedWaveformTests.swift`), so a change to shared
+  modulation code cannot alter a released sound unnoticed.
+- **A real capture now reaches the decode-failure path** in the Swift tests,
+  on every registered profile.
+
 ## Unreleased — why sparse payloads fail; scrambler plan
 
 - **The zero-payload failure is the transmitter's amplitude clip.** An
