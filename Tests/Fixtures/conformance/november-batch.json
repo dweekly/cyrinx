@@ -1,0 +1,130 @@
+{
+  "version": 1,
+  "profile_identities": [
+    "f7859015c017a426050c1c6e83b20d4f6afa009351a72187885e1c6c6e37a056",
+    "8ab86430214a2e77ab04baf1909471a334028604c412b9f32666b6c6e912c38b",
+    "0298025229bac4284b0676b566011df2a923bbffeafc0d6d0712ada2713b7a79",
+    "4857a2cbe838b523e4a992fdc51bdfa516737bd8485bfebfe75cafa85c71dd5a"
+  ],
+  "cases": [
+    {
+      "name": "digital-qpsk",
+      "profile": 0,
+      "path": "Tests/Fixtures/golden/qpsk_r12/rx_wave.bin",
+      "pcm_sha256": "84ddd4d2a1f5dfa4b9a590553d8ef2be0cc6769337ecc5f53e609b18bee71a95",
+      "mask": "1",
+      "valid_payload_sha256": "fe5c1de9b88c44e6f2e0097b5fd9fd2ba1d4f881d091aa00743bb670cbbe1615",
+      "receiver": 0,
+      "reason": 6
+    },
+    {
+      "name": "pixel-desk-frame-1",
+      "profile": 1,
+      "archive": "ladder-desk-2p5ft-down-20261110T174246.npz",
+      "source_sha256": "6de1c064573500c5781c01ea8642c9181d65f7514162bda530acba87869c744d",
+      "member": "qpsk-hi12-23-g43",
+      "start": 44000,
+      "samples": 196320,
+      "pcm_sha256": "615777ce4fc81c3d3d44ddf08e8cc5c4de2e86d0d4372689b20f8f0d3c492930",
+      "mask": "1111110101",
+      "valid_payload_sha256": "dbac0c3d8e795abb9a6017a219cb78d2a264d78f1f2bc74d8a5135b91115c25e",
+      "receiver": 0,
+      "reason": 6
+    },
+    {
+      "name": "pixel-desk-frame-2",
+      "profile": 1,
+      "archive": "ladder-desk-2p5ft-down-20261110T174246.npz",
+      "source_sha256": "6de1c064573500c5781c01ea8642c9181d65f7514162bda530acba87869c744d",
+      "member": "qpsk-hi12-23-g43",
+      "start": 240320,
+      "samples": 196320,
+      "pcm_sha256": "6f426f14ad27546a6acc416aa1e5a8cfb3eabb2913e0f898521973a1b06692c6",
+      "mask": "1111111111",
+      "valid_payload_sha256": "4846552666dceec5d5fdd6a6d94ab2cde35f16ae122e203008be91552f91ab2e",
+      "receiver": 0,
+      "reason": 6
+    },
+    {
+      "name": "pixel-behind-monitor-control",
+      "profile": 2,
+      "archive": "reverse-20261122-a/pixel-uplink.npy",
+      "source_sha256": "e0c36366a120b2372a771d8c4f17920aadd7949d45010afb71adbcd26ecdd3d8",
+      "start": 116460,
+      "samples": 140096,
+      "pcm_sha256": "36edc56356172c7bd19ae2b367653a7e5c570ae2560d321e1d45c6923b4fabee",
+      "mask": "0000",
+      "valid_payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "research": {
+        "mask": "1111",
+        "valid_payload_sha256": "01bb71e3a85a7712e08badafae038a2194ffaaddb94d768e8367843c5c321245"
+      },
+      "receiver": 0,
+      "reason": 6
+    },
+    {
+      "name": "moto-behind-monitor-control",
+      "profile": 2,
+      "archive": "reverse-20261122-a/moto-uplink.npy",
+      "source_sha256": "abaa1dfebd41f0169036a6d18510e8d980b9ad3ec4a5416b82f374333b9fecdc",
+      "start": 139027,
+      "samples": 140096,
+      "pcm_sha256": "2131d9c83a0ffd4aa9c351bee3ae40b588f37c0e172fe02632c96fa6c3707bf4",
+      "mask": "0000",
+      "valid_payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "research": {
+        "mask": "1111",
+        "valid_payload_sha256": "99250ee05d6d9e29e550d2390ecd992c2674ac2fbdb4a39df909b433f9b3113c"
+      },
+      "receiver": 0,
+      "reason": 6
+    },
+    {
+      "name": "periodic-dropout",
+      "profile": 3,
+      "path": "Tests/Fixtures/golden/qam16_r34/rx_wave.bin",
+      "dropout": {
+        "period": 512,
+        "width": 8
+      },
+      "pcm_sha256": "24d8b7241cfd5a56d6ce89fb7af3785ca869862357770ab9ba0af6e9baa6e348",
+      "mask": "1101",
+      "valid_payload_sha256": "fb8cdc60005601c89b5c100defcf119dd04f1302f4a61b276a9b88b9a807048f",
+      "receiver": 0,
+      "reason": 6
+    },
+    {
+      "name": "two-mic-recovery",
+      "profile": 3,
+      "path": "Tests/Fixtures/golden/qam16_r34_mrc/rx_wave.bin",
+      "secondary_path": "Tests/Fixtures/golden/qam16_r34_mrc/rx_wave2.bin",
+      "pcm_sha256": "ec248c195e8f79697fc88a0b369e5e70b1d07ebbd22a1cf78a390479fac45525",
+      "mask": "1111",
+      "valid_payload_sha256": "c136cbc89b46c8a0cabc7c9007e90ced34d2861e9cda4fab4e185f2e06fc57b5",
+      "receiver": 1,
+      "reason": 1
+    },
+    {
+      "name": "two-mic-reversed",
+      "profile": 3,
+      "path": "Tests/Fixtures/golden/qam16_r34_mrc/rx_wave2.bin",
+      "secondary_path": "Tests/Fixtures/golden/qam16_r34_mrc/rx_wave.bin",
+      "pcm_sha256": "1324e3eefb178bad3b2565ad8244f903c249a4dc35b270bbedd50382b2e6cd61",
+      "mask": "1111",
+      "valid_payload_sha256": "c136cbc89b46c8a0cabc7c9007e90ced34d2861e9cda4fab4e185f2e06fc57b5",
+      "receiver": 1,
+      "reason": 1
+    },
+    {
+      "name": "two-mic-duplicated",
+      "profile": 3,
+      "path": "Tests/Fixtures/golden/qam16_r34_mrc/rx_wave.bin",
+      "secondary_path": "Tests/Fixtures/golden/qam16_r34_mrc/rx_wave.bin",
+      "pcm_sha256": "6e8685ba3646f596fc199198994c90cec2c889cb416fb4742f9621700d1d15c9",
+      "mask": "0000",
+      "valid_payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "receiver": 0,
+      "reason": 2
+    }
+  ]
+}

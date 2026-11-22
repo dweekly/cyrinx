@@ -28,9 +28,9 @@ defined extraction policy.
 
 | Language | Retain | Deprecate | Experimental | Replace | Total |
 |---|---:|---:|---:|---:|---:|
-| Swift | 53 | 126 | 79 | 115 | 373 |
+| Swift | 53 | 126 | 143 | 115 | 437 |
 | C | 45 | 99 | 165 | 126 | 435 |
-| **Total** | **98** | **225** | **244** | **241** | **808** |
+| **Total** | **98** | **225** | **308** | **241** | **872** |
 
 The Swift total includes 366 source-declared entries and seven source-less
 protocol-witness initializers emitted even with

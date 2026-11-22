@@ -261,6 +261,25 @@ loopback; numbers are quoted as measured.
     a denser or frequency-staggered known-pilot lattice, optionally paired with
     a code rate near 0.70.
 
+26. **Zero-heavy payloads do not decode, even with no channel.** The bulk
+    codec maps payload bits to the waveform with no scrambler. In digital
+    loopback through the C codec on 2026-11-22, an all-zero frame, a frame of
+    128 data bytes followed by zeros, and a frame with eight data bytes at the
+    start of each otherwise-zero block each recovered 0 of 560 blocks across
+    the five registered profiles. The blocks carrying data were lost with the
+    padding. Dense pseudorandom data and a repeated 0x71 byte recovered
+    560/560. `cyrinx_batch_encode` documents zero-padding of a short payload
+    as its contract, so that documented path produces an undecodable frame.
+    The mechanism has not been isolated; identical symbols on every data bin
+    and the resulting clipped time-domain peak are the untested hypothesis.
+    XOR with a fixed pseudorandom mask before encoding restored 560/560 in
+    the same loopback. Reproduce with
+    `scratch/garage/payload_whitening.py`; the Swift package test
+    `zeroHeavyFrameRecoversNoBlocks` pins the unscrambled behavior. The Swift
+    `BatchPHY.encode` rejects a short payload for this reason. A scrambler in
+    the codec changes the waveform and therefore needs a new wire version
+    (ROADMAP Rank 1).
+
 ## Measurement-integrity reminders (process, not physics)
 
 - **Set-membership block verification overstates correctness.** Counting any
