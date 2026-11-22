@@ -273,8 +273,18 @@ loopback; numbers are quoted as measured.
     effect is not all-or-nothing: on profile 1, 6,400 bytes of 0x71 followed
     by zeros recovered 11 of 75 blocks and 19,199 bytes recovered all 75. The
     amount of zero fill a frame tolerates is uncharacterized.
-    The mechanism has not been isolated; identical symbols on every data bin
-    and the resulting clipped time-domain peak are the untested hypothesis.
+    The cause is the transmitter's amplitude clip. A zero payload puts about
+    95% of the data bins on one constellation point, which raises the
+    peak-to-RMS ratio of the multicarrier section from about 4.6 for random
+    data to 26 to 28, and the 3.3-sigma clip then flattens the peaks that
+    carry the frame. With the clip switched off, in a build that differs only
+    in the limit on `clip_sigma`, every tested pattern recovered every block on
+    all five profiles, through the unchanged receiver. For the all-zero payload
+    recovery returned between 15 and 20 sigma on profiles 1 and 2 and between
+    20 and 30 sigma on profiles 3 to 5. Any constant fill that codes to one
+    constellation point behaves the same way: an all-0xff frame recovered every
+    block on profiles 1 and 2 and none on profiles 3 to 5. Reproduce with
+    `scratch/garage/zero_payload_mechanism.py`.
     XOR with a fixed pseudorandom mask before encoding restored 560/560 in
     the same loopback. Over the air, in one six-frame broadcast, the same mask
     took a Moto G (2026) from 0/2 to 2/2 records recovered
