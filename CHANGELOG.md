@@ -24,6 +24,19 @@ commands or content hashes.
   the field. Partial work toward C3-08; see the status ledger in
   [docs/CYRINX_3_PLAN.md](docs/CYRINX_3_PLAN.md).
 
+## Unreleased — why sparse payloads fail; scrambler plan
+
+- **The zero-payload failure is the transmitter's amplitude clip.** An
+  all-zero fill puts about 95% of data bins on one constellation point, the
+  peak-to-RMS ratio rises from about 4.6 to 26 to 28, and the 3.3-sigma clip
+  removes the peaks. With the clip off every tested pattern recovers every
+  block on all five profiles. An all-0xff frame fails on profiles 3 to 5 as
+  zeros do. Reproduction: `scratch/garage/zero_payload_mechanism.py`;
+  [NEGATIVE_FINDINGS entry 26](docs/NEGATIVE_FINDINGS.md).
+- **A scrambler is planned, not built.** [docs/SCRAMBLER_PLAN.md](docs/SCRAMBLER_PLAN.md)
+  proposes scrambled profiles under new IDs beside the existing five. It
+  awaits approval.
+
 ## Unreleased — research: acknowledged acoustic file transfers
 
 - **Acknowledged acoustic file transfers, bench-coordinated.** A Mac delivered

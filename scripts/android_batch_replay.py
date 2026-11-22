@@ -59,7 +59,7 @@ def replay(serial, dex, library, cases, windows, expected, report, judge):
                              "2" if "secondary_path" in case else "1"])
             # A different C library and math library: decisions must match host C exactly, and
             # metrics stay within each fixture's tolerance.
-            judge(f"KISS/Android Kotlin/JNI {serial}/{name}", case, packet, expected[name])
+            judge("KISS", f"Android Kotlin/JNI {serial}", case, packet, expected[name])
     finally:
         output([*adb, "shell", "rm", "-f", *paths])
         output([*adb, "shell", "rmdir", remote])

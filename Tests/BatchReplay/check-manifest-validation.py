@@ -55,7 +55,24 @@ def main():
         except ValueError:
             continue
         raise RuntimeError(f"the replay runner accepted a case with {label}")
-    print(f"Confirmed that {len(cases)} bundled cases validate and {len(rejected)} malformed cases are refused.")
+    # Faults that would not reach the decoder are refused when the input is built.
+    source = cases["digital-qpsk"]
+    unreachable = {
+        "truncation past the end": changed("digital-qpsk", truncate=10**9),
+        "truncation to nothing": changed("digital-qpsk", truncate=0),
+        "injected sample past the end": changed("digital-qpsk", nonfinite_at=10**9),
+        "injected sample that truncation removes": changed("digital-qpsk", nonfinite_at=10, truncate=10),
+    }
+    for label, case in unreachable.items():
+        replay.validate_case(case, profiles)
+        try:
+            replay.fixture_bytes(case, None)
+        except ValueError as error:
+            if source["name"] in str(error) and "digest" not in str(error):
+                continue
+        raise RuntimeError(f"the replay runner built an input with {label}")
+    print(f"Confirmed that {len(cases)} bundled cases validate, {len(rejected)} malformed cases are refused, "
+          f"and {len(unreachable)} faults that cannot reach the decoder are refused.")
 
 
 if __name__ == "__main__":

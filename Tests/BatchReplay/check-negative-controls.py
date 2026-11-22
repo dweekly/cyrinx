@@ -44,6 +44,16 @@ def main():
                 raise
         else:
             raise RuntimeError("an unmatched negative control was reported as a pass")
+        # Nor may a control run while observations are being recorded for a new list.
+        sys.argv = [str(runner), "--digital-only", "--report", str(report), "--observe", "--mutate",
+                    f"{LABEL}:blocks_ok"]
+        try:
+            replay.main()
+        except ValueError as error:
+            if "one at a time" not in str(error) or json.loads(report.read_text())["status"] != "failed":
+                raise
+        else:
+            raise RuntimeError("a negative control ran in observation mode")
     print(f"All {len(FIELDS)} negative controls failed for the intended reason, and an unmatched one is refused.")
 
 

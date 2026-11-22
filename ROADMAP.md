@@ -206,11 +206,12 @@ bulk codec has no scrambler, and the sparse, zero-padded frames tested decoded
 no blocks in digital loopback on all five registered profiles
 ([NEGATIVE_FINDINGS entry 26](docs/NEGATIVE_FINDINGS.md)). The C batch contract
 zero-pads a short payload, the Swift binding rejects one, and the two need to
-agree. Candidate work, none of it started: isolate the mechanism; add a
-scrambler under a new wire version with regenerated golden vectors and
-profile identities; then decide whether short payloads are padded by the
-codec or refused by every binding. This is a proposal from the review that produced
-PR #105 and has no accepted design.
+agree. The cause is measured: an all-zero fill concentrates the data bins on one
+constellation point and the transmitter's amplitude clip removes the resulting
+peaks. David chose on 2026-11-22 to add scrambled profiles under new IDs
+beside the existing five, which stay as released. The design is proposed in
+[docs/SCRAMBLER_PLAN.md](docs/SCRAMBLER_PLAN.md) and awaits his approval; no
+codec change has been made.
 
 ## Rank 2 — Streaming bulk/bootstrap PHY and burst transmitter
 

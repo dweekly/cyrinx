@@ -97,10 +97,11 @@ def fixture_bytes(case, archive):
                 samples = array("f", (max(-1.0, min(1.0, s * case["gain"])) for s in samples))
             # A position past the end would leave the capture untouched and the fault untested, and
             # an empty capture cannot reach the decoder at all.
-            lowest = {"nonfinite_at": 0, "truncate": 1}
-            for key in lowest.keys() & case.keys():
-                if not lowest[key] <= case[key] < len(samples):
-                    raise ValueError(f"{case['name']}: {key} must fall inside the {len(samples)}-sample capture")
+            kept = case.get("truncate", len(samples))
+            if not 0 < kept <= len(samples) or ("truncate" in case and kept == len(samples)):
+                raise ValueError(f"{case['name']}: truncate must shorten the {len(samples)}-sample capture, not empty it")
+            if "nonfinite_at" in case and not 0 <= case["nonfinite_at"] < kept:
+                raise ValueError(f"{case['name']}: nonfinite_at must fall inside the {kept} samples that are kept")
             if "nonfinite_at" in case:
                 samples[case["nonfinite_at"]] = math.nan
             pcm = samples[:case.get("truncate", len(samples))].tobytes()
@@ -219,6 +220,8 @@ def same_decision(first, second):
 
 def mutate(packet, field, case):
     """Deliberately change one field of a record, for the negative controls."""
+    if "mask" not in case:
+        raise ValueError(f"{case['name']} is a rejected capture; a negative control needs a decoded record")
     data = bytearray(packet)
     offsets = dict(identity=4, blocks_ok=52, payload_required=68, logical_samples=84, evm_rms=100)
     if field == "payload":
@@ -358,6 +361,8 @@ def retained_research(build, cases, windows, rows, observe):
 def execute(args, report):
     if sys.byteorder != "little":
         raise ValueError("replay adapters require a little-endian host")
+    if args.observe and args.mutate:
+        raise ValueError("--mutate changes a record and --observe records it as seen; use one at a time")
     manifest = json.loads(args.manifest.read_bytes())
     if manifest["version"] != 1:
         raise ValueError("unsupported replay manifest")
@@ -403,10 +408,10 @@ def execute(args, report):
 
         mutated = []
 
-        def judge(label, case, packet, reference=None):
+        def judge(backend, binding, case, packet, reference=None):
             """Compare one binding's record with the list, then with direct C on the same backend."""
+            label = f"{backend}/{binding}/{case['name']}"
             report["checking"] = label
-            binding, backend = label.split("/", 1)[1].rsplit("/", 1)[0], label.split("/", 1)[0]
             row = {"binding": binding, "backend": backend, "fixture": case["name"]}
             if args.mutate and args.mutate.rsplit(":", 1)[0] == label:
                 packet = mutate(packet, args.mutate.rsplit(":", 1)[1], case)
@@ -446,7 +451,7 @@ def execute(args, report):
                     report["checking"] = f"{backend}/{name}/{case['name']}"
                     packet = run([*cmd, case["profile"], windows[case["name"]],
                                   2 if "secondary_path" in case else 1])
-                    packet = judge(f"{backend}/{name}/{case['name']}", case, packet, reference)
+                    packet = judge(backend, name, case, packet, reference)
                     # Bindings share one C build, so their records are identical to the byte. The
                     # sanitized probe is a separate build and is held to the tolerances instead.
                     if reference is not None and name != SANITIZED and packet != reference and not args.observe:
