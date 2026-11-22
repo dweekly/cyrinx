@@ -39,6 +39,9 @@ def main():
         "truncation on a recording": changed("pixel-desk-frame-2", truncate=100),
         "rejection that also names a mask": changed("digital-qpsk", status=-1),
         "decode failure as a status-only case": changed("truncated-capture", status=-10),
+        "decode failure that names a mask": changed("late-chirp", mask="1"),
+        "decode failure with no block count": changed("late-chirp", blocks=None),
+        "status that is neither a refusal nor a failed decode": changed("truncated-capture", status=-3),
         "decode with no metrics": changed("digital-qpsk", metrics=None),
         "metric with no tolerance": changed("digital-qpsk", metrics={
             name: {"value": 0} for name in replay.METRICS}),

@@ -34,6 +34,18 @@ def main():
                     continue
                 raise RuntimeError(f"a changed {field} failed without naming the record and field: {error}")
             raise RuntimeError(f"the replay check passed with a changed {field}")
+        # A failed decode still reports which profile it was given. A wrong identity there must
+        # fail as it does for a decoded record.
+        target = "KISS/Swift/late-chirp"
+        sys.argv = [str(runner), "--digital-only", "--report", str(report), "--mutate", f"{target}:identity"]
+        try:
+            replay.main()
+        except ValueError as error:
+            if not str(error).startswith(f"{target}: identity:"):
+                raise
+            print(f"Confirmed that a changed identity on a failed decode is named: {str(error)[:70]}")
+        else:
+            raise RuntimeError("a failed decode with a changed identity was reported as a pass")
         # A control aimed at a record the run never produces must fail too, not pass untested.
         sys.argv = [str(runner), "--digital-only", "--report", str(report), "--mutate",
                     "KISS/C/pixel-desk-frame-1:identity"]
