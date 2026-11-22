@@ -18,6 +18,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -26,9 +27,8 @@ ROOT = Path(__file__).resolve().parents[1]
 CORE = ROOT / "Sources/CCyrinx"
 TARGETS = {"arm64-v8a": "aarch64-linux-android26", "armeabi-v7a": "armv7a-linux-androideabi26",
            "x86_64": "x86_64-linux-android26", "x86": "i686-linux-android26"}
-# ABI -> the only assertions allowed to fail there, and the sizes the structures must have instead.
-REFUSED = {"x86": {"assertions": {"channel view v1 size", "batch input v1 size"},
-                   "sizes": {"cyrinx_batch_channel_view_t": 28, "cyrinx_batch_input_t": 72}}}
+# ABI -> the only assertions allowed to fail there, with the size the compiler must report for each.
+REFUSED = {"x86": {"channel view v1 size": 28, "batch input v1 size": 72}}
 HEADER = '#include "cyrinx/cyrinx_batch.h"\n'
 WRONG = HEADER + '_Static_assert(sizeof(cyrinx_batch_result_t) == 1, "negative control");\n'
 
@@ -51,7 +51,7 @@ def check(abi, target, tmp, cmake, toolchain, clang, wrong):
     if configured:
         # Keep going past the first failure, so every assertion in every file is evaluated.
         done = subprocess.run([cmake / "cmake", "--build", build, "--", "-k", "0"], capture_output=True, text=True)
-        entry["objects_compiled"] = len(list(build.rglob("*.o")))
+        entry["objects_compiled"] = len(list((build / "CMakeFiles/replay.dir").rglob("*.o")))
     output = (done.stdout + done.stderr).splitlines()
     # Compiler and CMake diagnostics. Any that is not one of the expected assertions fails the ABI.
     failures = [line.strip() for line in output if " error: " in line or line.startswith("CMake Error")]
@@ -59,15 +59,19 @@ def check(abi, target, tmp, cmake, toolchain, clang, wrong):
     entry.update(configured=configured, core_builds=configured and done.returncode == 0,
                  failures=failures[:20], failed_assertions=sorted(named))
     if abi in REFUSED:
+        # The sizes come from the build that was refused, not from a separate compile of the
+        # header: after each failed assertion the compiler notes the value it evaluated.
+        measured, pending = {}, None
+        for line in output:
+            if "static assertion failed" in line:
+                pending = line.rsplit(": ", 1)[-1].strip()
+            found = re.search(r"expression evaluates to '(\d+) == \d+'", line)
+            if found and pending:
+                measured[pending], pending = int(found.group(1)), None
+        entry["measured_sizes"] = measured
+        entry["documented_sizes_hold"] = measured == REFUSED[abi]
         # Refused, by the known assertions only, and with the structures at their documented sizes.
-        probe = tmp / f"{abi}-sizes.c"
-        probe.write_text(HEADER + "".join(
-            f'_Static_assert(sizeof({name}) == {size}, "{name} is {size} bytes");\n'
-            for name, size in REFUSED[abi]["sizes"].items()))
-        entry["documented_sizes_hold"], detail = compiles(clang, target, probe)
-        if not entry["documented_sizes_hold"]:
-            entry["failures"] += [line for line in detail.splitlines() if "static assertion failed" in line]
-        entry["as_expected"] = (configured and done.returncode != 0 and named == REFUSED[abi]["assertions"]
+        entry["as_expected"] = (configured and done.returncode != 0 and named == set(REFUSED[abi])
                                 and len(failures) == len(named) and entry["documented_sizes_hold"])
     else:
         entry["as_expected"] = entry["core_builds"]

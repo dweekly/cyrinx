@@ -18,7 +18,8 @@ commands or content hashes.
 - **Each released profile's transmitted waveform is pinned by digest**
   (`Tests/CyrinxTests/ReleasedWaveformTests.swift`), so a change to shared
   modulation code cannot alter a released sound unnoticed.
-- **A real capture now reaches the decode-failure path** in the Swift tests,
+- **A generated capture ending inside the frame now reaches the decode-failure
+  path** in the Swift tests,
   on every registered profile.
 
 ## Unreleased — why sparse payloads fail; scrambler plan
