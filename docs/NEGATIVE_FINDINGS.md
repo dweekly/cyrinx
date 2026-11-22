@@ -296,6 +296,22 @@ loopback; numbers are quoted as measured.
     the codec changes the waveform and therefore needs a new wire version
     (ROADMAP Rank 1).
 
+27. **The batch input layout is not the same on 32-bit x86.** The versioned
+    structures pin their sizes with compile-time assertions. Compiling the C
+    core with the Android NDK on 2026-11-22, the assertions held on arm64-v8a,
+    armeabi-v7a and x86_64. On 32-bit x86 the batch channel view is 28 bytes,
+    not 32, because that ABI aligns a 64-bit integer to four bytes and the
+    view is a pointer followed by 64-bit counts; the batch input, which holds
+    two views, is 72 bytes, not 80. The profile and result structures, which hold
+    no pointer, are the same on all four. The build refuses 32-bit x86 at the
+    assertion, so nothing can run there with a silently different layout.
+    The supported matrix David fixed on 2026-11-22 is arm64, so this blocks
+    nothing today. Making the layout identical everywhere would change a
+    merged contract and is undecided. Reproduce with
+    `.venv/bin/python scripts/check-abi-layout.py`, which passes only while
+    x86 is refused by exactly those two assertions and the two structures
+    measure exactly 28 and 72 bytes there.
+
 ## Measurement-integrity reminders (process, not physics)
 
 - **Set-membership block verification overstates correctness.** Counting any
