@@ -34,6 +34,8 @@ jobs:
           .venv/bin/python scripts/check-batch-replay.py --digital-only
       - name: Reject an intentionally reversed Kotlin mask
         run: .venv/bin/python Tests/BatchReplay/check-mask-order.py
+      - name: Refuse input lists the runner would not apply in full
+        run: .venv/bin/python Tests/BatchReplay/check-manifest-validation.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

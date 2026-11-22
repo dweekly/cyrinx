@@ -111,6 +111,43 @@ def verify(expected, mask, payload):
     return {"mask": ordered, "valid_payload_sha256": sha(valid)}
 
 
+COMMON_FIELDS = {"name", "profile", "mask", "receiver", "reason", "valid_payload_sha256", "pcm_sha256"}
+FILE_FIELDS = {"path"}, {"secondary_path", "dropout"}
+RECORDING_FIELDS = {"archive", "source_sha256", "start", "samples"}, {"member", "research"}
+RESEARCH_PROFILE = 2  # The control geometry is the only one the research lane decodes.
+
+
+def validate_case(case, profile_count):
+    """Refuse any case this runner would not apply in full.
+
+    A field it ignored would let a run pass against a different input or decoder than the list
+    asked for, so the set of fields is closed: one source, and only the options that source reads.
+    """
+    name = case["name"]
+    sources = [fields for fields in (FILE_FIELDS, RECORDING_FIELDS) if fields[0] & case.keys()]
+    if len(sources) != 1:
+        raise ValueError(f"{name}: name exactly one of path or archive")
+    required, optional = sources[0]
+    required = required | COMMON_FIELDS
+    if not required <= case.keys() <= required | optional:
+        odd = sorted((required - case.keys()) | (case.keys() - required - optional))
+        raise ValueError(f"{name}: missing or unsupported fields {', '.join(odd)}")
+    profile, mask = case["profile"], case["mask"]
+    if type(profile) is not int or not 0 <= profile < profile_count:
+        raise ValueError(f"{name}: unknown profile {profile!r}")
+    if not isinstance(mask, str) or not mask or set(mask) - {"0", "1"}:
+        raise ValueError(f"{name}: the mask is a string of 0 and 1")
+    dropout = case.get("dropout")
+    if dropout is not None and (not isinstance(dropout, dict) or dropout.keys() != {"period", "width"}
+                                or not all(type(v) is int for v in dropout.values())
+                                or not 0 < dropout["width"] <= dropout["period"]):
+        raise ValueError(f"{name}: dropout needs whole-number period and width, with width within the period")
+    research = case.get("research")
+    if research is not None and (profile != RESEARCH_PROFILE or not isinstance(research, dict)
+                                 or research.keys() != {"mask", "valid_payload_sha256"}):
+        raise ValueError(f"{name}: a research expectation needs profile {RESEARCH_PROFILE}, a mask and a hash")
+
+
 def retained_research(build, cases, windows, rows):
     import numpy as np
 
@@ -148,9 +185,7 @@ def execute(args, report):
     if not all(isinstance(name, str) and name for name in names) or len(set(names)) != len(names):
         raise ValueError("every replay case needs its own name")
     for case in manifest["cases"]:
-        # One source per case, so the tier below and the bytes read cannot disagree.
-        if ("path" in case) == ("archive" in case):
-            raise ValueError(f"{case['name']}: name exactly one of path or archive")
+        validate_case(case, len(manifest["profile_identities"]))
     cases = [case for case in manifest["cases"] if not args.digital_only or "archive" not in case]
     # The tier names the evidence this run reads, whichever flags selected it.
     report["tier"] = "retained" if any("archive" in case for case in cases) else "digital"
@@ -233,6 +268,7 @@ def main():
     parser.add_argument("--digital-only", action="store_true", help="only run fixtures available in a checkout")
     parser.add_argument("--report", type=Path, default=ROOT / "artifacts/conformance/november-batch.json")
     args = parser.parse_args()
+    args.archive = args.archive.expanduser()
     # Everything that can fail runs inside the try, so a failure replaces an earlier passing report.
     report = {"status": "failed", "command": shlex.join(sys.argv), "host": platform.platform(),
               "arch": platform.machine(), "results": []}

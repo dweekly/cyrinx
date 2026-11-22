@@ -9,7 +9,7 @@ From the repository root on macOS, with Clang, Swift, JDK 21 and Kotlin installe
 .venv/bin/python scripts/check-batch-replay.py
 ```
 
-The full run requires NumPy in the virtual environment and the original local recordings. It looks for them in `$CYRINX_GARAGE_ARTIFACTS`, then `~/dev/cyrinx-artifacts/garage`, as the capture tools do; `--archive` names another directory. Its inputs and frozen expectations are in `Tests/Fixtures/conformance/november-batch.json`. Both commands write `artifacts/conformance/november-batch.json`. Use `--report` for distinct output paths. A requested recording that is absent, a digest mismatch, a binding failure or an unexpected decision fails the run. So does a list in which a case lacks its own name or names both a checkout file and a recording. The report's tier says whether any recording was read. CI runs the digital subset.
+The full run requires NumPy in the virtual environment and the original local recordings. It looks for them in `$CYRINX_GARAGE_ARTIFACTS`, then `~/dev/cyrinx-artifacts/garage`, as the capture tools do; `--archive` names another directory. Its inputs and frozen expectations are in `Tests/Fixtures/conformance/november-batch.json`. Both commands write `artifacts/conformance/november-batch.json`. Use `--report` for distinct output paths. A requested recording that is absent, a digest mismatch, a binding failure or an unexpected decision fails the run. So does a list in which a case lacks its own name, names both a checkout file and a recording, or carries a field its source does not use, such as a dropout on a recording or a research expectation on a profile other than the control geometry. The report's tier says whether any recording was read. CI runs the digital subset.
 
 ## Android runtime
 
