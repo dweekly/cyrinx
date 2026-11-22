@@ -209,8 +209,8 @@ zero-pads a short payload, the Swift binding rejects one, and the two need to
 agree. Candidate work, none of it started: isolate the mechanism; add a
 scrambler under a new wire version with regenerated golden vectors and
 profile identities; then decide whether short payloads are padded by the
-codec or refused by every binding. This is a proposal from a review of PR #104
-and has no accepted design.
+codec or refused by every binding. This is a proposal from the review that produced
+PR #105 and has no accepted design.
 
 ## Rank 2 — Streaming bulk/bootstrap PHY and burst transmitter
 
