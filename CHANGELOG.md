@@ -19,8 +19,11 @@ commands or content hashes.
   (`Tests/CyrinxTests/ReleasedWaveformTests.swift`), so a change to shared
   modulation code cannot alter a released sound unnoticed.
 - **A generated capture ending inside the frame now reaches the decode-failure
-  path** in the Swift tests,
-  on every registered profile.
+  path** in the Swift tests, on every registered profile.
+- **The whole test suite runs clean under AddressSanitizer and
+  ThreadSanitizer** (`./scripts/test-sanitizers.sh`): 108 XCTest cases and
+  38 Swift Testing tests, with the C core instrumented, and no report from
+  either. The script first proves each sanitizer catches a known defect.
 
 ## Unreleased — why sparse payloads fail; scrambler plan
 

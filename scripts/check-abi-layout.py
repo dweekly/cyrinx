@@ -48,6 +48,10 @@ def check(abi, target, tmp, cmake, toolchain, clang, wrong):
                            f"-DANDROID_ABI={abi}", "-DANDROID_PLATFORM=android-26", "-DCMAKE_BUILD_TYPE=Release"],
                           capture_output=True, text=True)
     configured = done.returncode == 0
+    if not configured:
+        # Why configuration failed is in the lines after CMake's first error; keep the tail, since
+        # the build directory is temporary.
+        entry["configure_output"] = (done.stdout + done.stderr).splitlines()[-15:]
     if configured:
         # Keep going past the first failure, so every assertion in every file is evaluated.
         done = subprocess.run([cmake / "cmake", "--build", build, "--", "-k", "0"], capture_output=True, text=True)
@@ -103,7 +107,7 @@ def main():
                 if entry["core_builds"]:
                     outcome = "builds"
                 elif not entry["configured"]:
-                    outcome = "did not configure"
+                    outcome = "did not configure: " + " | ".join(entry["configure_output"][-3:])
                 else:
                     outcome = "refused by " + (", ".join(entry["failed_assertions"]) or "another error")
                 print(f"{abi:<12} {outcome}; {entry['objects_compiled']} files compiled; as expected: "
