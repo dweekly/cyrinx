@@ -4,10 +4,12 @@ on:
   push:
     paths: &inputs
       - 'Sources/CCyrinx/**'
+      - 'Sources/Cyrinx/BatchPHY.swift'
       - 'Tests/BatchReplay/**'
       - 'Tests/Fixtures/conformance/**'
       - 'Tests/Fixtures/golden/**'
       - 'scripts/check-batch-replay.py'
+      - 'scripts/android_batch_replay.py'
       - '.github/workflows/batch-replay.yml'
   pull_request:
     paths: *inputs

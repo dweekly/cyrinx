@@ -43,7 +43,16 @@ def compile_probes(build, backend, java_home, jar):
     direct = build / "direct"
     run(["clang", *includes, ADAPTERS / "direct.c", *link, "-o", direct])
     swift = build / "swift-replay"
-    run(["swiftc", "-module-cache-path", build.parent / "modules", "-I", ADAPTERS, "-I", CORE / "include", ADAPTERS / "Replay.swift",
+    # Both backends compile the shipping Swift wrapper against their own C build.
+    (build / "module.modulemap").write_text(
+        f'module CCyrinx {{ header "{CORE}/include/cyrinx/cyrinx_batch.h" export * }}\n')
+    swift_flags = ["swiftc", "-swift-version", "6", "-module-cache-path", build.parent / "modules",
+                   "-I", build, "-I", CORE / "include"]
+    wrapper = build / ("libCyrinx" + suffix)
+    run([*swift_flags, "-enable-testing", "-emit-module", "-emit-library", "-module-name", "Cyrinx",
+         "-emit-module-path", build / "Cyrinx.swiftmodule", ROOT / "Sources/Cyrinx/BatchPHY.swift",
+         library, "-Xlinker", "-rpath", "-Xlinker", build, "-o", wrapper])
+    run([*swift_flags, "-I", ADAPTERS, ADAPTERS / "Replay.swift", wrapper,
          library, "-Xlinker", "-rpath", "-Xlinker", build, "-o", swift])
     jni = build / ("libreplay" + suffix)
     run(["clang", "-std=c11", shared, "-fPIC", *includes, "-I", java_home / "include",
@@ -155,10 +164,14 @@ def execute(args, report):
             windows[case["name"]] = path
         jar = build / "adapter.jar"
         run([kotlin, ADAPTERS / "Replay.kt", "-include-runtime", "-d", jar])
+        kiss_reference = {}
         for backend in (["KISS", "Accelerate"] if sys.platform == "darwin" else ["KISS"]):
             lane = build / backend
             lane.mkdir()
             probes = compile_probes(lane, backend, java_home, jar)
+            if run([*probes["Kotlin/JNI"], "registry"]) != b"registry OK":
+                raise ValueError(f"{backend}: JNI registry round trip failed")
+            report.setdefault("jni_registry", []).append(backend)
             for case in cases:
                 reference = None
                 key, blocks = case["profile"], len(case["mask"])
@@ -177,8 +190,17 @@ def execute(args, report):
                         raise ValueError(f"{label} differs from the direct C output")
                     if reference is None:
                         reference = packet
+                        if backend == "KISS":
+                            kiss_reference[case["name"]] = packet
                     report["results"].append(dict(binding=name, backend=backend, fixture=case["name"],
                                                   profile_identity=identity, receiver=receiver, reason=reason, **actual))
+        if args.android:
+            import android_batch_replay as android
+
+            dex, library, ndk = android.build(build, ADAPTERS, jar)
+            report["toolchains"]["Android NDK"] = ndk
+            for serial in args.android:
+                android.replay(serial, dex, library, cases, windows, kiss_reference, report)
         if any("research" in case for case in cases):
             report["checking"] = "research control frames"
             retained_research(build, cases, windows, report["results"])
@@ -189,6 +211,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, default=MANIFEST)
     parser.add_argument("--archive", type=Path, default=ROOT.parent / "cyrinx-artifacts/garage")
+    parser.add_argument("--android", action="append", metavar="SERIAL", help="also run on this USB arm64 Android device")
     parser.add_argument("--digital-only", action="store_true", help="only run fixtures available in a checkout")
     parser.add_argument("--report", type=Path, default=ROOT / "artifacts/conformance/november-batch.json")
     args = parser.parse_args()
