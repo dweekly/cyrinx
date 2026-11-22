@@ -7,6 +7,31 @@ date-labelled.
 Detailed evidence for every claim is in the cited document and its reproduction
 commands or content hashes.
 
+## Unreleased — research: batched acoustic ACKs; Swift batch binding candidate
+
+- **Acknowledged acoustic file transfers, bench-coordinated.** A Mac delivered
+  a 64 KiB file to a Pixel 7a and a Moto G (2026) with the file data and the
+  acknowledgments both sent as sound, USB scheduling the turns, and the
+  handset SHA-256 checked. Sending up to four frames per acknowledgment was
+  faster than one in both run orders on both phones (Pixel 4.17 to 8.23 kbps,
+  Moto 2.17 to 3.64 kbps in the repeat). Two observations per setting, host
+  load uncontrolled. Record:
+  [docs/research/receiver-tracking-and-acoustic-acks-2026-11-22.md](docs/research/receiver-tracking-and-acoustic-acks-2026-11-22.md).
+- **`BatchPHY`, an experimental Swift binding to the C batch contract**, with a
+  migration example in [docs/BATCH_PHY.md](docs/BATCH_PHY.md). It is a
+  candidate for plan item C3-06 whose merge gate remains open.
+- **Cross-binding replay.** Nine fixtures give the same ordered block mask,
+  receiver selection and payload bytes through direct C, Swift and Kotlin/JNI
+  on both FFT backends. CI runs the digital subset and a reversed-mask
+  negative control. Partial work toward C3-07 and C3-08; see the status ledger
+  in [docs/CYRINX_3_PLAN.md](docs/CYRINX_3_PLAN.md).
+- **Negative finding: zero-heavy payloads do not decode.** With no scrambler
+  in the codec, an all-zero or mostly-zero frame recovers no blocks in digital
+  loopback on all five registered profiles
+  ([NEGATIVE_FINDINGS entry 26](docs/NEGATIVE_FINDINGS.md)). `BatchPHY.encode`
+  rejects a short payload; the C entry point still zero-pads. No scrambler
+  has been built.
+
 ## Unreleased — local gates run on the current toolchain; simulator plan
 
 - **Swift Format advanced to 604.0.0.** The tree needed no reformatting under

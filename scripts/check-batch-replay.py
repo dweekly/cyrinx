@@ -44,8 +44,8 @@ def compile_probes(build, backend, java_home, jar):
     run(["clang", *includes, ADAPTERS / "direct.c", *link, "-o", direct])
     swift = build / "swift-replay"
     # Both backends compile the shipping Swift wrapper against their own C build.
-    (build / "module.modulemap").write_text(
-        f'module CCyrinx {{ header "{CORE}/include/cyrinx/cyrinx_batch.h" export * }}\n')
+    headers = " ".join(f'header "{CORE}/include/cyrinx/{name}.h"' for name in ("cyrinx_batch", "cyrinx_bulk"))
+    (build / "module.modulemap").write_text(f"module CCyrinx {{ {headers} export * }}\n")
     swift_flags = ["swiftc", "-swift-version", "6", "-module-cache-path", build.parent / "modules",
                    "-I", build, "-I", CORE / "include"]
     wrapper = build / ("libCyrinx" + suffix)
@@ -114,14 +114,18 @@ def verify(expected, mask, payload):
 def retained_research(build, cases, windows, rows):
     import numpy as np
 
+    library = build / "research.dylib"
+    run(["bash", ROOT / "scratch/garage/build_clock_dylib.sh", library])
+    # clib reads its library path at import, so both variables are set first. A checkout
+    # with no locally built scratch/hw20k library then uses this build as well.
+    os.environ["CYRINX_CLOCK_CODEC_PATH"] = str(library)
+    os.environ["CYRINX_BULK_CODEC_PATH"] = str(library)
     sys.path.insert(0, str(ROOT / "scratch/garage"))
     import clock_offset
     import clib
 
-    library = build / "research.dylib"
-    run(["bash", ROOT / "scratch/garage/build_clock_dylib.sh", library])
-    os.environ["CYRINX_CLOCK_CODEC_PATH"] = str(library)
-    os.environ["CYRINX_BULK_CODEC_PATH"] = str(library)
+    if Path(clib.loaded_library_path()).resolve() != library.resolve():
+        raise ValueError("research lane loaded a codec other than the one it built")
     clock_offset.set_pilot_fit(clock_offset.FIT_COHERENT)
     cfg = clib.make_cfg(f_lo=300, f_hi=11000, bits_per_bin=2, rate="1/2", nfft=16384, cp=8192, n_sym=3)
     for case in cases:

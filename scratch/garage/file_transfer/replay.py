@@ -35,6 +35,12 @@ def build(folder):
     lib = folder / "clock.dylib"
     subprocess.run(["bash", HERE.parent / "build_clock_dylib.sh", lib], check=True)
     os.environ["CYRINX_CLOCK_CODEC_PATH"] = os.environ["CYRINX_BULK_CODEC_PATH"] = str(lib)
+    # clib fixed its library path when it was imported above, before this build existed. Point it
+    # here so a checkout with no locally built scratch/hw20k library runs, and so the pilot fit
+    # set below applies to the codec that clib calls.
+    require(clib._DEFAULT_CODEC is None, "clib loaded a codec before the research build")
+    clib._DEFAULT_CODEC_PATH = str(lib)
+    require(Path(clib.loaded_library_path()) == lib.resolve(), "clib loaded a different codec")
     clock_offset.set_pilot_fit(clock_offset.FIT_COHERENT)
 
 

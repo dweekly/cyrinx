@@ -2,6 +2,8 @@ name: Batch replay
 
 on:
   push:
+    branches:
+      - main
     paths: &inputs
       - 'Sources/CCyrinx/**'
       - 'Sources/Cyrinx/BatchPHY.swift'
