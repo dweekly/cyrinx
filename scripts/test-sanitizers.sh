@@ -71,7 +71,9 @@ for sanitizer in address thread; do
     echo "== swift test --sanitize=$sanitizer"
     if ! TSAN_OPTIONS="halt_on_error=1" swift test "--sanitize=$sanitizer" \
         --build-path ".build/sanitize-$sanitizer" >"$log" 2>&1; then
-        tail -40 "$log" >&2
+        # The whole log: the failing assertion can be far above the last lines, and the log is
+        # deleted when this script exits.
+        cat "$log" >&2
         echo "the test suite failed under the $sanitizer sanitizer" >&2
         exit 1
     fi
