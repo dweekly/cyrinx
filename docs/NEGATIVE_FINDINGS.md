@@ -273,8 +273,7 @@ loopback; numbers are quoted as measured.
     The mechanism has not been isolated; identical symbols on every data bin
     and the resulting clipped time-domain peak are the untested hypothesis.
     XOR with a fixed pseudorandom mask before encoding restored 560/560 in
-    the same loopback, and on a Moto G (2026) it took two 128-byte records
-    from 0/2 to 2/2 recovered over the air. Reproduce with
+    the same loopback. Reproduce with
     `scratch/garage/payload_whitening.py`; the Swift package test
     `zeroHeavyFrameRecoversNoBlocks` pins the unscrambled behavior. The Swift
     `BatchPHY.encode` rejects a short payload for this reason. A scrambler in

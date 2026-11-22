@@ -7,7 +7,7 @@ date-labelled.
 Detailed evidence for every claim is in the cited document and its reproduction
 commands or content hashes.
 
-## Unreleased — research: batched acoustic ACKs; Swift batch binding candidate
+## Unreleased — research: acknowledged acoustic file transfers
 
 - **Acknowledged acoustic file transfers, bench-coordinated.** A Mac delivered
   a 64 KiB file to a Pixel 7a and a Moto G (2026) with the file data and the
@@ -17,6 +17,13 @@ commands or content hashes.
   Moto 2.17 to 3.64 kbps in the repeat). Two observations per setting, host
   load uncontrolled. Record:
   [docs/research/receiver-tracking-and-acoustic-acks-2026-11-22.md](docs/research/receiver-tracking-and-acoustic-acks-2026-11-22.md).
+- **Whitening a sparse payload restored recovery over the air on one phone.**
+  In one six-frame broadcast a Moto G (2026) recovered both 128-byte records
+  after a reversible XOR mask and neither plain record; a Pixel 7a recovered
+  both either way. Same record.
+
+## Unreleased — Swift batch binding candidate and cross-binding replay
+
 - **`BatchPHY`, an experimental Swift binding to the C batch contract**, with a
   migration example in [docs/BATCH_PHY.md](docs/BATCH_PHY.md). It is a
   candidate for plan item C3-06 whose merge gate remains open.

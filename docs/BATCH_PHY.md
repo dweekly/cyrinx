@@ -34,7 +34,7 @@ Use `try BatchPHY.Profile.registered()` to enumerate profiles and inspect their 
 
 The caller supplies a full frame. The codec has no scrambler, so the bytes chosen for unused space decide whether the frame decodes. In a digital loopback with no audio hardware, a frame of zero bytes recovered no blocks on any of the five registered profiles. A frame holding 128 data bytes followed by zeros also recovered none, including the block that carried the data. Frames filled with pseudorandom bytes, or with a repeated nonzero byte, recovered every block. How much zero fill a frame tolerates is uncharacterized. The package test `zeroHeavyFrameRecoversNoBlocks` records this behavior.
 
-Fill unused space with varied bytes, such as a seeded pseudorandom sequence that the receiving application can recognize and discard. A reversible XOR mask restored recovery in [one digital and one two-phone experiment](research/receiver-tracking-and-acoustic-acks-2026-11-22.md). That mask is application-level research and is absent from the wire format. The C entry point `cyrinx_batch_encode` still accepts a short payload and fills it with zeros. Swift rejects that input because the resulting frame carries no recoverable data.
+Fill unused space with varied bytes, such as a seeded pseudorandom sequence that the receiving application can recognize and discard. A reversible XOR mask restored recovery in the same loopback ([NEGATIVE_FINDINGS entry 26](NEGATIVE_FINDINGS.md)). That mask is application-level research and is absent from the wire format. The C entry point `cyrinx_batch_encode` still accepts a short payload and fills it with zeros. Swift rejects that input because the resulting frame carries no recoverable data.
 
 ## Raw codes
 
