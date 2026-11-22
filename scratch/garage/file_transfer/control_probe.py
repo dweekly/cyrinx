@@ -117,6 +117,8 @@ def main():
         retain.session_dir(str(args.record.resolve().parent))
         if args.record.exists():
             parser.error(f"{args.record} already exists")
+    if args.replay and not args.serial:
+        parser.error("--replay needs the --serial of every phone in the trial, so a missing phone is noticed")
     with tempfile.TemporaryDirectory(prefix="cyrinx-control-") as tmp:
         build(Path(tmp))
         cfg = clib.make_cfg(f_lo=300, f_hi=11000, bits_per_bin=2, rate="1/2", nfft=16384, cp=8192, n_sym=3)
@@ -153,10 +155,18 @@ def main():
             if recordings != scores:
                 raise ValueError("recordings and scores differ: "
                                  f"{sorted(recordings ^ scores)} lack a counterpart in {args.replay}")
+            if recordings != set(args.serial):
+                raise ValueError(f"expected phones {sorted(set(args.serial))}, found {sorted(recordings)}")
             for stem in sorted(recordings):
                 path = args.replay / f"{stem}.npy"
-                if score(np.load(path, allow_pickle=False)) != json.loads(path.with_suffix(".json").read_text()):
+                reached = []
+                if (score(np.load(path, allow_pickle=False), reached)
+                        != json.loads(path.with_suffix(".json").read_text())):
                     raise ValueError(f"control replay mismatch for {path}")
+                # A pair that never aligned scores the same as a rejected one. Only the silent
+                # pair may miss the combiner.
+                if not all(reached[:3]) or len(reached) != len(DIGITAL_CHECKS):
+                    raise ValueError(f"{path}: a control pair never reached the combiner")
                 print(path.stem, "reproduced")
 
 

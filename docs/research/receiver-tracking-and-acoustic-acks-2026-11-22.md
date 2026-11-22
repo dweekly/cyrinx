@@ -109,7 +109,7 @@ The repeat used the same 65,536 source bytes, fixed modulation, device positions
 | Moto G (2026) | 1 | 2.02 | 2.17 | 241.22 | 15/16 |
 | Moto G (2026) | 4 | 4.48 | 3.64 | 143.84 | 4/5 |
 
-Four frames per ACK was fastest in both orders on both devices. In the repeat it improved the Pixel's file goodput by a factor of 1.97 and the Moto's by 1.68. The first Moto four-frame ACK was missed, so four data frames were repeated before the sender learned the receiver's state. This illustrates the retransmission cost of a longer burst when the return path fails. The repeat enabled combining consecutive failed ACKs for the same retry list. Both misses were isolated. The file transfers completed without invoking the combiner. USB scheduled the turns, host load was uncontrolled, and each device and spacing has two observations across the sweeps.
+Four frames per ACK was fastest in both orders on both devices. In the repeat it improved the Pixel's file goodput by a factor of 1.97 and the Moto's by 1.68. The first Moto four-frame ACK was missed, so four data frames were repeated before the sender learned the receiver's state. This illustrates the retransmission cost of a longer burst when the return path fails. The repeat enabled combining consecutive failed ACKs for the same retry list. Both misses were isolated. The file transfers completed without invoking the combiner. USB scheduled the turns, host load was uncontrolled, and each phone had two observations at one- and four-frame spacing and one at two-frame spacing.
 
 ### Controlled return-path experiment
 
@@ -123,7 +123,7 @@ Each phone played eight scheduled control slots to the Mac. An unmodified ACK ca
 | Stale session | Stale token decoded, current session rejected it | Stale token decoded, current session rejected it |
 | Two silent slots | No accepted bitmap | No accepted bitmap |
 
-The sender-side combiner ran live during the file trials. The control probe scored the captured sequences immediately after each playback. These outcomes establish a recoverable loss case and exercise three rejection cases. They do not estimate a false-ACK rate or time saved during live file delivery. Replay reconstructed all four files and reproduced the sender decisions for all 31 turns. The repeat archive is `ack-repeat-20261122-a`. Its 79-entry hash manifest has SHA-256 `84cd2d93528e3cb6ac668fb874ba7a63d009a40666a73b83a325d22ef90aa444`.
+The sender had ACK combining enabled during the file trials, but no pair of consecutive misses triggered it. The control probe scored the captured sequences immediately after each playback. These outcomes establish a recoverable loss case and exercise three rejection cases. They do not estimate a false-ACK rate or time saved during live file delivery. Replay reconstructed all four files and reproduced the sender decisions for all 31 turns. The repeat archive is `ack-repeat-20261122-a`. Its 79-entry hash manifest has SHA-256 `84cd2d93528e3cb6ac668fb874ba7a63d009a40666a73b83a325d22ef90aa444`.
 
 ### Public batch binding and payload sensitivity
 

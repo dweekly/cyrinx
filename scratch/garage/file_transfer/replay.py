@@ -73,6 +73,12 @@ def replay(trial, tools, cfg):
     # A missing or repeated turn would let recordings that were never adjacent be combined as
     # consecutive failed replies.
     require(numbers == list(range(1, len(numbers) + 1)), f"{trial}: turns are not numbered 1 to {len(numbers)}")
+    # The policy decides whether the live acknowledgment method is checked, so a ledger must not
+    # carry that record under a policy that skips it, or lack it under one that needs it.
+    for turn in ledger["turns"]:
+        recorded_method = {"ack_method", "combine_attempted"} & turn.keys()
+        require(len(recorded_method) == (2 if policy == "repeat-mrc-v1" else 0),
+                f"{trial} turn {turn['turn']}: acknowledgment record does not fit policy {policy}")
     token = bytes.fromhex(ledger["token"])
     source = (trial / "sent.bin").read_bytes()
     digest = hashlib.sha256(source).hexdigest()

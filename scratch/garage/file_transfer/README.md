@@ -26,7 +26,7 @@ archive="${CYRINX_GARAGE_ARTIFACTS:-$HOME/dev/cyrinx-artifacts/garage}"
   --report artifacts/bench/ack-repeat-replay.json
 .venv/bin/python scratch/garage/file_transfer/control_probe.py --digital
 .venv/bin/python scratch/garage/file_transfer/control_probe.py \
-  --replay "$archive/ack-repeat-20261122-a/controls"
+  --replay "$archive/ack-repeat-20261122-a/controls" --serial SERIAL_A --serial SERIAL_B
 ```
 
-For a new controlled acoustic trial, use `control_probe.py --record NEW_DIRECTORY --serial SERIAL_A --serial SERIAL_B`. The new directory must be outside any linked worktree, each serial is named once, and the run takes the shared bench audio lock. The phones play test ACKs to the Mac. The second and third frames in the sequence have complementary frequency losses applied to their training and data. One pair changes its cumulative state, one pair has a stale session token, and two slots contain silence. The report includes each single decode and the combined result. A positive control carries the complete test bitmap without an imposed loss.
+For a new controlled acoustic trial, use `control_probe.py --record NEW_DIRECTORY --serial SERIAL_A --serial SERIAL_B`. The new directory must be outside any linked worktree, each serial is named once, and the run takes the shared bench audio lock. The phones play test ACKs to the Mac. The second and third frames in the sequence have complementary frequency losses applied to their training and data. One pair changes its cumulative state, one pair has a stale session token, and two slots contain silence. The report includes each single decode and the combined result. Replay names the phones it expects, fails if one is absent, and requires every pair except the silent one to have reached the combiner. A positive control carries the complete test bitmap without an imposed loss.
