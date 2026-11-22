@@ -40,6 +40,7 @@ def main():
         "profile as text": changed("digital-qpsk", profile="0"),
         "mask with other characters": changed("digital-qpsk", mask="2"),
         "dropout wider than its period": changed("periodic-dropout", dropout={"period": 4, "width": 8}),
+        "dropout on two channels": changed("two-mic-recovery", dropout={"period": 2, "width": 1}),
     }
     for label, case in rejected.items():
         try:

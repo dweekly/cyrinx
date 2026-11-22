@@ -138,6 +138,10 @@ def validate_case(case, profile_count):
     if not isinstance(mask, str) or not mask or set(mask) - {"0", "1"}:
         raise ValueError(f"{name}: the mask is a string of 0 and 1")
     dropout = case.get("dropout")
+    if dropout is not None and "secondary_path" in case:
+        # The transform zeroes single-channel samples; applied to interleaved audio it would mute
+        # one microphone instead of a span of time.
+        raise ValueError(f"{name}: dropout is applied to one-channel inputs only")
     if dropout is not None and (not isinstance(dropout, dict) or dropout.keys() != {"period", "width"}
                                 or not all(type(v) is int for v in dropout.values())
                                 or not 0 < dropout["width"] <= dropout["period"]):
@@ -268,7 +272,6 @@ def main():
     parser.add_argument("--digital-only", action="store_true", help="only run fixtures available in a checkout")
     parser.add_argument("--report", type=Path, default=ROOT / "artifacts/conformance/november-batch.json")
     args = parser.parse_args()
-    args.archive = args.archive.expanduser()
     # Everything that can fail runs inside the try, so a failure replaces an earlier passing report.
     report = {"status": "failed", "command": shlex.join(sys.argv), "host": platform.platform(),
               "arch": platform.machine(), "results": []}
@@ -276,6 +279,7 @@ def main():
         report["revision"] = run(["git", "-C", ROOT, "rev-parse", "HEAD"]).decode().strip()
         report["worktree_dirty"] = bool(run(["git", "-C", ROOT, "status", "--porcelain"]))
         report["manifest_sha256"] = sha(args.manifest.read_bytes())
+        args.archive = args.archive.expanduser()
         execute(args, report)
         report["status"] = "passed"
     except Exception as error:
