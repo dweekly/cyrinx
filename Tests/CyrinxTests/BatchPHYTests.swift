@@ -88,11 +88,47 @@ import Testing
         #expect(actual.mrcHoldoutPilotRMS.bitPattern == c.mrc_holdout_pilot_rms.bitPattern)
     }
 
-    @Test func emptyPayloadUsesCZeroPadding() throws {
-        let profile = try BatchPHY.Profile(id: 1)
-        let encoded = try BatchPHY.encode([], profile: profile)
-        let padded = try BatchPHY.encode(
-            Array(repeating: 0, count: profile.payloadByteCount), profile: profile)
-        #expect(encoded.samples.elementsEqual(padded.samples))
+    @Test(arguments: [1, 2, 3, 4, 5] as [UInt32])
+    func shortPayloadIsRejected(id: UInt32) throws {
+        let profile = try BatchPHY.Profile(id: id)
+        #expect(profile.payloadByteCount == Int(profile.blockCount) * BatchPHY.Profile.blockByteCount)
+        for count in [0, 1, profile.payloadByteCount - 1] {
+            do {
+                _ = try BatchPHY.encode(Array(repeating: 113, count: count), profile: profile)
+                Issue.record("A \(count)-byte payload was accepted")
+            } catch BatchPHY.Failure.invalidArgument {}
+        }
+    }
+
+    // Records a codec limitation (docs/NEGATIVE_FINDINGS.md entry 26), not a requirement: with no
+    // scrambler, zero-heavy frames lose every block in a clean loopback. A scrambler should turn
+    // these expectations around.
+    @Test(arguments: [1, 2, 3, 4, 5] as [UInt32])
+    func zeroHeavyFrameRecoversNoBlocks(id: UInt32) throws {
+        let profile = try BatchPHY.Profile(id: id)
+        var record = [UInt8](repeating: 0, count: profile.payloadByteCount)
+        for index in 0..<128 { record[index] = UInt8(truncatingIfNeeded: index &* 73 &+ 41) }
+        for payload in [[UInt8](repeating: 0, count: profile.payloadByteCount), record] {
+            let frame = try BatchPHY.encode(payload, profile: profile)
+            let decoded = try BatchPHY.decode(primary: .init(frame.samples), profile: profile)
+            #expect(decoded.metrics.blocksOK == 0)
+            #expect(decoded.blockValidity.allSatisfy { $0 == 0 })
+        }
+    }
+
+    @Test func statusCodesMapToFailures() throws {
+        try BatchPHY.check(CYRINX_STATUS_OK)
+        func failure(_ status: Int32) -> BatchPHY.Failure? {
+            do { try BatchPHY.check(status) } catch { return error as? BatchPHY.Failure }
+            return nil
+        }
+        guard case .invalidArgument? = failure(CYRINX_STATUS_ERR_INVALID_ARGUMENT),
+            case .profileNotFound? = failure(CYRINX_STATUS_ERR_NOT_FOUND),
+            case .bufferTooSmall? = failure(CYRINX_STATUS_ERR_BUFFER_TOO_SMALL),
+            case .status(let unknown)? = failure(Int32.min), unknown == Int32.min
+        else {
+            Issue.record("A C status mapped to the wrong failure")
+            return
+        }
     }
 }

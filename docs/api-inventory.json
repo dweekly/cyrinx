@@ -45,7 +45,7 @@
   },
   "swift": {
    "deprecate": 126,
-   "experimental": 142,
+   "experimental": 143,
    "replace": 115,
    "retain": 53
   }
@@ -19567,6 +19567,28 @@
     "all"
    ],
    "replacement": "plan:C3-05"
+  },
+  {
+   "id": "swift:Cyrinx:swift.type.property:BatchPHY.Profile.blockByteCount",
+   "language": "swift",
+   "kind": "swift.type.property",
+   "path": "BatchPHY.Profile.blockByteCount",
+   "declaration": "static let blockByteCount: Int",
+   "source": "Sources/Cyrinx/BatchPHY.swift",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "fingerprint": "690be7302464a85b886aa398210ca84e662c6ac84b97859be7fa696743d24837",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "C3-06 Swift value binding to the versioned C batch and profile contracts.",
+   "compatibility": "Experimental 3.x surface during cross-binding conformance testing.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-06"
   },
   {
    "id": "swift:Cyrinx:swift.type.property:Cyrinx.version",

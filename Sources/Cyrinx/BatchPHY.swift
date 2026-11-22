@@ -15,6 +15,8 @@ public enum BatchPHY {
         fileprivate let raw: cyrinx_profile_t
         public let frameSampleCount: Int
         public let payloadByteCount: Int
+        /// Bytes in one payload block. Block `i` occupies `i * blockByteCount` onward in a payload.
+        public static let blockByteCount = Int(CYRINX_BULK_CRC_BLOCK)
 
         public init(id: UInt32) throws {
             var profile = Self.empty()
@@ -136,13 +138,17 @@ public enum BatchPHY {
         public let metrics: Metrics
     }
 
+    /// Encodes exactly one frame. `payload` must hold `profile.payloadByteCount` bytes.
+    ///
+    /// A shorter payload throws `Failure.invalidArgument`. The C entry point would zero-fill it,
+    /// and the codec has no scrambler: a frame that is mostly zero bytes decodes no blocks, including
+    /// the blocks that carry data. Fill unused space with varied bytes. See docs/BATCH_PHY.md.
     public static func encode(_ payload: [UInt8], profile: Profile) throws -> Encoded {
+        guard payload.count == profile.payloadByteCount else { throw Failure.invalidArgument }
         var raw = profile.raw
         var result = emptyResult()
         var samples = [Float](repeating: 0, count: profile.frameSampleCount)
-        // C requires a non-null address even for a zero-length payload.
-        let storage = payload.isEmpty ? [UInt8(0)] : payload
-        try check(cyrinx_batch_encode(&raw, storage, payload.count, &samples, samples.count, &result))
+        try check(cyrinx_batch_encode(&raw, payload, payload.count, &samples, samples.count, &result))
         return Encoded(samples: samples, metrics: Metrics(result))
     }
 
@@ -179,7 +185,7 @@ public enum BatchPHY {
         return result
     }
 
-    private static func check(_ status: Int32) throws {
+    static func check(_ status: Int32) throws {
         switch status {
         case CYRINX_STATUS_OK: return
         case CYRINX_STATUS_ERR_INVALID_ARGUMENT: throw Failure.invalidArgument
