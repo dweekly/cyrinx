@@ -129,6 +129,35 @@ import Testing
         }
     }
 
+    // The one decode failure a real capture can reach: the chirp is found so late that the
+    // frame it announces runs past the end of the capture. C returns its decode-failure status
+    // with the evidence it had gathered, and Swift carries that evidence in the thrown failure.
+    @Test(arguments: [1, 2, 3, 4, 5] as [UInt32])
+    func captureEndingInsideTheFrameReportsDecodeFailure(id: UInt32) throws {
+        let profile = try BatchPHY.Profile(id: id)
+        let frame = try BatchPHY.encode(variedPayload(profile.payloadByteCount, seed: id), profile: profile)
+        let preamble = Int(CYRINX_BULK_CHIRP_LEN + CYRINX_BULK_GUARD)
+        var late = [Float](repeating: 0, count: frame.samples.count - preamble)
+        late += frame.samples.prefix(preamble)
+        late[0] = 1  // One full-scale sample, so the evidence count is not trivially zero.
+        #expect(late.count == profile.frameSampleCount)
+        do {
+            _ = try BatchPHY.decode(primary: .init(late), profile: profile)
+            Issue.record("A capture that ends inside the frame decoded")
+        } catch BatchPHY.Failure.decodeFailed(let metrics) {
+            #expect(metrics.profileID == id)
+            #expect(metrics.profileIdentitySHA256 == profile.identitySHA256)
+            #expect(metrics.blocksOK == 0 && metrics.payloadBytesProduced == 0)
+            #expect(metrics.blocksTotal == profile.blockCount)
+            #expect(metrics.logicalSamplesDecoded == UInt64(late.count))
+            #expect(metrics.clippingEvidence == 1 && metrics.nonfiniteEvidence == 0)
+        }
+        // The same capture with the whole frame present decodes, so the ending is the only fault.
+        let whole = late.dropLast(preamble) + frame.samples
+        let decoded = try BatchPHY.decode(primary: .init(Array(whole)), profile: profile)
+        #expect(decoded.metrics.blocksOK == profile.blockCount)
+    }
+
     @Test func statusCodesMapToFailures() throws {
         try BatchPHY.check(CYRINX_STATUS_OK)
         func failure(_ status: Int32) -> BatchPHY.Failure? {
