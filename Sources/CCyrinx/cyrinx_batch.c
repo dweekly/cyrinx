@@ -8,9 +8,14 @@
 #include "cyrinx_profiles_internal.h"
 
 _Static_assert(sizeof(cyrinx_batch_channel_view_t) == 32, "channel view v1 size");
+_Static_assert(offsetof(cyrinx_batch_channel_view_t, sample_count) == 8, "channel view v1 layout");
+_Static_assert(offsetof(cyrinx_batch_channel_view_t, first_sample) == 16, "channel view v1 layout");
+_Static_assert(offsetof(cyrinx_batch_channel_view_t, stride) == 24, "channel view v1 layout");
+_Static_assert(offsetof(cyrinx_batch_channel_view_t, role) == 28, "channel view v1 layout");
 _Static_assert(sizeof(cyrinx_batch_input_t) == CYRINX_BATCH_INPUT_V1_SIZE, "batch input v1 size");
 _Static_assert(sizeof(cyrinx_batch_result_t) == CYRINX_BATCH_RESULT_V1_SIZE, "batch result v1 size");
 _Static_assert(offsetof(cyrinx_batch_input_t, channels) == 16, "batch input v1 layout");
+_Static_assert(offsetof(cyrinx_batch_input_t, channels[1]) == 48, "batch input v1 layout");
 _Static_assert(offsetof(cyrinx_batch_result_t, payload_bytes_required) == 32, "batch result v1 layout");
 _Static_assert(offsetof(cyrinx_batch_result_t, clipping_evidence) == 72, "batch result v1 layout");
 _Static_assert(offsetof(cyrinx_batch_result_t, evm_rms) == 80, "batch result v1 layout");

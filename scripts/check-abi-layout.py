@@ -8,11 +8,12 @@ x86 with the Android NDK. A build that succeeds means every assertion held for t
 A negative control then compiles one deliberately wrong size assertion for each ABI and requires
 the compiler to reject it, so a toolchain that ignored the assertions could not pass.
 
-32-bit x86 is expected to be refused. There a 64-bit integer aligns to four bytes, so the batch
-channel view, which holds a pointer followed by 64-bit counts, is 28 bytes and not 32, and the
-batch input, which holds two views, is 72 and not 80 (docs/NEGATIVE_FINDINGS.md entry 27). The
-check passes only while x86 is refused by exactly those two assertions and the two structures
-measure exactly 28 and 72 bytes there, so any other change to the layout fails it.
+All four must build. 32-bit x86 aligns a 64-bit integer to four bytes, which once made the batch
+channel view 28 bytes there and not 32 (docs/NEGATIVE_FINDINGS.md entry 27). The view's first
+64-bit member is now eight-byte aligned on every ABI, and this check is what keeps it so.
+
+REFUSED can name an ABI that is expected to fail, with the assertions allowed to fail there and
+the size the compiler must report for each. It is empty: no ABI is expected to fail.
 """
 import argparse
 import json
@@ -28,7 +29,7 @@ CORE = ROOT / "Sources/CCyrinx"
 TARGETS = {"arm64-v8a": "aarch64-linux-android26", "armeabi-v7a": "armv7a-linux-androideabi26",
            "x86_64": "x86_64-linux-android26", "x86": "i686-linux-android26"}
 # ABI -> the only assertions allowed to fail there, with the size the compiler must report for each.
-REFUSED = {"x86": {"channel view v1 size": 28, "batch input v1 size": 72}}
+REFUSED = {}
 HEADER = '#include "cyrinx/cyrinx_batch.h"\n'
 WRONG = HEADER + '_Static_assert(sizeof(cyrinx_batch_result_t) == 1, "negative control");\n'
 

@@ -74,6 +74,19 @@ typedef int32_t cyrinx_abi_status_t;
  * bytes of the version it implements; caller bytes beyond that prefix are
  * never read and never modified. On rejection the entry point returns
  * CYRINX_STATUS_ERR_INVALID_ARGUMENT and writes no output at all. */
+/* ---------------- Identical layout on every ABI ----------------
+ * A versioned structure must have the same size and field offsets everywhere.
+ * 32-bit x86 aligns a 64-bit integer to four bytes where every other supported
+ * ABI uses eight, so a 64-bit member that follows a pointer or a 32-bit member
+ * would sit four bytes earlier there. Marking that member CYRINX_ALIGN8 gives
+ * it eight-byte alignment on every ABI. It changes nothing where the natural
+ * alignment is already eight. */
+#ifdef __cplusplus
+#define CYRINX_ALIGN8 alignas(8)
+#else
+#define CYRINX_ALIGN8 _Alignas(8)
+#endif
+
 typedef struct cyrinx_abi_header {
     uint32_t struct_size;
     uint32_t abi_version;
