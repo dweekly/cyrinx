@@ -97,9 +97,20 @@ JNIEXPORT jobject JNICALL Java_Replay_decode(JNIEnv *env, jobject self, jint key
                          "invalid channel layout");
         return NULL;
     }
-    jfloat *data = (*env)->GetFloatArrayElements(env, samples, NULL);
-    if (!data)
+    jsize blocks = (jsize)profile.block_count, capacity = blocks * 256;
+    uint8_t *payload = calloc((size_t)capacity, 1), *mask = calloc((size_t)blocks, 1);
+    if (!payload || !mask) {
+        free(mask);
+        free(payload);
+        (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/OutOfMemoryError"), "replay output");
         return NULL;
+    }
+    jfloat *data = (*env)->GetFloatArrayElements(env, samples, NULL);
+    if (!data) {
+        free(mask);
+        free(payload);
+        return NULL;
+    }
     cyrinx_batch_input_t input = {
         .struct_size = sizeof(input),
         .abi_version = CYRINX_BATCH_INPUT_ABI_VERSION,
@@ -108,27 +119,32 @@ JNIEXPORT jobject JNICALL Java_Replay_decode(JNIEnv *env, jobject self, jint key
                      {data, (uint64_t)count, 1, (uint32_t)channels, CYRINX_BATCH_ROLE_SECONDARY}}};
     cyrinx_batch_result_t result = {.struct_size = sizeof(result),
                                     .abi_version = CYRINX_BATCH_RESULT_ABI_VERSION};
-    jsize blocks = (jsize)profile.block_count, capacity = blocks * 256;
-    uint8_t *payload = calloc((size_t)capacity, 1), *mask = calloc((size_t)blocks, 1);
     int status =
         cyrinx_batch_decode(&profile, &input, payload, (size_t)capacity, mask, (size_t)blocks, &result);
     (*env)->ReleaseFloatArrayElements(env, samples, data, JNI_ABORT);
+    // The status is part of the result: a rejected capture returns it with empty arrays, so the
+    // caller sees which rejection it was. Only a failure of the binding itself throws.
+    bool ok = status == CYRINX_STATUS_OK;
+    jint counts[6] = {(jint)result.selected_receiver, (jint)result.selection_reason,
+                      (jint)result.blocks_total,      (jint)result.blocks_ok,
+                      (jint)result.clipping_evidence, (jint)result.nonfinite_evidence};
+    jlong sizes[2] = {(jlong)result.payload_bytes_produced, (jlong)result.logical_samples_decoded};
+    jdouble metrics[3] = {result.evm_rms, result.primary_holdout_pilot_rms, result.mrc_holdout_pilot_rms};
     jobject decoded = NULL;
-    if (!payload || !mask) {
-        (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/OutOfMemoryError"), "replay output");
-    } else if (status || result.blocks_total != (uint32_t)blocks ||
-               result.payload_bytes_produced != (uint64_t)capacity) {
-        (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IllegalStateException"),
-                         "batch decode failed");
-    } else {
-        jclass cls = (*env)->FindClass(env, "Decoded");
-        jmethodID ctor = cls ? (*env)->GetMethodID(env, cls, "<init>", "([B[B[BII)V") : NULL;
-        jbyteArray id = ctor ? copy_bytes(env, result.profile_identity_sha256, 32) : NULL;
-        jbyteArray valid = id && !(*env)->ExceptionCheck(env) ? copy_bytes(env, mask, blocks) : NULL;
-        jbyteArray bytes = valid && !(*env)->ExceptionCheck(env) ? copy_bytes(env, payload, capacity) : NULL;
-        if (bytes && !(*env)->ExceptionCheck(env))
-            decoded = (*env)->NewObject(env, cls, ctor, id, valid, bytes, (jint)result.selected_receiver,
-                                        (jint)result.selection_reason);
+    jclass cls = (*env)->FindClass(env, "Decoded");
+    jmethodID ctor = cls ? (*env)->GetMethodID(env, cls, "<init>", "(I[B[B[B[I[J[D)V") : NULL;
+    jbyteArray id = ctor ? copy_bytes(env, result.profile_identity_sha256, 32) : NULL;
+    jbyteArray valid = id ? copy_bytes(env, mask, ok ? blocks : 0) : NULL;
+    jbyteArray bytes = valid ? copy_bytes(env, payload, ok ? capacity : 0) : NULL;
+    jintArray count_array = bytes ? (*env)->NewIntArray(env, 6) : NULL;
+    jlongArray size_array = count_array ? (*env)->NewLongArray(env, 2) : NULL;
+    jdoubleArray metric_array = size_array ? (*env)->NewDoubleArray(env, 3) : NULL;
+    if (metric_array && !(*env)->ExceptionCheck(env)) {
+        (*env)->SetIntArrayRegion(env, count_array, 0, 6, counts);
+        (*env)->SetLongArrayRegion(env, size_array, 0, 2, sizes);
+        (*env)->SetDoubleArrayRegion(env, metric_array, 0, 3, metrics);
+        decoded = (*env)->NewObject(env, cls, ctor, (jint)status, id, valid, bytes, count_array, size_array,
+                                    metric_array);
     }
     free(mask);
     free(payload);

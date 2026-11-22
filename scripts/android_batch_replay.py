@@ -34,7 +34,7 @@ def build(work, adapters, jar):
     return dex, native / "libreplay.so", (ndk / "source.properties").read_text().strip()
 
 
-def replay(serial, dex, library, cases, windows, expected, report):
+def replay(serial, dex, library, cases, windows, expected, report, judge):
     adb = ["adb", "-s", serial]
     remote = "/data/local/tmp/cyrinx-replay-" + secrets.token_hex(8)
     report.setdefault("android", {})[serial] = {
@@ -53,16 +53,12 @@ def replay(serial, dex, library, cases, windows, expected, report):
         report["android"][serial]["registry_round_trip"] = True
         for case in cases:
             name = case["name"]
-            report["checking"] = f"Android/{serial}/{name}"
             output([*adb, "push", windows[name], paths[2]])
             packet = output([*art, str(case["profile"]), paths[2],
                              "2" if "secondary_path" in case else "1"])
-            if packet != expected[name]:
-                raise ValueError(f"{report['checking']}: Android output differs from host C "
-                                 f"({len(packet)} vs {len(expected[name])} bytes)")
-            report["results"].append(dict(binding="Android Kotlin/JNI", serial=serial, backend="KISS",
-                                          fixture=name, mask=case["mask"],
-                                          valid_payload_sha256=case["valid_payload_sha256"]))
+            # A different C library and math library: decisions must match host C exactly, and
+            # metrics stay within each fixture's tolerance.
+            judge(f"KISS/Android Kotlin/JNI {serial}/{name}", case, packet, expected[name])
     finally:
         output([*adb, "shell", "rm", "-f", *paths])
         output([*adb, "shell", "rmdir", remote])

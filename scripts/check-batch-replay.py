@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import platform
@@ -58,8 +59,16 @@ def compile_probes(build, backend, java_home, jar):
     run(["clang", "-std=c11", shared, "-fPIC", *includes, "-I", java_home / "include",
          "-I", java_home / "include" / ("darwin" if apple else "linux"),
          ADAPTERS / "jni.c", *link, "-o", jni])
-    return {"C": [direct], "Swift": [swift],
-            "Kotlin/JNI": [java_home / "bin/java", "-Xcheck:jni", "-cp", jar, "Replay", jni]}
+    probes = {"C": [direct], "Swift": [swift],
+              "Kotlin/JNI": [java_home / "bin/java", "-Xcheck:jni", "-cp", jar, "Replay", jni]}
+    if backend == "KISS":
+        # The same C sources and probe, instrumented. Any report from either sanitizer ends the
+        # process with a failure, which fails the run.
+        checked = build / "direct-sanitized"
+        run(["clang", "-std=c11", "-O1", "-g", "-fsanitize=address,undefined", "-fno-sanitize-recover=all",
+             "-Dkiss_fft_scalar=double", *includes, ADAPTERS / "direct.c", *sources, "-lm", "-o", checked])
+        probes[SANITIZED] = [checked]
+    return probes
 
 
 def fixture_bytes(case, archive):
@@ -80,6 +89,15 @@ def fixture_bytes(case, archive):
             for start in range(0, len(pcm), 4 * period):
                 end = min(start + 4 * width, len(pcm))
                 pcm[start:end] = bytes(end - start)
+        if "gain" in case or "nonfinite_at" in case or "truncate" in case:
+            from array import array
+
+            samples = array("f", bytes(pcm))
+            if "gain" in case:  # Overdrive, then clamp as a full-scale recorder would.
+                samples = array("f", (max(-1.0, min(1.0, s * case["gain"])) for s in samples))
+            if "nonfinite_at" in case:
+                samples[case["nonfinite_at"]] = math.nan
+            pcm = samples[:case.get("truncate", len(samples))].tobytes()
     else:
         import numpy as np
 
@@ -101,18 +119,121 @@ def fixture_bytes(case, archive):
     return pcm
 
 
-def verify(expected, mask, payload):
+SANITIZED = "C (ASan+UBSan)"
+HEADER = struct.Struct("<i32s6I2Q3d")  # Tests/BatchReplay/Packet.h
+EXACT = ("status", "identity", "receiver", "reason", "blocks_total", "blocks_ok", "clipping", "nonfinite",
+         "payload_bytes", "logical_samples")
+METRICS = ("evm_rms", "primary_holdout_pilot_rms", "mrc_holdout_pilot_rms")
+
+
+def plain(value):
+    """A metric as JSON can carry it: the number, or a name for a value that is not finite."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return "nan" if math.isnan(value) else ("inf" if value > 0 else "-inf")
+    return value
+
+
+def parse(packet):
+    """Split one binding's record into named fields, the ordered mask and the payload."""
+    if len(packet) < HEADER.size:
+        raise ValueError(f"record: {len(packet)} bytes is shorter than the header")
+    values = HEADER.unpack_from(packet)
+    record = dict(zip(EXACT + METRICS, values))
+    record["identity"] = record["identity"].hex()
+    body = packet[HEADER.size:]
+    if record["status"] == 0:
+        blocks = record["blocks_total"]
+        record["mask"], record["payload"] = body[:blocks], body[blocks:]
+    elif body:
+        raise ValueError("record: a rejected decode carried a mask or payload")
+    return record
+
+
+def expectation(case, manifest, pcm):
+    """What every binding must report for this case, from the list and the input itself."""
+    if case.get("status", 0):
+        return dict(status=case["status"])
+    mask = case["mask"]
+    channels = 2 if "secondary_path" in case else 1
+    return dict(status=0, identity=manifest["profile_identities"][case["profile"]],
+                receiver=case["receiver"], reason=case["reason"], blocks_total=len(mask),
+                blocks_ok=mask.count("1"), clipping=case["clipping"], nonfinite=case["nonfinite"],
+                payload_bytes=256 * len(mask), logical_samples=len(pcm) // 4 // channels)
+
+
+def compare(case, expected, record):
+    """Raise naming the first field that differs; return the metric comparisons otherwise."""
+    for field, value in expected.items():
+        if record[field] != value:
+            raise ValueError(f"{field}: expected {value}, observed {record[field]}")
+    if expected["status"]:
+        return {}
+    mask, payload = record["mask"], record["payload"]
     ordered = "".join(str(v) for v in mask)
-    if any(v > 1 for v in mask) or ordered != expected["mask"] or len(payload) != 256 * len(mask):
-        raise ValueError(f"expected mask {expected['mask']}, observed {ordered}, {len(payload)} payload bytes")
+    if any(v > 1 for v in mask) or ordered != case["mask"] or len(payload) != 256 * len(mask):
+        raise ValueError(f"mask: expected mask {case['mask']}, observed {ordered}, {len(payload)} payload bytes")
     valid = b"".join(payload[i * 256:(i + 1) * 256] for i, v in enumerate(mask) if v)
-    if sha(valid) != expected["valid_payload_sha256"]:
-        raise ValueError("decoded bytes differ from the transmitted blocks")
-    return {"mask": ordered, "valid_payload_sha256": sha(valid)}
+    if sha(valid) != case["valid_payload_sha256"]:
+        raise ValueError("payload: decoded bytes differ from the transmitted blocks")
+    metrics = {}
+    for field in METRICS:
+        target, tolerance, observed = case["metrics"][field]["value"], case["metrics"][field]["tolerance"], record[field]
+        if isinstance(target, str):  # The decoder reports "not evaluated" as a non-finite value.
+            delta = 0.0 if plain(observed) == target else math.inf
+        else:
+            delta = abs(observed - target)
+        if not delta <= tolerance:  # Also false when the difference is not a number.
+            raise ValueError(f"{field}: expected {target} within {tolerance}, observed {plain(observed)}")
+        metrics[field] = dict(observed=plain(observed), expected=target, delta=delta, tolerance=tolerance,
+                              passed=True)
+    return dict(mask=ordered, valid_payload_sha256=sha(valid), metrics=metrics)
 
 
-COMMON_FIELDS = {"name", "profile", "mask", "receiver", "reason", "valid_payload_sha256", "pcm_sha256"}
-FILE_FIELDS = {"path"}, {"secondary_path", "dropout"}
+def same_decision(first, second):
+    """Whether two records agree on everything except floating-point metrics."""
+    return all(first.get(k) == second.get(k) for k in EXACT + ("mask", "payload"))
+
+
+def mutate(packet, field, case):
+    """Deliberately change one field of a record, for the negative controls."""
+    data = bytearray(packet)
+    offsets = dict(identity=4, blocks_ok=48, logical_samples=68, evm_rms=76)
+    if field == "payload":
+        data[HEADER.size + len(case["mask"]) + 256 * case["mask"].index("1")] ^= 1
+    elif field == "mask":
+        data[HEADER.size] ^= 1
+    elif field == "evm_rms":
+        value = struct.unpack_from("<d", data, offsets[field])[0] + 4 * case["metrics"][field]["tolerance"] + 1e-6
+        struct.pack_into("<d", data, offsets[field], value)
+    elif field in offsets:
+        data[offsets[field]] ^= 1
+    else:
+        raise ValueError(f"no mutation defined for {field}")
+    return bytes(data)
+
+
+def validate_report(report):
+    """The report's own shape, checked before it is written. Version: REPORT_SCHEMA."""
+    required = {"schema": str, "status": str, "command": str, "host": str, "arch": str, "results": list}
+    for key, kind in required.items():
+        if not isinstance(report.get(key), kind):
+            raise ValueError(f"report: {key} is missing or not a {kind.__name__}")
+    if report["status"] == "passed":
+        for key in ("revision", "manifest_sha256", "tier", "toolchains"):
+            if key not in report:
+                raise ValueError(f"report: a passing report needs {key}")
+    for row in report["results"]:
+        if not {"binding", "backend", "fixture"} <= row.keys():
+            raise ValueError("report: a result lacks its binding, backend or fixture")
+        for metric in row.get("metrics", {}).values():
+            if metric.keys() != {"observed", "expected", "delta", "tolerance", "passed"}:
+                raise ValueError("report: a metric comparison is incomplete")
+
+
+REPORT_SCHEMA = "cyrinx-batch-replay-report/2"
+IDENTITY_FIELDS = {"name", "profile", "pcm_sha256"}
+DECODED_FIELDS = {"mask", "receiver", "reason", "valid_payload_sha256", "clipping", "nonfinite", "metrics"}
+FILE_FIELDS = {"path"}, {"secondary_path", "dropout", "gain", "nonfinite_at", "truncate", "status"}
 RECORDING_FIELDS = {"archive", "source_sha256", "start", "samples"}, {"member", "research"}
 RESEARCH_PROFILE = 2  # The control geometry is the only one the research lane decodes.
 
@@ -128,15 +249,37 @@ def validate_case(case, profile_count):
     if len(sources) != 1:
         raise ValueError(f"{name}: name exactly one of path or archive")
     required, optional = sources[0]
-    required = required | COMMON_FIELDS
+    # A case the decoder must reject carries the status alone; any other carries the full result.
+    rejected = case.get("status", 0) != 0
+    if type(case.get("status", 0)) is not int:
+        raise ValueError(f"{name}: status is a whole number")
+    required = required | IDENTITY_FIELDS | (set() if rejected else DECODED_FIELDS)
     if not required <= case.keys() <= required | optional:
         odd = sorted((required - case.keys()) | (case.keys() - required - optional))
         raise ValueError(f"{name}: missing or unsupported fields {', '.join(odd)}")
-    profile, mask = case["profile"], case["mask"]
+    profile = case["profile"]
     if type(profile) is not int or not 0 <= profile < profile_count:
         raise ValueError(f"{name}: unknown profile {profile!r}")
-    if not isinstance(mask, str) or not mask or set(mask) - {"0", "1"}:
-        raise ValueError(f"{name}: the mask is a string of 0 and 1")
+    if not rejected:
+        mask, metrics = case["mask"], case["metrics"]
+        if not isinstance(mask, str) or not mask or set(mask) - {"0", "1"}:
+            raise ValueError(f"{name}: the mask is a string of 0 and 1")
+        if any(type(case[key]) is not int or case[key] < 0 for key in ("clipping", "nonfinite")):
+            raise ValueError(f"{name}: clipping and nonfinite are counts")
+        if (not isinstance(metrics, dict) or metrics.keys() != set(METRICS) or not all(
+                isinstance(m, dict) and m.keys() == {"value", "tolerance"}
+                and (m["value"] in ("inf", "-inf", "nan") if isinstance(m["value"], str)
+                     else type(m["value"]) in (int, float) and math.isfinite(m["value"]))
+                and type(m["tolerance"]) in (int, float) and math.isfinite(m["tolerance"]) and m["tolerance"] >= 0
+                for m in metrics.values())):
+            raise ValueError(f"{name}: metrics needs a value and a tolerance for each of {', '.join(METRICS)}")
+    transforms = {"gain", "nonfinite_at", "truncate"} & case.keys()
+    if transforms and "secondary_path" in case:
+        raise ValueError(f"{name}: {', '.join(sorted(transforms))} apply to one-channel inputs only")
+    if "gain" in case and (type(case["gain"]) not in (int, float) or not 0 < case["gain"] < 1e6):
+        raise ValueError(f"{name}: gain is a positive number")
+    if any(key in case and (type(case[key]) is not int or case[key] < 0) for key in ("nonfinite_at", "truncate")):
+        raise ValueError(f"{name}: nonfinite_at and truncate are sample positions")
     dropout = case.get("dropout")
     if dropout is not None and "secondary_path" in case:
         # The transform zeroes single-channel samples; applied to interleaved audio it would mute
@@ -175,7 +318,12 @@ def retained_research(build, cases, windows, rows):
             decoded = clock_offset.decode(cfg, samples)
             if decoded is None:
                 raise ValueError(f"research decoder failed on {case['name']}")
-            actual = verify(case["research"], bytes(decoded["block_valid"]), decoded["payload"])
+            mask, payload = bytes(decoded["block_valid"]), decoded["payload"]
+            ordered = "".join(str(v) for v in mask)
+            valid = b"".join(payload[i * 256:(i + 1) * 256] for i, v in enumerate(mask) if v)
+            if ordered != case["research"]["mask"] or sha(valid) != case["research"]["valid_payload_sha256"]:
+                raise ValueError(f"research decoder: unexpected result on {case['name']}")
+            actual = dict(mask=ordered, valid_payload_sha256=sha(valid))
             rows.append(dict(fixture=case["name"], binding="research C via ctypes", backend="KISS", **actual))
 
 
@@ -209,15 +357,42 @@ def execute(args, report):
             command, stderr=subprocess.STDOUT, text=True).strip()
     with tempfile.TemporaryDirectory(prefix="cyrinx-replay-") as tmp:
         build = Path(tmp)
-        windows = {}
+        windows, expected = {}, {}
         for index, case in enumerate(cases):
             # Staged by position: names that differ only in case would share a file on macOS.
             path = build / f"input-{index:03d}.f32"
-            path.write_bytes(fixture_bytes(case, args.archive))
+            pcm = fixture_bytes(case, args.archive)
+            path.write_bytes(pcm)
             windows[case["name"]] = path
+            expected[case["name"]] = expectation(case, manifest, pcm)
         jar = build / "adapter.jar"
         run([kotlin, ADAPTERS / "Replay.kt", "-include-runtime", "-d", jar])
         kiss_reference = {}
+
+        def judge(label, case, packet, reference=None):
+            """Compare one binding's record with the list, then with direct C on the same backend."""
+            report["checking"] = label
+            if args.mutate and args.mutate.rsplit(":", 1)[0] == label:
+                packet = mutate(packet, args.mutate.rsplit(":", 1)[1], case)
+            try:
+                record = parse(packet)
+                if args.observe:
+                    outcome = {k: plain(v) for k, v in record.items() if k not in ("payload", "mask")}
+                    if record["status"] == 0:
+                        outcome["mask"] = "".join(str(v) for v in record["mask"])
+                        outcome["valid_payload_sha256"] = sha(b"".join(
+                            record["payload"][i * 256:(i + 1) * 256] for i, v in enumerate(record["mask"]) if v))
+                else:
+                    outcome = compare(case, expected[case["name"]], record)
+                    if reference is not None and not same_decision(record, parse(reference)):
+                        raise ValueError("record: differs from the direct C output")
+            except ValueError as error:
+                raise ValueError(f"{label}: {error}") from error
+            binding, backend = label.split("/", 1)[1].rsplit("/", 1)[0], label.split("/", 1)[0]
+            report["results"].append({**outcome, "binding": binding, "backend": backend,
+                                      "fixture": case["name"], "status": record["status"]})
+            return packet
+
         for backend in (["KISS", "Accelerate"] if sys.platform == "darwin" else ["KISS"]):
             lane = build / backend
             lane.mkdir()
@@ -227,33 +402,25 @@ def execute(args, report):
             report.setdefault("jni_registry", []).append(backend)
             for case in cases:
                 reference = None
-                key, blocks = case["profile"], len(case["mask"])
                 for name, cmd in probes.items():
-                    label = f"{backend}/{name}/{case['name']}"
-                    report["checking"] = label
-                    packet = run([*cmd, key, windows[case["name"]], 2 if "secondary_path" in case else 1])
-                    identity = packet[:32].hex()
-                    if identity != manifest["profile_identities"][key]:
-                        raise ValueError(f"{label} returned a different profile identity")
-                    receiver, reason = struct.unpack("<II", packet[32:40])
-                    if (receiver, reason) != (case["receiver"], case["reason"]):
-                        raise ValueError(f"{label}: unexpected receiver {receiver} or reason {reason}")
-                    actual = verify(case, packet[40:40 + blocks], packet[40 + blocks:])
-                    if reference is not None and packet != reference:
-                        raise ValueError(f"{label} differs from the direct C output")
+                    packet = run([*cmd, case["profile"], windows[case["name"]],
+                                  2 if "secondary_path" in case else 1])
+                    packet = judge(f"{backend}/{name}/{case['name']}", case, packet, reference)
+                    # Bindings share one C build, so their records are identical to the byte. The
+                    # sanitized probe is a separate build and is held to the tolerances instead.
+                    if reference is not None and name != SANITIZED and packet != reference and not args.observe:
+                        raise ValueError(f"{backend}/{name}/{case['name']}: record: differs from direct C")
                     if reference is None:
                         reference = packet
                         if backend == "KISS":
                             kiss_reference[case["name"]] = packet
-                    report["results"].append(dict(binding=name, backend=backend, fixture=case["name"],
-                                                  profile_identity=identity, receiver=receiver, reason=reason, **actual))
         if args.android:
             import android_batch_replay as android
 
             dex, library, ndk = android.build(build, ADAPTERS, jar)
             report["toolchains"]["Android NDK"] = ndk
             for serial in args.android:
-                android.replay(serial, dex, library, cases, windows, kiss_reference, report)
+                android.replay(serial, dex, library, cases, windows, kiss_reference, report, judge)
         if any("research" in case for case in cases):
             report["checking"] = "research control frames"
             retained_research(build, cases, windows, report["results"])
@@ -271,17 +438,22 @@ def main():
     parser.add_argument("--android", action="append", metavar="SERIAL", help="also run on this USB arm64 Android device")
     parser.add_argument("--digital-only", action="store_true", help="only run fixtures available in a checkout")
     parser.add_argument("--report", type=Path, default=ROOT / "artifacts/conformance/november-batch.json")
+    parser.add_argument("--mutate", metavar="BACKEND/BINDING/FIXTURE:FIELD",
+                        help="negative control: change one field of one record before it is compared")
+    parser.add_argument("--observe", action="store_true",
+                        help="record what each binding reports without comparing; for regenerating a list")
     args = parser.parse_args()
     # Everything that can fail runs inside the try, so a failure replaces an earlier passing report.
-    report = {"status": "failed", "command": shlex.join(sys.argv), "host": platform.platform(),
-              "arch": platform.machine(), "results": []}
+    report = {"schema": REPORT_SCHEMA, "status": "failed", "command": shlex.join(sys.argv),
+              "host": platform.platform(), "arch": platform.machine(), "results": []}
     try:
         report["revision"] = run(["git", "-C", ROOT, "rev-parse", "HEAD"]).decode().strip()
         report["worktree_dirty"] = bool(run(["git", "-C", ROOT, "status", "--porcelain"]))
         report["manifest_sha256"] = sha(args.manifest.read_bytes())
         args.archive = args.archive.expanduser()
         execute(args, report)
-        report["status"] = "passed"
+        report["status"] = "observed" if args.observe else "passed"
+        validate_report(report)
     except Exception as error:
         report["error"] = str(error)
         raise

@@ -2,8 +2,12 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-data class Decoded(val identity: ByteArray, val mask: ByteArray, val payload: ByteArray,
-                   val receiver: Int, val reason: Int)
+/** One batch decode as the C core reported it. `counts` holds the selected receiver, selection
+ *  reason, total blocks, valid blocks, clipping evidence and non-finite evidence; `sizes` the
+ *  payload bytes produced and logical samples decoded; `metrics` the EVM and the two pilot
+ *  residuals. A rejected capture has a non-zero status and empty mask and payload. */
+class Decoded(val status: Int, val identity: ByteArray, val mask: ByteArray, val payload: ByteArray,
+              val counts: IntArray, val sizes: LongArray, val metrics: DoubleArray)
 
 object Replay {
     external fun profileIDs(): IntArray
@@ -19,10 +23,14 @@ object Replay {
                 val capacity = decode(id, encode(id, byteArrayOf()), 1, false).payload.size
                 val source = java.util.Random(id.toLong()).let { rng -> ByteArray(capacity).also { rng.nextBytes(it) } }
                 val result = decode(id, encode(id, source), 1, false)
-                check(result.mask.all { it == 1.toByte() } && result.payload.contentEquals(source))
+                check(result.status == 0 && result.mask.all { it == 1.toByte() } && result.payload.contentEquals(source))
+                check(result.counts[2] == result.mask.size && result.counts[3] == result.mask.size)
+                check(result.sizes[0] == capacity.toLong())
             }
             check(runCatching { encode(-1, byteArrayOf()) }.exceptionOrNull() is IllegalArgumentException)
             check(runCatching { decode(1, floatArrayOf(0f), 2, false) }.exceptionOrNull() is IllegalArgumentException)
+            val rejected = decode(1, floatArrayOf(0f), 1, false)
+            check(rejected.status == -1 && rejected.mask.isEmpty() && rejected.payload.isEmpty())
             print("registry OK")
             return
         }
@@ -34,9 +42,13 @@ object Replay {
         val channels = args[3].toInt()
         require(channels in 1..2 && samples.size % channels == 0)
         val result = decode(args[1].toInt(), samples, channels, true)
-        System.out.write(result.identity)
-        System.out.write(ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN)
-            .putInt(result.receiver).putInt(result.reason).array())
+        // The record layout is Tests/BatchReplay/Packet.h.
+        val header = ByteBuffer.allocate(100).order(ByteOrder.LITTLE_ENDIAN)
+        header.putInt(result.status).put(result.identity)
+        result.counts.forEach { header.putInt(it) }
+        result.sizes.forEach { header.putLong(it) }
+        result.metrics.forEach { header.putDouble(it) }
+        System.out.write(header.array())
         System.out.write(result.mask)
         System.out.write(result.payload)
         System.out.flush()

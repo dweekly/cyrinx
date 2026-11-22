@@ -34,7 +34,14 @@ def main():
             "pixel-desk-frame-2", research=cases["pixel-behind-monitor-control"]["research"]),
         "research on a checkout file": changed(
             "digital-qpsk", research=cases["pixel-behind-monitor-control"]["research"]),
-        "unknown field": changed("digital-qpsk", gain=2),
+        "unknown field": changed("digital-qpsk", loudness=2),
+        "gain on two channels": changed("two-mic-recovery", gain=2),
+        "truncation on a recording": changed("pixel-desk-frame-2", truncate=100),
+        "rejection that also names a mask": changed("digital-qpsk", status=-1),
+        "decode with no metrics": changed("digital-qpsk", metrics=None),
+        "metric with no tolerance": changed("digital-qpsk", metrics={
+            name: {"value": 0} for name in replay.METRICS}),
+        "clipping that is not a count": changed("digital-qpsk", clipping=-1),
         "missing digest": changed("pixel-desk-frame-1", source_sha256=None),
         "profile out of range": changed("digital-qpsk", profile=profiles),
         "profile as text": changed("digital-qpsk", profile="0"),
