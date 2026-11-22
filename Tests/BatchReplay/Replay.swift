@@ -11,12 +11,16 @@ func bytes<T: FixedWidthInteger>(_ value: T) -> Data {
 
 /// The record layout is Tests/BatchReplay/Packet.h.
 func header(status: Int32, metrics: BatchPHY.Metrics?) -> Data {
-    guard let metrics else { return bytes(status) + Data(count: 96) }
+    guard let metrics else { return bytes(status) + Data(count: 120) }
     var output = bytes(status) + Data(metrics.profileIdentitySHA256)
-    let decisions = [metrics.selectedReceiver, metrics.selectionReason]
-    let counts = [metrics.blocksTotal, metrics.blocksOK, metrics.clippingEvidence, metrics.nonfiniteEvidence]
-    for field in decisions + counts { output += bytes(field) }
-    for field in [metrics.payloadBytesProduced, metrics.logicalSamplesDecoded] { output += bytes(field) }
+    let decisions = [metrics.profileID, metrics.selectedReceiver, metrics.selectionReason]
+    let blocks = [metrics.blocksTotal, metrics.blocksOK, metrics.blockValidityRequired]
+    let evidence = [metrics.clippingEvidence, metrics.nonfiniteEvidence]
+    for field in decisions + blocks + evidence { output += bytes(field) }
+    let capacities = [metrics.payloadBytesRequired, metrics.logicalFrameSamples]
+    for field in capacities + [metrics.logicalSamplesDecoded, metrics.payloadBytesProduced] {
+        output += bytes(field)
+    }
     for field in [metrics.evmRMS, metrics.primaryHoldoutPilotRMS, metrics.mrcHoldoutPilotRMS] {
         output += bytes(field.bitPattern)
     }

@@ -53,6 +53,7 @@ def replay(serial, dex, library, cases, windows, expected, report, judge):
         report["android"][serial]["registry_round_trip"] = True
         for case in cases:
             name = case["name"]
+            report["checking"] = f"KISS/Android Kotlin/JNI {serial}/{name}"
             output([*adb, "push", windows[name], paths[2]])
             packet = output([*art, str(case["profile"]), paths[2],
                              "2" if "secondary_path" in case else "1"])

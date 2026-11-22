@@ -23,7 +23,7 @@ Each named device receives a temporary DEX archive, the arm64 JNI library and on
 
 ## What each binding reports
 
-Every binding writes one record per decode, laid out in `Packet.h`: the status, the profile identity, the selected receiver and reason, total and valid block counts, clipping and non-finite evidence counts, payload bytes produced, logical samples decoded, the EVM and the two pilot residuals, then the ordered mask and the payload. A capture the decoder rejects is a result too: its record is the status alone.
+Every binding writes one record per decode, laid out in `Packet.h`: the status, the profile identity and ID, the selected receiver and reason, total and valid block counts, the required validity and payload capacities, the frame length, clipping and non-finite evidence counts, logical samples decoded, payload bytes produced, the EVM and the two pilot residuals, then the ordered mask and the payload. That is every field of the C result except the caller's own size and version and the encode-only sample count. A capture the decoder rejects is a result too: its record is the status alone.
 
 The runner compares each record with the list field by field. Status, identity, decisions, counts, the mask and the valid bytes compare exactly. The three floating-point metrics compare against a value and a tolerance declared for that fixture. A metric the decoder reports as not evaluated is written as `inf` and must match as such. Bindings that share one C build must also produce byte-identical records. The Android lane and the sanitized build are separate builds, so they are held to the same exact decisions and to the metric tolerances.
 
@@ -33,7 +33,7 @@ Three generated faults sit beside the dropout case: a capture cut shorter than o
 
 ## Negative controls
 
-`check-negative-controls.py` changes one field of the Swift record for the dropout fixture, five times: a payload byte, a mask position, a count, an identity byte, and the EVM by more than its tolerance. Each run must fail and name the backend, binding, fixture and field. `check-mask-order.py` reverses the mask inside the Kotlin source instead, and `check-manifest-validation.py` covers malformed lists.
+`check-negative-controls.py` changes one field of the Swift record for the dropout fixture, six times: a payload byte, a mask position, a count, a required capacity, an identity byte, and the EVM by more than its tolerance. Each run must fail and name the backend, binding, fixture and field, and the failed metric comparison must appear in the report. A control aimed at a record the run does not produce is refused instead of passing untested. `check-mask-order.py` reverses the mask inside the Kotlin source instead, and `check-manifest-validation.py` covers malformed lists.
 
 ## Regenerating expectations
 

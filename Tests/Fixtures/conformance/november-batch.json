@@ -6,6 +6,12 @@
     "0298025229bac4284b0676b566011df2a923bbffeafc0d6d0712ada2713b7a79",
     "4857a2cbe838b523e4a992fdc51bdfa516737bd8485bfebfe75cafa85c71dd5a"
   ],
+  "frame_samples": [
+    23040,
+    184320,
+    129024,
+    23040
+  ],
   "cases": [
     {
       "name": "digital-qpsk",

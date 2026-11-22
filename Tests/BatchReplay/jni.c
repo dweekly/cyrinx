@@ -125,10 +125,12 @@ JNIEXPORT jobject JNICALL Java_Replay_decode(JNIEnv *env, jobject self, jint key
     // The status is part of the result: a rejected capture returns it with empty arrays, so the
     // caller sees which rejection it was. Only a failure of the binding itself throws.
     bool ok = status == CYRINX_STATUS_OK;
-    jint counts[6] = {(jint)result.selected_receiver, (jint)result.selection_reason,
-                      (jint)result.blocks_total,      (jint)result.blocks_ok,
+    jint counts[8] = {(jint)result.profile_id,        (jint)result.selected_receiver,
+                      (jint)result.selection_reason,  (jint)result.blocks_total,
+                      (jint)result.blocks_ok,         (jint)result.block_validity_required,
                       (jint)result.clipping_evidence, (jint)result.nonfinite_evidence};
-    jlong sizes[2] = {(jlong)result.payload_bytes_produced, (jlong)result.logical_samples_decoded};
+    jlong sizes[4] = {(jlong)result.payload_bytes_required, (jlong)result.logical_frame_samples,
+                      (jlong)result.logical_samples_decoded, (jlong)result.payload_bytes_produced};
     jdouble metrics[3] = {result.evm_rms, result.primary_holdout_pilot_rms, result.mrc_holdout_pilot_rms};
     jobject decoded = NULL;
     jclass cls = (*env)->FindClass(env, "Decoded");
@@ -136,12 +138,12 @@ JNIEXPORT jobject JNICALL Java_Replay_decode(JNIEnv *env, jobject self, jint key
     jbyteArray id = ctor ? copy_bytes(env, result.profile_identity_sha256, 32) : NULL;
     jbyteArray valid = id ? copy_bytes(env, mask, ok ? blocks : 0) : NULL;
     jbyteArray bytes = valid ? copy_bytes(env, payload, ok ? capacity : 0) : NULL;
-    jintArray count_array = bytes ? (*env)->NewIntArray(env, 6) : NULL;
-    jlongArray size_array = count_array ? (*env)->NewLongArray(env, 2) : NULL;
+    jintArray count_array = bytes ? (*env)->NewIntArray(env, 8) : NULL;
+    jlongArray size_array = count_array ? (*env)->NewLongArray(env, 4) : NULL;
     jdoubleArray metric_array = size_array ? (*env)->NewDoubleArray(env, 3) : NULL;
     if (metric_array && !(*env)->ExceptionCheck(env)) {
-        (*env)->SetIntArrayRegion(env, count_array, 0, 6, counts);
-        (*env)->SetLongArrayRegion(env, size_array, 0, 2, sizes);
+        (*env)->SetIntArrayRegion(env, count_array, 0, 8, counts);
+        (*env)->SetLongArrayRegion(env, size_array, 0, 4, sizes);
         (*env)->SetDoubleArrayRegion(env, metric_array, 0, 3, metrics);
         decoded = (*env)->NewObject(env, cls, ctor, (jint)status, id, valid, bytes, count_array, size_array,
                                     metric_array);
