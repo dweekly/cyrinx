@@ -111,6 +111,47 @@ def verify(expected, mask, payload):
     return {"mask": ordered, "valid_payload_sha256": sha(valid)}
 
 
+COMMON_FIELDS = {"name", "profile", "mask", "receiver", "reason", "valid_payload_sha256", "pcm_sha256"}
+FILE_FIELDS = {"path"}, {"secondary_path", "dropout"}
+RECORDING_FIELDS = {"archive", "source_sha256", "start", "samples"}, {"member", "research"}
+RESEARCH_PROFILE = 2  # The control geometry is the only one the research lane decodes.
+
+
+def validate_case(case, profile_count):
+    """Refuse any case this runner would not apply in full.
+
+    A field it ignored would let a run pass against a different input or decoder than the list
+    asked for, so the set of fields is closed: one source, and only the options that source reads.
+    """
+    name = case["name"]
+    sources = [fields for fields in (FILE_FIELDS, RECORDING_FIELDS) if fields[0] & case.keys()]
+    if len(sources) != 1:
+        raise ValueError(f"{name}: name exactly one of path or archive")
+    required, optional = sources[0]
+    required = required | COMMON_FIELDS
+    if not required <= case.keys() <= required | optional:
+        odd = sorted((required - case.keys()) | (case.keys() - required - optional))
+        raise ValueError(f"{name}: missing or unsupported fields {', '.join(odd)}")
+    profile, mask = case["profile"], case["mask"]
+    if type(profile) is not int or not 0 <= profile < profile_count:
+        raise ValueError(f"{name}: unknown profile {profile!r}")
+    if not isinstance(mask, str) or not mask or set(mask) - {"0", "1"}:
+        raise ValueError(f"{name}: the mask is a string of 0 and 1")
+    dropout = case.get("dropout")
+    if dropout is not None and "secondary_path" in case:
+        # The transform zeroes single-channel samples; applied to interleaved audio it would mute
+        # one microphone instead of a span of time.
+        raise ValueError(f"{name}: dropout is applied to one-channel inputs only")
+    if dropout is not None and (not isinstance(dropout, dict) or dropout.keys() != {"period", "width"}
+                                or not all(type(v) is int for v in dropout.values())
+                                or not 0 < dropout["width"] <= dropout["period"]):
+        raise ValueError(f"{name}: dropout needs whole-number period and width, with width within the period")
+    research = case.get("research")
+    if research is not None and (profile != RESEARCH_PROFILE or not isinstance(research, dict)
+                                 or research.keys() != {"mask", "valid_payload_sha256"}):
+        raise ValueError(f"{name}: a research expectation needs profile {RESEARCH_PROFILE}, a mask and a hash")
+
+
 def retained_research(build, cases, windows, rows):
     import numpy as np
 
@@ -144,6 +185,11 @@ def execute(args, report):
     manifest = json.loads(args.manifest.read_bytes())
     if manifest["version"] != 1:
         raise ValueError("unsupported replay manifest")
+    names = [case.get("name") for case in manifest["cases"]]
+    if not all(isinstance(name, str) and name for name in names) or len(set(names)) != len(names):
+        raise ValueError("every replay case needs its own name")
+    for case in manifest["cases"]:
+        validate_case(case, len(manifest["profile_identities"]))
     cases = [case for case in manifest["cases"] if not args.digital_only or "archive" not in case]
     # The tier names the evidence this run reads, whichever flags selected it.
     report["tier"] = "retained" if any("archive" in case for case in cases) else "digital"
@@ -164,8 +210,9 @@ def execute(args, report):
     with tempfile.TemporaryDirectory(prefix="cyrinx-replay-") as tmp:
         build = Path(tmp)
         windows = {}
-        for case in cases:
-            path = build / (case["name"] + ".f32")
+        for index, case in enumerate(cases):
+            # Staged by position: names that differ only in case would share a file on macOS.
+            path = build / f"input-{index:03d}.f32"
             path.write_bytes(fixture_bytes(case, args.archive))
             windows[case["name"]] = path
         jar = build / "adapter.jar"
@@ -216,7 +263,11 @@ def execute(args, report):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, default=MANIFEST)
-    parser.add_argument("--archive", type=Path, default=ROOT.parent / "cyrinx-artifacts/garage")
+    # The same default as scratch/garage/retain.py, so a linked worktree finds the recordings.
+    parser.add_argument("--archive", type=Path, help="retained recordings; default $CYRINX_GARAGE_ARTIFACTS "
+                        "or ~/dev/cyrinx-artifacts/garage",
+                        default=Path(os.environ.get("CYRINX_GARAGE_ARTIFACTS")
+                                     or Path.home() / "dev/cyrinx-artifacts/garage"))
     parser.add_argument("--android", action="append", metavar="SERIAL", help="also run on this USB arm64 Android device")
     parser.add_argument("--digital-only", action="store_true", help="only run fixtures available in a checkout")
     parser.add_argument("--report", type=Path, default=ROOT / "artifacts/conformance/november-batch.json")
@@ -228,6 +279,7 @@ def main():
         report["revision"] = run(["git", "-C", ROOT, "rev-parse", "HEAD"]).decode().strip()
         report["worktree_dirty"] = bool(run(["git", "-C", ROOT, "status", "--porcelain"]))
         report["manifest_sha256"] = sha(args.manifest.read_bytes())
+        args.archive = args.archive.expanduser()
         execute(args, report)
         report["status"] = "passed"
     except Exception as error:
