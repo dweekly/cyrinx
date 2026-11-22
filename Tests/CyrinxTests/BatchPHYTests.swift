@@ -4,6 +4,15 @@ import Testing
 @testable import Cyrinx
 
 @Suite struct BatchPHYTests {
+    /// Deterministic bytes that differ within and between blocks, so a reordering changes them.
+    private func variedPayload(_ count: Int, seed: UInt32) -> [UInt8] {
+        var state = seed
+        return (0..<count).map { _ in
+            state = state &* 1_664_525 &+ 1_013_904_223
+            return UInt8(truncatingIfNeeded: state >> 24)
+        }
+    }
+
     @Test(arguments: [1, 2, 3, 4, 5] as [UInt32])
     func registeredFrameRoundTrip(id: UInt32) throws {
         let profile = try BatchPHY.Profile(id: id)
@@ -11,7 +20,8 @@ import Testing
         #expect(profile.identitySHA256 == withUnsafeBytes(of: raw.identity_sha256) { Array($0) })
         #expect(profile.symbolCount == raw.symbol_count)
         #expect(profile.blockCount == raw.block_count)
-        let source = [UInt8](repeating: 113, count: profile.payloadByteCount)
+        let source = variedPayload(profile.payloadByteCount, seed: id)
+        #expect(source != Array(source.reversed()))
         let encoded = try BatchPHY.encode(source, profile: profile)
         #expect(encoded.samples.count == profile.frameSampleCount)
         #expect(encoded.metrics.samplesProduced == UInt64(encoded.samples.count))
@@ -36,8 +46,11 @@ import Testing
 
     @Test func invalidLayoutAndOversizePayload() throws {
         let profile = try BatchPHY.Profile(id: 1)
+        // The same silent capture is accepted with a valid stride, so stride is the only fault.
+        let capture = [Float](repeating: 0, count: profile.frameSampleCount)
+        #expect(try BatchPHY.decode(primary: .init(capture), profile: profile).metrics.blocksOK == 0)
         do {
-            _ = try BatchPHY.decode(primary: .init([0], stride: 0), profile: profile)
+            _ = try BatchPHY.decode(primary: .init(capture, stride: 0), profile: profile)
             Issue.record("Zero stride was accepted")
         } catch BatchPHY.Failure.invalidArgument {}
         do {
@@ -101,8 +114,8 @@ import Testing
     }
 
     // Records a codec limitation (docs/NEGATIVE_FINDINGS.md entry 26), not a requirement: with no
-    // scrambler, zero-heavy frames lose every block in a clean loopback. A scrambler should turn
-    // these expectations around.
+    // scrambler, these two zero-heavy frames lose every block in a clean loopback. A scrambler
+    // should turn these expectations around.
     @Test(arguments: [1, 2, 3, 4, 5] as [UInt32])
     func zeroHeavyFrameRecoversNoBlocks(id: UInt32) throws {
         let profile = try BatchPHY.Profile(id: id)
