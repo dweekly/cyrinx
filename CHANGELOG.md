@@ -7,6 +7,19 @@ date-labelled.
 Detailed evidence for every claim is in the cited document and its reproduction
 commands or content hashes.
 
+## Unreleased — why sparse payloads fail; scrambler plan
+
+- **The zero-payload failure is the transmitter's amplitude clip.** An
+  all-zero fill puts about 95% of data bins on one constellation point, the
+  peak-to-RMS ratio rises from about 4.6 to 26 to 28, and the 3.3-sigma clip
+  removes the peaks. With the clip off every tested pattern recovers every
+  block on all five profiles. An all-0xff frame fails on profiles 3 to 5 as
+  zeros do. Reproduction: `scratch/garage/zero_payload_mechanism.py`;
+  [NEGATIVE_FINDINGS entry 26](docs/NEGATIVE_FINDINGS.md).
+- **A scrambler is planned, not built.** [docs/SCRAMBLER_PLAN.md](docs/SCRAMBLER_PLAN.md)
+  proposes scrambled profiles under new IDs beside the existing five. It
+  awaits approval.
+
 ## Unreleased — research: acknowledged acoustic file transfers
 
 - **Acknowledged acoustic file transfers, bench-coordinated.** A Mac delivered
