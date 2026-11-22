@@ -8,6 +8,7 @@ import numpy as np
 from scipy.signal import fftconvolve
 
 from replay import CHUNKS, ack_bitmap, aligned_ack, build, clib, clock_offset
+import retain
 import tempfile
 
 RATE = 48000
@@ -59,6 +60,36 @@ def measure(capture, cfg, geometry, chirp, step):
     return dict(first_sample=first, positive=sorted(singles[0] or []), checks=checks)
 
 
+def sequence(cfg, geometry):
+    """The eight scheduled control slots, and the slot period in samples."""
+    base = waveform(cfg, geometry, TOKEN, range(254))
+    changed = waveform(cfg, geometry, TOKEN, range(CHUNKS))
+    stale = waveform(cfg, geometry, STALE, range(254))
+    frames = [base, impair(base, 1), impair(base, -1), impair(changed, -1),
+              impair(stale, 1), impair(stale, -1), np.zeros_like(base), np.zeros_like(base)]
+    return frames, geometry.frame_samples + 16000
+
+
+# What a clean loopback of the sequence must produce. Every field is compared, so a control
+# that stops exercising its case fails here even if nothing was wrongly accepted.
+DIGITAL_POSITIVE = list(range(254))
+DIGITAL_CHECKS = [
+    dict(condition="unchanged", single=[None, None], combined=list(range(254)), stale_chunks=None,
+         unexpected=[]),
+    dict(condition="changed", single=[None, None], combined=None, stale_chunks=None, unexpected=[]),
+    dict(condition="stale-session", single=[None, None], combined=None, stale_chunks=254, unexpected=[]),
+    dict(condition="absent", single=[None, None], combined=None, stale_chunks=None, unexpected=[]),
+]
+
+
+def check_digital(result):
+    if result["positive"] != DIGITAL_POSITIVE:
+        raise ValueError("digital control mismatch: positive control")
+    for expected, actual in zip(DIGITAL_CHECKS, result["checks"], strict=True):
+        if actual != expected:
+            raise ValueError(f"digital control mismatch: {expected['condition']}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -67,47 +98,52 @@ def main():
     mode.add_argument("--replay", type=Path)
     parser.add_argument("--serial", action="append", default=[])
     args = parser.parse_args()
+    if args.record:
+        if not args.serial:
+            parser.error("--record needs at least one --serial")
+        if len(set(args.serial)) != len(args.serial):
+            parser.error("--record takes each --serial once; a repeat would overwrite its recording")
+        # Refuses a destination inside a linked worktree, where the only copy would be deleted.
+        retain.session_dir(str(args.record.resolve().parent))
+        if args.record.exists():
+            parser.error(f"{args.record} already exists")
     with tempfile.TemporaryDirectory(prefix="cyrinx-control-") as tmp:
         build(Path(tmp))
         cfg = clib.make_cfg(f_lo=300, f_hi=11000, bits_per_bin=2, rate="1/2", nfft=16384, cp=8192, n_sym=3)
         g = clib.geometry(cfg)
-        base = waveform(cfg, g, TOKEN, range(254))
-        changed = waveform(cfg, g, TOKEN, range(CHUNKS))
-        stale = waveform(cfg, g, STALE, range(254))
-        frames = [base, impair(base, 1), impair(base, -1), impair(changed, -1),
-                  impair(stale, 1), impair(stale, -1), np.zeros_like(base), np.zeros_like(base)]
-        step = g.frame_samples + 16000
+        frames, step = sequence(cfg, g)
+        chirp = frames[0][:4096]
         wave = np.concatenate([np.pad(w, (0, 16000)) for w in frames])
 
         def score(x):
-            return measure(x, cfg, g, base[:4096], step)
+            return measure(x, cfg, g, chirp, step)
 
         if args.digital:
-            result = score(np.pad(wave, (8000, 16000)))
-            same = result["checks"][0]
-            if (result["positive"] != list(range(254)) or same["single"] != [None, None]
-                    or same["combined"] != list(range(254)) or any(c["unexpected"] for c in result["checks"])
-                    or any(c["combined"] is not None for c in result["checks"][2:])):
-                raise ValueError("digital control mismatch")
+            check_digital(score(np.pad(wave, (8000, 16000))))
             print("Digital positive, complementary loss, changing bitmap, stale session and silence checks passed.")
         elif args.record:
             import harness
-            if not args.serial:
-                parser.error("--record needs at least one --serial")
-            args.record.mkdir(parents=True, exist_ok=False)
-            for serial in args.serial:
-                os.environ["ANDROID_SERIAL"] = serial
-                # Use the same built-in Mac recording and HIL speaker routes as the file bench.
-                capture = harness.android_to_mac(wave, post_s=1.2)
-                np.save(args.record / f"{serial}.npy", capture)
-                result = score(capture)
-                (args.record / f"{serial}.json").write_text(json.dumps(result, indent=2) + "\n")
-                print(serial, [len(row["combined"] or []) for row in result["checks"]], flush=True)
+            # Another bench campaign stages audio at the same paths; fail before disturbing it.
+            with harness.exclusive_android_audio_lock("ack-control-probe"):
+                args.record.mkdir(parents=True, exist_ok=False)
+                for serial in args.serial:
+                    os.environ["ANDROID_SERIAL"] = serial
+                    # Use the same built-in Mac recording and HIL speaker routes as the file bench.
+                    capture = harness.android_to_mac(wave, post_s=1.2)
+                    np.save(args.record / f"{serial}.npy", capture)
+                    result = score(capture)
+                    (args.record / f"{serial}.json").write_text(json.dumps(result, indent=2) + "\n")
+                    print(serial, [len(row["combined"] or []) for row in result["checks"]], flush=True)
         else:
-            paths = sorted(args.replay.glob("*.npy"))
-            if not paths:
+            recordings = {path.stem for path in args.replay.glob("*.npy")}
+            scores = {path.stem for path in args.replay.glob("*.json")}
+            if not recordings:
                 raise ValueError("no live control recordings")
-            for path in paths:
+            if recordings != scores:
+                raise ValueError("recordings and scores differ: "
+                                 f"{sorted(recordings ^ scores)} lack a counterpart in {args.replay}")
+            for stem in sorted(recordings):
+                path = args.replay / f"{stem}.npy"
                 if score(np.load(path, allow_pickle=False)) != json.loads(path.with_suffix(".json").read_text()):
                     raise ValueError(f"control replay mismatch for {path}")
                 print(path.stem, "reproduced")

@@ -3,8 +3,9 @@
 The six bench transfers sent the same 65,536-byte file to the Pixel and Moto with up to one, two or four data frames per cumulative acoustic ACK. Each forward recording is signed 16-bit little-endian stereo PCM at 48 kHz. The return recordings are mono float32 from the Mac. The campaign-specific source and original ledgers are in the local archive. From the repository root on macOS, with Clang, NumPy and SciPy available, run
 
 ```sh
+archive="${CYRINX_GARAGE_ARTIFACTS:-$HOME/dev/cyrinx-artifacts/garage}"
 .venv/bin/python scratch/garage/file_transfer/replay.py \
-  ../cyrinx-artifacts/garage/ack-schedules-20261122-a \
+  "$archive/ack-schedules-20261122-a" \
   --report artifacts/bench/ack-spacing-replay.json
 ```
 
@@ -19,12 +20,13 @@ The native utilities are short-lived bench executables. Each replay uses a fresh
 The repeat campaign records which single or combined ACK actually advanced the sender. Replay checks that decision, the retry list, file digest and receiver state on every turn. Its two tested spacings can be selected explicitly.
 
 ```sh
+archive="${CYRINX_GARAGE_ARTIFACTS:-$HOME/dev/cyrinx-artifacts/garage}"
 .venv/bin/python scratch/garage/file_transfer/replay.py \
-  ../cyrinx-artifacts/garage/ack-repeat-20261122-a --batches 1 4 \
+  "$archive/ack-repeat-20261122-a" --batches 1 4 \
   --report artifacts/bench/ack-repeat-replay.json
 .venv/bin/python scratch/garage/file_transfer/control_probe.py --digital
 .venv/bin/python scratch/garage/file_transfer/control_probe.py \
-  --replay ../cyrinx-artifacts/garage/ack-repeat-20261122-a/controls
+  --replay "$archive/ack-repeat-20261122-a/controls"
 ```
 
-For a new controlled acoustic trial, use `control_probe.py --record NEW_DIRECTORY --serial SERIAL_A --serial SERIAL_B`. The phones play test ACKs to the Mac. The second and third frames in the sequence have complementary frequency losses applied to their training and data. One pair changes its cumulative state, one pair has a stale session token, and two slots contain silence. The report includes each single decode and the combined result. A positive control carries the complete test bitmap without an imposed loss.
+For a new controlled acoustic trial, use `control_probe.py --record NEW_DIRECTORY --serial SERIAL_A --serial SERIAL_B`. The new directory must be outside any linked worktree, each serial is named once, and the run takes the shared bench audio lock. The phones play test ACKs to the Mac. The second and third frames in the sequence have complementary frequency losses applied to their training and data. One pair changes its cumulative state, one pair has a stale session token, and two slots contain silence. The report includes each single decode and the combined result. A positive control carries the complete test bitmap without an imposed loss.
