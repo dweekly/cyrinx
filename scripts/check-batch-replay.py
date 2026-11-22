@@ -144,6 +144,13 @@ def execute(args, report):
     manifest = json.loads(args.manifest.read_bytes())
     if manifest["version"] != 1:
         raise ValueError("unsupported replay manifest")
+    names = [case.get("name") for case in manifest["cases"]]
+    if not all(isinstance(name, str) and name for name in names) or len(set(names)) != len(names):
+        raise ValueError("every replay case needs its own name")
+    for case in manifest["cases"]:
+        # One source per case, so the tier below and the bytes read cannot disagree.
+        if ("path" in case) == ("archive" in case):
+            raise ValueError(f"{case['name']}: name exactly one of path or archive")
     cases = [case for case in manifest["cases"] if not args.digital_only or "archive" not in case]
     # The tier names the evidence this run reads, whichever flags selected it.
     report["tier"] = "retained" if any("archive" in case for case in cases) else "digital"
@@ -164,8 +171,9 @@ def execute(args, report):
     with tempfile.TemporaryDirectory(prefix="cyrinx-replay-") as tmp:
         build = Path(tmp)
         windows = {}
-        for case in cases:
-            path = build / (case["name"] + ".f32")
+        for index, case in enumerate(cases):
+            # Staged by position: names that differ only in case would share a file on macOS.
+            path = build / f"input-{index:03d}.f32"
             path.write_bytes(fixture_bytes(case, args.archive))
             windows[case["name"]] = path
         jar = build / "adapter.jar"
@@ -216,7 +224,11 @@ def execute(args, report):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, default=MANIFEST)
-    parser.add_argument("--archive", type=Path, default=ROOT.parent / "cyrinx-artifacts/garage")
+    # The same default as scratch/garage/retain.py, so a linked worktree finds the recordings.
+    parser.add_argument("--archive", type=Path, help="retained recordings; default $CYRINX_GARAGE_ARTIFACTS "
+                        "or ~/dev/cyrinx-artifacts/garage",
+                        default=Path(os.environ.get("CYRINX_GARAGE_ARTIFACTS")
+                                     or Path.home() / "dev/cyrinx-artifacts/garage"))
     parser.add_argument("--android", action="append", metavar="SERIAL", help="also run on this USB arm64 Android device")
     parser.add_argument("--digital-only", action="store_true", help="only run fixtures available in a checkout")
     parser.add_argument("--report", type=Path, default=ROOT / "artifacts/conformance/november-batch.json")
