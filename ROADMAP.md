@@ -202,8 +202,8 @@ extends that corpus, while Rank 7 owns withheld policy qualification and public
 corpus packaging.
 
 **Open defect — payload scrambling (recorded 2026-11-22, unscheduled).** The
-bulk codec has no scrambler, and frames that are mostly zero bytes decode no
-blocks in digital loopback on all five registered profiles
+bulk codec has no scrambler, and the sparse, zero-padded frames tested decoded
+no blocks in digital loopback on all five registered profiles
 ([NEGATIVE_FINDINGS entry 26](docs/NEGATIVE_FINDINGS.md)). The C batch contract
 zero-pads a short payload, the Swift binding rejects one, and the two need to
 agree. Candidate work, none of it started: isolate the mechanism; add a

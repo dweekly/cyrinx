@@ -145,6 +145,8 @@ def execute(args, report):
     if manifest["version"] != 1:
         raise ValueError("unsupported replay manifest")
     cases = [case for case in manifest["cases"] if not args.digital_only or "archive" not in case]
+    # The tier names the evidence this run reads, whichever flags selected it.
+    report["tier"] = "retained" if any("archive" in case for case in cases) else "digital"
     if not cases:
         raise ValueError("empty replay selection")
     kotlin = os.environ.get("KOTLINC") or shutil.which("kotlinc") or (
@@ -219,12 +221,13 @@ def main():
     parser.add_argument("--digital-only", action="store_true", help="only run fixtures available in a checkout")
     parser.add_argument("--report", type=Path, default=ROOT / "artifacts/conformance/november-batch.json")
     args = parser.parse_args()
+    # Everything that can fail runs inside the try, so a failure replaces an earlier passing report.
     report = {"status": "failed", "command": shlex.join(sys.argv), "host": platform.platform(),
-              "arch": platform.machine(), "tier": "digital" if args.digital_only else "retained",
-              "revision": run(["git", "-C", ROOT, "rev-parse", "HEAD"]).decode().strip(),
-              "worktree_dirty": bool(run(["git", "-C", ROOT, "status", "--porcelain"])),
-              "manifest_sha256": sha(args.manifest.read_bytes()), "results": []}
+              "arch": platform.machine(), "results": []}
     try:
+        report["revision"] = run(["git", "-C", ROOT, "rev-parse", "HEAD"]).decode().strip()
+        report["worktree_dirty"] = bool(run(["git", "-C", ROOT, "status", "--porcelain"]))
+        report["manifest_sha256"] = sha(args.manifest.read_bytes())
         execute(args, report)
         report["status"] = "passed"
     except Exception as error:

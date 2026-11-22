@@ -17,9 +17,9 @@ commands or content hashes.
   on both FFT backends. CI runs the digital subset and a reversed-mask
   negative control. Partial work toward C3-07 and C3-08; see the status ledger
   in [docs/CYRINX_3_PLAN.md](docs/CYRINX_3_PLAN.md).
-- **Negative finding: zero-heavy payloads do not decode.** With no scrambler
-  in the codec, an all-zero or mostly-zero frame recovers no blocks in digital
-  loopback on all five registered profiles
+- **Negative finding: sparse, zero-padded payloads did not decode.** With no
+  scrambler in the codec, an all-zero frame and a 128-byte record followed by
+  zeros recovered no blocks in digital loopback on all five registered profiles
   ([NEGATIVE_FINDINGS entry 26](docs/NEGATIVE_FINDINGS.md)). `BatchPHY.encode`
   rejects a short payload; the C entry point still zero-pads. No scrambler
   has been built.

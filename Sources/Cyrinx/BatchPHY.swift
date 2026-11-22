@@ -141,8 +141,9 @@ public enum BatchPHY {
     /// Encodes exactly one frame. `payload` must hold `profile.payloadByteCount` bytes.
     ///
     /// A shorter payload throws `Failure.invalidArgument`. The C entry point would zero-fill it,
-    /// and the codec has no scrambler: a frame that is mostly zero bytes decodes no blocks, including
-    /// the blocks that carry data. Fill unused space with varied bytes. See docs/BATCH_PHY.md.
+    /// and the codec has no scrambler: in the cases measured, a short record followed by zeros
+    /// decoded no blocks, including the block that carried the record. Fill unused space with
+    /// varied bytes. See docs/BATCH_PHY.md.
     public static func encode(_ payload: [UInt8], profile: Profile) throws -> Encoded {
         guard payload.count == profile.payloadByteCount else { throw Failure.invalidArgument }
         var raw = profile.raw
