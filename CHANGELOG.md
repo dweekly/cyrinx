@@ -24,6 +24,21 @@ commands or content hashes.
   the field. Partial work toward C3-08; see the status ledger in
   [docs/CYRINX_3_PLAN.md](docs/CYRINX_3_PLAN.md).
 
+## Unreleased — layout checked on four Android ABIs; released waveforms pinned
+
+- **The C structures' layout assertions now compile for arm64-v8a,
+  armeabi-v7a, x86_64 and x86** (`.venv/bin/python scripts/check-abi-layout.py`). They hold
+  on the first three. 32-bit x86 is refused at compile time: the batch
+  channel view is 28 bytes there, not 32
+  ([NEGATIVE_FINDINGS entry 27](docs/NEGATIVE_FINDINGS.md)). The supported
+  matrix is arm64, so nothing shipped is affected.
+- **Each released profile's transmitted waveform is pinned by digest**
+  (`Tests/CyrinxTests/ReleasedWaveformTests.swift`), so a change to shared
+  modulation code cannot alter a released sound unnoticed.
+- **A generated capture ending inside the frame now reaches the decode-failure
+  path** in the Swift tests,
+  on every registered profile.
+
 ## Unreleased — why sparse payloads fail; scrambler plan
 
 - **The zero-payload failure is the transmitter's amplitude clip.** An
