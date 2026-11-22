@@ -69,6 +69,10 @@ def replay(trial, tools, cfg):
     ledger = json.loads((trial / "transfer.json").read_text())
     policy = ledger.get("ack_policy", "single")
     require(policy in ("single", "repeat-mrc-v1"), f"{trial}: unknown ACK policy")
+    numbers = [turn["turn"] for turn in ledger["turns"]]
+    # A missing or repeated turn would let recordings that were never adjacent be combined as
+    # consecutive failed replies.
+    require(numbers == list(range(1, len(numbers) + 1)), f"{trial}: turns are not numbered 1 to {len(numbers)}")
     token = bytes.fromhex(ledger["token"])
     source = (trial / "sent.bin").read_bytes()
     digest = hashlib.sha256(source).hexdigest()

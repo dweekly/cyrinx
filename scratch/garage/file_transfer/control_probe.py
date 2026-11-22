@@ -35,7 +35,9 @@ def impair(wave, side):
     return np.concatenate((wave[:6144], np.fft.irfft(np.fft.rfft(data) * gain, len(data))))
 
 
-def measure(capture, cfg, geometry, chirp, step):
+def measure(capture, cfg, geometry, chirp, step, reached=None):
+    """Score one eight-slot capture. `reached` collects, per pair, whether both windows aligned
+    and so went to the combiner; a pair that never got there reports no bitmap as well."""
     # Schedule isolates the eight slots; each pair independently reacquires its chirps.
     room = len(capture) - 8 * step + 1
     if room <= 0:
@@ -49,6 +51,8 @@ def measure(capture, cfg, geometry, chirp, step):
     for name, a, b, count in [("unchanged", 1, 2, 254), ("changed", 1, 3, 276),
                               ("stale-session", 4, 5, 0), ("absent", 6, 7, 0)]:
         pair = [aligned_ack(windows[j], chirp, geometry.frame_samples) for j in (a, b)]
+        if reached is not None:
+            reached.append(all(w is not None for w in pair))
         result = None if any(w is None for w in pair) else clock_offset.decode2(cfg, *pair)
         recovered = ack_bitmap(result, TOKEN)
         stale = ack_bitmap(result, STALE)
@@ -82,9 +86,15 @@ DIGITAL_CHECKS = [
 ]
 
 
-def check_digital(result):
+def check_digital(result, reached):
     if result["positive"] != DIGITAL_POSITIVE:
         raise ValueError("digital control mismatch: positive control")
+    # A rejection counts only if the combiner saw the pair. The silent pair has nothing to align.
+    if len(reached) != len(DIGITAL_CHECKS):
+        raise ValueError("digital control mismatch: a control pair was not scored")
+    for expected, combined in zip(DIGITAL_CHECKS[:3], reached):
+        if not combined:
+            raise ValueError(f"digital control mismatch: {expected['condition']} never reached the combiner")
     for expected, actual in zip(DIGITAL_CHECKS, result["checks"], strict=True):
         if actual != expected:
             raise ValueError(f"digital control mismatch: {expected['condition']}")
@@ -115,11 +125,12 @@ def main():
         chirp = frames[0][:4096]
         wave = np.concatenate([np.pad(w, (0, 16000)) for w in frames])
 
-        def score(x):
-            return measure(x, cfg, g, chirp, step)
+        def score(x, reached=None):
+            return measure(x, cfg, g, chirp, step, reached)
 
         if args.digital:
-            check_digital(score(np.pad(wave, (8000, 16000))))
+            reached = []
+            check_digital(score(np.pad(wave, (8000, 16000)), reached), reached)
             print("Digital positive, complementary loss, changing bitmap, stale session and silence checks passed.")
         elif args.record:
             import harness
