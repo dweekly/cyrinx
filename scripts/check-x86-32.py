@@ -66,16 +66,10 @@ def main():
         replay = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(replay)
         manifest = json.loads((args.manifest or replay.MANIFEST).read_text())
-        # Every entry is checked before any is set aside, so a damaged entry fails the run and
-        # only a well-formed recording case is skipped for needing the local archive.
-        frames = manifest.get("frame_samples")
-        if not isinstance(frames, list) or len(frames) != len(manifest["profile_identities"]):
-            raise ValueError("the list needs frame_samples, one whole number per profile")
-        names = [case.get("name") for case in manifest["cases"]]
-        if not all(isinstance(name, str) and name for name in names) or len(set(names)) != len(names):
-            raise ValueError("every replay case needs its own name")
-        for case in manifest["cases"]:
-            replay.validate_case(case, len(manifest["profile_identities"]))
+        # The replay's own check of the whole list, before any entry is set aside: a damaged
+        # entry fails the run and only a well-formed recording case is skipped for needing the
+        # local archive.
+        replay.validate_manifest(manifest)
         cases = [case for case in manifest["cases"] if "path" in case]
         report["skipped_recording_cases"] = [case["name"] for case in manifest["cases"] if "archive" in case]
         if not cases:
@@ -118,13 +112,20 @@ def main():
                     record = replay.parse(there)
                     outcome = replay.compare(case, replay.expectation(case, manifest, inputs[index]), record)
                     same = replay.same_decision(record, replay.parse(here))
+                except replay.Mismatch as error:
+                    # Keep what was compared before it failed, as the replay's own report does.
+                    if error.outcome:
+                        report["results"].append({**error.outcome, "fixture": case["name"],
+                                                  "status": record["status"], "bytes": len(there),
+                                                  "passed": False})
+                    raise ValueError(f"{case['name']}: {error}") from error
                 except ValueError as error:
                     raise ValueError(f"{case['name']}: {error}") from error
                 report["results"].append({**outcome, "fixture": case["name"], "status": record["status"],
                                           "bytes": len(there), "identical_decisions_to_host": same})
                 print(f"{case['name']:<22} status {record['status']:>3}  mask {outcome.get('mask', '-'):<6} "
                       f"same decisions as this host: {same}")
-        good = all(row["identical_decisions_to_host"] for row in report["results"])
+        good = all(row.get("identical_decisions_to_host") for row in report["results"])
         report["status"] = "passed" if good and len(report["results"]) == len(cases) else "failed"
     except Exception as error:
         report["error"] = str(error)

@@ -3,6 +3,9 @@ import copy
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
+import sys
+import tempfile
 
 
 def main():
@@ -76,8 +79,60 @@ def main():
             if source["name"] in str(error) and "digest" not in str(error):
                 continue
         raise RuntimeError(f"the replay runner built an input with {label}")
+    # The whole list is checked by one function that every runner calls, including the 32-bit
+    # x86 one, which sets recording cases aside only after the list has passed.
+    replay.validate_manifest(manifest)
+    frames = manifest["frame_samples"]
+    damaged = {
+        "a frame length that is not a whole number": dict(manifest, frame_samples=[float(frames[0]), *frames[1:]]),
+        "a missing frame length": dict(manifest, frame_samples=[*frames[:-1], None]),
+        "too few frame lengths": dict(manifest, frame_samples=frames[:-1]),
+        "two cases with one name": dict(manifest, cases=[*manifest["cases"], manifest["cases"][0]]),
+        "an unknown version": dict(manifest, version=2),
+    }
+    for label, value in damaged.items():
+        try:
+            replay.validate_manifest(value)
+        except ValueError:
+            continue
+        raise RuntimeError(f"the replay runner accepted a list with {label}")
+    # The 32-bit x86 runner is run on a list with no cases and a frame length that is not a whole
+    # number. It must refuse the list for the frame length, which it can only do by checking the
+    # whole list before it looks for cases to run. It fails before it contacts any machine, so
+    # the host named here is never used.
+    with tempfile.TemporaryDirectory(prefix="cyrinx-x86-list-") as tmp:
+        listed, report = Path(tmp) / "list.json", Path(tmp) / "report.json"
+        listed.write_text(json.dumps(dict(manifest, frame_samples=[float(frames[0]), *frames[1:]], cases=[])))
+        done = subprocess.run([sys.executable, root / "scripts/check-x86-32.py", "--host", "unused.invalid",
+                               "--manifest", listed, "--report", report], capture_output=True, text=True)
+        result = json.loads(report.read_text())
+        if done.returncode == 0 or result["status"] != "failed" or "frame_samples" not in result.get("error", ""):
+            raise RuntimeError("the 32-bit x86 runner did not refuse a damaged list for its frame lengths: "
+                               f"exit {done.returncode}, {result.get('error')!r}")
+    # A payload of the wrong length is refused and named as the payload, with a matching mask.
+    case = cases["digital-qpsk"]
+    expected = replay.expectation(case, manifest, b"")
+    record = dict(expected, mask=bytes(int(bit) for bit in case["mask"]))
+    for length in (256 * len(case["mask"]) - 1, 256 * len(case["mask"]) + 1):
+        try:
+            replay.compare(case, expected, dict(record, payload=bytes(length)))
+        except replay.Mismatch as error:
+            if str(error) == f"payload: expected {256 * len(case['mask'])} bytes, observed {length}":
+                continue
+            raise RuntimeError(f"a {length}-byte payload was reported as: {error}") from error
+        raise RuntimeError(f"the replay runner accepted a {length}-byte payload")
+    # The research comparison refuses a result whose length is not its mask's. The case is made
+    # here so that only the length can differ: one valid block of zeros, then one invalid block.
+    # The hash covers the valid block alone, which is the same bytes at every length tried.
+    control = {"research": {"mask": "10", "valid_payload_sha256": replay.sha(bytes(256))}}
+    if replay.research_outcome(control, bytes([1, 0]), bytes(512))[1]:
+        raise RuntimeError("the research comparison refused a result of the right length")
+    for length in (511, 513):
+        if not replay.research_outcome(control, bytes([1, 0]), bytes(length))[1]:
+            raise RuntimeError(f"the research comparison accepted a {length}-byte payload for two blocks")
     print(f"Confirmed that {len(cases)} bundled cases validate, {len(rejected)} malformed cases are refused, "
-          f"and {len(unreachable)} faults that cannot reach the decoder are refused.")
+          f"{len(unreachable)} faults that cannot reach the decoder are refused, {len(damaged)} damaged lists "
+          "are refused, and a payload of the wrong length is refused in both comparisons.")
 
 
 if __name__ == "__main__":

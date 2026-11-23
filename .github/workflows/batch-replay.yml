@@ -11,6 +11,7 @@ on:
       - 'Tests/Fixtures/conformance/**'
       - 'Tests/Fixtures/golden/**'
       - 'scripts/check-batch-replay.py'
+      - 'scripts/check-x86-32.py'
       - 'scripts/android_batch_replay.py'
       - '.github/workflows/batch-replay.yml'
   pull_request:
