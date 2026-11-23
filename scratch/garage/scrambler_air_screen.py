@@ -1,29 +1,40 @@
 #!/usr/bin/env python3
 """Over-the-air screen of one scrambled profile: a short record, sent through its batch encoder.
 
-docs/SCRAMBLER_PLAN.md asks for this screen. The Mac's speakers play six frames while one phone
+docs/SCRAMBLER_PLAN.md asks for this screen. The Mac's speakers play eight frames while one phone
 records; the run is repeated for each phone. The candidate is one of the scrambled profiles 6 to
 10, and its parent is the unscrambled profile five below it. The frames are, in order:
 
   0  dense random payload on the candidate profile        (control)
-  1  record A on the unscrambled parent profile            (the paired legacy transmission)
-  2  record A on the candidate profile
-  3  record B on the candidate profile
-  4  record B on the unscrambled parent profile
-  5  dense random payload on the candidate profile        (control)
+  1  dense random payload on the parent profile           (control)
+  2  record A on the parent profile                        (the paired legacy transmission)
+  3  record A on the candidate profile
+  4  record B on the candidate profile
+  5  record B on the parent profile
+  6  dense random payload on the parent profile           (control)
+  7  dense random payload on the candidate profile        (control)
 
 A record is 128 bytes handed to cyrinx_batch_encode_v2 as a 128-byte payload, which fills the
 rest of the frame with zeros. Each capture is cut into frames at the transmitter's schedule and
-decoded by cyrinx_batch_decode_v2 with the profile that frame was sent with. The screen passes
-when, on every phone, both candidate record frames return a CRC-valid first block that holds the
-record. It is a screen: one placement, one volume, two records. It does not qualify a profile.
+decoded by cyrinx_batch_decode_v2 with the profile that frame was sent with.
 
-The dense controls say whether the placement can carry the candidate's geometry at all. If they
-do not decode, the run says nothing about the scrambler.
+The run has three possible outcomes, and only the first is a pass:
+
+  passed       at least two phones; on every phone every dense control decodes in full and
+               both candidate record frames return a CRC-valid first block holding the record
+  failed       the dense controls decode, and a candidate record frame is lost
+  no answer    a dense control is lost, or fewer than two phones were recorded. The controls
+               say whether the placement carries the geometry at all, scrambled and not; when
+               they fail, the run says nothing about the scrambler
+
+It is a screen: one placement, one volume, two records. It does not qualify a profile.
 
 Usage:
-  scrambler_air_screen.py record NEW_DIRECTORY --candidate ID --serial SERIAL [--serial SERIAL ...]
+  scrambler_air_screen.py record NEW_DIRECTORY --candidate ID --serial SERIAL --serial SERIAL
   scrambler_air_screen.py replay DIRECTORY     # re-score a retained run; fails if scores change
+
+A replay rebuilds the frames the retained run recorded, so runs made with an earlier,
+six-frame schedule still replay.
 """
 import argparse
 import ctypes
@@ -47,11 +58,12 @@ SOURCES = ("cyrinx_batch.c", "cyrinx_profiles.c", "cyrinx_sha256.c", "cyrinx_bul
 
 
 def schedule(candidate):
-    """The six frames as (label, profile ID, payload name)."""
+    """The frames of a new run as (label, profile ID, payload name)."""
     parent = candidate - 5
-    return (("dense control", candidate, "dense-0"), ("record A, unscrambled", parent, "record-A"),
-            ("record A, scrambled", candidate, "record-A"), ("record B, scrambled", candidate, "record-B"),
-            ("record B, unscrambled", parent, "record-B"), ("dense control", candidate, "dense-1"))
+    return (("dense control, scrambled", candidate, "dense-0"), ("dense control, unscrambled", parent, "dense-2"),
+            ("record A, unscrambled", parent, "record-A"), ("record A, scrambled", candidate, "record-A"),
+            ("record B, scrambled", candidate, "record-B"), ("record B, unscrambled", parent, "record-B"),
+            ("dense control, unscrambled", parent, "dense-3"), ("dense control, scrambled", candidate, "dense-1"))
 
 
 class Profile(ctypes.Structure):
@@ -143,13 +155,18 @@ class Codec:
 
 def payloads(capacity):
     """What each frame carries, as handed to the encoder, by name."""
+    # Drawn in this order, so the four payloads of the first, six-frame schedule keep their bytes.
     rng = np.random.default_rng(20261122)
     return {"dense-0": rng.bytes(capacity), "dense-1": rng.bytes(capacity),
-            "record-A": rng.bytes(128), "record-B": rng.bytes(128)}
+            "record-A": rng.bytes(128), "record-B": rng.bytes(128),
+            "dense-2": rng.bytes(capacity), "dense-3": rng.bytes(capacity)}
 
 
-def transmission(codec, candidate):
-    """The six frames with their gaps, and the facts of the trial."""
+def transmission(codec, candidate, frames=None):
+    """The frames with their gaps, and the facts of the trial.
+
+    `frames` is the schedule to build; a replay passes the one its run recorded.
+    """
     if candidate not in range(6, 11):
         raise ValueError("the candidate is one of the scrambled profiles 6 to 10")
     parent = candidate - 5
@@ -160,7 +177,9 @@ def transmission(codec, candidate):
     if codec.sizes(profiles[parent]) != (frame, capacity, blocks):
         raise ValueError("the candidate and its parent do not share a geometry")
     data = payloads(capacity)
-    frames = schedule(candidate)
+    frames = [tuple(row) for row in (frames or schedule(candidate))]
+    if any(identifier not in profiles or name not in data for _, identifier, name in frames):
+        raise ValueError("the schedule names a profile or payload this trial does not have")
     waves = [np.pad(codec.encode(profiles[identifier], data[name]), (0, GAP)) for _, identifier, name in frames]
     wave = np.concatenate(waves).astype("<f4")
     facts = dict(candidate_profile=candidate, parent_profile=parent, sample_rate=SR, frame_samples=frame, gap=GAP,
@@ -207,17 +226,18 @@ def score(codec, profiles, data, wave, facts, pcm_path):
     return rows
 
 
-def verdict(scores, candidate):
-    """The screen: every candidate record frame, on every phone, returns its record in block 0."""
-    wanted = [row for rows in scores.values() for row in rows
-              if row["profile"] == candidate and row["payload"].startswith("record")]
-    return bool(wanted) and all(row["first_block_holds_the_payload"] for row in wanted)
-
-
-def controls_decoded(scores):
-    """Whether every dense control frame, on every phone, returned every block."""
-    controls = [row for rows in scores.values() for row in rows if row["payload"].startswith("dense")]
-    return bool(controls) and all(row["blocks_verified"] == row["blocks_total"] for row in controls)
+def summarize(scores, candidate):
+    """What a run established. See the module description for the three outcomes."""
+    rows = [row for phone in scores.values() for row in phone]
+    records = [row for row in rows if row["profile"] == candidate and row["payload"].startswith("record")]
+    controls = [row for row in rows if row["payload"].startswith("dense")]
+    recovered = bool(records) and all(row["first_block_holds_the_payload"] for row in records)
+    carried = bool(controls) and all(row["blocks_verified"] == row["blocks_total"] for row in controls)
+    # The plan asks for recovery on each of the two phones, so one phone alone is never a pass.
+    enough = len(scores) >= 2
+    outcome = "no answer" if not (carried and enough) else "passed" if recovered else "failed"
+    return dict(passed=outcome == "passed", outcome=outcome, records_recovered=recovered,
+                controls_decoded=carried, phones=len(scores))
 
 
 def main():
@@ -229,12 +249,12 @@ def main():
     args = parser.parse_args()
     if args.mode == "record" and args.candidate is None:
         raise SystemExit("record needs --candidate")
-    # A replay screens the candidate that was recorded.
-    candidate = args.candidate if args.mode == "record" else json.loads(
-        (args.folder / "trial.json").read_text())["candidate_profile"]
+    # A replay screens the candidate, and rebuilds the frames, that its run recorded.
+    recorded = None if args.mode == "record" else json.loads((args.folder / "trial.json").read_text())
+    candidate = args.candidate if recorded is None else recorded["candidate_profile"]
     with tempfile.TemporaryDirectory(prefix="cyrinx-air-screen-") as build:
         codec = Codec(build)
-        profiles, data, wave, facts = transmission(codec, candidate)
+        profiles, data, wave, facts = transmission(codec, candidate, recorded and recorded["schedule"])
         if args.mode == "record":
             if not args.serial or len(set(args.serial)) != len(args.serial):
                 raise SystemExit("record needs each phone's --serial once")
@@ -270,7 +290,7 @@ def main():
                 raise SystemExit(f"this checkout no longer makes the transmission that was recorded: {key} differs")
         scores = {serial: score(codec, profiles, data, wave, facts, args.folder / f"{serial}.pcm")
                   for serial in trial["phones"]}
-    summary = dict(passed=verdict(scores, candidate), controls_decoded=controls_decoded(scores), scores=scores)
+    summary = dict(summarize(scores, candidate), scores=scores)
     ledger = args.folder / "scores.json"
     if args.mode == "record":
         ledger.write_text(json.dumps(summary, indent=2) + "\n")
@@ -286,9 +306,12 @@ def main():
             print(f"{model:<14} {row['frame']:<22} profile {row['profile']:>2}  valid {row['blocks_valid']:>3}/"
                   f"{row['blocks_total']}  verified {row['blocks_verified']:>3}  record in block 0: "
                   f"{row['first_block_holds_the_payload']}")
-    if not summary["controls_decoded"]:
-        print("a dense control did not decode in full: this placement does not carry the geometry cleanly")
-    print("screen passed" if summary["passed"] else "screen FAILED")
+    if summary["outcome"] == "no answer":
+        reason = ("fewer than two phones were recorded" if summary["phones"] < 2
+                  else "a dense control did not decode in full, so this placement does not carry the geometry")
+        print(f"screen gave no answer: {reason}")
+    else:
+        print("screen passed" if summary["passed"] else "screen FAILED: the controls decoded and a record was lost")
     return 0 if summary["passed"] else 1
 
 

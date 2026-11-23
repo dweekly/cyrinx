@@ -12,12 +12,12 @@ commands or content hashes.
 - **The screen ran and could not answer.** The Mac played dense control
   frames and 128-byte records, on scrambled profiles 7 and 6 and their
   unscrambled parents, to a Pixel 7a and a Moto G as they lay on the bench.
-  No frame decoded on either phone, the controls included, so the runs say
-  nothing about recovery. The controls were 23 to 33 dB above the noise;
-  a second receiver failed as well
+  No frame decoded on either phone, including the dense controls of the
+  unscrambled profile 1, so the runs say nothing about recovery. The
+  measurements taken did not isolate the cause
   ([NEGATIVE_FINDINGS entry 28](docs/NEGATIVE_FINDINGS.md)).
 - **The recordings show the scrambler's effect on level.** An unscrambled
-  short record went out about 5 dB below a dense frame and arrived about 4 dB
+  short record went out about 5 dB below a dense frame and arrived 4 to 5 dB
   below; the scrambled one went out and arrived at the dense frame's level.
 - The screen is still open. It needs the phones placed where the parent
   profiles decode, by someone at the bench.

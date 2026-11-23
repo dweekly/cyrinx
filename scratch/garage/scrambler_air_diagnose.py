@@ -51,7 +51,7 @@ def main():
 
         trial = json.loads((folder / "trial.json").read_text())
         candidate = trial["candidate_profile"]
-        profiles, data, wave, facts = screen.transmission(screen.Codec(build), candidate)
+        profiles, data, wave, facts = screen.transmission(screen.Codec(build), candidate, trial["schedule"])
         if facts["tx_float32_sha256"] != trial["tx_float32_sha256"]:
             raise SystemExit("this checkout no longer makes the transmission that was recorded")
         frame, step, blocks = facts["frame_samples"], facts["frame_samples"] + screen.GAP, facts["blocks"]

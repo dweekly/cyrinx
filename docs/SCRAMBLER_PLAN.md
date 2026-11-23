@@ -339,12 +339,15 @@ replay and peak gates):
   codec accepts, with 93% to 96% of data bins on one point.
 
 **Over the air: attempted, no answer.** `scratch/garage/scrambler_air_screen.py`
-runs the screen described above. On 2026-11-22 it was run at the bench's
-placement with candidate 7 and again with candidate 6. On both phones no frame
-decoded through the batch receiver, the dense controls included, so the screen
-said nothing about the scrambler
+runs the screen described above, with dense controls on the candidate and on
+its unscrambled parent. It reports a pass only when two phones were recorded,
+every control decoded, and both scrambled records came back; a lost control is
+reported as no answer. On 2026-11-22 it was run at the bench's placement with
+candidate 7 and with candidate 6. On both phones no frame decoded through the
+batch receiver, the unscrambled parent's dense controls included, so the
+screen said nothing about the scrambler
 ([NEGATIVE_FINDINGS entry 28](NEGATIVE_FINDINGS.md)). The recordings show the
 scrambled short record transmitted and received at a dense frame's level, where
 the unscrambled one is about 5 dB down. The screen is still open. It needs the
-phones placed where the parent profile's dense frame decodes, which was their
-qualification condition, and that needs someone at the bench.
+phones placed where the parent profile's dense frame decodes, and that needs
+someone at the bench.

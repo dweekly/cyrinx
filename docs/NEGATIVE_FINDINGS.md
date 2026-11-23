@@ -334,52 +334,61 @@ loopback; numbers are quoted as measured.
     needs explicit alignment in any future versioned structure.
 
 28. **The over-the-air screen of a scrambled profile gave no answer: no
-    frame decoded at the bench's placement, control frames included.** On
-    2026-11-22 the Mac's speakers, at 88% output, played six frames to a
-    Pixel 7a and a Moto G (2026) as they lay on the bench. Their distance
-    and position were not measured; the same day's earlier recordings from
-    this bench are labelled as behind the monitor. The frames were two dense
-    controls on a scrambled candidate, and two 128-byte records, each sent
-    on the candidate and on its unscrambled parent. Two runs are valid: one
-    with candidate profile 7 and parent 2, one with candidate 6 and parent
-    1. In both runs, on both phones, the batch receiver completed every
-    decode and found no CRC-valid block in any of the six frames. With the
-    dense controls lost, the runs say nothing about what the scrambler does
-    to recovery.
+    frame decoded at the bench's placement, the unscrambled control frames
+    included.** On 2026-11-22 the Mac's speakers, at 88% output, played
+    frames to a Pixel 7a and a Moto G (2026) as they lay on the bench. Their
+    distance and position were not measured; the same day's earlier
+    recordings from this bench are labelled as behind the monitor. Each run
+    sent two 128-byte records, each on a scrambled candidate profile and on
+    its unscrambled parent, between dense control frames. Three runs are
+    valid:
 
-    The cause was not noise and not the scrambler. The control frames were
-    23 to 25 dB above the noise for profile 7 and 30 to 33 dB for profile
-    6. The strongest arrival after the first chirp came 355 to 408 samples
-    later at 0.8 to 4.2 dB below it, on both phones. That is outside
-    profile 7's 240-sample cyclic prefix. It is inside profile 6's 768, and
-    profile 6 failed all the same, so a late echo alone does not explain
-    it. The research receiver, with either pilot fit and its clock-offset
-    search, also recovered 0 of 75 blocks of every frame, scored by byte
-    agreement after removing the scrambler mask. Profiles 2 and 3 were
-    qualified near-field; nothing here contradicts that. The same day's
-    earlier broadcast that did recover records at this bench used a QPSK
-    rate-1/2 research geometry with an 8,192-sample cyclic prefix, which is
-    not a registered profile (entry 26).
+    - candidate 7, parent 2, with dense controls on the candidate only;
+    - candidate 6, parent 1, with dense controls on the candidate only;
+    - candidate 6, parent 1, with dense controls on both.
+
+    In all three, on both phones, the batch receiver completed every decode
+    and found no CRC-valid block in any frame. In the third run that
+    includes the dense frames of profile 1, the unscrambled geometry
+    released in 1.x. A placement that loses the parent profile's own dense
+    frame cannot show what the scrambler adds, so the runs say nothing about
+    recovery, for or against.
+
+    **These measurements did not isolate the cause.** They show three
+    things. A control frame's power was 23 to 25 dB above the noise for
+    profile 7 and 29 to 33 dB for profile 6; that compares one channel's
+    power during a frame with the noise after the transmission, and is not
+    the signal-to-noise ratio on a data carrier or a measure of interference
+    during a frame. The strongest arrival after the first chirp's peak came
+    355 to 408 samples later, 0.7 to 4.2 dB below it; profile 7's cyclic
+    prefix is 240 samples and profile 6's is 768. And the research receiver,
+    with either pilot fit and its clock-offset search, recovered 0 of 75
+    blocks of every frame, scored by byte agreement after removing the
+    scrambler mask where one applied. Profiles 2 and 3 were qualified
+    near-field, and nothing here contradicts that. The same day's earlier
+    broadcast that did recover records at this bench used a QPSK rate-1/2
+    research geometry with an 8,192-sample cyclic prefix, which is not a
+    registered profile (entry 26).
 
     The recordings do show one effect of the scrambler, in level and not in
     recovery. An unscrambled 128-byte record padded with zeros was
     transmitted 4.9 to 5.2 dB below a dense frame, because its tall peaks
-    set the scale, and was received 3.7 to 4.8 dB below. The same record on
+    set the scale, and was received 3.7 to 4.9 dB below. The same record on
     the scrambled profile was transmitted at the dense frame's level and
     received within 0.7 dB of it.
 
-    A third run, between the two, is retained and unused: the script reused
-    a recording name, the harness matched the earlier run's log lines, and
-    both captures were cut. The script now names each recording uniquely and
-    checks its length.
+    A fourth run is retained and unused: the script reused a recording
+    name, the harness matched an earlier run's log lines, and both captures
+    were cut. The script now names each recording uniquely and checks its
+    length.
 
     Reproduce the scores and the three measurements from the local archives
-    `scrambler-air-20261122-a` and `-c` with `.venv/bin/python
+    `scrambler-air-20261122-a`, `-c` and `-d` with `.venv/bin/python
     scratch/garage/scrambler_air_screen.py replay DIRECTORY` and
     `scratch/garage/scrambler_air_diagnose.py DIRECTORY`. The screen needs a
     placement where the parent profile's dense frame decodes through the
     batch receiver, or a receiver that decodes at this one. It was not rerun
-    because the phones would have to be moved by hand.
+    there because the phones would have to be moved by hand.
 
 ## Measurement-integrity reminders (process, not physics)
 
