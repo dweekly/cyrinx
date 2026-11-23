@@ -297,9 +297,11 @@ loopback; numbers are quoted as measured.
     10 are profiles 1 to 5 with the payload and CRC bits scrambled, reached
     through the C v2 profile type and batch entry points. In digital loopback
     they recover every block of the zero, 128-byte and sparse patterns
-    (`CyrinxScrambledBatchTests`). They are experimental and have not been
-    sent over the air ([SCRAMBLER_PLAN](SCRAMBLER_PLAN.md)). Profiles 1 to 5
-    still fail as described here.
+    (`CyrinxScrambledBatchTests`). They are experimental. An over-the-air
+    screen of two of them gave no answer, because nothing decoded at the
+    bench's placement, control frames included (entry 28;
+    [SCRAMBLER_PLAN](SCRAMBLER_PLAN.md)). Profiles 1 to 5 still fail as
+    described here.
 
 27. **The batch input layout was not the same on 32-bit x86. Fixed.** The
     versioned structures pin their sizes with compile-time assertions, which
@@ -330,6 +332,63 @@ loopback; numbers are quoted as measured.
     two-channel fixtures that use that structure. The lesson is general:
     a 64-bit integer or double that follows a pointer or a 32-bit member
     needs explicit alignment in any future versioned structure.
+
+28. **The over-the-air screen of a scrambled profile gave no answer: no
+    frame decoded at the bench's placement, the unscrambled control frames
+    included.** On 2026-11-22 the Mac's speakers, at 88% output, played
+    frames to a Pixel 7a and a Moto G (2026) as they lay on the bench. Their
+    distance and position were not measured; the same day's earlier
+    recordings from this bench are labelled as behind the monitor. Each run
+    sent two 128-byte records, each on a scrambled candidate profile and on
+    its unscrambled parent, between dense control frames. Three runs are
+    valid:
+
+    - candidate 7, parent 2, with dense controls on the candidate only;
+    - candidate 6, parent 1, with dense controls on the candidate only;
+    - candidate 6, parent 1, with dense controls on both.
+
+    In all three, on both phones, the batch receiver completed every decode
+    and found no CRC-valid block in any frame. In the third run that
+    includes the dense frames of profile 1, the unscrambled geometry
+    released in 1.x. A placement that loses the parent profile's own dense
+    frame cannot show what the scrambler adds, so the runs say nothing about
+    recovery, for or against.
+
+    **These measurements did not isolate the cause.** They show three
+    things. A control frame's power was 23 to 25 dB above the noise for
+    profile 7 and 29 to 33 dB for profile 6; that compares one channel's
+    power during a frame with the noise after the transmission, and is not
+    the signal-to-noise ratio on a data carrier or a measure of interference
+    during a frame. The strongest arrival after the first chirp's peak came
+    355 to 408 samples later, 0.7 to 4.2 dB below it; profile 7's cyclic
+    prefix is 240 samples and profile 6's is 768. And the research receiver,
+    with either pilot fit and its clock-offset search, recovered 0 of 75
+    blocks of every frame, scored by byte agreement after removing the
+    scrambler mask where one applied. Profiles 2 and 3 were qualified
+    near-field, and nothing here contradicts that. The same day's earlier
+    broadcast that did recover records at this bench used a QPSK rate-1/2
+    research geometry with an 8,192-sample cyclic prefix, which is not a
+    registered profile (entry 26).
+
+    The recordings do show one effect of the scrambler, in level and not in
+    recovery. An unscrambled 128-byte record padded with zeros was
+    transmitted 4.9 to 5.2 dB below a dense frame, because its tall peaks
+    set the scale, and was received 3.7 to 4.9 dB below. The same record on
+    the scrambled profile was transmitted at the dense frame's level and
+    received within 0.7 dB of it.
+
+    A fourth run is retained and unused: the script reused a recording
+    name, the harness matched an earlier run's log lines, and both captures
+    were cut. The script now names each recording uniquely and checks its
+    length.
+
+    Reproduce the scores and the three measurements from the local archives
+    `scrambler-air-20261122-a`, `-c` and `-d` with `.venv/bin/python
+    scratch/garage/scrambler_air_screen.py replay DIRECTORY` and
+    `scratch/garage/scrambler_air_diagnose.py DIRECTORY`. The screen needs a
+    placement where the parent profile's dense frame decodes through the
+    batch receiver, or a receiver that decodes at this one. It was not rerun
+    there because the phones would have to be moved by hand.
 
 ## Measurement-integrity reminders (process, not physics)
 

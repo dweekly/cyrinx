@@ -7,6 +7,21 @@ date-labelled.
 Detailed evidence for every claim is in the cited document and its reproduction
 commands or content hashes.
 
+## Unreleased — over-the-air screen of the scrambled profiles: no answer
+
+- **The screen ran and could not answer.** The Mac played dense control
+  frames and 128-byte records, on scrambled profiles 7 and 6 and their
+  unscrambled parents, to a Pixel 7a and a Moto G as they lay on the bench.
+  No frame decoded on either phone, including the dense controls of the
+  unscrambled profile 1, so the runs say nothing about recovery. The
+  measurements taken did not isolate the cause
+  ([NEGATIVE_FINDINGS entry 28](docs/NEGATIVE_FINDINGS.md)).
+- **The recordings show the scrambler's effect on level.** An unscrambled
+  short record went out about 5 dB below a dense frame and arrived 4 to 5 dB
+  below; the scrambled one went out and arrived at the dense frame's level.
+- The screen is still open. It needs the phones placed where the parent
+  profiles decode, by someone at the bench.
+
 ## Unreleased — scrambled profiles in Swift, Kotlin and the replay
 
 - **`BatchPHY` offers the scrambled profiles.** `Profile(id:)` finds IDs 6
@@ -26,7 +41,8 @@ commands or content hashes.
   peak-to-RMS ratio of profiles 6 to 10 is 4.2 to 5.0 for the zero, short,
   sparse and 0xff payloads. The unscrambled profiles' zero frame reads at
   least 10 on the same measurement.
-- None of this has been sent over the air.
+- None of this had been sent over the air; the entry above records the
+  first attempt.
 
 ## Unreleased — scrambled profiles in the C core
 

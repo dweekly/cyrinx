@@ -32,7 +32,7 @@ Use `try BatchPHY.Profile.registered()` to enumerate the five unscrambled profil
 
 ## Scrambled profiles
 
-Profiles 6 to 10 are profiles 1 to 5 with a payload scrambler: the sender XORs each frame's payload and CRC bits with a fixed pseudorandom pattern before coding, and the receiver removes it. Their parameters, frame length and capacity equal their parents'. Their identities differ, and a receiver built before they existed cannot decode them. `Profile.isScrambled` and `Profile.payloadScrambler` report the mode. All five are experimental: they are measured in digital loopback and by replay on two phones, and none has been sent over the air.
+Profiles 6 to 10 are profiles 1 to 5 with a payload scrambler: the sender XORs each frame's payload and CRC bits with a fixed pseudorandom pattern before coding, and the receiver removes it. Their parameters, frame length and capacity equal their parents'. Their identities differ, and a receiver built before they existed cannot decode them. `Profile.isScrambled` and `Profile.payloadScrambler` report the mode. All five are experimental: they are measured in digital loopback and by replay on two phones. An over-the-air screen of profiles 6 and 7 gave no answer, because no frame decoded at the bench's placement, control frames included ([NEGATIVE_FINDINGS entry 28](NEGATIVE_FINDINGS.md)).
 
 `Profile(id:)` finds all ten. `Profile.registered()` still returns the five unscrambled profiles, so code that offers every entry of that list keeps offering the same formats.
 
