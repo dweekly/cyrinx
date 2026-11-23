@@ -23,14 +23,14 @@ used to make the checked-in file appear complete.
 
 ## Inventory totals
 
-The 873 classified identities comprise the complete surface emitted by the
+The 912 classified identities comprise the complete surface emitted by the
 defined extraction policy.
 
 | Language | Retain | Deprecate | Experimental | Replace | Total |
 |---|---:|---:|---:|---:|---:|
 | Swift | 53 | 126 | 143 | 115 | 437 |
-| C | 45 | 99 | 166 | 126 | 436 |
-| **Total** | **98** | **225** | **309** | **241** | **873** |
+| C | 45 | 99 | 205 | 126 | 475 |
+| **Total** | **98** | **225** | **348** | **241** | **912** |
 
 The Swift total includes 430 source-declared entries and seven source-less
 protocol-witness initializers emitted even with
@@ -258,7 +258,7 @@ their definitions and predicates are inventoried. This prevents a Windows-only
 function, for example, from remaining invisible to the default Clang pass.
 
 Stable IDs use language, module, declaration kind, and public path. Current
-paths are unique across all 873 entries. File, line, and declaration spelling
+paths are unique across all 912 entries. File, line, and declaration spelling
 are not identity. A separate SHA-256 fingerprint covers normalized declaration,
 availability, conformances, enum value/order, field order, and source
 attributes. A signature change therefore preserves the classification while

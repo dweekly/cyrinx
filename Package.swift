@@ -76,9 +76,21 @@ let package = Package(
                 .headerSearchPath(".")
             ]
         ),
+        // Test-support C target: a consumer compiled against a snapshot of the
+        // profile header from before the v2 profile type, linked against the
+        // present library. Not a product.
+        .target(
+            name: "CV1HeaderConsumer",
+            dependencies: ["CCyrinx"],
+            path: "Tests/CV1HeaderConsumer",
+            publicHeadersPath: "include",
+            cSettings: [
+                .headerSearchPath(".")
+            ]
+        ),
         .testTarget(
             name: "CyrinxTests",
-            dependencies: ["Cyrinx", "CCyrinx", "CGoldenVectors"],
+            dependencies: ["Cyrinx", "CCyrinx", "CGoldenVectors", "CV1HeaderConsumer"],
             path: "Tests/CyrinxTests"
         )
     ]

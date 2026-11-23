@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "cyrinx_bulk_internal.h"
 #include "cyrinx_profiles_internal.h"
 
 _Static_assert(sizeof(cyrinx_batch_channel_view_t) == 32, "channel view v1 size");
@@ -92,16 +93,14 @@ static void write_capacity_fields(cyrinx_batch_result_t *out_result, const cyrin
     out_result->logical_samples_decoded = logical_min;
 }
 
-cyrinx_abi_status_t cyrinx_batch_decode(const cyrinx_profile_t *profile, const cyrinx_batch_input_t *input,
-                                        uint8_t *out_payload, size_t out_payload_cap, uint8_t *block_validity,
-                                        size_t block_validity_cap, cyrinx_batch_result_t *out_result) {
-    if (profile == NULL || input == NULL || out_payload == NULL || block_validity == NULL) {
-        return CYRINX_STATUS_ERR_INVALID_ARGUMENT;
-    }
-    cyrinx_abi_status_t status = cyrinx_profile_validate(profile);
-    if (status != CYRINX_STATUS_OK) {
-        return status;
-    }
+/* Decode against a profile that has already passed its version's validation.
+ * `profile` is the v1 view of it; `payload_scrambler` is the mode of a v2
+ * profile and CYRINX_PAYLOAD_SCRAMBLER_NONE for a v1 one. */
+static cyrinx_abi_status_t decode_validated(const cyrinx_profile_t *profile, uint32_t payload_scrambler,
+                                            const cyrinx_batch_input_t *input, uint8_t *out_payload,
+                                            size_t out_payload_cap, uint8_t *block_validity,
+                                            size_t block_validity_cap, cyrinx_batch_result_t *out_result) {
+    cyrinx_abi_status_t status;
     if (!validate_input_layout(input)) {
         return CYRINX_STATUS_ERR_INVALID_ARGUMENT;
     }
@@ -171,10 +170,10 @@ cyrinx_abi_status_t cyrinx_batch_decode(const cyrinx_profile_t *profile, const c
     int blocks_ok = 0;
     int blocks_total = 0;
     double evm_rms = 0.0;
-    long decode_result = cyrinx_bulk_demodulate2_auto_v1_with_block_validity(
-        &cfg, primary, (size_t)logical_min, secondary, has_secondary ? (size_t)logical_min : 0, out_payload,
-        out_payload_cap, &blocks_ok, &blocks_total, &evm_rms, block_validity, block_validity_cap,
-        &diagnostics);
+    long decode_result = cyrinx_internal_bulk_demodulate2_auto_v1_with_block_validity(
+        &cfg, payload_scrambler, primary, (size_t)logical_min, secondary,
+        has_secondary ? (size_t)logical_min : 0, out_payload, out_payload_cap, &blocks_ok, &blocks_total,
+        &evm_rms, block_validity, block_validity_cap, &diagnostics);
 
     free(primary);
     free(secondary);
@@ -198,16 +197,43 @@ cyrinx_abi_status_t cyrinx_batch_decode(const cyrinx_profile_t *profile, const c
     return decode_result >= 0 ? CYRINX_STATUS_OK : CYRINX_STATUS_ERR_DECODE;
 }
 
-cyrinx_abi_status_t cyrinx_batch_encode(const cyrinx_profile_t *profile, const uint8_t *payload,
-                                        size_t payload_len, float *out_samples, size_t out_cap,
-                                        cyrinx_batch_result_t *out_result) {
-    if (profile == NULL || payload == NULL || out_samples == NULL) {
+cyrinx_abi_status_t cyrinx_batch_decode(const cyrinx_profile_t *profile, const cyrinx_batch_input_t *input,
+                                        uint8_t *out_payload, size_t out_payload_cap, uint8_t *block_validity,
+                                        size_t block_validity_cap, cyrinx_batch_result_t *out_result) {
+    if (profile == NULL || input == NULL || out_payload == NULL || block_validity == NULL) {
         return CYRINX_STATUS_ERR_INVALID_ARGUMENT;
     }
     cyrinx_abi_status_t status = cyrinx_profile_validate(profile);
     if (status != CYRINX_STATUS_OK) {
         return status;
     }
+    return decode_validated(profile, CYRINX_PAYLOAD_SCRAMBLER_NONE, input, out_payload, out_payload_cap,
+                            block_validity, block_validity_cap, out_result);
+}
+
+cyrinx_abi_status_t cyrinx_batch_decode_v2(const cyrinx_profile_v2_t *profile,
+                                           const cyrinx_batch_input_t *input, uint8_t *out_payload,
+                                           size_t out_payload_cap, uint8_t *block_validity,
+                                           size_t block_validity_cap, cyrinx_batch_result_t *out_result) {
+    if (profile == NULL || input == NULL || out_payload == NULL || block_validity == NULL) {
+        return CYRINX_STATUS_ERR_INVALID_ARGUMENT;
+    }
+    cyrinx_abi_status_t status = cyrinx_profile_v2_validate(profile);
+    if (status != CYRINX_STATUS_OK) {
+        return status;
+    }
+    cyrinx_profile_t view;
+    cyrinx_internal_profile_v1_view(profile, &view);
+    return decode_validated(&view, profile->payload_scrambler, input, out_payload, out_payload_cap,
+                            block_validity, block_validity_cap, out_result);
+}
+
+/* Encode against a profile that has already passed its version's validation;
+ * arguments as decode_validated. */
+static cyrinx_abi_status_t encode_validated(const cyrinx_profile_t *profile, uint32_t payload_scrambler,
+                                            const uint8_t *payload, size_t payload_len, float *out_samples,
+                                            size_t out_cap, cyrinx_batch_result_t *out_result) {
+    cyrinx_abi_status_t status;
     if (out_result != NULL &&
         !cyrinx_abi_accepts(out_result, CYRINX_BATCH_RESULT_V1_SIZE, CYRINX_BATCH_RESULT_ABI_VERSION)) {
         return CYRINX_STATUS_ERR_INVALID_ARGUMENT;
@@ -243,8 +269,8 @@ cyrinx_abi_status_t cyrinx_batch_encode(const cyrinx_profile_t *profile, const u
         frame_payload = padded;
     }
 
-    long samples_written =
-        cyrinx_bulk_modulate(&cfg, frame_payload, (size_t)geometry.payload_bytes, out_samples, out_cap, NULL);
+    long samples_written = cyrinx_internal_bulk_modulate(
+        &cfg, payload_scrambler, frame_payload, (size_t)geometry.payload_bytes, out_samples, out_cap, NULL);
     free(padded);
 
     if (samples_written < 0) {
@@ -258,4 +284,34 @@ cyrinx_abi_status_t cyrinx_batch_encode(const cyrinx_profile_t *profile, const u
     }
 
     return CYRINX_STATUS_OK;
+}
+
+cyrinx_abi_status_t cyrinx_batch_encode(const cyrinx_profile_t *profile, const uint8_t *payload,
+                                        size_t payload_len, float *out_samples, size_t out_cap,
+                                        cyrinx_batch_result_t *out_result) {
+    if (profile == NULL || payload == NULL || out_samples == NULL) {
+        return CYRINX_STATUS_ERR_INVALID_ARGUMENT;
+    }
+    cyrinx_abi_status_t status = cyrinx_profile_validate(profile);
+    if (status != CYRINX_STATUS_OK) {
+        return status;
+    }
+    return encode_validated(profile, CYRINX_PAYLOAD_SCRAMBLER_NONE, payload, payload_len, out_samples,
+                            out_cap, out_result);
+}
+
+cyrinx_abi_status_t cyrinx_batch_encode_v2(const cyrinx_profile_v2_t *profile, const uint8_t *payload,
+                                           size_t payload_len, float *out_samples, size_t out_cap,
+                                           cyrinx_batch_result_t *out_result) {
+    if (profile == NULL || payload == NULL || out_samples == NULL) {
+        return CYRINX_STATUS_ERR_INVALID_ARGUMENT;
+    }
+    cyrinx_abi_status_t status = cyrinx_profile_v2_validate(profile);
+    if (status != CYRINX_STATUS_OK) {
+        return status;
+    }
+    cyrinx_profile_t view;
+    cyrinx_internal_profile_v1_view(profile, &view);
+    return encode_validated(&view, profile->payload_scrambler, payload, payload_len, out_samples, out_cap,
+                            out_result);
 }
