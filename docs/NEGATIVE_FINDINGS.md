@@ -296,21 +296,35 @@ loopback; numbers are quoted as measured.
     the codec changes the waveform and therefore needs a new wire version
     (ROADMAP Rank 1).
 
-27. **The batch input layout is not the same on 32-bit x86.** The versioned
-    structures pin their sizes with compile-time assertions. Compiling the C
-    core with the Android NDK on 2026-11-22, the assertions held on arm64-v8a,
-    armeabi-v7a and x86_64. On 32-bit x86 the batch channel view is 28 bytes,
-    not 32, because that ABI aligns a 64-bit integer to four bytes and the
-    view is a pointer followed by 64-bit counts; the batch input, which holds
-    two views, is 72 bytes, not 80. The profile and result structures, which hold
-    no pointer, are the same on all four. The build refuses 32-bit x86 at the
-    assertion, so nothing can run there with a silently different layout.
-    The supported matrix David fixed on 2026-11-22 is arm64, so this blocks
-    nothing today. Making the layout identical everywhere would change a
-    merged contract and is undecided. Reproduce with
-    `.venv/bin/python scripts/check-abi-layout.py`, which passes only while
-    x86 is refused by exactly those two assertions and the two structures
-    measure exactly 28 and 72 bytes there.
+27. **The batch input layout was not the same on 32-bit x86. Fixed.** The
+    versioned structures pin their sizes with compile-time assertions, which
+    had only been evaluated on 64-bit hosts. Compiling the C core with the
+    Android NDK on 2026-11-22, they held on arm64-v8a, armeabi-v7a and
+    x86_64. On 32-bit x86 the batch channel view was 28 bytes, not 32,
+    because that ABI aligns a 64-bit integer to four bytes and the view is a
+    pointer followed by 64-bit counts; the batch input, which holds two
+    views, was 72 bytes, not 80. The build refused that ABI at the
+    assertion, so nothing ran there with a different layout. David asked for
+    32-bit x86 to be supported (2026-11-22). The view's first 64-bit member
+    now carries eight-byte alignment on every ABI (`CYRINX_ALIGN8`), which
+    changes nothing where the alignment was already eight, and every field
+    offset of the view is asserted. All four ABIs now build
+    (`.venv/bin/python scripts/check-abi-layout.py`). The decoder was also
+    built and run as a 32-bit x86 Linux program, with the Android x86 ABI's
+    floating-point settings, on the five checkout replay fixtures: identity,
+    receiver decision, mask and every payload byte matched the macOS arm64
+    build (`.venv/bin/python scripts/check-x86-32.py --host <linux host>`).
+    Not tested: the Android runtime or JNI on 32-bit x86, for which no
+    device or emulator was available. This covers the Cyrinx 3 versioned
+    structures only: the ABI header, the profile, and the batch channel
+    view, input and result. The 2.x structures make no such promise and
+    still differ on 32-bit x86, where a double also aligns to four bytes:
+    `cyrinx_bulk_diversity_diagnostics` is 60 bytes there and 64 on the
+    other three. Each is filled and read within one build, so the
+    difference changes no result, as the 32-bit run above shows for the
+    two-channel fixtures that use that structure. The lesson is general:
+    a 64-bit integer or double that follows a pointer or a 32-bit member
+    needs explicit alignment in any future versioned structure.
 
 ## Measurement-integrity reminders (process, not physics)
 

@@ -14,6 +14,9 @@
 - `./scripts/format-check.sh`: verify formatting without changing files.
 - `./scripts/lint.sh`: run SwiftLint and ShellCheck.
 - `./scripts/check.sh`: full local gate: format check, lint, and tests.
+- `.venv/bin/python scripts/check-abi-layout.py`: compile the C core's layout assertions for the four Android ABIs.
+- `.venv/bin/python scripts/check-x86-32.py --host <linux host>`: run the decoder as a 32-bit x86 program in a container on a Linux machine and compare it with this host.
+- `./scripts/test-sanitizers.sh`: run the whole test suite under AddressSanitizer and ThreadSanitizer, after checking that both catch a known defect.
 - `./scripts/hil-generate.sh`: regenerate the HIL Xcode project from `Apps/HIL/project.yml`.
 - `cd Apps/HIL/android && ./gradlew assembleDebug`: build the Android HIL app.
 

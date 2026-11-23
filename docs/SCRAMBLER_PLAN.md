@@ -227,11 +227,34 @@ One point was reconciled between the two: Codex asked for the golden case to
 carry a registered identity, Gemini showed a registered profile is too large
 and, for most, incompatible with the generator's channel, so the committed
 case is a small fixture profile and the registered IDs are covered by the
-recovery, peak and replay gates. Nothing else was declined.
+recovery, peak and replay gates.
+
+**The reviewers disagreed on how the profile structure grows, and this plan
+follows one of them.** Codex recommended a separately named v2 type with its
+own operations, which items 2, 3 and 6 adopt. Gemini recommended growing the
+existing structure in place, with version 2 marked in its header, an explicit
+reserved field and layout assertions. An earlier version of this section
+said nothing else was declined; that was wrong, and Gemini's recommendation
+was declined without being recorded.
+
+- **Separately Named Type** (adopted): old code cannot touch the new field by
+  accident, the released paths stay unchanged, and it follows this
+  repository's rule to "add versioned entry points rather than changing old
+  layouts in place" (CYRINX_3_PLAN.md, C3-03). It costs about seven
+  near-duplicate entry points and two code paths in each binding.
+- **Grow In Place**: one type and far fewer new entry points, which is the
+  use the versioned header was designed for. It costs a version check in
+  every function before the new field is read, and a missed check reads past
+  the end of an older caller's structure.
+
+Gemini also suggested making zero-padding of a short payload an explicit
+option on `BatchPHY.encode` instead of automatic on scrambled profiles. Item 7
+keeps it automatic; that suggestion was declined too.
 
 ## Questions for David
 
-1. Approve this design, or change it? The choices most worth a second look
-   are the separate v2 profile type with its own enumeration (items 2 and 3)
-   and accepting short payloads on scrambled profiles (item 7).
+1. Approve this design, or change it? The choice most worth a second look is
+   Separately Named Type against Grow In Place, described under Review, where
+   the two reviewers disagreed. The other is accepting short payloads
+   automatically on scrambled profiles (item 7).
 2. Should the per-frame seed stay out, given the known limit above?
