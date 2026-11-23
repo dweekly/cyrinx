@@ -29,6 +29,7 @@ Only `selfcal.py` talks to hardware; everything else is analysis.
 | `rangefind.py` | Two-way acoustic ranging between the Mac and the phone with no shared clock; needs the phone app's play-and-record command |
 | `speaker_matrix.py` | Measures the path from each Mac speaker to each phone microphone in one clock-corrected recording, checks itself, and summarises what phase alignment or two streams could gain |
 | `retain.py` | Decides where captures are kept: `~/dev/cyrinx-artifacts/garage/` unless `--outdir` or `$CYRINX_GARAGE_ARTIFACTS` says otherwise, and never inside a linked git worktree, which is deleted with its ignored files when removed. Also points the harness's raw phone pulls at that directory |
+| `scrambler_air_screen.py`, `scrambler_air_diagnose.py`, `test_scrambler_air_screen.py` | Over-the-air screen of one scrambled profile against its unscrambled parent, decoded by the C batch receiver with dense control frames; and the measurements that explain a run in which nothing decoded: each frame's level, the strongest late arrival, and the research receiver's result. The test scores digital stand-ins for a recording, so it needs no hardware |
 | `test_geometries.py`, `test_delay_spread.py` | Offline tests, including a byte-exact round trip through the C codec and a retained real capture |
 
 ## Where captures go

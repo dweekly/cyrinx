@@ -297,9 +297,11 @@ loopback; numbers are quoted as measured.
     10 are profiles 1 to 5 with the payload and CRC bits scrambled, reached
     through the C v2 profile type and batch entry points. In digital loopback
     they recover every block of the zero, 128-byte and sparse patterns
-    (`CyrinxScrambledBatchTests`). They are experimental and have not been
-    sent over the air ([SCRAMBLER_PLAN](SCRAMBLER_PLAN.md)). Profiles 1 to 5
-    still fail as described here.
+    (`CyrinxScrambledBatchTests`). They are experimental. An over-the-air
+    screen of two of them gave no answer, because nothing decoded at the
+    bench's placement, control frames included (entry 28;
+    [SCRAMBLER_PLAN](SCRAMBLER_PLAN.md)). Profiles 1 to 5 still fail as
+    described here.
 
 27. **The batch input layout was not the same on 32-bit x86. Fixed.** The
     versioned structures pin their sizes with compile-time assertions, which
@@ -330,6 +332,54 @@ loopback; numbers are quoted as measured.
     two-channel fixtures that use that structure. The lesson is general:
     a 64-bit integer or double that follows a pointer or a 32-bit member
     needs explicit alignment in any future versioned structure.
+
+28. **The over-the-air screen of a scrambled profile gave no answer: no
+    frame decoded at the bench's placement, control frames included.** On
+    2026-11-22 the Mac's speakers, at 88% output, played six frames to a
+    Pixel 7a and a Moto G (2026) as they lay on the bench. Their distance
+    and position were not measured; the same day's earlier recordings from
+    this bench are labelled as behind the monitor. The frames were two dense
+    controls on a scrambled candidate, and two 128-byte records, each sent
+    on the candidate and on its unscrambled parent. Two runs are valid: one
+    with candidate profile 7 and parent 2, one with candidate 6 and parent
+    1. In both runs, on both phones, the batch receiver completed every
+    decode and found no CRC-valid block in any of the six frames. With the
+    dense controls lost, the runs say nothing about what the scrambler does
+    to recovery.
+
+    The cause was not noise and not the scrambler. The control frames were
+    23 to 25 dB above the noise for profile 7 and 30 to 33 dB for profile
+    6. The strongest arrival after the first chirp came 355 to 408 samples
+    later at 0.8 to 4.2 dB below it, on both phones. That is outside
+    profile 7's 240-sample cyclic prefix. It is inside profile 6's 768, and
+    profile 6 failed all the same, so a late echo alone does not explain
+    it. The research receiver, with either pilot fit and its clock-offset
+    search, also recovered 0 of 75 blocks of every frame, scored by byte
+    agreement after removing the scrambler mask. Profiles 2 and 3 were
+    qualified near-field; nothing here contradicts that. The same day's
+    earlier broadcast that did recover records at this bench used a QPSK
+    rate-1/2 research geometry with an 8,192-sample cyclic prefix, which is
+    not a registered profile (entry 26).
+
+    The recordings do show one effect of the scrambler, in level and not in
+    recovery. An unscrambled 128-byte record padded with zeros was
+    transmitted 4.9 to 5.2 dB below a dense frame, because its tall peaks
+    set the scale, and was received 3.7 to 4.8 dB below. The same record on
+    the scrambled profile was transmitted at the dense frame's level and
+    received within 0.7 dB of it.
+
+    A third run, between the two, is retained and unused: the script reused
+    a recording name, the harness matched the earlier run's log lines, and
+    both captures were cut. The script now names each recording uniquely and
+    checks its length.
+
+    Reproduce the scores and the three measurements from the local archives
+    `scrambler-air-20261122-a` and `-c` with `.venv/bin/python
+    scratch/garage/scrambler_air_screen.py replay DIRECTORY` and
+    `scratch/garage/scrambler_air_diagnose.py DIRECTORY`. The screen needs a
+    placement where the parent profile's dense frame decodes through the
+    batch receiver, or a receiver that decodes at this one. It was not rerun
+    because the phones would have to be moved by hand.
 
 ## Measurement-integrity reminders (process, not physics)
 
