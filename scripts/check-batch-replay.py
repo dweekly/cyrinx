@@ -138,6 +138,9 @@ EXACT = ("status", "identity", "profile_id", "receiver", "reason", "blocks_total
          "validity_required", "clipping", "nonfinite", "payload_required", "frame_samples",
          "logical_samples", "payload_bytes")
 FIXTURE_ID_BASE = 0xF000  # Tests/BatchReplay/Profiles.h
+# Profile arguments no probe may accept: an unregistered ID, an ID that is not a number, an
+# unknown test geometry, and text that is not a key.
+UNKNOWN_PROFILES = ("registered:11", "registered:", "registered:8x", "99", "seven")
 INVALID_ARGUMENT = -1  # CYRINX_STATUS_ERR_INVALID_ARGUMENT
 DECODE_FAILURE = -10  # CYRINX_STATUS_ERR_DECODE
 METRICS = ("evm_rms", "primary_holdout_pilot_rms", "mrc_holdout_pilot_rms")
@@ -539,6 +542,16 @@ def execute(args, report):
             if run([*probes["Kotlin/JNI"], "registry"]) != b"registry OK":
                 raise ValueError(f"{backend}: JNI registry round trip failed")
             report.setdefault("jni_registry", []).append(backend)
+            # A profile argument that names nothing must stop the probe. One that fell back to
+            # some other profile would produce a result from a decoder the case never asked for.
+            for name, cmd in probes.items():
+                for argument in UNKNOWN_PROFILES:
+                    report["checking"] = f"{backend}/{name}/profile argument {argument}"
+                    refused = subprocess.run([str(arg) for arg in (*cmd, argument, windows[cases[0]["name"]], 1)],
+                                             capture_output=True)
+                    if refused.returncode == 0:
+                        raise ValueError(f"{backend}/{name}: accepted the profile argument {argument!r}")
+            report.setdefault("unknown_profiles_refused", []).append(backend)
             for case in cases:
                 reference = None
                 for name, cmd in probes.items():

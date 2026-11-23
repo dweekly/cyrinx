@@ -10,8 +10,10 @@ int main(int argc, char **argv) {
     cyrinx_profile_v2_t registered;
     if (argc != 4)
         return 1;
-    bool by_id = replay_registered(argv[1], &registered);
-    if (!by_id && !replay_profile(atoi(argv[1]), &profile))
+    bool by_id = replay_names_registered(argv[1]);
+    int key = 0;
+    if (by_id ? !replay_registered(argv[1], &registered)
+              : !(replay_key(argv[1], &key) && replay_profile(key, &profile)))
         return 1;
     uint32_t channels = (uint32_t)atoi(argv[3]);
     if (channels != 1 && channels != 2)

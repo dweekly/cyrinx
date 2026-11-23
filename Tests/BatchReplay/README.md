@@ -35,6 +35,8 @@ Three generated faults sit beside the dropout case: a capture cut shorter than o
 
 A case names its profile in one of two ways. `profile` is the key of a test geometry in `Profiles.h`, decoded through the v1 profile type and entry point. `registered_profile` is a registered ID, looked up in the library's registry through the v2 type and decoded through the v2 entry point, which is how a scrambled profile is reached. The list's `registered_profiles` gives the identity and frame length each such profile must report, and a probe is told the profile as `registered:<id>`.
 
+Before any case runs, each probe on each host backend is given five profile arguments that name nothing, such as an unregistered ID or a key that is not a number, and must exit with an error. A probe that fell back to some other profile would report a result from a decoder the case never asked for.
+
 Two cases use registered profile 8, the scrambled twin of profile 3. Their capture, `Tests/Fixtures/conformance/registered-8-sparse.f32`, is one clean frame made by the Python reference modem, not by the C core, with a payload of eight data bytes at the head of each otherwise-zero block. Unscrambled, such a payload recovers no block. The first case requires all 107 blocks. The second applies the dropout of the dropout case, which loses 29 blocks, and requires the other 78 at their own offsets; its valid-byte hash was computed from the transmitted payload, not from a decoder's output. Regenerate or check the capture with:
 
 ```sh
