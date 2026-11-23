@@ -39,7 +39,7 @@
  "classificationCounts": {
   "c": {
    "deprecate": 99,
-   "experimental": 165,
+   "experimental": 166,
    "replace": 126,
    "retain": 45
   },
@@ -3229,6 +3229,28 @@
    "replacement": "plan:C3-05"
   },
   {
+   "id": "c:CCyrinx:c.macro:CYRINX_ALIGN8",
+   "language": "c",
+   "kind": "c.macro",
+   "path": "CYRINX_ALIGN8",
+   "declaration": "[(defined(__cplusplus))] #define CYRINX_ALIGN8 alignas(8) || [(!(defined(__cplusplus)))] #define CYRINX_ALIGN8 _Alignas(8)",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_base.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "fingerprint": "80951ebe043421dc586753020e967b4bde199da35be5a914fa1cafff70788993",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Alignment marker that gives a 64-bit member of a versioned structure eight-byte alignment on every ABI, so layouts match on 32-bit x86.",
+   "compatibility": "No compatibility promise before the C3-05 review freezes the v1 layouts; the frozen layouts are pinned by _Static_asserts and the contract test suites.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
    "id": "c:CCyrinx:c.macro:CYRINX_API",
    "language": "c",
    "kind": "c.macro",
@@ -5252,9 +5274,11 @@
    "origin": "source",
    "availability": [],
    "conformances": [],
-   "attributes": [],
+   "attributes": [
+    "AlignedAttr:{\"inner\":[{\"inner\":[{\"kind\":\"IntegerLiteral\",\"type\":{\"qualType\":\"int\"},\"value\":\"8\",\"valueCategory\":\"prvalue\"}],\"kind\":\"ConstantExpr\",\"type\":{\"qualType\":\"int\"},\"value\":\"8\",\"valueCategory\":\"prvalue\"}]}"
+   ],
    "ordinal": 1,
-   "fingerprint": "2fe4370991ced3582b0b0227de606c61d118a30c5b7edacf5fcd32e8dce95363",
+   "fingerprint": "e651ea19c3a74216ff7b2d72da385391f032bfb8137f3b3210232a4a2a61dcf3",
    "present": true,
    "reviewState": "reviewed",
    "disposition": "experimental",
