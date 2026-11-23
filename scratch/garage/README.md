@@ -78,6 +78,8 @@ confirmed by the owner.
 
 ## Running the tests
 
+`./scripts/test-research.sh`, from the repository root, builds both libraries below from the checkout and runs this directory's tests and `scratch/hw20k`'s with none skipped. The commands that follow do the same by hand.
+
 ```sh
 python3 -m venv .venv && .venv/bin/pip install numpy pytest
 clang -std=c11 -O2 -dynamiclib -Dkiss_fft_scalar=double \
