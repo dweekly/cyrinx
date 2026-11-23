@@ -298,7 +298,20 @@ keeps it automatic; that suggestion was declined too.
 - The v1 identity functions refuse any structure whose header says version 2,
   scrambled or not.
 
+**Built in the reference modem** (design item 8), with `swift test --filter
+CyrinxScrambledGoldenTests` and `./scripts/test-accelerate.sh`:
+
+- `scratch/hw20k/modem.py` has the scrambler, written from this document's
+  text. Golden case `qam16_r34_scrambled` is a four-block, four-symbol frame
+  with a sparse payload.
+- The C core's frame for that payload matches the Python waveform within the
+  golden tolerance, and the C core decodes the Python audio after the
+  generator's echo channel, on both FFT backends.
+- The fixture profile's v2 identity, computed by the generator with
+  `hashlib`, equals the C library's.
+- Before the clip the scrambled frame's peak-to-RMS ratio is 4.0. The same
+  payload unscrambled is 23.7, and the C core recovers none of its blocks.
+
 **Not built yet:** short payloads and the scrambler mode in `BatchPHY` (item
-7), the Python reference and the golden case (item 8), the JNI probe and the
-replay fixture (item 9 and the replay gate), the peak diagnostic, and the
-over-the-air screen.
+7), the JNI probe and the replay fixture (item 9 and the replay gate), the
+peak diagnostic on the registered profiles, and the over-the-air screen.

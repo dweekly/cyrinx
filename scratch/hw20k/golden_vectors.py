@@ -36,6 +36,7 @@ Usage:
 import hashlib
 import json
 import os
+import struct
 import sys
 
 import numpy as np
@@ -124,6 +125,52 @@ def _cfg_qpsk_r23():
     return cfg
 
 
+def _cfg_qam16_scrambled():
+    # The 16-QAM case's geometry with the payload scrambler on (docs/SCRAMBLER_PLAN.md). Four
+    # blocks, so the mask runs across the first block's CRC into the second.
+    base = M.Config(nfft=2048, cp=768)
+    cfg = M.Config(nfft=2048, cp=768, rate="3/4", n_sym=4,
+                   bits_per_bin={b: 4 for b in base.data_idx},
+                   payload_scrambler=M.SCRAMBLER_FRAMED_BITS_V1)
+    assert cfg.n_blocks >= 2, "the scrambled case must span a block boundary"
+    return cfg
+
+
+def _sparse_payload(cfg, seed):
+    """Eight data bytes at the head of each otherwise-zero block: the kind of payload the
+    unscrambled codec loses (NEGATIVE_FINDINGS entry 26)."""
+    rng = M.DetRng(seed)
+    return b"".join(rng.bytes(8) + bytes(M.CRC_BLOCK - 8) for _ in range(cfg.n_blocks))
+
+
+# Peak-to-RMS ratio of the OFDM section before the clip. The scrambled case must sit below the
+# first figure, and its payload sent unscrambled above the second, so the case shows both that
+# the payload is one the clip destroys and that the scrambler removes the peak.
+SCRAMBLED_MAX_PEAK_TO_RMS = 6.5
+UNSCRAMBLED_MIN_PEAK_TO_RMS = 10.0
+
+# The profile enum values of cyrinx_profiles.h, for the identity of the scrambled case.
+PROFILE_MODULATION = {1: 0, 2: 1, 4: 2, 6: 3, 8: 4}
+PROFILE_CODE_RATE = {"1/2": 0, "2/3": 1, "3/4": 2, "5/6": 3}
+
+
+def _v2_identity(meta):
+    """SHA-256 of the v2 profile identity stream for a scrambled case, computed here from the
+    stream's definition and not by the C library."""
+    stream = b"cyrinx-profile-identity-v2" + struct.pack(
+        ">ddIIIIIIIddddI", meta["f_lo"], meta["f_hi"], meta["nfft"], meta["cp"], meta["sr"],
+        meta["pilot_every"], meta["n_sym"], PROFILE_MODULATION[meta["bits_per_bin_uniform"]],
+        PROFILE_CODE_RATE[meta["rate"]], meta["amp"], meta["clip_sigma"], meta["chirp_f0"],
+        meta["chirp_f1"], meta["payload_scrambler"])
+    assert len(stream) == 106
+    return hashlib.sha256(stream).hexdigest()
+
+
+def _peak_to_rms(taps):
+    raw = taps["ofdm_time_raw"]
+    return float(np.abs(raw).max() / raw.std())
+
+
 CASES = [
     ("qpsk_r12", _cfg_qpsk, 0x1234),
     ("qam16_r34", _cfg_qam16, 0x5678),
@@ -132,6 +179,9 @@ CASES = [
     # decode FAILS; rx_wave2 (mic1) is complementarily notched; the MRC decode
     # (cyrinx_bulk_demodulate2 / modem.demodulate_frame(rx2=)) must be byte-exact.
     ("qam16_r34_mrc", _cfg_qam16, 0xD00D),
+    # Scrambled twin of the 16-QAM geometry with a sparse payload. Its config records the
+    # scrambler mode and the v2 identity of the fixture profile that describes it.
+    ("qam16_r34_scrambled", _cfg_qam16_scrambled, 0x5C4A),
 ]
 
 
@@ -180,7 +230,8 @@ def _storage_dtype(arr):
 
 def build_case(name, cfg, seed):
     mrc = name.endswith("_mrc")
-    payload = M.DetRng(seed).bytes(cfg.payload_bytes)
+    scrambled = cfg.payload_scrambler != M.SCRAMBLER_NONE
+    payload = _sparse_payload(cfg, seed) if scrambled else M.DetRng(seed).bytes(cfg.payload_bytes)
     taps = {}
     wave = M.modulate_frame(cfg, payload, taps=taps)
     mic0_alone_ok = None
@@ -241,6 +292,22 @@ def build_case(name, cfg, seed):
         "decode_blocks_total": int(res["blocks_total"]),
         "pad_fill_bits_len": int(taps["pad_fill_bits"].size),
     }
+    if scrambled:
+        # The same payload through the same geometry with the scrambler off, for the record of
+        # what the scrambler changed. Nothing of the unscrambled frame is stored.
+        plain = M.Config(nfft=cfg.nfft, cp=cfg.cp, rate=cfg.rate_name, n_sym=cfg.n_sym,
+                         bits_per_bin=cfg.bits_per_bin)
+        plain_taps = {}
+        M.modulate_frame(plain, payload, taps=plain_taps)
+        peak, plain_peak = _peak_to_rms(taps), _peak_to_rms(plain_taps)
+        assert peak <= SCRAMBLED_MAX_PEAK_TO_RMS, f"{name}: scrambled peak-to-RMS {peak:.2f}"
+        assert plain_peak >= UNSCRAMBLED_MIN_PEAK_TO_RMS, \
+            f"{name}: this payload peaks at only {plain_peak:.2f} unscrambled, so it proves nothing"
+        cfgmeta["payload_scrambler"] = int(cfg.payload_scrambler)
+        cfgmeta["pre_clip_peak_to_rms"] = round(peak, 3)
+        cfgmeta["unscrambled_pre_clip_peak_to_rms"] = round(plain_peak, 3)
+        cfgmeta["profile_identity_scheme"] = "sha256/cyrinx-profile-identity-v2"
+        cfgmeta["profile_identity_sha256"] = _v2_identity(cfgmeta)
     if mrc:
         cfgmeta["rx2_channel_taps"] = RX2_CHANNEL_TAPS
         cfgmeta["rx_notch_mic0"] = MRC_NOTCH_MIC0

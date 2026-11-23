@@ -24,6 +24,12 @@ commands or content hashes.
   Kotlin probe do not expose the new profiles yet.
   [docs/SCRAMBLER_PLAN.md](docs/SCRAMBLER_PLAN.md) records the design, its
   approval and what remains.
+- **The Python reference modem has the same scrambler, and the two agree.**
+  A new golden case, a four-block frame with a sparse payload, is made by
+  the Python modem; the C core reproduces its waveform within the golden
+  tolerance and decodes its audio on both FFT backends. Before the clip the
+  scrambled frame's peak-to-RMS ratio is 4.0, against 23.7 for the same
+  payload unscrambled.
 
 ## Unreleased — conformance: full result records, sanitizers, negative controls
 

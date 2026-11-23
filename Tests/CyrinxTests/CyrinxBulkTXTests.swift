@@ -109,7 +109,7 @@ final class CyrinxBulkTXTests: XCTestCase {
     /// float-tol; wave is float-tol vs the float32 reference.
     func testModulateDataFreqAndWave() throws {
         let tol = Float(try GoldenVectors.loadManifest().floatAbsTol)
-        for c in try cases() {
+        for c in try unscrambledCases() {
             let cfg = c.config
             let expDataFreq = GoldenVectors.complex64(
                 try GoldenVectors.rawData(c.name, try artifactObj(c, "data_freq")))
@@ -173,7 +173,7 @@ final class CyrinxBulkTXTests: XCTestCase {
     /// pilot phase tracking, max-log LLR, deinterleave, depuncture, soft Viterbi,
     /// and CRC — end to end.
     func testDemodulateRxWave() throws {
-        for c in try cases() {
+        for c in try unscrambledCases() {
             let cfg = c.config
             let isMRC = c.artifacts.contains { $0.stage == "rx_wave2" }
             let rxWave = GoldenVectors.float32s(
@@ -289,6 +289,12 @@ final class CyrinxBulkTXTests: XCTestCase {
 
     private func cases() throws -> [GoldenVectors.Case] {
         try GoldenVectors.loadManifest().cases
+    }
+
+    /// The cases the 2.x entry points can make and read. A scrambled case goes through the v2
+    /// batch entry points instead, in CyrinxScrambledGoldenTests.
+    private func unscrambledCases() throws -> [GoldenVectors.Case] {
+        try cases().filter { !$0.config.isScrambled }
     }
 
     private func artifactObj(_ c: GoldenVectors.Case, _ stage: String) throws
