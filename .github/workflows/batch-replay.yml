@@ -36,6 +36,8 @@ jobs:
         run: .venv/bin/python Tests/BatchReplay/check-mask-order.py
       - name: Refuse input lists the runner would not apply in full
         run: .venv/bin/python Tests/BatchReplay/check-manifest-validation.py
+      - name: Fail, and say where, when one field of one record changes
+        run: .venv/bin/python Tests/BatchReplay/check-negative-controls.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

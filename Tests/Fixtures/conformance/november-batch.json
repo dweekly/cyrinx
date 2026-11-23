@@ -6,6 +6,12 @@
     "0298025229bac4284b0676b566011df2a923bbffeafc0d6d0712ada2713b7a79",
     "4857a2cbe838b523e4a992fdc51bdfa516737bd8485bfebfe75cafa85c71dd5a"
   ],
+  "frame_samples": [
+    23040,
+    184320,
+    129024,
+    23040
+  ],
   "cases": [
     {
       "name": "digital-qpsk",
@@ -15,7 +21,23 @@
       "mask": "1",
       "valid_payload_sha256": "fe5c1de9b88c44e6f2e0097b5fd9fd2ba1d4f881d091aa00743bb670cbbe1615",
       "receiver": 0,
-      "reason": 6
+      "reason": 6,
+      "clipping": 0,
+      "nonfinite": 0,
+      "metrics": {
+        "evm_rms": {
+          "value": 0.016971090657665763,
+          "tolerance": 1e-09
+        },
+        "primary_holdout_pilot_rms": {
+          "value": "inf",
+          "tolerance": 0
+        },
+        "mrc_holdout_pilot_rms": {
+          "value": "inf",
+          "tolerance": 0
+        }
+      }
     },
     {
       "name": "pixel-desk-frame-1",
@@ -29,7 +51,23 @@
       "mask": "1111110101",
       "valid_payload_sha256": "dbac0c3d8e795abb9a6017a219cb78d2a264d78f1f2bc74d8a5135b91115c25e",
       "receiver": 0,
-      "reason": 6
+      "reason": 6,
+      "clipping": 0,
+      "nonfinite": 0,
+      "metrics": {
+        "evm_rms": {
+          "value": 0.7399539518789217,
+          "tolerance": 1e-09
+        },
+        "primary_holdout_pilot_rms": {
+          "value": "inf",
+          "tolerance": 0
+        },
+        "mrc_holdout_pilot_rms": {
+          "value": "inf",
+          "tolerance": 0
+        }
+      }
     },
     {
       "name": "pixel-desk-frame-2",
@@ -43,7 +81,23 @@
       "mask": "1111111111",
       "valid_payload_sha256": "4846552666dceec5d5fdd6a6d94ab2cde35f16ae122e203008be91552f91ab2e",
       "receiver": 0,
-      "reason": 6
+      "reason": 6,
+      "clipping": 0,
+      "nonfinite": 0,
+      "metrics": {
+        "evm_rms": {
+          "value": 0.6782740940628189,
+          "tolerance": 1e-09
+        },
+        "primary_holdout_pilot_rms": {
+          "value": "inf",
+          "tolerance": 0
+        },
+        "mrc_holdout_pilot_rms": {
+          "value": "inf",
+          "tolerance": 0
+        }
+      }
     },
     {
       "name": "pixel-behind-monitor-control",
@@ -60,7 +114,23 @@
         "valid_payload_sha256": "01bb71e3a85a7712e08badafae038a2194ffaaddb94d768e8367843c5c321245"
       },
       "receiver": 0,
-      "reason": 6
+      "reason": 6,
+      "clipping": 0,
+      "nonfinite": 0,
+      "metrics": {
+        "evm_rms": {
+          "value": 1.2277942162199516,
+          "tolerance": 1e-09
+        },
+        "primary_holdout_pilot_rms": {
+          "value": "inf",
+          "tolerance": 0
+        },
+        "mrc_holdout_pilot_rms": {
+          "value": "inf",
+          "tolerance": 0
+        }
+      }
     },
     {
       "name": "moto-behind-monitor-control",
@@ -77,7 +147,23 @@
         "valid_payload_sha256": "99250ee05d6d9e29e550d2390ecd992c2674ac2fbdb4a39df909b433f9b3113c"
       },
       "receiver": 0,
-      "reason": 6
+      "reason": 6,
+      "clipping": 0,
+      "nonfinite": 0,
+      "metrics": {
+        "evm_rms": {
+          "value": 1.3087058910257074,
+          "tolerance": 1e-09
+        },
+        "primary_holdout_pilot_rms": {
+          "value": "inf",
+          "tolerance": 0
+        },
+        "mrc_holdout_pilot_rms": {
+          "value": "inf",
+          "tolerance": 0
+        }
+      }
     },
     {
       "name": "periodic-dropout",
@@ -91,7 +177,23 @@
       "mask": "1101",
       "valid_payload_sha256": "fb8cdc60005601c89b5c100defcf119dd04f1302f4a61b276a9b88b9a807048f",
       "receiver": 0,
-      "reason": 6
+      "reason": 6,
+      "clipping": 0,
+      "nonfinite": 0,
+      "metrics": {
+        "evm_rms": {
+          "value": 0.25863759895166416,
+          "tolerance": 1e-09
+        },
+        "primary_holdout_pilot_rms": {
+          "value": "inf",
+          "tolerance": 0
+        },
+        "mrc_holdout_pilot_rms": {
+          "value": "inf",
+          "tolerance": 0
+        }
+      }
     },
     {
       "name": "two-mic-recovery",
@@ -102,7 +204,23 @@
       "mask": "1111",
       "valid_payload_sha256": "c136cbc89b46c8a0cabc7c9007e90ced34d2861e9cda4fab4e185f2e06fc57b5",
       "receiver": 1,
-      "reason": 1
+      "reason": 1,
+      "clipping": 0,
+      "nonfinite": 0,
+      "metrics": {
+        "evm_rms": {
+          "value": 0.038928067166863985,
+          "tolerance": 1e-09
+        },
+        "primary_holdout_pilot_rms": {
+          "value": 3.259930710113849,
+          "tolerance": 1e-09
+        },
+        "mrc_holdout_pilot_rms": {
+          "value": 0.04287529919061497,
+          "tolerance": 1e-09
+        }
+      }
     },
     {
       "name": "two-mic-reversed",
@@ -113,7 +231,23 @@
       "mask": "1111",
       "valid_payload_sha256": "c136cbc89b46c8a0cabc7c9007e90ced34d2861e9cda4fab4e185f2e06fc57b5",
       "receiver": 1,
-      "reason": 1
+      "reason": 1,
+      "clipping": 0,
+      "nonfinite": 0,
+      "metrics": {
+        "evm_rms": {
+          "value": 0.03892806716686398,
+          "tolerance": 1e-09
+        },
+        "primary_holdout_pilot_rms": {
+          "value": 3.6907061202380644,
+          "tolerance": 1e-09
+        },
+        "mrc_holdout_pilot_rms": {
+          "value": 0.04287529919061499,
+          "tolerance": 1e-09
+        }
+      }
     },
     {
       "name": "two-mic-duplicated",
@@ -124,7 +258,85 @@
       "mask": "0000",
       "valid_payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "receiver": 0,
-      "reason": 2
+      "reason": 2,
+      "clipping": 0,
+      "nonfinite": 0,
+      "metrics": {
+        "evm_rms": {
+          "value": 5.739210446986059,
+          "tolerance": 1e-09
+        },
+        "primary_holdout_pilot_rms": {
+          "value": 3.259930710113849,
+          "tolerance": 1e-09
+        },
+        "mrc_holdout_pilot_rms": {
+          "value": 3.2599311724644324,
+          "tolerance": 1e-09
+        }
+      }
+    },
+    {
+      "name": "truncated-capture",
+      "profile": 0,
+      "path": "Tests/Fixtures/golden/qpsk_r12/rx_wave.bin",
+      "truncate": 4096,
+      "status": -1,
+      "pcm_sha256": "dd331027463852aacb502b87129d35f952c076b6e754560c4389684b930caf5f"
+    },
+    {
+      "name": "nonfinite-sample",
+      "profile": 3,
+      "path": "Tests/Fixtures/golden/qam16_r34/rx_wave.bin",
+      "nonfinite_at": 9000,
+      "mask": "1111",
+      "receiver": 0,
+      "reason": 6,
+      "valid_payload_sha256": "7480da176862677585a8221d93ebfee8e79d6be888d66edc3b77ac69560f8eae",
+      "clipping": 0,
+      "nonfinite": 1,
+      "metrics": {
+        "evm_rms": {
+          "value": 0.011577106246850532,
+          "tolerance": 1e-09
+        },
+        "primary_holdout_pilot_rms": {
+          "value": "inf",
+          "tolerance": 0
+        },
+        "mrc_holdout_pilot_rms": {
+          "value": "inf",
+          "tolerance": 0
+        }
+      },
+      "pcm_sha256": "17446ae08fc7a2876633575e3e341b41d6372dc09d9ae5f1ccfec65e0414edcc"
+    },
+    {
+      "name": "clipped-capture",
+      "profile": 3,
+      "path": "Tests/Fixtures/golden/qam16_r34/rx_wave.bin",
+      "gain": 8.0,
+      "mask": "0000",
+      "receiver": 0,
+      "reason": 6,
+      "valid_payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "clipping": 11188,
+      "nonfinite": 0,
+      "metrics": {
+        "evm_rms": {
+          "value": 1.0326615291969283,
+          "tolerance": 1e-09
+        },
+        "primary_holdout_pilot_rms": {
+          "value": "inf",
+          "tolerance": 0
+        },
+        "mrc_holdout_pilot_rms": {
+          "value": "inf",
+          "tolerance": 0
+        }
+      },
+      "pcm_sha256": "9be00eb524634b940e238623a59b94fe6cfa2a35fdf1df5ede673ec11a7c4785"
     }
   ]
 }

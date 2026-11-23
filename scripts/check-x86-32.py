@@ -4,8 +4,10 @@ scripts/check-abi-layout.py proves the versioned structures have the same layout
 This goes one step further and runs the decoder there. The checkout-only replay fixtures are
 decoded by the direct C probe built for this host and by the same probe built inside a 32-bit
 x86 Linux container on a remote machine, with the floating-point settings of the Android x86
-ABI. Each pair of results must be identical: profile identity, receiver decision, ordered block
-mask and every payload byte.
+ABI. The 32-bit record is held to the same expectations as every other lane of the replay: the
+status, identity, decisions, counts, ordered block mask and valid bytes exactly, and the metrics
+within each fixture's tolerance. Its decisions and every payload byte must also equal this
+host's.
 
 It needs ssh access to a Linux machine with Docker. No 32-bit x86 Android device or emulator
 is involved, so this covers the C core on that architecture, not the Android runtime.
@@ -64,13 +66,10 @@ def main():
         replay = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(replay)
         manifest = json.loads((args.manifest or replay.MANIFEST).read_text())
-        # Every entry is checked before any is set aside, so a damaged entry fails the run and
-        # only a well-formed recording case is skipped for needing the local archive.
-        names = [case.get("name") for case in manifest["cases"]]
-        if not all(isinstance(name, str) and name for name in names) or len(set(names)) != len(names):
-            raise ValueError("every replay case needs its own name")
-        for case in manifest["cases"]:
-            replay.validate_case(case, len(manifest["profile_identities"]))
+        # The replay's own check of the whole list, before any entry is set aside: a damaged
+        # entry fails the run and only a well-formed recording case is skipped for needing the
+        # local archive.
+        replay.validate_manifest(manifest)
         cases = [case for case in manifest["cases"] if "path" in case]
         report["skipped_recording_cases"] = [case["name"] for case in manifest["cases"] if "archive" in case]
         if not cases:
@@ -78,9 +77,10 @@ def main():
         with tempfile.TemporaryDirectory(prefix="cyrinx-x86-32-") as tmp:
             tmp = Path(tmp)
             (tmp / "inputs").mkdir()
-            lines = []
+            lines, inputs = [], []
             for index, case in enumerate(cases):
-                (tmp / "inputs" / f"{index}.f32").write_bytes(replay.fixture_bytes(case, None))
+                inputs.append(replay.fixture_bytes(case, None))
+                (tmp / "inputs" / f"{index}.f32").write_bytes(inputs[-1])
                 lines.append(f"{index} {case['profile']} {2 if 'secondary_path' in case else 1}")
             (tmp / "cases.txt").write_text("\n".join(lines) + "\n")
             (tmp / "run.sh").write_text(REMOTE.replace("SOURCES", " ".join("core/" + name for name in SOURCES)))
@@ -106,18 +106,26 @@ def main():
                 here = run([local, case["profile"], tmp / "inputs" / f"{index}.f32", channels],
                            capture_output=True).stdout
                 there = run([*SSH, args.host, "cat", f"{remote}/out/{index}.bin"], capture_output=True).stdout
-                blocks = len(case["mask"])
-                # The probe writes a 40-byte header, then one mask byte and 256 payload bytes per
-                # block. A record of any other length is not the result this case describes.
-                if len(there) != 40 + blocks * 257:
-                    raise ValueError(f"{case['name']}: {len(there)} bytes returned where {blocks} blocks "
-                                     f"need {40 + blocks * 257}")
-                mask = "".join(str(v) for v in there[40:40 + blocks])
-                same = here == there
-                report["results"].append(dict(fixture=case["name"], bytes=len(there), mask=mask,
-                                              expected_mask=case["mask"], identical_to_host=same))
-                print(f"{case['name']:<22} {len(there):>6} bytes  mask {mask:<6} identical to this host: {same}")
-        good = all(row["identical_to_host"] and row["mask"] == row["expected_mask"] for row in report["results"])
+                try:
+                    # The runner's own parsing and comparison: a record of the wrong length, a
+                    # different decision or count, or a metric outside its tolerance all fail here.
+                    record = replay.parse(there)
+                    outcome = replay.compare(case, replay.expectation(case, manifest, inputs[index]), record)
+                    same = replay.same_decision(record, replay.parse(here))
+                except replay.Mismatch as error:
+                    # Keep what was compared before it failed, as the replay's own report does.
+                    if error.outcome:
+                        report["results"].append({**error.outcome, "fixture": case["name"],
+                                                  "status": record["status"], "bytes": len(there),
+                                                  "passed": False})
+                    raise ValueError(f"{case['name']}: {error}") from error
+                except ValueError as error:
+                    raise ValueError(f"{case['name']}: {error}") from error
+                report["results"].append({**outcome, "fixture": case["name"], "status": record["status"],
+                                          "bytes": len(there), "identical_decisions_to_host": same})
+                print(f"{case['name']:<22} status {record['status']:>3}  mask {outcome.get('mask', '-'):<6} "
+                      f"same decisions as this host: {same}")
+        good = all(row.get("identical_decisions_to_host") for row in report["results"])
         report["status"] = "passed" if good and len(report["results"]) == len(cases) else "failed"
     except Exception as error:
         report["error"] = str(error)
@@ -127,8 +135,10 @@ def main():
             # The container wrote its outputs as root, so it removes them; then the directory goes.
             try:
                 subprocess.run([*SSH, args.host, f"docker run --rm -v {remote}:/work {IMAGE} sh -c "
-                                f"'rm -rf /work/* /work/.[!.]*' ; rmdir {remote}"], capture_output=True, timeout=120)
-            except subprocess.TimeoutExpired:
+                                f"'rm -rf /work/* /work/.[!.]*' ; rmdir {remote}"], capture_output=True, timeout=120,
+                               check=True)
+            except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
+                # A warning, so a failed tidy-up never hides the replay's own result.
                 print(f"could not remove {remote} on {args.host}", file=sys.stderr)
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(json.dumps(report, indent=2) + "\n")
