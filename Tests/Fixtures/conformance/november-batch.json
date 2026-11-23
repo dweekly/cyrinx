@@ -337,6 +337,33 @@
         }
       },
       "pcm_sha256": "9be00eb524634b940e238623a59b94fe6cfa2a35fdf1df5ede673ec11a7c4785"
+    },
+    {
+      "name": "late-chirp",
+      "profile": 0,
+      "path": "Tests/Fixtures/golden/qpsk_r12/rx_wave.bin",
+      "delay": 22156,
+      "status": -10,
+      "blocks": 1,
+      "receiver": 0,
+      "reason": 0,
+      "clipping": 0,
+      "nonfinite": 0,
+      "pcm_sha256": "2bee489064513920e7e8936263c8128189fcfda687d44ceef46ae5a82bc07384",
+      "metrics": {
+        "evm_rms": {
+          "value": 0.0,
+          "tolerance": 1e-09
+        },
+        "primary_holdout_pilot_rms": {
+          "value": "inf",
+          "tolerance": 0
+        },
+        "mrc_holdout_pilot_rms": {
+          "value": "inf",
+          "tolerance": 0
+        }
+      }
     }
   ]
 }
