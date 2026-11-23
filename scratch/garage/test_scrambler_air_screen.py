@@ -95,6 +95,25 @@ def test_a_record_frame_with_the_wrong_bytes_does_not_count(codec, tmp_path):
     assert not screen.summarize({"one": rows, "two": rows}, 6)["records_recovered"]
 
 
+def test_a_replay_must_reproduce_the_retained_outcome_and_not_only_its_pass_flag(clean):
+    _, rows = clean
+    lost_control = copy.deepcopy(rows)
+    lost_control[0]["blocks_verified"] -= 1
+    scores = {"one": rows, "two": lost_control}
+    summary = dict(screen.summarize(scores, 6), scores=scores)
+    assert summary["outcome"] == "no answer"
+    assert screen.replay_differences(copy.deepcopy(summary), summary) == []
+    # Retained as a failure, replayed as no answer: neither passed, and the scores agree.
+    assert screen.replay_differences(dict(summary, outcome="failed"), summary) == ["outcome"]
+    assert screen.replay_differences(dict(summary, controls_decoded=True), summary) == ["controls_decoded"]
+    # A ledger from before the outcome existed is held to its scores and its pass flag.
+    early = dict(passed=False, scores=scores)
+    assert screen.replay_differences(early, summary) == []
+    assert screen.replay_differences(dict(early, passed=True), summary) == ["passed"]
+    assert screen.replay_differences(dict(passed=False, scores={"one": rows}), summary) == ["scores"]
+    assert screen.replay_differences({}, summary) == ["passed", "scores"]
+
+
 @pytest.mark.parametrize("candidate", [7, 6])
 def test_the_first_schedule_still_builds_the_transmission_the_retained_runs_recorded(codec, candidate):
     frames = [[label, candidate if which == "C" else candidate - 5, name] for label, which, name in FIRST_SCHEDULE]

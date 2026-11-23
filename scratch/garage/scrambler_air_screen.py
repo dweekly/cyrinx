@@ -240,6 +240,16 @@ def summarize(scores, candidate):
                 controls_decoded=carried, phones=len(scores))
 
 
+def replay_differences(retained, summary):
+    """The fields of a retained ledger that a replay did not reproduce.
+
+    Every field the retained ledger holds is compared, the three-way outcome included: a run
+    retained as failed must not replay as no answer. A ledger written before a field existed is
+    not failed for lacking it, but it always holds the frame scores and the pass flag.
+    """
+    return [key for key in sorted(set(retained) | {"scores", "passed"}) if retained.get(key) != summary.get(key)]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("mode", choices=["record", "replay"])
@@ -295,11 +305,9 @@ def main():
     if args.mode == "record":
         ledger.write_text(json.dumps(summary, indent=2) + "\n")
     else:
-        # The verdict and every frame's scores must be the retained ones. A ledger written before
-        # a summary field existed is not failed for lacking it.
-        retained = json.loads(ledger.read_text())
-        if retained["scores"] != summary["scores"] or retained["passed"] != summary["passed"]:
-            raise SystemExit("replay gave different scores from the retained ones")
+        changed = replay_differences(json.loads(ledger.read_text()), summary)
+        if changed:
+            raise SystemExit(f"replay differs from the retained run in: {', '.join(changed)}")
     for serial, rows in scores.items():
         model = trial["phones"][serial].get("model", serial)
         for row in rows:
