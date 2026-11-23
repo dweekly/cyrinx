@@ -45,7 +45,7 @@
   },
   "swift": {
    "deprecate": 126,
-   "experimental": 143,
+   "experimental": 146,
    "replace": 115,
    "retain": 53
   }
@@ -15388,6 +15388,28 @@
    "replacement": "plan:C3-06"
   },
   {
+   "id": "swift:Cyrinx:swift.property:BatchPHY.Profile.isScrambled",
+   "language": "swift",
+   "kind": "swift.property",
+   "path": "BatchPHY.Profile.isScrambled",
+   "declaration": "var isScrambled: Bool { get }",
+   "source": "Sources/Cyrinx/BatchPHY.swift",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "fingerprint": "77755dee14b2ab25847b467eda992539e1b04f80968932ba65d3e9d0378d7511",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "C3-06 Swift value binding to the versioned C batch and profile contracts.",
+   "compatibility": "Experimental 3.x surface during cross-binding conformance testing.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-06"
+  },
+  {
    "id": "swift:Cyrinx:swift.property:BatchPHY.Profile.lowFrequencyHz",
    "language": "swift",
    "kind": "swift.property",
@@ -15443,6 +15465,28 @@
    "conformances": [],
    "attributes": [],
    "fingerprint": "b51aa91f086cf43d13aca54fdfcbf701b19f15b836e95825446e20e936fcf321",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "C3-06 Swift value binding to the versioned C batch and profile contracts.",
+   "compatibility": "Experimental 3.x surface during cross-binding conformance testing.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-06"
+  },
+  {
+   "id": "swift:Cyrinx:swift.property:BatchPHY.Profile.payloadScrambler",
+   "language": "swift",
+   "kind": "swift.property",
+   "path": "BatchPHY.Profile.payloadScrambler",
+   "declaration": "var payloadScrambler: UInt32 { get }",
+   "source": "Sources/Cyrinx/BatchPHY.swift",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "fingerprint": "7057e08223888f7c50aed3cfc91c94b5bba16c19505d888fd7e4054a907b4f67",
    "present": true,
    "reviewState": "reviewed",
    "disposition": "experimental",
@@ -19906,6 +19950,28 @@
    "conformances": [],
    "attributes": [],
    "fingerprint": "aa9fd358f0c1af701170e3f1e008e654343e38219a5315da95c66276070799eb",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "C3-06 Swift value binding to the versioned C batch and profile contracts.",
+   "compatibility": "Experimental 3.x surface during cross-binding conformance testing.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-06"
+  },
+  {
+   "id": "swift:Cyrinx:swift.type.method:BatchPHY.Profile.registeredIncludingScrambled()",
+   "language": "swift",
+   "kind": "swift.type.method",
+   "path": "BatchPHY.Profile.registeredIncludingScrambled()",
+   "declaration": "static func registeredIncludingScrambled() throws -> [`Self`]",
+   "source": "Sources/Cyrinx/BatchPHY.swift",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "fingerprint": "8466f834605da6ff375b3bf7aa6c07eb88d14c5fbefcdbd31bfb0c9f99caf3ae",
    "present": true,
    "reviewState": "reviewed",
    "disposition": "experimental",

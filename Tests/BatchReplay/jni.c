@@ -9,10 +9,34 @@ static jbyteArray copy_bytes(JNIEnv *env, const uint8_t *data, jsize count) {
     return array;
 }
 
-static bool lookup_registered(jint id, cyrinx_profile_t *profile) {
-    profile->struct_size = CYRINX_PROFILE_V1_SIZE;
-    profile->abi_version = CYRINX_PROFILE_ABI_VERSION;
-    return cyrinx_profile_get_by_id((uint32_t)id, profile) == CYRINX_STATUS_OK;
+// Registered profiles are looked up through the v2 type, so the scrambled ones are reachable.
+static bool lookup_registered(jint id, cyrinx_profile_v2_t *profile) {
+    *profile = (cyrinx_profile_v2_t){.struct_size = CYRINX_PROFILE_V2_SIZE,
+                                     .abi_version = CYRINX_PROFILE_V2_ABI_VERSION};
+    return id >= 0 && cyrinx_profile_v2_get_by_id((uint32_t)id, profile) == CYRINX_STATUS_OK;
+}
+
+// Every registered ID, scrambled profiles included. profileIDs below keeps the v1 view.
+JNIEXPORT jintArray JNICALL Java_Replay_allProfileIDs(JNIEnv *env, jobject self) {
+    (void)self;
+    jsize count = (jsize)cyrinx_profile_v2_get_count();
+    jintArray ids = (*env)->NewIntArray(env, count);
+    if (!ids)
+        return NULL;
+    for (jsize i = 0; i < count; i++) {
+        cyrinx_profile_v2_t profile = {.struct_size = CYRINX_PROFILE_V2_SIZE,
+                                       .abi_version = CYRINX_PROFILE_V2_ABI_VERSION};
+        if (cyrinx_profile_v2_get_by_index((size_t)i, &profile) != CYRINX_STATUS_OK) {
+            (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IllegalStateException"),
+                             "registry lookup");
+            return NULL;
+        }
+        jint id = (jint)profile.id;
+        (*env)->SetIntArrayRegion(env, ids, i, 1, &id);
+        if ((*env)->ExceptionCheck(env))
+            return NULL;
+    }
+    return ids;
 }
 
 JNIEXPORT jintArray JNICALL Java_Replay_profileIDs(JNIEnv *env, jobject self) {
@@ -39,7 +63,7 @@ JNIEXPORT jintArray JNICALL Java_Replay_profileIDs(JNIEnv *env, jobject self) {
 
 JNIEXPORT jfloatArray JNICALL Java_Replay_encode(JNIEnv *env, jobject self, jint id, jbyteArray bytes) {
     (void)self;
-    cyrinx_profile_t profile = {0};
+    cyrinx_profile_v2_t profile;
     if (!bytes || !lookup_registered(id, &profile)) {
         (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IllegalArgumentException"),
                          "unknown profile or null payload");
@@ -50,7 +74,8 @@ JNIEXPORT jfloatArray JNICALL Java_Replay_encode(JNIEnv *env, jobject self, jint
     float sample = 0;
     cyrinx_batch_result_t result = {.struct_size = sizeof(result),
                                     .abi_version = CYRINX_BATCH_RESULT_ABI_VERSION};
-    if (cyrinx_batch_encode(&profile, &byte, 0, &sample, 0, &result) != CYRINX_STATUS_ERR_BUFFER_TOO_SMALL ||
+    if (cyrinx_batch_encode_v2(&profile, &byte, 0, &sample, 0, &result) !=
+            CYRINX_STATUS_ERR_BUFFER_TOO_SMALL ||
         (uint64_t)count > result.payload_bytes_required || result.logical_frame_samples > INT32_MAX) {
         (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IllegalArgumentException"),
                          "invalid encode capacity");
@@ -68,8 +93,8 @@ JNIEXPORT jfloatArray JNICALL Java_Replay_encode(JNIEnv *env, jobject self, jint
         (*env)->ReleaseFloatArrayElements(env, output, samples, JNI_ABORT);
         return NULL;
     }
-    int status = cyrinx_batch_encode(&profile, count ? (uint8_t *)input : &byte, (size_t)count, samples,
-                                     (size_t)frames, &result);
+    int status = cyrinx_batch_encode_v2(&profile, count ? (uint8_t *)input : &byte, (size_t)count, samples,
+                                        (size_t)frames, &result);
     if (input)
         (*env)->ReleaseByteArrayElements(env, bytes, input, JNI_ABORT);
     (*env)->ReleaseFloatArrayElements(env, output, samples, status ? JNI_ABORT : 0);
@@ -84,9 +109,12 @@ JNIEXPORT jfloatArray JNICALL Java_Replay_encode(JNIEnv *env, jobject self, jint
 JNIEXPORT jobject JNICALL Java_Replay_decode(JNIEnv *env, jobject self, jint key, jfloatArray samples,
                                              jint channels, jboolean fixture) {
     (void)self;
+    // A test geometry is a v1 profile decoded by the v1 entry point; a registered profile is a
+    // v2 profile decoded by the v2 entry point.
     cyrinx_profile_t profile = {0};
+    cyrinx_profile_v2_t registered;
     if (!samples || (channels != 1 && channels != 2) ||
-        !(fixture ? replay_profile(key, &profile) : lookup_registered(key, &profile))) {
+        !(fixture ? replay_profile(key, &profile) : lookup_registered(key, &registered))) {
         (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IllegalArgumentException"),
                          "invalid replay input");
         return NULL;
@@ -97,7 +125,7 @@ JNIEXPORT jobject JNICALL Java_Replay_decode(JNIEnv *env, jobject self, jint key
                          "invalid channel layout");
         return NULL;
     }
-    jsize blocks = (jsize)profile.block_count, capacity = blocks * 256;
+    jsize blocks = (jsize)(fixture ? profile.block_count : registered.block_count), capacity = blocks * 256;
     uint8_t *payload = calloc((size_t)capacity, 1), *mask = calloc((size_t)blocks, 1);
     if (!payload || !mask) {
         free(mask);
@@ -119,8 +147,10 @@ JNIEXPORT jobject JNICALL Java_Replay_decode(JNIEnv *env, jobject self, jint key
                      {data, (uint64_t)count, 1, (uint32_t)channels, CYRINX_BATCH_ROLE_SECONDARY}}};
     cyrinx_batch_result_t result = {.struct_size = sizeof(result),
                                     .abi_version = CYRINX_BATCH_RESULT_ABI_VERSION};
-    int status =
-        cyrinx_batch_decode(&profile, &input, payload, (size_t)capacity, mask, (size_t)blocks, &result);
+    int status = fixture ? cyrinx_batch_decode(&profile, &input, payload, (size_t)capacity, mask,
+                                               (size_t)blocks, &result)
+                         : cyrinx_batch_decode_v2(&registered, &input, payload, (size_t)capacity, mask,
+                                                  (size_t)blocks, &result);
     (*env)->ReleaseFloatArrayElements(env, samples, data, JNI_ABORT);
     // The status is part of the result: a rejected capture returns it with empty arrays, so the
     // caller sees which rejection it was. Only a failure of the binding itself throws.

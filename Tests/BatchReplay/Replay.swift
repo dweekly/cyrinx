@@ -27,12 +27,23 @@ func header(status: Int32, metrics: BatchPHY.Metrics?) -> Data {
     return output
 }
 
-func replay(_ key: Int32, samples: [Float], channels: UInt32) throws -> Data {
+/// The profile a probe argument names: "registered:<id>" for one in the library's registry, or
+/// the key of one of the runner's own test geometries (Tests/BatchReplay/Profiles.h).
+func profile(named argument: String) throws -> BatchPHY.Profile {
+    let prefix = "registered:"
+    if argument.hasPrefix(prefix) {
+        guard let id = UInt32(argument.dropFirst(prefix.count)) else { throw ReplayError.input }
+        return try BatchPHY.Profile(id: id)
+    }
     var raw = cyrinx_profile_t()
-    guard replay_profile(key, &raw), (1...2).contains(channels),
-        samples.count.isMultiple(of: Int(channels))
+    guard let key = Int32(argument), replay_profile(key, &raw) else { throw ReplayError.input }
+    return try BatchPHY.Profile(validating: raw)
+}
+
+func replay(_ argument: String, samples: [Float], channels: UInt32) throws -> Data {
+    guard (1...2).contains(channels), samples.count.isMultiple(of: Int(channels))
     else { throw ReplayError.input }
-    let profile = try BatchPHY.Profile(validating: raw)
+    let profile = try profile(named: argument)
     let primary = BatchPHY.Channel(samples, stride: channels)
     let secondary = channels == 2 ? BatchPHY.Channel(samples, firstSample: 1, stride: 2) : nil
     do {
@@ -51,9 +62,7 @@ func replay(_ key: Int32, samples: [Float], channels: UInt32) throws -> Data {
     }
 }
 
-guard CommandLine.arguments.count == 4, let key = Int32(CommandLine.arguments[1]),
-    let channels = UInt32(CommandLine.arguments[3])
-else {
+guard CommandLine.arguments.count == 4, let channels = UInt32(CommandLine.arguments[3]) else {
     throw ReplayError.input
 }
 let data = try Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[2]))
@@ -63,4 +72,5 @@ let samples = data.withUnsafeBytes { bytes in
         Float(bitPattern: UInt32(littleEndian: bytes.loadUnaligned(fromByteOffset: $0, as: UInt32.self)))
     }
 }
-FileHandle.standardOutput.write(try replay(key, samples: samples, channels: channels))
+FileHandle.standardOutput.write(
+    try replay(CommandLine.arguments[1], samples: samples, channels: channels))

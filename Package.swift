@@ -88,9 +88,22 @@ let package = Package(
                 .headerSearchPath(".")
             ]
         ),
+        // Test-support C target: measures a transmitted frame before the clip, by
+        // calling the library's internal modulator. Not a product.
+        .target(
+            name: "CScramblerDiagnostics",
+            dependencies: ["CCyrinx"],
+            path: "Tests/CScramblerDiagnostics",
+            publicHeadersPath: "include",
+            cSettings: [
+                .headerSearchPath(".")
+            ]
+        ),
         .testTarget(
             name: "CyrinxTests",
-            dependencies: ["Cyrinx", "CCyrinx", "CGoldenVectors", "CV1HeaderConsumer"],
+            dependencies: [
+                "Cyrinx", "CCyrinx", "CGoldenVectors", "CV1HeaderConsumer", "CScramblerDiagnostics"
+            ],
             path: "Tests/CyrinxTests"
         )
     ]

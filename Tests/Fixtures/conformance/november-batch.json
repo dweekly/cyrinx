@@ -12,6 +12,12 @@
     129024,
     23040
   ],
+  "registered_profiles": {
+    "8": {
+      "identity": "3bbb03687700acee7255567fa1e4a0d1b89be515885cb63fcaee71abf9f486b4",
+      "frame_samples": 147648
+    }
+  },
   "cases": [
     {
       "name": "digital-qpsk",
@@ -353,6 +359,62 @@
       "metrics": {
         "evm_rms": {
           "value": 0.0,
+          "tolerance": 1e-09
+        },
+        "primary_holdout_pilot_rms": {
+          "value": "inf",
+          "tolerance": 0
+        },
+        "mrc_holdout_pilot_rms": {
+          "value": "inf",
+          "tolerance": 0
+        }
+      }
+    },
+    {
+      "name": "registered-scrambled-sparse",
+      "registered_profile": 8,
+      "path": "Tests/Fixtures/conformance/registered-8-sparse.f32",
+      "pcm_sha256": "90aa8e19a15c90e44013ed0b06441d968512a1d65fd4c7e67812eb4c2404ec25",
+      "mask": "11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
+      "valid_payload_sha256": "98c8841566fd17f60ef75dce34beb8a06be413592c06daf000533e94f777fe6c",
+      "receiver": 0,
+      "reason": 6,
+      "clipping": 0,
+      "nonfinite": 0,
+      "metrics": {
+        "evm_rms": {
+          "value": 0.014788841121279926,
+          "tolerance": 1e-09
+        },
+        "primary_holdout_pilot_rms": {
+          "value": "inf",
+          "tolerance": 0
+        },
+        "mrc_holdout_pilot_rms": {
+          "value": "inf",
+          "tolerance": 0
+        }
+      }
+    },
+    {
+      "name": "registered-scrambled-dropout",
+      "registered_profile": 8,
+      "path": "Tests/Fixtures/conformance/registered-8-sparse.f32",
+      "dropout": {
+        "period": 512,
+        "width": 8
+      },
+      "pcm_sha256": "727a63f7475f0782c3a9d9ff953273936c2e6e6f2296465948eca5f86d4ffddc",
+      "mask": "11111111111011100110101011111011101010101101111101100010110011111110111101111110111101111101100011011110111",
+      "valid_payload_sha256": "017e8a901e9b9af654561c178ca3cdd704bfee0addaac6d53634f20b9ca3232c",
+      "receiver": 0,
+      "reason": 6,
+      "clipping": 0,
+      "nonfinite": 0,
+      "metrics": {
+        "evm_rms": {
+          "value": 0.16693438971002517,
           "tolerance": 1e-09
         },
         "primary_holdout_pilot_rms": {

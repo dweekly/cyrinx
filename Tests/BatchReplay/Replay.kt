@@ -12,14 +12,17 @@ class Decoded(val status: Int, val identity: ByteArray, val mask: ByteArray, val
 
 object Replay {
     external fun profileIDs(): IntArray
+    external fun allProfileIDs(): IntArray
     external fun encode(profile: Int, payload: ByteArray): FloatArray
     external fun decode(profile: Int, samples: FloatArray, channels: Int, fixture: Boolean): Decoded
 
     @JvmStatic fun main(args: Array<String>) {
         System.load(args[0])
         if (args[1] == "registry") {
-            val ids = profileIDs()
-            check(ids.contentEquals(intArrayOf(1, 2, 3, 4, 5)))
+            // The first list is the one callers had before scrambled profiles existed; it must not grow.
+            check(profileIDs().contentEquals(intArrayOf(1, 2, 3, 4, 5)))
+            val ids = allProfileIDs()
+            check(ids.contentEquals(IntArray(10) { it + 1 }))
             for (id in ids) {
                 val capacity = decode(id, encode(id, byteArrayOf()), 1, false).payload.size
                 val source = java.util.Random(id.toLong()).let { rng -> ByteArray(capacity).also { rng.nextBytes(it) } }
@@ -28,6 +31,12 @@ object Replay {
                 check(result.counts[0] == id && result.counts[3] == result.mask.size)
                 check(result.counts[4] == result.mask.size && result.counts[5] == result.mask.size)
                 check(result.sizes[0] == capacity.toLong() && result.sizes[3] == capacity.toLong())
+                // An empty payload is a frame of zero bytes. A scrambled profile carries it whole;
+                // its unscrambled parent recovers none of it.
+                val empty = decode(id, encode(id, byteArrayOf()), 1, false)
+                check(empty.status == 0 && empty.counts[0] == id)
+                if (id > 5) check(empty.mask.all { it == 1.toByte() } && empty.payload.all { it == 0.toByte() })
+                else check(empty.mask.all { it == 0.toByte() })
             }
             check(runCatching { encode(-1, byteArrayOf()) }.exceptionOrNull() is IllegalArgumentException)
             check(runCatching { decode(1, floatArrayOf(0f), 2, false) }.exceptionOrNull() is IllegalArgumentException)
@@ -43,7 +52,11 @@ object Replay {
         buffer.get(samples)
         val channels = args[3].toInt()
         require(channels in 1..2 && samples.size % channels == 0)
-        val result = decode(args[1].toInt(), samples, channels, true)
+        // "registered:<id>" names a profile in the library's registry; a bare number names one of
+        // the runner's own test geometries (Tests/BatchReplay/Profiles.h).
+        val registered = args[1].removePrefix("registered:")
+        val result = if (registered != args[1]) decode(registered.toInt(), samples, channels, false)
+                     else decode(args[1].toInt(), samples, channels, true)
         // The record layout is Tests/BatchReplay/Packet.h.
         val header = ByteBuffer.allocate(124).order(ByteOrder.LITTLE_ENDIAN)
         header.putInt(result.status).put(result.identity)

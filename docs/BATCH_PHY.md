@@ -28,15 +28,25 @@ for (slot, valid) in decoded.blockValidity.enumerated() where valid == 1 {
 }
 ```
 
-Use `try BatchPHY.Profile.registered()` to enumerate profiles and inspect their wire identity and physical parameters. A successful decode can return zero valid blocks. Use the ordered mask before consuming bytes.
+Use `try BatchPHY.Profile.registered()` to enumerate the five unscrambled profiles and inspect their wire identity and physical parameters. `try BatchPHY.Profile.registeredIncludingScrambled()` lists all ten; see Scrambled profiles below. A successful decode can return zero valid blocks. Use the ordered mask before consuming bytes.
+
+## Scrambled profiles
+
+Profiles 6 to 10 are profiles 1 to 5 with a payload scrambler: the sender XORs each frame's payload and CRC bits with a fixed pseudorandom pattern before coding, and the receiver removes it. Their parameters, frame length and capacity equal their parents'. Their identities differ, and a receiver built before they existed cannot decode them. `Profile.isScrambled` and `Profile.payloadScrambler` report the mode. All five are experimental: they are measured in digital loopback and by replay on two phones, and none has been sent over the air.
+
+`Profile(id:)` finds all ten. `Profile.registered()` still returns the five unscrambled profiles, so code that offers every entry of that list keeps offering the same formats.
+
+A decoder is told its profile by the caller. Nothing in a frame says whether it is scrambled, and decoding a frame with the twin of the profile that made it returns a completed decode with no valid block.
 
 ## Payload size and content
 
-The caller supplies a full frame. The five profiles `BatchPHY` exposes have no scrambler, so the bytes chosen for unused space decide whether the frame decodes. In a digital loopback with no audio hardware, a frame of zero bytes recovered no blocks on any of the five registered profiles. A frame holding 128 data bytes followed by zeros also recovered none, including the block that carried the data. Frames filled with pseudorandom bytes, or with a repeated 0x71 byte, recovered every block. A repeated 0xff byte did not on profiles 3 to 5: like zeros, it codes to a single constellation point, and the transmitter's amplitude clip then removes the peaks that carry the frame ([NEGATIVE_FINDINGS entry 26](NEGATIVE_FINDINGS.md)). Zero fill is not always fatal: on profile 1, a frame one-third full of a repeated 0x71 byte and zero after that recovered 11 of 75 blocks, and a frame one byte short of full recovered all 75. Where the boundary lies is uncharacterized. The package test `zeroHeavyFrameRecoversNoBlocks` records this behavior.
+On a scrambled profile the caller may supply any length from nothing to `profile.payloadByteCount`. A shorter payload is followed by zero bytes to fill the frame. The frame carries no length: the decoder returns the whole frame, and the application keeps the original length or puts it in the payload. In digital loopback each scrambled profile recovers every block for payloads of 0, 1, 128, 255, 256 and 257 bytes, one byte short of full, and full (package test `scrambledProfileAcceptsShortPayloads`).
 
-Fill unused space with varied bytes, such as a seeded pseudorandom sequence that the receiving application can recognize and discard. A reversible XOR mask restored recovery in the same loopback ([NEGATIVE_FINDINGS entry 26](NEGATIVE_FINDINGS.md)). That mask is application-level research and is absent from the wire format. The C entry point `cyrinx_batch_encode` still accepts a short payload and fills it with zeros. Swift rejects that input because, for a short record, the padded frame lost the record in every case measured.
+On an unscrambled profile the caller supplies a full frame, and the bytes chosen for unused space decide whether the frame decodes. In a digital loopback with no audio hardware, a frame of zero bytes recovered no blocks on any of the five unscrambled profiles. A frame holding 128 data bytes followed by zeros also recovered none, including the block that carried the data. Frames filled with pseudorandom bytes, or with a repeated 0x71 byte, recovered every block. A repeated 0xff byte did not on profiles 3 to 5: like zeros, it codes to a single constellation point, and the transmitter's amplitude clip then removes the peaks that carry the frame ([NEGATIVE_FINDINGS entry 26](NEGATIVE_FINDINGS.md)). Zero fill is not always fatal: on profile 1, a frame one-third full of a repeated 0x71 byte and zero after that recovered 11 of 75 blocks, and a frame one byte short of full recovered all 75. Where the boundary lies is uncharacterized. The package test `zeroHeavyFrameRecoversNoBlocks` records this behavior.
 
-The C core also holds scrambled twins of the five profiles, IDs 6 to 10, which recover zero-filled and sparse frames in the same loopback. They are reached through `cyrinx_profile_v2_t`, `cyrinx_batch_encode_v2` and `cyrinx_batch_decode_v2`. `BatchPHY` does not expose them yet, and `BatchPHY.Profile(id:)` reports them as not found ([SCRAMBLER_PLAN](SCRAMBLER_PLAN.md)).
+So on an unscrambled profile, fill unused space with varied bytes, such as a seeded pseudorandom sequence that the receiving application can recognize and discard, or use the scrambled twin. Swift rejects a short payload there because, for a short record, the zero-padded frame lost the record in every case measured. The C entry points accept a short payload on either kind of profile and fill it with zeros.
+
+The scrambler has a limit of its own. It makes common payloads safe, not every payload: a payload equal to the scrambler's own pattern cancels it and is expected to fail as a zero frame does unscrambled ([SCRAMBLER_PLAN](SCRAMBLER_PLAN.md), Known limits).
 
 ## Raw codes
 

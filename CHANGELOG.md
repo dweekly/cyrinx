@@ -7,6 +7,27 @@ date-labelled.
 Detailed evidence for every claim is in the cited document and its reproduction
 commands or content hashes.
 
+## Unreleased — scrambled profiles in Swift, Kotlin and the replay
+
+- **`BatchPHY` offers the scrambled profiles.** `Profile(id:)` finds IDs 6
+  to 10, `Profile.registeredIncludingScrambled()` lists all ten, and
+  `Profile.registered()` still returns the five unscrambled ones. On a
+  scrambled profile `BatchPHY.encode` accepts a payload of any length up to
+  the frame's capacity and fills the remainder with zeros; the frame carries
+  no length, so the decoder returns the whole frame. Unscrambled profiles
+  still require a full frame. [docs/BATCH_PHY.md](docs/BATCH_PHY.md).
+- **A scrambled registered profile is in the cross-binding replay.** One
+  frame of profile 8, made by the Python reference modem with a mostly-zero
+  payload, decodes identically through C, Swift and Kotlin/JNI on both FFT
+  backends, under the sanitizers, on a Pixel 7a and a Moto G, and as a
+  32-bit x86 program: 107 of 107 blocks. A damaged copy keeps 78 blocks at
+  their own offsets.
+- **The tall peaks are gone, by measurement.** Before the clip can act, the
+  peak-to-RMS ratio of profiles 6 to 10 is 4.2 to 5.0 for the zero, short,
+  sparse and 0xff payloads. The unscrambled profiles' zero frame reads at
+  least 10 on the same measurement.
+- None of this has been sent over the air.
+
 ## Unreleased — scrambled profiles in the C core
 
 - **Profiles 6 to 10 are profiles 1 to 5 with a payload scrambler.** The
@@ -20,8 +41,8 @@ commands or content hashes.
   points in C.** `cyrinx_profile_v2_t`, `cyrinx_batch_encode_v2` and
   `cyrinx_batch_decode_v2` sit beside the existing ones. Profiles 1 to 5,
   their waveforms and digests, and every existing function are unchanged;
-  an existing caller still sees five profiles. The Swift `BatchPHY` and the
-  Kotlin probe do not expose the new profiles yet.
+  an existing caller still sees five profiles. The entry above adds them to
+  the Swift `BatchPHY` and the Kotlin probe.
   [docs/SCRAMBLER_PLAN.md](docs/SCRAMBLER_PLAN.md) records the design, its
   approval and what remains.
 - **The Python reference modem has the same scrambler, and the two agree.**

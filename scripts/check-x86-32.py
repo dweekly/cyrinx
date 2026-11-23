@@ -81,7 +81,7 @@ def main():
             for index, case in enumerate(cases):
                 inputs.append(replay.fixture_bytes(case, None))
                 (tmp / "inputs" / f"{index}.f32").write_bytes(inputs[-1])
-                lines.append(f"{index} {case['profile']} {2 if 'secondary_path' in case else 1}")
+                lines.append(f"{index} {replay.probe_profile(case)} {2 if 'secondary_path' in case else 1}")
             (tmp / "cases.txt").write_text("\n".join(lines) + "\n")
             (tmp / "run.sh").write_text(REMOTE.replace("SOURCES", " ".join("core/" + name for name in SOURCES)))
             local = tmp / "direct"
@@ -103,7 +103,7 @@ def main():
                  f"-v {remote}:/work {IMAGE} sh /work/run.sh"])
             for index, case in enumerate(cases):
                 channels = 2 if "secondary_path" in case else 1
-                here = run([local, case["profile"], tmp / "inputs" / f"{index}.f32", channels],
+                here = run([local, replay.probe_profile(case), tmp / "inputs" / f"{index}.f32", channels],
                            capture_output=True).stdout
                 there = run([*SSH, args.host, "cat", f"{remote}/out/{index}.bin"], capture_output=True).stdout
                 try:

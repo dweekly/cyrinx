@@ -2,6 +2,45 @@
 #define CYRINX_REPLAY_PROFILES_H
 
 #include "cyrinx/cyrinx_batch.h"
+#include <stdlib.h>
+#include <string.h>
+
+// A probe is told its profile in one of two ways: a key naming one of the fixed test geometries
+// below, or "registered:<id>" naming a profile in the library's registry. A registered profile
+// is looked up through the v2 type, so the scrambled ones are reachable.
+#define REPLAY_REGISTERED_PREFIX "registered:"
+
+// Whether the argument is of the "registered:<id>" form at all. An argument of that form that
+// names no registered profile is an error, never a test geometry.
+static inline bool replay_names_registered(const char *argument) {
+    return strncmp(argument, REPLAY_REGISTERED_PREFIX, strlen(REPLAY_REGISTERED_PREFIX)) == 0;
+}
+
+// Look up the registered profile a "registered:<id>" argument names. False for a malformed ID
+// or one that is not registered.
+static inline bool replay_registered(const char *argument, cyrinx_profile_v2_t *out) {
+    const char *digits = argument + strlen(REPLAY_REGISTERED_PREFIX);
+    char *end = NULL;
+    unsigned long id = strtoul(digits, &end, 10);
+    if (*digits < '0' || *digits > '9' || *end != '\0' || id > UINT32_MAX) {
+        return false;
+    }
+    *out = (cyrinx_profile_v2_t){.struct_size = CYRINX_PROFILE_V2_SIZE,
+                                 .abi_version = CYRINX_PROFILE_V2_ABI_VERSION};
+    return cyrinx_profile_v2_get_by_id((uint32_t)id, out) == CYRINX_STATUS_OK;
+}
+
+// The key of a test geometry: decimal digits and nothing else. False for anything that is not,
+// so that a mistyped argument is refused and never read as key zero.
+static inline bool replay_key(const char *argument, int *out) {
+    char *end = NULL;
+    long key = strtol(argument, &end, 10);
+    if (*argument < '0' || *argument > '9' || *end != '\0' || key > 1000) {
+        return false;
+    }
+    *out = (int)key;
+    return true;
+}
 
 // Fixed test geometries. These keys are local to the replay runner.
 enum { REPLAY_QPSK = 0, REPLAY_DESK = 1, REPLAY_CONTROL = 2, REPLAY_QAM16 = 3 };
