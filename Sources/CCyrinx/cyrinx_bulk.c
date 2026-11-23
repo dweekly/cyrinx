@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "cyrinx/cyrinx_fft.h"
+#include "cyrinx_bulk_internal.h"
 
 /* ---------------- splitmix64 DetRng ---------------- */
 /* modem.py:DetRng — constants are the standard splitmix64 mixer. */
@@ -654,8 +655,42 @@ static void cyrinx_ofdm_mod_symbol(cyrinx_irfft_plan *plan, int nfft, int cp, in
     memcpy(out + cp, tbuf, (size_t)nfft * sizeof(double));
 }
 
+/* ---------------- Payload scrambler ----------------
+ * Mode CYRINX_PAYLOAD_SCRAMBLER_FRAMED_BITS_V1 XORs the framed bits, which are
+ * each block's 256 payload bytes followed by its four CRC bytes unpacked most
+ * significant bit first, with one mask. Mask bit i is the high bit of the i-th
+ * SplitMix64 output from CYRINX_PAYLOAD_SCRAMBLER_V1_SEED. The mask starts at
+ * bit zero of the frame and runs across CRCs and block boundaries without a
+ * reset. The seed-7 information padding after the framed bits is not masked.
+ * XOR is its own inverse, so the receiver calls the same function. */
+bool cyrinx_internal_payload_scrambler_supported(uint32_t payload_scrambler) {
+    return payload_scrambler == CYRINX_PAYLOAD_SCRAMBLER_NONE ||
+           payload_scrambler == CYRINX_PAYLOAD_SCRAMBLER_FRAMED_BITS_V1;
+}
+
+static void cyrinx_scramble_framed_bits(uint32_t payload_scrambler, uint8_t *bits, size_t n) {
+    if (payload_scrambler != CYRINX_PAYLOAD_SCRAMBLER_FRAMED_BITS_V1) {
+        return;
+    }
+    cyrinx_detrng r;
+    cyrinx_detrng_init(&r, CYRINX_PAYLOAD_SCRAMBLER_V1_SEED);
+    for (size_t i = 0; i < n; ++i) {
+        bits[i] ^= (uint8_t)(cyrinx_detrng_u64(&r) >> 63);
+    }
+}
+
 long cyrinx_bulk_modulate(const cyrinx_bulk_config *cfg, const uint8_t *payload, size_t payload_len,
                           float *wave_out, size_t wave_cap, double *data_freq_out) {
+    return cyrinx_internal_bulk_modulate(cfg, CYRINX_PAYLOAD_SCRAMBLER_NONE, payload, payload_len, wave_out,
+                                         wave_cap, data_freq_out);
+}
+
+long cyrinx_internal_bulk_modulate(const cyrinx_bulk_config *cfg, uint32_t payload_scrambler,
+                                   const uint8_t *payload, size_t payload_len, float *wave_out,
+                                   size_t wave_cap, double *data_freq_out) {
+    if (!cyrinx_internal_payload_scrambler_supported(payload_scrambler)) {
+        return -1;
+    }
     cyrinx_bulk_geometry g;
     if (cyrinx_bulk_compute_geometry(cfg, &g) != 0) {
         return -1;
@@ -687,6 +722,7 @@ long cyrinx_bulk_modulate(const cyrinx_bulk_config *cfg, const uint8_t *payload,
         }
     }
     (void)stream_bytes;
+    cyrinx_scramble_framed_bits(payload_scrambler, bits, (size_t)nbit);
     if (nbit < g.info_bits) {
         cyrinx_prbs_bits(bits + nbit, (size_t)(g.info_bits - nbit), 7);
         nbit = g.info_bits;
@@ -1315,11 +1351,13 @@ resource_failure:
  * (ports modem.py demodulate_frame(rx2=...), the validated Python reference).
  * Sync runs on rx; rx2 must be sample-aligned (a second channel of the same
  * capture). */
-static long cyrinx_bulk_demod_impl(const cyrinx_bulk_config *cfg, const float *rx, size_t rx_len,
-                                   const float *rx2, size_t rx2_len, uint8_t *out_payload, size_t out_cap,
-                                   int *blocks_ok, int *blocks_total, double *evm_rms,
+static long cyrinx_bulk_demod_impl(const cyrinx_bulk_config *cfg, uint32_t payload_scrambler, const float *rx,
+                                   size_t rx_len, const float *rx2, size_t rx2_len, uint8_t *out_payload,
+                                   size_t out_cap, int *blocks_ok, int *blocks_total, double *evm_rms,
                                    uint8_t *block_valid_out, size_t block_valid_cap, int auto_v1,
                                    cyrinx_bulk_diversity_diagnostics *diagnostics) {
+    if (!cyrinx_internal_payload_scrambler_supported(payload_scrambler))
+        return -1;
     if (auto_v1)
         cyrinx_init_diversity_diagnostics(diagnostics);
     cyrinx_bulk_geometry g;
@@ -1642,6 +1680,8 @@ static long cyrinx_bulk_demod_impl(const cyrinx_bulk_config *cfg, const float *r
     }
     uint8_t *info = (uint8_t *)malloc((size_t)g.info_bits);
     cyrinx_viterbi(l0, l1, nstep, g.info_bits, info);
+    cyrinx_scramble_framed_bits(payload_scrambler, info,
+                                (size_t)g.n_blocks * (CYRINX_BULK_CRC_BLOCK + 4) * 8);
 
     /* ---- repack info bits -> stream bytes; CRC per block ---- */
     int ok = 0;
@@ -1761,23 +1801,24 @@ pilot_weight_resource_failure:
 long cyrinx_bulk_demodulate(const cyrinx_bulk_config *cfg, const float *rx, size_t rx_len,
                             uint8_t *out_payload, size_t out_cap, int *blocks_ok, int *blocks_total,
                             double *evm_rms) {
-    return cyrinx_bulk_demod_impl(cfg, rx, rx_len, NULL, 0, out_payload, out_cap, blocks_ok, blocks_total,
-                                  evm_rms, NULL, 0, 0, NULL);
+    return cyrinx_bulk_demod_impl(cfg, CYRINX_PAYLOAD_SCRAMBLER_NONE, rx, rx_len, NULL, 0, out_payload,
+                                  out_cap, blocks_ok, blocks_total, evm_rms, NULL, 0, 0, NULL);
 }
 
 long cyrinx_bulk_demodulate2(const cyrinx_bulk_config *cfg, const float *rx, size_t rx_len, const float *rx2,
                              size_t rx2_len, uint8_t *out_payload, size_t out_cap, int *blocks_ok,
                              int *blocks_total, double *evm_rms) {
-    return cyrinx_bulk_demod_impl(cfg, rx, rx_len, rx2, rx2_len, out_payload, out_cap, blocks_ok,
-                                  blocks_total, evm_rms, NULL, 0, 0, NULL);
+    return cyrinx_bulk_demod_impl(cfg, CYRINX_PAYLOAD_SCRAMBLER_NONE, rx, rx_len, rx2, rx2_len, out_payload,
+                                  out_cap, blocks_ok, blocks_total, evm_rms, NULL, 0, 0, NULL);
 }
 
 long cyrinx_bulk_demodulate_with_block_validity(const cyrinx_bulk_config *cfg, const float *rx, size_t rx_len,
                                                 uint8_t *out_payload, size_t out_cap, int *blocks_ok,
                                                 int *blocks_total, double *evm_rms, uint8_t *block_valid_out,
                                                 size_t block_valid_cap) {
-    return cyrinx_bulk_demod_impl(cfg, rx, rx_len, NULL, 0, out_payload, out_cap, blocks_ok, blocks_total,
-                                  evm_rms, block_valid_out, block_valid_cap, 0, NULL);
+    return cyrinx_bulk_demod_impl(cfg, CYRINX_PAYLOAD_SCRAMBLER_NONE, rx, rx_len, NULL, 0, out_payload,
+                                  out_cap, blocks_ok, blocks_total, evm_rms, block_valid_out, block_valid_cap,
+                                  0, NULL);
 }
 
 long cyrinx_bulk_demodulate2_with_block_validity(const cyrinx_bulk_config *cfg, const float *rx,
@@ -1785,16 +1826,17 @@ long cyrinx_bulk_demodulate2_with_block_validity(const cyrinx_bulk_config *cfg, 
                                                  uint8_t *out_payload, size_t out_cap, int *blocks_ok,
                                                  int *blocks_total, double *evm_rms, uint8_t *block_valid_out,
                                                  size_t block_valid_cap) {
-    return cyrinx_bulk_demod_impl(cfg, rx, rx_len, rx2, rx2_len, out_payload, out_cap, blocks_ok,
-                                  blocks_total, evm_rms, block_valid_out, block_valid_cap, 0, NULL);
+    return cyrinx_bulk_demod_impl(cfg, CYRINX_PAYLOAD_SCRAMBLER_NONE, rx, rx_len, rx2, rx2_len, out_payload,
+                                  out_cap, blocks_ok, blocks_total, evm_rms, block_valid_out, block_valid_cap,
+                                  0, NULL);
 }
 
 long cyrinx_bulk_demodulate2_auto_v1(const cyrinx_bulk_config *cfg, const float *rx, size_t rx_len,
                                      const float *rx2, size_t rx2_len, uint8_t *out_payload, size_t out_cap,
                                      int *blocks_ok, int *blocks_total, double *evm_rms,
                                      cyrinx_bulk_diversity_diagnostics *diagnostics) {
-    return cyrinx_bulk_demod_impl(cfg, rx, rx_len, rx2, rx2_len, out_payload, out_cap, blocks_ok,
-                                  blocks_total, evm_rms, NULL, 0, 1, diagnostics);
+    return cyrinx_bulk_demod_impl(cfg, CYRINX_PAYLOAD_SCRAMBLER_NONE, rx, rx_len, rx2, rx2_len, out_payload,
+                                  out_cap, blocks_ok, blocks_total, evm_rms, NULL, 0, 1, diagnostics);
 }
 
 long cyrinx_bulk_demodulate2_auto_v1_with_block_validity(const cyrinx_bulk_config *cfg, const float *rx,
@@ -1803,6 +1845,17 @@ long cyrinx_bulk_demodulate2_auto_v1_with_block_validity(const cyrinx_bulk_confi
                                                          int *blocks_total, double *evm_rms,
                                                          uint8_t *block_valid_out, size_t block_valid_cap,
                                                          cyrinx_bulk_diversity_diagnostics *diagnostics) {
-    return cyrinx_bulk_demod_impl(cfg, rx, rx_len, rx2, rx2_len, out_payload, out_cap, blocks_ok,
-                                  blocks_total, evm_rms, block_valid_out, block_valid_cap, 1, diagnostics);
+    return cyrinx_bulk_demod_impl(cfg, CYRINX_PAYLOAD_SCRAMBLER_NONE, rx, rx_len, rx2, rx2_len, out_payload,
+                                  out_cap, blocks_ok, blocks_total, evm_rms, block_valid_out, block_valid_cap,
+                                  1, diagnostics);
+}
+
+long cyrinx_internal_bulk_demodulate2_auto_v1_with_block_validity(
+    const cyrinx_bulk_config *cfg, uint32_t payload_scrambler, const float *rx, size_t rx_len,
+    const float *rx2, size_t rx2_len, uint8_t *out_payload, size_t out_cap, int *blocks_ok, int *blocks_total,
+    double *evm_rms, uint8_t *block_valid_out, size_t block_valid_cap,
+    cyrinx_bulk_diversity_diagnostics *diagnostics) {
+    return cyrinx_bulk_demod_impl(cfg, payload_scrambler, rx, rx_len, rx2, rx2_len, out_payload, out_cap,
+                                  blocks_ok, blocks_total, evm_rms, block_valid_out, block_valid_cap, 1,
+                                  diagnostics);
 }

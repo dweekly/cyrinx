@@ -7,6 +7,24 @@ date-labelled.
 Detailed evidence for every claim is in the cited document and its reproduction
 commands or content hashes.
 
+## Unreleased — scrambled profiles in the C core
+
+- **Profiles 6 to 10 are profiles 1 to 5 with a payload scrambler.** The
+  sender XORs each frame's payload and CRC bits with a fixed pseudorandom
+  pattern before coding, and the receiver removes it. In digital loopback
+  they recover every block of an all-zero frame, a 128-byte record padded
+  with zeros and a sparse frame, which their parents lose entirely
+  ([NEGATIVE_FINDINGS entry 26](docs/NEGATIVE_FINDINGS.md)). They are
+  experimental: none has been sent over the air.
+- **They are reached through a new v2 profile type and v2 batch entry
+  points in C.** `cyrinx_profile_v2_t`, `cyrinx_batch_encode_v2` and
+  `cyrinx_batch_decode_v2` sit beside the existing ones. Profiles 1 to 5,
+  their waveforms and digests, and every existing function are unchanged;
+  an existing caller still sees five profiles. The Swift `BatchPHY` and the
+  Kotlin probe do not expose the new profiles yet.
+  [docs/SCRAMBLER_PLAN.md](docs/SCRAMBLER_PLAN.md) records the design, its
+  approval and what remains.
+
 ## Unreleased — conformance: full result records, sanitizers, negative controls
 
 - **Every binding now reports the whole decode result**, and the replay
@@ -67,9 +85,9 @@ commands or content hashes.
   block on all five profiles. An all-0xff frame fails on profiles 3 to 5 as
   zeros do. Reproduction: `scratch/garage/zero_payload_mechanism.py`;
   [NEGATIVE_FINDINGS entry 26](docs/NEGATIVE_FINDINGS.md).
-- **A scrambler is planned, not built.** [docs/SCRAMBLER_PLAN.md](docs/SCRAMBLER_PLAN.md)
-  proposes scrambled profiles under new IDs beside the existing five. It
-  awaits approval.
+- **A scrambler was planned.** [docs/SCRAMBLER_PLAN.md](docs/SCRAMBLER_PLAN.md)
+  proposed scrambled profiles under new IDs beside the existing five. The
+  entry at the top records what has since been built.
 
 ## Unreleased — research: acknowledged acoustic file transfers
 

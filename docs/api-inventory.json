@@ -39,7 +39,7 @@
  "classificationCounts": {
   "c": {
    "deprecate": 99,
-   "experimental": 166,
+   "experimental": 205,
    "replace": 126,
    "retain": 45
   },
@@ -820,6 +820,54 @@
    "replacement": "plan:C3-05"
   },
   {
+   "id": "c:CCyrinx:c.enum.case:cyrinx_payload_scrambler_t.CYRINX_PAYLOAD_SCRAMBLER_FRAMED_BITS_V1",
+   "language": "c",
+   "kind": "c.enum.case",
+   "path": "cyrinx_payload_scrambler_t.CYRINX_PAYLOAD_SCRAMBLER_FRAMED_BITS_V1",
+   "declaration": "CYRINX_PAYLOAD_SCRAMBLER_FRAMED_BITS_V1",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "enumValue": 1,
+   "ordinal": 1,
+   "fingerprint": "37f069f1804e589527125050505888c16d1b532b1cec9d5622dbfaf444bee8cb",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.enum.case:cyrinx_payload_scrambler_t.CYRINX_PAYLOAD_SCRAMBLER_NONE",
+   "language": "c",
+   "kind": "c.enum.case",
+   "path": "cyrinx_payload_scrambler_t.CYRINX_PAYLOAD_SCRAMBLER_NONE",
+   "declaration": "CYRINX_PAYLOAD_SCRAMBLER_NONE",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "enumValue": 0,
+   "ordinal": 0,
+   "fingerprint": "840e5e5cfecdfbb3a43a71e7eb5cd5714f9f9d1db2208b5b357684c853aa4a7c",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
    "id": "c:CCyrinx:c.enum.case:cyrinx_phy_stub_mode_t.CYRINX_PHY_STUB_DCSS",
    "language": "c",
    "kind": "c.enum.case",
@@ -1540,6 +1588,28 @@
    "replacement": "plan:C3-05"
   },
   {
+   "id": "c:CCyrinx:c.enum:cyrinx_payload_scrambler_t",
+   "language": "c",
+   "kind": "c.enum",
+   "path": "cyrinx_payload_scrambler_t",
+   "declaration": "typedef enum { ... } cyrinx_payload_scrambler_t;",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "fingerprint": "ba94224a35e958093b89524a3924e07e5d1e6b3fb843d4d0afb96320978f95a1",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
    "id": "c:CCyrinx:c.enum:cyrinx_phy_stub_mode_t",
    "language": "c",
    "kind": "c.enum",
@@ -1741,6 +1811,30 @@
    "replacement": "plan:C3-05"
   },
   {
+   "id": "c:CCyrinx:c.func:cyrinx_batch_decode_v2",
+   "language": "c",
+   "kind": "c.func",
+   "path": "cyrinx_batch_decode_v2",
+   "declaration": "cyrinx_abi_status_t cyrinx_batch_decode_v2(const cyrinx_profile_v2_t *profile, const cyrinx_batch_input_t *input, uint8_t *out_payload, size_t out_payload_cap, uint8_t *block_validity, size_t block_validity_cap, cyrinx_batch_result_t *out_result);",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_batch.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [
+    "VisibilityAttr:{\"visibility\":\"default\"}"
+   ],
+   "fingerprint": "13550f5123d1c48fef5da8e64a3b2fef32baa422c43fd1df88391c01d19479c2",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
    "id": "c:CCyrinx:c.func:cyrinx_batch_encode",
    "language": "c",
    "kind": "c.func",
@@ -1759,6 +1853,30 @@
    "disposition": "experimental",
    "decision": "Reconstructed C3-03/04/05 versioned ABI, profile-registry, and batch contracts; experimental until the reconstruction passes its documented merge-gate review.",
    "compatibility": "No compatibility promise before the C3-05 review freezes the v1 layouts; the frozen layouts are pinned by _Static_asserts and the contract test suites.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.func:cyrinx_batch_encode_v2",
+   "language": "c",
+   "kind": "c.func",
+   "path": "cyrinx_batch_encode_v2",
+   "declaration": "cyrinx_abi_status_t cyrinx_batch_encode_v2(const cyrinx_profile_v2_t *profile, const uint8_t *payload, size_t payload_len, float *out_samples, size_t out_cap, cyrinx_batch_result_t *out_result);",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_batch.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [
+    "VisibilityAttr:{\"visibility\":\"default\"}"
+   ],
+   "fingerprint": "3a6921e1636daae31ea87930a0186a36cf0a5802f09b3c499f6001bb10e15f0d",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
    "platforms": [
     "all"
    ],
@@ -2697,6 +2815,150 @@
    "disposition": "experimental",
    "decision": "Reconstructed C3-03/04/05 versioned ABI, profile-registry, and batch contracts; experimental until the reconstruction passes its documented merge-gate review.",
    "compatibility": "No compatibility promise before the C3-05 review freezes the v1 layouts; the frozen layouts are pinned by _Static_asserts and the contract test suites.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.func:cyrinx_profile_v2_compute_identity",
+   "language": "c",
+   "kind": "c.func",
+   "path": "cyrinx_profile_v2_compute_identity",
+   "declaration": "cyrinx_abi_status_t cyrinx_profile_v2_compute_identity(const cyrinx_profile_v2_t *profile, uint8_t *out_digest32);",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [
+    "VisibilityAttr:{\"visibility\":\"default\"}"
+   ],
+   "fingerprint": "aed51489934f102b7f3e4b3eb34cb730799f6f5f267f42ccc7532fd9b79a3d0b",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.func:cyrinx_profile_v2_get_by_id",
+   "language": "c",
+   "kind": "c.func",
+   "path": "cyrinx_profile_v2_get_by_id",
+   "declaration": "cyrinx_abi_status_t cyrinx_profile_v2_get_by_id(uint32_t id, cyrinx_profile_v2_t *out_profile);",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [
+    "VisibilityAttr:{\"visibility\":\"default\"}"
+   ],
+   "fingerprint": "25700b7d4086eddc95a7277c6cc2ce0b96476aaa38f57fea5c121d558034a0eb",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.func:cyrinx_profile_v2_get_by_index",
+   "language": "c",
+   "kind": "c.func",
+   "path": "cyrinx_profile_v2_get_by_index",
+   "declaration": "cyrinx_abi_status_t cyrinx_profile_v2_get_by_index(size_t index, cyrinx_profile_v2_t *out_profile);",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [
+    "VisibilityAttr:{\"visibility\":\"default\"}"
+   ],
+   "fingerprint": "ba0aca3e136166787ffa71eb1134e77ba27b47de205ad7ab99f641f33b3b1094",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.func:cyrinx_profile_v2_get_count",
+   "language": "c",
+   "kind": "c.func",
+   "path": "cyrinx_profile_v2_get_count",
+   "declaration": "size_t cyrinx_profile_v2_get_count();",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [
+    "VisibilityAttr:{\"visibility\":\"default\"}"
+   ],
+   "fingerprint": "eeaad718a55d3cc25f20b0b0067d35ad1460bda4a6e8f43db7ce4bbfed9fb795",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.func:cyrinx_profile_v2_serialize_identity",
+   "language": "c",
+   "kind": "c.func",
+   "path": "cyrinx_profile_v2_serialize_identity",
+   "declaration": "cyrinx_abi_status_t cyrinx_profile_v2_serialize_identity(const cyrinx_profile_v2_t *profile, uint8_t *out, size_t out_cap, size_t *out_len);",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [
+    "VisibilityAttr:{\"visibility\":\"default\"}"
+   ],
+   "fingerprint": "87fbd7e1ffde28940108059e1c03ab3ebc2007aa4d3be9416aad056e98ea9abc",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.func:cyrinx_profile_v2_validate",
+   "language": "c",
+   "kind": "c.func",
+   "path": "cyrinx_profile_v2_validate",
+   "declaration": "cyrinx_abi_status_t cyrinx_profile_v2_validate(const cyrinx_profile_v2_t *profile);",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [
+    "VisibilityAttr:{\"visibility\":\"default\"}"
+   ],
+   "fingerprint": "40bea7cfa30c9cdf438e5ec70cb81f8a1292f3cadcb098809d7bf2cb71dcb22f",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
    "platforms": [
     "all"
    ],
@@ -4229,6 +4491,28 @@
    "replacement": "module:CyrinxExperimental"
   },
   {
+   "id": "c:CCyrinx:c.macro:CYRINX_PAYLOAD_SCRAMBLER_V1_SEED",
+   "language": "c",
+   "kind": "c.macro",
+   "path": "CYRINX_PAYLOAD_SCRAMBLER_V1_SEED",
+   "declaration": "#define CYRINX_PAYLOAD_SCRAMBLER_V1_SEED 0x4359525853435231ull",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "fingerprint": "4675ef8956c624389cb638fa20eeb1f97433b6dc79a8456b3948803ff58991e0",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
    "id": "c:CCyrinx:c.macro:CYRINX_PROFILE_ABI_VERSION",
    "language": "c",
    "kind": "c.macro",
@@ -4295,6 +4579,50 @@
    "replacement": "plan:C3-05"
   },
   {
+   "id": "c:CCyrinx:c.macro:CYRINX_PROFILE_IDENTITY_V2_DOMAIN",
+   "language": "c",
+   "kind": "c.macro",
+   "path": "CYRINX_PROFILE_IDENTITY_V2_DOMAIN",
+   "declaration": "#define CYRINX_PROFILE_IDENTITY_V2_DOMAIN \"cyrinx-profile-identity-v2\"",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "fingerprint": "191f81e16a63bf161ab228dc00df7218322a4e49271150133ffe6a929a35378a",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.macro:CYRINX_PROFILE_IDENTITY_V2_SERIALIZED_SIZE",
+   "language": "c",
+   "kind": "c.macro",
+   "path": "CYRINX_PROFILE_IDENTITY_V2_SERIALIZED_SIZE",
+   "declaration": "#define CYRINX_PROFILE_IDENTITY_V2_SERIALIZED_SIZE 106u",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "fingerprint": "12d1a544c4401fb3f6dd6d0f1006556b4250cb314f5eb5f0683296071be88db6",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
    "id": "c:CCyrinx:c.macro:CYRINX_PROFILE_V1_SIZE",
    "language": "c",
    "kind": "c.macro",
@@ -4311,6 +4639,50 @@
    "disposition": "experimental",
    "decision": "Reconstructed C3-03/04/05 versioned ABI, profile-registry, and batch contracts; experimental until the reconstruction passes its documented merge-gate review.",
    "compatibility": "No compatibility promise before the C3-05 review freezes the v1 layouts; the frozen layouts are pinned by _Static_asserts and the contract test suites.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.macro:CYRINX_PROFILE_V2_ABI_VERSION",
+   "language": "c",
+   "kind": "c.macro",
+   "path": "CYRINX_PROFILE_V2_ABI_VERSION",
+   "declaration": "#define CYRINX_PROFILE_V2_ABI_VERSION 2u",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "fingerprint": "61ba9e4a0cedb34eba92fe943a87092d4b34048c06efe96f09d244e5100cfd0a",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.macro:CYRINX_PROFILE_V2_SIZE",
+   "language": "c",
+   "kind": "c.macro",
+   "path": "CYRINX_PROFILE_V2_SIZE",
+   "declaration": "#define CYRINX_PROFILE_V2_SIZE 136u",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "fingerprint": "9276f62148d178a4b364d5665ea48ad9dca9aac280af5b91122854a61fe3762b",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
    "platforms": [
     "all"
    ],
@@ -9141,6 +9513,489 @@
    "replacement": "plan:C3-05"
   },
   {
+   "id": "c:CCyrinx:c.property:cyrinx_profile_v2.abi_version",
+   "language": "c",
+   "kind": "c.property",
+   "path": "cyrinx_profile_v2.abi_version",
+   "declaration": "uint32_t abi_version;",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "ordinal": 1,
+   "fingerprint": "e88ee058f2fb1abf73aaa3d106388ceee141a4a7e49f33c79c5f45cf213dabbe",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.property:cyrinx_profile_v2.amplitude",
+   "language": "c",
+   "kind": "c.property",
+   "path": "cyrinx_profile_v2.amplitude",
+   "declaration": "double amplitude;",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "ordinal": 14,
+   "fingerprint": "307e72a474c3e387b620bab5e26fa5026ad6aea366929539ee2c1811e16f068f",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.property:cyrinx_profile_v2.block_count",
+   "language": "c",
+   "kind": "c.property",
+   "path": "cyrinx_profile_v2.block_count",
+   "declaration": "uint32_t block_count;",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "ordinal": 13,
+   "fingerprint": "9711dde855d550e6bb54e9207857e2bce422ab9a7bb77645c81d6d04b418318a",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.property:cyrinx_profile_v2.chirp_f0",
+   "language": "c",
+   "kind": "c.property",
+   "path": "cyrinx_profile_v2.chirp_f0",
+   "declaration": "double chirp_f0;",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "ordinal": 16,
+   "fingerprint": "19de82d7b88fd0948438fbacc19871e414ae5f69d17f5bda0c4b6fd5304273a2",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.property:cyrinx_profile_v2.chirp_f1",
+   "language": "c",
+   "kind": "c.property",
+   "path": "cyrinx_profile_v2.chirp_f1",
+   "declaration": "double chirp_f1;",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "ordinal": 17,
+   "fingerprint": "4bd88f8200299619c06bb4cab00775814922a1b163bc46b86a9c77a6cd3b232d",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.property:cyrinx_profile_v2.classification",
+   "language": "c",
+   "kind": "c.property",
+   "path": "cyrinx_profile_v2.classification",
+   "declaration": "uint32_t classification;",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "ordinal": 3,
+   "fingerprint": "34eebc1330a3991d7f4b51943cffb3fbbc959579dedc63876029cb6510e7b036",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.property:cyrinx_profile_v2.clip_sigma",
+   "language": "c",
+   "kind": "c.property",
+   "path": "cyrinx_profile_v2.clip_sigma",
+   "declaration": "double clip_sigma;",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "ordinal": 15,
+   "fingerprint": "1c6806c34fa0e2e1a06727a3eab4a2332fba0d84ed240141206dc5e3fe3066c9",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.property:cyrinx_profile_v2.code_rate",
+   "language": "c",
+   "kind": "c.property",
+   "path": "cyrinx_profile_v2.code_rate",
+   "declaration": "uint32_t code_rate;",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "ordinal": 5,
+   "fingerprint": "ba51e54602aae1697502ccf163df701c50f36923d0e0210d92059d3c4dbdb3d1",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.property:cyrinx_profile_v2.cyclic_prefix",
+   "language": "c",
+   "kind": "c.property",
+   "path": "cyrinx_profile_v2.cyclic_prefix",
+   "declaration": "uint32_t cyclic_prefix;",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "ordinal": 9,
+   "fingerprint": "5b8a781affae676917dd8ed221eb24b0b4c9c77985d955767f323179c7a3885d",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.property:cyrinx_profile_v2.fft_size",
+   "language": "c",
+   "kind": "c.property",
+   "path": "cyrinx_profile_v2.fft_size",
+   "declaration": "uint32_t fft_size;",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "ordinal": 8,
+   "fingerprint": "967ecc990a80ddc3e82090f4dd5f534e303a0d66dee9e1a56e0c10c2598a0d3a",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.property:cyrinx_profile_v2.high_frequency_hz",
+   "language": "c",
+   "kind": "c.property",
+   "path": "cyrinx_profile_v2.high_frequency_hz",
+   "declaration": "double high_frequency_hz;",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "ordinal": 7,
+   "fingerprint": "e6ee9a7dda299b6f79338f96b082177c39cee046b5a2d491f2fae14602ee205c",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.property:cyrinx_profile_v2.id",
+   "language": "c",
+   "kind": "c.property",
+   "path": "cyrinx_profile_v2.id",
+   "declaration": "uint32_t id;",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "ordinal": 2,
+   "fingerprint": "be16c72f3aea0434e25c1b70fcfd09fd1ff39e8b020bcafc110f03ef3104849b",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.property:cyrinx_profile_v2.identity_sha256",
+   "language": "c",
+   "kind": "c.property",
+   "path": "cyrinx_profile_v2.identity_sha256",
+   "declaration": "uint8_t identity_sha256[32];",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "ordinal": 18,
+   "fingerprint": "53051d7e7862f08d15c052bc594b89ca5af1a3053362d06ef4ed0ba0220feb18",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.property:cyrinx_profile_v2.low_frequency_hz",
+   "language": "c",
+   "kind": "c.property",
+   "path": "cyrinx_profile_v2.low_frequency_hz",
+   "declaration": "double low_frequency_hz;",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "ordinal": 6,
+   "fingerprint": "b849f9741212000a75186037e47e9c5b17f6a0b3e9be0fcab122951057a9ed2a",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.property:cyrinx_profile_v2.modulation",
+   "language": "c",
+   "kind": "c.property",
+   "path": "cyrinx_profile_v2.modulation",
+   "declaration": "uint32_t modulation;",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "ordinal": 4,
+   "fingerprint": "601dcdbd67ad850f37bd513ceeec5317207c5d9b4fee4016ad2b5a78109b69e0",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.property:cyrinx_profile_v2.payload_scrambler",
+   "language": "c",
+   "kind": "c.property",
+   "path": "cyrinx_profile_v2.payload_scrambler",
+   "declaration": "uint32_t payload_scrambler;",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "ordinal": 19,
+   "fingerprint": "ba4a7d9766259fd197b3ffc0eeda450837a1af7eb2b21d3d3fc5678c5461441c",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.property:cyrinx_profile_v2.pilot_every",
+   "language": "c",
+   "kind": "c.property",
+   "path": "cyrinx_profile_v2.pilot_every",
+   "declaration": "uint32_t pilot_every;",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "ordinal": 11,
+   "fingerprint": "f1f3cf0563f6348f7d2a17c91c0ba7a0b461417e776928aefd90545429c038ff",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.property:cyrinx_profile_v2.reserved0",
+   "language": "c",
+   "kind": "c.property",
+   "path": "cyrinx_profile_v2.reserved0",
+   "declaration": "uint32_t reserved0;",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "ordinal": 20,
+   "fingerprint": "19b5785c4130c784f09da4b038aede5832b65e7cbe89b94ea071e1bdde029762",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.property:cyrinx_profile_v2.sample_rate",
+   "language": "c",
+   "kind": "c.property",
+   "path": "cyrinx_profile_v2.sample_rate",
+   "declaration": "uint32_t sample_rate;",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "ordinal": 10,
+   "fingerprint": "2809fcc2d143f862ccd03be4e730f6a5ae3684df3375a82c879cf4f2180ac24b",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.property:cyrinx_profile_v2.struct_size",
+   "language": "c",
+   "kind": "c.property",
+   "path": "cyrinx_profile_v2.struct_size",
+   "declaration": "uint32_t struct_size;",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "ordinal": 0,
+   "fingerprint": "6106b277f4e48e79641c6ca640f087f4fb163aba1be9d7c84007199ad14d2c44",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.property:cyrinx_profile_v2.symbol_count",
+   "language": "c",
+   "kind": "c.property",
+   "path": "cyrinx_profile_v2.symbol_count",
+   "declaration": "uint32_t symbol_count;",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "ordinal": 12,
+   "fingerprint": "996f49f1b0edd278db75dbea627baa082de2e77ff1296756230a15a5e1164ad7",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
    "id": "c:CCyrinx:c.property:cyrinx_reposition_advice.evidence_value",
    "language": "c",
    "kind": "c.property",
@@ -9693,6 +10548,28 @@
    "replacement": "plan:C3-05"
   },
   {
+   "id": "c:CCyrinx:c.tag.struct:cyrinx_profile_v2",
+   "language": "c",
+   "kind": "c.tag.struct",
+   "path": "cyrinx_profile_v2",
+   "declaration": "struct cyrinx_profile_v2",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "fingerprint": "3735f680838ba22545159fa3479da568e01583412ea60cf01da43a3aade1a523",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
    "id": "c:CCyrinx:c.tag.struct:cyrinx_rfft_plan",
    "language": "c",
    "kind": "c.tag.struct",
@@ -9906,6 +10783,28 @@
    "disposition": "experimental",
    "decision": "Reconstructed C3-03/04/05 versioned ABI, profile-registry, and batch contracts; experimental until the reconstruction passes its documented merge-gate review.",
    "compatibility": "No compatibility promise before the C3-05 review freezes the v1 layouts; the frozen layouts are pinned by _Static_asserts and the contract test suites.",
+   "platforms": [
+    "all"
+   ],
+   "replacement": "plan:C3-05"
+  },
+  {
+   "id": "c:CCyrinx:c.typealias:cyrinx_profile_v2_t",
+   "language": "c",
+   "kind": "c.typealias",
+   "path": "cyrinx_profile_v2_t",
+   "declaration": "typedef struct cyrinx_profile_v2 cyrinx_profile_v2_t;",
+   "source": "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
+   "origin": "source",
+   "availability": [],
+   "conformances": [],
+   "attributes": [],
+   "fingerprint": "b971612981cb89109aa3fc40348d37f1f407f119fec300f0f041121d2646e9c4",
+   "present": true,
+   "reviewState": "reviewed",
+   "disposition": "experimental",
+   "decision": "Scrambled profiles (docs/SCRAMBLER_PLAN.md): the separately named v2 profile type, its registry view, identity and validation, and the v2 batch entry points that carry the scrambler mode. Experimental: no scrambled profile is qualified.",
+   "compatibility": "No compatibility promise before a scrambled profile is qualified; the v2 layout is pinned by _Static_asserts and CyrinxProfileV2Tests.",
    "platforms": [
     "all"
    ],

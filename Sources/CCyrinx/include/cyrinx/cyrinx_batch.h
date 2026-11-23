@@ -120,15 +120,38 @@ CYRINX_API cyrinx_abi_status_t cyrinx_batch_decode(const cyrinx_profile_t *profi
  * decode side returning the padded frame payload). Writes the frame's samples
  * to out_samples and, when out_result is non-NULL, the produced counts.
  *
- * Caution: the bulk codec has no scrambler. In digital loopback on every
- * registered profile, an all-zero frame and a 128-byte payload padded this way
- * decoded no CRC-valid blocks, including the block holding the payload. Longer
+ * Caution: a v1 profile has no scrambler. In digital loopback on every v1
+ * profile, an all-zero frame and a 128-byte payload padded this way decoded
+ * no CRC-valid blocks, including the block holding the payload. Longer
  * payloads can survive the padding; the boundary is uncharacterized. Callers
- * that need a short payload recovered should fill the frame with varied bytes
- * themselves. See docs/NEGATIVE_FINDINGS.md entry 26. */
+ * that need a short payload recovered should use a scrambled profile through
+ * cyrinx_batch_encode_v2, or fill the frame with varied bytes themselves. See
+ * docs/NEGATIVE_FINDINGS.md entry 26. */
 CYRINX_API cyrinx_abi_status_t cyrinx_batch_encode(const cyrinx_profile_t *profile, const uint8_t *payload,
                                                    size_t payload_len, float *out_samples, size_t out_cap,
                                                    cyrinx_batch_result_t *out_result);
+
+/* As cyrinx_batch_decode and cyrinx_batch_encode, for a v2 profile, which may
+ * be scrambled. The profile must pass cyrinx_profile_v2_validate. Error
+ * precedence, the capacity query, the input and result structures and every
+ * count are the same as for the v1 entry points; an unscrambled v2 profile
+ * produces and decodes the same waveform as its v1 form. The result's
+ * identity digest is the v2 profile's, so it tells a scrambled profile from
+ * its unscrambled twin.
+ *
+ * A decoder is told its profile by the caller. Decoding a capture with the
+ * twin of the profile that made it demodulates normally and returns
+ * CYRINX_STATUS_OK with no CRC-valid blocks. */
+CYRINX_API cyrinx_abi_status_t cyrinx_batch_decode_v2(const cyrinx_profile_v2_t *profile,
+                                                      const cyrinx_batch_input_t *input, uint8_t *out_payload,
+                                                      size_t out_payload_cap, uint8_t *block_validity,
+                                                      size_t block_validity_cap,
+                                                      cyrinx_batch_result_t *out_result);
+
+CYRINX_API cyrinx_abi_status_t cyrinx_batch_encode_v2(const cyrinx_profile_v2_t *profile,
+                                                      const uint8_t *payload, size_t payload_len,
+                                                      float *out_samples, size_t out_cap,
+                                                      cyrinx_batch_result_t *out_result);
 
 #ifdef __cplusplus
 }

@@ -293,8 +293,13 @@ loopback; numbers are quoted as measured.
     `scratch/garage/payload_whitening.py`; the Swift package test
     `zeroHeavyFrameRecoversNoBlocks` pins the unscrambled behavior. The Swift
     `BatchPHY.encode` rejects a short payload for this reason. A scrambler in
-    the codec changes the waveform and therefore needs a new wire version
-    (ROADMAP Rank 1).
+    the codec changes the waveform, so it was added as new profiles: IDs 6 to
+    10 are profiles 1 to 5 with the payload and CRC bits scrambled, reached
+    through the C v2 profile type and batch entry points. In digital loopback
+    they recover every block of the zero, 128-byte and sparse patterns
+    (`CyrinxScrambledBatchTests`). They are experimental and have not been
+    sent over the air ([SCRAMBLER_PLAN](SCRAMBLER_PLAN.md)). Profiles 1 to 5
+    still fail as described here.
 
 27. **The batch input layout was not the same on 32-bit x86. Fixed.** The
     versioned structures pin their sizes with compile-time assertions, which

@@ -1,6 +1,8 @@
 # Plan: scrambled profiles for payload-independent decoding
 
-Status: **proposed, awaiting David's approval. No codec change has been made.**
+Status: **approved by David on 2026-11-22. The C core is built; the bindings,
+the reference modem and the over-the-air screen are not.** Progress is at the
+end of this document.
 Stage: product. Written 2026-11-22; revised the same day after one plan review.
 
 ## In plain English
@@ -49,10 +51,16 @@ airtime, and it is the standard remedy.
   waveforms, IDs and identity digests. Scrambled formats get new IDs.
 - **Approval before any codec change** (David, 2026-11-22, by choosing the
   scope "Scrambler Then Gates", whose terms were plan first).
+- **The design below, as written** (David, 2026-11-22: "approved on scrambler
+  plan"). He added that he does not fully understand it. The choices inside
+  it, including the Separately Named Type, automatic short payloads on
+  scrambled profiles and leaving the per-frame seed out, were an agent's
+  recommendations that he accepted by approving the whole, not choices he
+  made one by one.
 
-## Proposed design
+## Design
 
-Everything in this section is proposed by an agent and not yet confirmed.
+Proposed by an agent and approved by David as a whole on 2026-11-22.
 
 1. **The exact bit stream.** `payload_scrambler = 1` means: XOR exactly
    `block_count * 260 * 8` framed bits, which are each block's 256 payload
@@ -251,10 +259,46 @@ Gemini also suggested making zero-padding of a short payload an explicit
 option on `BatchPHY.encode` instead of automatic on scrambled profiles. Item 7
 keeps it automatic; that suggestion was declined too.
 
-## Questions for David
+## Questions for David (answered 2026-11-22: approved as written)
 
 1. Approve this design, or change it? The choice most worth a second look is
    Separately Named Type against Grow In Place, described under Review, where
    the two reviewers disagreed. The other is accepting short payloads
    automatically on scrambled profiles (item 7).
 2. Should the per-frame seed stay out, given the known limit above?
+
+## Progress
+
+**Built in the C core** (design items 1 to 6), with `swift test --filter
+"CyrinxProfileV2|CyrinxScrambledBatchTests"`:
+
+- The scrambler, mode `CYRINX_PAYLOAD_SCRAMBLER_FRAMED_BITS_V1`, with seed
+  `CYRINX_PAYLOAD_SCRAMBLER_V1_SEED` (the ASCII bytes `CYRXSCR1`). A test
+  computes the mask with its own SplitMix64 and reads the library's mask back
+  through a decode, across the first CRC into the second block and over two
+  frames.
+- `cyrinx_profile_v2_t`, 136 bytes, with lookup, identity and validation
+  functions; profiles 6 to 10 in `Tests/Fixtures/profiles/cyrinx_profiles_v2.json`,
+  whose digests were computed outside the C library.
+- `cyrinx_batch_encode_v2` and `cyrinx_batch_decode_v2`.
+- In digital loopback, profiles 6 to 10 recover every block of the zero,
+  128-byte, sparse, 0x71, 0xff and dense random patterns, and their
+  unscrambled parents still recover none of the first three.
+- A profile and its twin cross-decode to an all-invalid mask in both
+  directions, and a noise-damaged scrambled frame keeps every recovered block
+  at its own offset.
+- The five released waveforms are unchanged (`ReleasedWaveformTests`), and a
+  consumer compiled against the header as it was before this change still
+  enumerates five profiles.
+
+**As built, where the text above left a choice open:**
+
+- One identity function serves the v2 type. It writes the v1 byte stream for
+  an unscrambled profile and the v2 stream for a scrambled one.
+- The v1 identity functions refuse any structure whose header says version 2,
+  scrambled or not.
+
+**Not built yet:** short payloads and the scrambler mode in `BatchPHY` (item
+7), the Python reference and the golden case (item 8), the JNI probe and the
+replay fixture (item 9 and the replay gate), the peak diagnostic, and the
+over-the-air screen.

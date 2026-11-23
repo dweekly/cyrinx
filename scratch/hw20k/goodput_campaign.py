@@ -66,9 +66,13 @@ LLR_RELIABILITY_ESTIMATOR = "known-pilot-local-frequency-boxcar11-blend25-75-v1"
 BULK_DECODER_BUILD_RECIPE = "clang-c11-o2-kissfft-double-dynamiclib-v1"
 BULK_DECODER_BUILD_INPUTS = (
     "Sources/CCyrinx/cyrinx_bulk.c",
+    # Included by cyrinx_bulk.c for the scrambler mode, with the two headers it reads in turn.
+    "Sources/CCyrinx/cyrinx_bulk_internal.h",
     "Sources/CCyrinx/cyrinx_fft.c",
+    "Sources/CCyrinx/include/cyrinx/cyrinx_base.h",
     "Sources/CCyrinx/include/cyrinx/cyrinx_bulk.h",
     "Sources/CCyrinx/include/cyrinx/cyrinx_fft.h",
+    "Sources/CCyrinx/include/cyrinx/cyrinx_profiles.h",
     "Sources/CCyrinx/kissfft/kiss_fft.c",
     "Sources/CCyrinx/kissfft/kiss_fftr.c",
     "Sources/CCyrinx/kissfft/kiss_fft.h",
