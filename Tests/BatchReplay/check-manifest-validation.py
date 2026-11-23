@@ -104,13 +104,15 @@ def main():
                 continue
             raise RuntimeError(f"a {length}-byte payload was reported as: {error}") from error
         raise RuntimeError(f"the replay runner accepted a {length}-byte payload")
-    # The research comparison refuses a result with bytes beyond the blocks its mask covers.
-    control = cases["pixel-behind-monitor-control"]
-    blocks = len(control["research"]["mask"])
-    mask = bytes(int(bit) for bit in control["research"]["mask"])
-    for length in (256 * blocks - 1, 256 * blocks + 1):
-        if not replay.research_outcome(control, mask, bytes(length))[1]:
-            raise RuntimeError(f"the research comparison accepted a {length}-byte payload")
+    # The research comparison refuses a result whose length is not its mask's. The case is made
+    # here so that only the length can differ: one valid block of zeros, then one invalid block.
+    # The hash covers the valid block alone, which is the same bytes at every length tried.
+    control = {"research": {"mask": "10", "valid_payload_sha256": replay.sha(bytes(256))}}
+    if replay.research_outcome(control, bytes([1, 0]), bytes(512))[1]:
+        raise RuntimeError("the research comparison refused a result of the right length")
+    for length in (511, 513):
+        if not replay.research_outcome(control, bytes([1, 0]), bytes(length))[1]:
+            raise RuntimeError(f"the research comparison accepted a {length}-byte payload for two blocks")
     print(f"Confirmed that {len(cases)} bundled cases validate, {len(rejected)} malformed cases are refused, "
           f"{len(unreachable)} faults that cannot reach the decoder are refused, {len(damaged)} damaged lists "
           "are refused, and a payload of the wrong length is refused in both comparisons.")
