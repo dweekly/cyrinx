@@ -49,11 +49,12 @@ extern "C" {
 #define CYRINX_BATCH_ROLE_SECONDARY 1u
 
 typedef struct cyrinx_batch_channel_view {
-    const float *samples;  /* base pointer of the backing storage */
-    uint64_t sample_count; /* raw samples readable from `samples` */
-    uint64_t first_sample; /* raw offset of this channel's first sample */
-    uint32_t stride;       /* >= 1 raw samples between logical samples */
-    uint32_t role;         /* CYRINX_BATCH_ROLE_* */
+    const float *samples; /* base pointer of the backing storage */
+    /* Eight-byte aligned so the pointer above occupies eight bytes on 32-bit ABIs too. */
+    CYRINX_ALIGN8 uint64_t sample_count; /* raw samples readable from `samples` */
+    uint64_t first_sample;               /* raw offset of this channel's first sample */
+    uint32_t stride;                     /* >= 1 raw samples between logical samples */
+    uint32_t role;                       /* CYRINX_BATCH_ROLE_* */
 } cyrinx_batch_channel_view_t;
 
 #define CYRINX_BATCH_INPUT_ABI_VERSION 1u

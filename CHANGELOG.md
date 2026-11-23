@@ -24,20 +24,38 @@ commands or content hashes.
   the field. Partial work toward C3-08; see the status ledger in
   [docs/CYRINX_3_PLAN.md](docs/CYRINX_3_PLAN.md).
 
+## Unreleased — 32-bit x86 supported by the C core
+
+- **The Cyrinx 3 batch and profile structures now have one layout on every
+  ABI.** The batch channel view was 28 bytes on 32-bit x86 and 32 everywhere
+  else. Its first 64-bit member is now eight-byte aligned everywhere, its
+  field offsets are asserted, and the core builds for arm64-v8a,
+  armeabi-v7a, x86_64 and x86. Layout on the other three is unchanged. The
+  2.x structures make no such promise and still differ on 32-bit x86
+  ([NEGATIVE_FINDINGS entry 27](docs/NEGATIVE_FINDINGS.md)).
+- **The decoder runs correctly as a 32-bit x86 program.** Built in a 32-bit
+  x86 Linux container with the Android x86 ABI's floating-point settings, it
+  gives the same identity, receiver decision, mask and payload bytes as the
+  macOS arm64 build on the five checkout replay fixtures
+  (`scripts/check-x86-32.py`). The Android runtime on 32-bit x86 is untested.
+
 ## Unreleased — layout checked on four Android ABIs; released waveforms pinned
 
 - **The C structures' layout assertions now compile for arm64-v8a,
   armeabi-v7a, x86_64 and x86** (`.venv/bin/python scripts/check-abi-layout.py`). They hold
-  on the first three. 32-bit x86 is refused at compile time: the batch
-  channel view is 28 bytes there, not 32
-  ([NEGATIVE_FINDINGS entry 27](docs/NEGATIVE_FINDINGS.md)). The supported
-  matrix is arm64, so nothing shipped is affected.
+  on the first three. At the time 32-bit x86 was refused at compile time:
+  the batch channel view was 28 bytes there, not 32
+  ([NEGATIVE_FINDINGS entry 27](docs/NEGATIVE_FINDINGS.md)). The entry above
+  fixes it.
 - **Each released profile's transmitted waveform is pinned by digest**
   (`Tests/CyrinxTests/ReleasedWaveformTests.swift`), so a change to shared
   modulation code cannot alter a released sound unnoticed.
 - **A generated capture ending inside the frame now reaches the decode-failure
-  path** in the Swift tests,
-  on every registered profile.
+  path** in the Swift tests, on every registered profile.
+- **The whole test suite runs clean under AddressSanitizer and
+  ThreadSanitizer** (`./scripts/test-sanitizers.sh`): 108 XCTest cases and
+  38 Swift Testing tests, with the C core instrumented, and no report from
+  either. The script first proves each sanitizer catches a known defect.
 
 ## Unreleased — why sparse payloads fail; scrambler plan
 
