@@ -3,6 +3,9 @@ import copy
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
+import sys
+import tempfile
 
 
 def main():
@@ -39,6 +42,10 @@ def main():
         "truncation on a recording": changed("pixel-desk-frame-2", truncate=100),
         "rejection that also names a mask": changed("digital-qpsk", status=-1),
         "decode failure as a status-only case": changed("truncated-capture", status=-10),
+        "decode failure that names a mask": changed("late-chirp", mask="1"),
+        "decode failure with no block count": changed("late-chirp", blocks=None),
+        "decode failure with no metrics": changed("late-chirp", metrics=None),
+        "status that is neither a refusal nor a failed decode": changed("truncated-capture", status=-3),
         "decode with no metrics": changed("digital-qpsk", metrics=None),
         "metric with no tolerance": changed("digital-qpsk", metrics={
             name: {"value": 0} for name in replay.METRICS}),
@@ -89,9 +96,19 @@ def main():
         except ValueError:
             continue
         raise RuntimeError(f"the replay runner accepted a list with {label}")
-    x86 = (root / "scripts/check-x86-32.py").read_text()
-    if "replay.validate_manifest(manifest)" not in x86 or "validate_case" in x86:
-        raise RuntimeError("the 32-bit x86 runner does not use the replay's own check of the list")
+    # The 32-bit x86 runner is run on a list with no cases and a frame length that is not a whole
+    # number. It must refuse the list for the frame length, which it can only do by checking the
+    # whole list before it looks for cases to run. It fails before it contacts any machine, so
+    # the host named here is never used.
+    with tempfile.TemporaryDirectory(prefix="cyrinx-x86-list-") as tmp:
+        listed, report = Path(tmp) / "list.json", Path(tmp) / "report.json"
+        listed.write_text(json.dumps(dict(manifest, frame_samples=[float(frames[0]), *frames[1:]], cases=[])))
+        done = subprocess.run([sys.executable, root / "scripts/check-x86-32.py", "--host", "unused.invalid",
+                               "--manifest", listed, "--report", report], capture_output=True, text=True)
+        result = json.loads(report.read_text())
+        if done.returncode == 0 or result["status"] != "failed" or "frame_samples" not in result.get("error", ""):
+            raise RuntimeError("the 32-bit x86 runner did not refuse a damaged list for its frame lengths: "
+                               f"exit {done.returncode}, {result.get('error')!r}")
     # A payload of the wrong length is refused and named as the payload, with a matching mask.
     case = cases["digital-qpsk"]
     expected = replay.expectation(case, manifest, b"")
