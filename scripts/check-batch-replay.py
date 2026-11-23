@@ -89,7 +89,7 @@ def fixture_bytes(case, archive):
             for start in range(0, len(pcm), 4 * period):
                 end = min(start + 4 * width, len(pcm))
                 pcm[start:end] = bytes(end - start)
-        if "gain" in case or "nonfinite_at" in case or "truncate" in case:
+        if {"gain", "nonfinite_at", "truncate", "delay"} & case.keys():
             from array import array
 
             samples = array("f", bytes(pcm))
@@ -97,6 +97,12 @@ def fixture_bytes(case, archive):
                 samples = array("f", (max(-1.0, min(1.0, s * case["gain"])) for s in samples))
             # A position past the end would leave the capture untouched and the fault untested, and
             # an empty capture cannot reach the decoder at all.
+            if "delay" in case:
+                # The capture starts late: silence first, the same length kept, so the end of the
+                # frame falls off. A delay of nothing, or of the whole capture, tests nothing.
+                if not 0 < case["delay"] < len(samples):
+                    raise ValueError(f"{case['name']}: delay must fall inside the {len(samples)}-sample capture")
+                samples = array("f", bytes(4 * case["delay"])) + samples[:len(samples) - case["delay"]]
             kept = case.get("truncate", len(samples))
             if not 0 < kept <= len(samples) or ("truncate" in case and kept == len(samples)):
                 raise ValueError(f"{case['name']}: truncate must shorten the {len(samples)}-sample capture, not empty it")
@@ -133,6 +139,7 @@ EXACT = ("status", "identity", "profile_id", "receiver", "reason", "blocks_total
          "logical_samples", "payload_bytes")
 FIXTURE_ID_BASE = 0xF000  # Tests/BatchReplay/Profiles.h
 INVALID_ARGUMENT = -1  # CYRINX_STATUS_ERR_INVALID_ARGUMENT
+DECODE_FAILURE = -10  # CYRINX_STATUS_ERR_DECODE
 METRICS = ("evm_rms", "primary_holdout_pilot_rms", "mrc_holdout_pilot_rms")
 
 
@@ -161,10 +168,20 @@ def parse(packet):
 
 def expectation(case, manifest, pcm):
     """What every binding must report for this case, from the list and the input itself."""
+    channels = 2 if "secondary_path" in case else 1
+    if case.get("status", 0) == DECODE_FAILURE:
+        # The decoder gave up after reading the capture. It still reports which profile it was
+        # given, what that profile needs, how much it read and what it saw, with nothing produced.
+        blocks = case["blocks"]
+        return dict(status=DECODE_FAILURE, identity=manifest["profile_identities"][case["profile"]],
+                    profile_id=FIXTURE_ID_BASE + case["profile"], receiver=case["receiver"],
+                    reason=case["reason"], blocks_total=blocks, blocks_ok=0, validity_required=blocks,
+                    clipping=case["clipping"], nonfinite=case["nonfinite"], payload_required=256 * blocks,
+                    frame_samples=manifest["frame_samples"][case["profile"]],
+                    logical_samples=len(pcm) // 4 // channels, payload_bytes=0)
     if case.get("status", 0):
         return dict(status=case["status"])
     mask = case["mask"]
-    channels = 2 if "secondary_path" in case else 1
     return dict(status=0, identity=manifest["profile_identities"][case["profile"]],
                 profile_id=FIXTURE_ID_BASE + case["profile"], receiver=case["receiver"],
                 reason=case["reason"], blocks_total=len(mask), blocks_ok=mask.count("1"),
@@ -186,18 +203,22 @@ def compare(case, expected, record):
     for field, value in expected.items():
         if record[field] != value:
             raise Mismatch(f"{field}: expected {value}, observed {record[field]}")
-    if expected["status"]:
+    if expected["status"] == INVALID_ARGUMENT:
         return {}
-    observed_exact = {field: record[field] for field in EXACT if field != "status"}
-    mask, payload = record["mask"], record["payload"]
-    ordered = "".join(str(v) for v in mask)
-    if any(v > 1 for v in mask) or ordered != case["mask"]:
-        raise Mismatch(f"mask: expected mask {case['mask']}, observed {ordered}")
-    if len(payload) != 256 * len(mask):
-        raise Mismatch(f"payload: expected {256 * len(mask)} bytes, observed {len(payload)}")
-    valid = b"".join(payload[i * 256:(i + 1) * 256] for i, v in enumerate(mask) if v)
-    if sha(valid) != case["valid_payload_sha256"]:
-        raise Mismatch("payload: decoded bytes differ from the transmitted blocks")
+    outcome = {field: record[field] for field in EXACT if field != "status"}
+    if expected["status"] == 0:
+        mask, payload = record["mask"], record["payload"]
+        ordered = "".join(str(v) for v in mask)
+        if any(v > 1 for v in mask) or ordered != case["mask"]:
+            raise Mismatch(f"mask: expected mask {case['mask']}, observed {ordered}")
+        if len(payload) != 256 * len(mask):
+            raise Mismatch(f"payload: expected {256 * len(mask)} bytes, observed {len(payload)}")
+        valid = b"".join(payload[i * 256:(i + 1) * 256] for i, v in enumerate(mask) if v)
+        if sha(valid) != case["valid_payload_sha256"]:
+            raise Mismatch("payload: decoded bytes differ from the transmitted blocks")
+        outcome.update(mask=ordered, valid_payload_sha256=sha(valid))
+    # A failed decode has no mask or payload, but its metrics are evidence too and are held to
+    # the same declared values: a binding must not report a measurement the decoder never made.
     metrics, failure = {}, None
     for field in METRICS:
         target, tolerance, observed = case["metrics"][field]["value"], case["metrics"][field]["tolerance"], record[field]
@@ -210,7 +231,7 @@ def compare(case, expected, record):
                               tolerance=tolerance, passed=passed)
         if not passed and failure is None:
             failure = f"{field}: expected {target} within {tolerance}, observed {plain(observed)}"
-    outcome = dict(observed_exact, mask=ordered, valid_payload_sha256=sha(valid), metrics=metrics)
+    outcome["metrics"] = metrics
     if failure:
         raise Mismatch(failure, outcome)  # The row is kept, with the failed comparison in it.
     return outcome
@@ -223,8 +244,8 @@ def same_decision(first, second):
 
 def mutate(packet, field, case):
     """Deliberately change one field of a record, for the negative controls."""
-    if "mask" not in case:
-        raise ValueError(f"{case['name']} is a rejected capture; a negative control needs a decoded record")
+    if case.get("status", 0) == INVALID_ARGUMENT or ("mask" not in case and field in ("payload", "mask")):
+        raise ValueError(f"{case['name']} has no {field} to change")
     data = bytearray(packet)
     offsets = dict(identity=4, blocks_ok=52, payload_required=68, logical_samples=84, evm_rms=100)
     if field == "payload" and "1" not in case["mask"]:
@@ -262,12 +283,16 @@ def validate_report(report):
         decoded = row.get("status") == 0 and report["status"] == "passed"
         if decoded and not set(EXACT) | {"mask", "valid_payload_sha256", "metrics"} <= row.keys():
             raise ValueError("report: a decoded result lacks an observed field")
+        failed = row.get("status") == DECODE_FAILURE and report["status"] == "passed"
+        if failed and not set(EXACT) | {"metrics"} <= row.keys():
+            raise ValueError("report: a failed decode lacks its observed evidence")
 
 
 REPORT_SCHEMA = "cyrinx-batch-replay-report/2"
 IDENTITY_FIELDS = {"name", "profile", "pcm_sha256"}
+FAILURE_FIELDS = {"blocks", "receiver", "reason", "clipping", "nonfinite", "metrics"}
 DECODED_FIELDS = {"mask", "receiver", "reason", "valid_payload_sha256", "clipping", "nonfinite", "metrics"}
-FILE_FIELDS = {"path"}, {"secondary_path", "dropout", "gain", "nonfinite_at", "truncate", "status"}
+FILE_FIELDS = {"path"}, {"secondary_path", "dropout", "gain", "nonfinite_at", "truncate", "delay", "status"}
 RECORDING_FIELDS = {"archive", "source_sha256", "start", "samples"}, {"member", "research"}
 RESEARCH_PROFILE = 2  # The control geometry is the only one the research lane decodes.
 
@@ -287,12 +312,13 @@ def validate_case(case, profile_count):
     rejected = case.get("status", 0) != 0
     if type(case.get("status", 0)) is not int:
         raise ValueError(f"{name}: status is a whole number")
-    if rejected and case["status"] != INVALID_ARGUMENT:
-        # A status-only case compares nothing else. That is right for an input the decoder
-        # refuses before reading it, which writes no result. A decode failure does write
-        # evidence, and this runner does not compare it yet, so it cannot pass as verified.
-        raise ValueError(f"{name}: a status-only case is the invalid-argument status {INVALID_ARGUMENT}")
-    required = required | IDENTITY_FIELDS | (set() if rejected else DECODED_FIELDS)
+    failed = case.get("status", 0) == DECODE_FAILURE
+    if rejected and not failed and case["status"] != INVALID_ARGUMENT:
+        raise ValueError(f"{name}: status is {INVALID_ARGUMENT} for a refused input or {DECODE_FAILURE} for a "
+                         "failed decode")
+    # A refused input writes no result, so its case is the status alone. A failed decode writes
+    # evidence, so its case names that evidence and every binding must report it.
+    required = required | IDENTITY_FIELDS | (FAILURE_FIELDS if failed else set() if rejected else DECODED_FIELDS)
     if not required <= case.keys() <= required | optional:
         odd = sorted((required - case.keys()) | (case.keys() - required - optional))
         raise ValueError(f"{name}: missing or unsupported fields {', '.join(odd)}")
@@ -300,11 +326,13 @@ def validate_case(case, profile_count):
     if type(profile) is not int or not 0 <= profile < profile_count:
         raise ValueError(f"{name}: unknown profile {profile!r}")
     if not rejected:
-        mask, metrics = case["mask"], case["metrics"]
+        mask = case["mask"]
         if not isinstance(mask, str) or not mask or set(mask) - {"0", "1"}:
             raise ValueError(f"{name}: the mask is a string of 0 and 1")
         if any(type(case[key]) is not int or case[key] < 0 for key in ("clipping", "nonfinite")):
             raise ValueError(f"{name}: clipping and nonfinite are counts")
+    if not rejected or failed:
+        metrics = case["metrics"]
         if (not isinstance(metrics, dict) or metrics.keys() != set(METRICS) or not all(
                 isinstance(m, dict) and m.keys() == {"value", "tolerance"}
                 and (m["value"] in ("inf", "-inf", "nan") if isinstance(m["value"], str)
@@ -312,13 +340,18 @@ def validate_case(case, profile_count):
                 and type(m["tolerance"]) in (int, float) and math.isfinite(m["tolerance"]) and m["tolerance"] >= 0
                 for m in metrics.values())):
             raise ValueError(f"{name}: metrics needs a value and a tolerance for each of {', '.join(METRICS)}")
-    transforms = {"gain", "nonfinite_at", "truncate"} & case.keys()
+    if failed and any(type(case[key]) is not int or case[key] < 0 for key in FAILURE_FIELDS - {"metrics"}):
+        raise ValueError(f"{name}: a failed decode's evidence fields are counts and codes")
+    if failed and case["blocks"] < 1:
+        raise ValueError(f"{name}: blocks is the profile's block count")
+    transforms = {"gain", "nonfinite_at", "truncate", "delay"} & case.keys()
     if transforms and "secondary_path" in case:
         raise ValueError(f"{name}: {', '.join(sorted(transforms))} apply to one-channel inputs only")
     if "gain" in case and (type(case["gain"]) not in (int, float) or not 0 < case["gain"] < 1e6):
         raise ValueError(f"{name}: gain is a positive number")
-    if any(key in case and (type(case[key]) is not int or case[key] < 0) for key in ("nonfinite_at", "truncate")):
-        raise ValueError(f"{name}: nonfinite_at and truncate are sample positions")
+    if any(key in case and (type(case[key]) is not int or case[key] < 0)
+           for key in ("nonfinite_at", "truncate", "delay")):
+        raise ValueError(f"{name}: nonfinite_at, truncate and delay are sample counts")
     dropout = case.get("dropout")
     if dropout is not None and "secondary_path" in case:
         # The transform zeroes single-channel samples; applied to interleaved audio it would mute
