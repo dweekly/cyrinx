@@ -8,6 +8,6 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 exec swift test \
-  --filter "CyrinxBulkTXTests|CyrinxBulkPHYTests|CyrinxGoldenVectorTests|CyrinxScrambledGoldenTests|CyrinxScrambledBatchTests|ReleasedWaveformTests" \
+  --filter "CyrinxBulkTXTests|CyrinxBulkPHYTests|CyrinxGoldenVectorTests|CyrinxScrambledGoldenTests|CyrinxScrambledBatchTests|CyrinxScramblerPeakTests|ReleasedWaveformTests" \
   -Xcc -DCYRINX_FFT_ACCELERATE \
   -Xlinker -framework -Xlinker Accelerate

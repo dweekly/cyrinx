@@ -44,19 +44,6 @@ import Testing
         } catch BatchPHY.Failure.profileNotFound {}
     }
 
-    /// The scrambled profiles exist in the C core's v2 view. `BatchPHY` reads the v1 view, so
-    /// until it is moved over it reports them as not found.
-    @Test(arguments: UInt32(6)...10)
-    func scrambledProfilesAreNotExposedYet(id: UInt32) {
-        #expect(throws: BatchPHY.Failure.self) { _ = try BatchPHY.Profile(id: id) }
-        do {
-            _ = try BatchPHY.Profile(id: id)
-        } catch BatchPHY.Failure.profileNotFound {
-        } catch {
-            Issue.record("profile \(id) failed with \(error), not as not found")
-        }
-    }
-
     @Test func invalidLayoutAndOversizePayload() throws {
         let profile = try BatchPHY.Profile(id: 1)
         // The same silent capture is accepted with a valid stride, so stride is the only fault.

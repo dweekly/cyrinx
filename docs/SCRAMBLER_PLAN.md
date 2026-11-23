@@ -312,6 +312,31 @@ CyrinxScrambledGoldenTests` and `./scripts/test-accelerate.sh`:
 - Before the clip the scrambled frame's peak-to-RMS ratio is 4.0. The same
   payload unscrambled is 23.7, and the C core recovers none of its blocks.
 
-**Not built yet:** short payloads and the scrambler mode in `BatchPHY` (item
-7), the JNI probe and the replay fixture (item 9 and the replay gate), the
-peak diagnostic on the registered profiles, and the over-the-air screen.
+**Built in the bindings and the replay** (design items 7 and 9, and the
+replay and peak gates):
+
+- `BatchPHY.Profile` holds the v2 layout, finds all ten profiles by ID, and
+  reports the scrambler mode. `registered()` still returns five;
+  `registeredIncludingScrambled()` returns ten. On a scrambled profile
+  `BatchPHY.encode` takes 0 to `payloadByteCount` bytes and gives the waveform
+  of explicit zero padding; on an unscrambled one it still takes a full frame
+  only. `swift test --filter BatchPHYScrambledTests` covers lengths 0, 1,
+  128, 255, 256, 257, capacity minus one, capacity and oversize on all ten.
+- The Kotlin/JNI probe looks registered profiles up through the v2 type. Its
+  original list of IDs is unchanged and a second lists all ten.
+- `scripts/check-batch-replay.py` decodes a frame of registered profile 8,
+  made by the Python reference modem with a sparse payload, through C, Swift
+  and Kotlin/JNI on both FFT backends, under the sanitizers, and on both
+  phones: 107 of 107 blocks. A second case with a dropout loses 29 blocks and
+  keeps the other 78 at their own offsets, checked against the transmitted
+  bytes.
+- `swift test --filter CyrinxScramblerPeakTests` measures each of IDs 6 to 10
+  before the clip can act. For the zero, 128-byte, sparse and 0xff patterns
+  the peak-to-RMS ratio is between 4.2 and 5.0, against a bound of 6.5, and
+  the commonest constellation point's share is within 0.002 of a random
+  payload's, against a bound of 0.02. The same measurement on the
+  unscrambled parents' zero frame reads at least 10, the widest clip the
+  codec accepts, with 93% to 96% of data bins on one point.
+
+**Not built yet:** the over-the-air screen. Nothing here has been played
+through a speaker.

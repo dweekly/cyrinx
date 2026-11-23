@@ -2,6 +2,28 @@
 #define CYRINX_REPLAY_PROFILES_H
 
 #include "cyrinx/cyrinx_batch.h"
+#include <stdlib.h>
+#include <string.h>
+
+// A probe is told its profile in one of two ways: a key naming one of the fixed test geometries
+// below, or "registered:<id>" naming a profile in the library's registry. A registered profile
+// is looked up through the v2 type, so the scrambled ones are reachable.
+#define REPLAY_REGISTERED_PREFIX "registered:"
+
+static inline bool replay_registered(const char *argument, cyrinx_profile_v2_t *out) {
+    size_t prefix = strlen(REPLAY_REGISTERED_PREFIX);
+    if (strncmp(argument, REPLAY_REGISTERED_PREFIX, prefix) != 0) {
+        return false;
+    }
+    char *end = NULL;
+    unsigned long id = strtoul(argument + prefix, &end, 10);
+    if (end == argument + prefix || *end != '\0' || id > UINT32_MAX) {
+        return false;
+    }
+    *out = (cyrinx_profile_v2_t){.struct_size = CYRINX_PROFILE_V2_SIZE,
+                                 .abi_version = CYRINX_PROFILE_V2_ABI_VERSION};
+    return cyrinx_profile_v2_get_by_id((uint32_t)id, out) == CYRINX_STATUS_OK;
+}
 
 // Fixed test geometries. These keys are local to the replay runner.
 enum { REPLAY_QPSK = 0, REPLAY_DESK = 1, REPLAY_CONTROL = 2, REPLAY_QAM16 = 3 };

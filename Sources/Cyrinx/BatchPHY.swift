@@ -11,41 +11,73 @@ public enum BatchPHY {
     }
 
     /// An immutable, validated profile. Integer discriminators preserve their C values.
+    ///
+    /// Profiles 1 to 5 are unscrambled. Profiles 6 to 10 are the same five with a payload
+    /// scrambler, which lets a frame of mostly zero bytes decode; see docs/BATCH_PHY.md.
     public struct Profile: Sendable {
-        fileprivate let raw: cyrinx_profile_t
+        fileprivate let raw: cyrinx_profile_v2_t
         public let frameSampleCount: Int
         public let payloadByteCount: Int
         /// Bytes in one payload block. Block `i` occupies `i * blockByteCount` onward in a payload.
         public static let blockByteCount = Int(CYRINX_BULK_CRC_BLOCK)
 
+        /// Looks up a registered profile, scrambled or not, by its ID.
         public init(id: UInt32) throws {
             var profile = Self.empty()
-            try BatchPHY.check(cyrinx_profile_get_by_id(id, &profile))
+            try BatchPHY.check(cyrinx_profile_v2_get_by_id(id, &profile))
             try self.init(validating: profile)
         }
 
+        /// The unscrambled registered profiles. This list does not grow when scrambled profiles
+        /// are added, so code that offers every entry of it keeps offering the same formats.
         public static func registered() throws -> [Self] {
-            try (0..<cyrinx_profile_get_count()).map { index in
+            try profiles(count: cyrinx_profile_get_count())
+        }
+
+        /// Every registered profile: the unscrambled ones in the order of `registered()`, then
+        /// the scrambled ones.
+        public static func registeredIncludingScrambled() throws -> [Self] {
+            try profiles(count: cyrinx_profile_v2_get_count())
+        }
+
+        // The C registry lists the unscrambled profiles first, in their original order.
+        private static func profiles(count: Int) throws -> [Self] {
+            try (0..<count).map { index in
                 var profile = Self.empty()
-                try BatchPHY.check(cyrinx_profile_get_by_index(index, &profile))
+                try BatchPHY.check(cyrinx_profile_v2_get_by_index(index, &profile))
                 return try Self(validating: profile)
             }
         }
 
-        private static func empty() -> cyrinx_profile_t {
-            var profile = cyrinx_profile_t()
-            profile.struct_size = CYRINX_PROFILE_V1_SIZE
-            profile.abi_version = CYRINX_PROFILE_ABI_VERSION
+        private static func empty() -> cyrinx_profile_v2_t {
+            var profile = cyrinx_profile_v2_t()
+            profile.struct_size = CYRINX_PROFILE_V2_SIZE
+            profile.abi_version = CYRINX_PROFILE_V2_ABI_VERSION
             return profile
         }
 
-        // Uses the C capacity query for both dimensions, including custom fixture profiles.
+        /// A custom unscrambled profile in the v1 layout, such as a test fixture. It must pass
+        /// the v1 validation before it is carried over to the v2 layout this type holds.
         init(validating value: cyrinx_profile_t) throws {
+            var v1 = value
+            try BatchPHY.check(cyrinx_profile_validate(&v1))
+            var profile = Self.empty()
+            // The v2 layout begins with the v1 fields at the same offsets.
+            withUnsafeMutableBytes(of: &profile) { target in
+                withUnsafeBytes(of: v1) { target.copyMemory(from: $0) }
+            }
+            profile.struct_size = CYRINX_PROFILE_V2_SIZE
+            profile.abi_version = CYRINX_PROFILE_V2_ABI_VERSION
+            try self.init(validating: profile)
+        }
+
+        // Uses the C capacity query for both dimensions, including custom fixture profiles.
+        init(validating value: cyrinx_profile_v2_t) throws {
             var profile = value
             var byte: UInt8 = 0
             var sample: Float = 0
             var result = BatchPHY.emptyResult()
-            let status = cyrinx_batch_encode(&profile, &byte, 0, &sample, 0, &result)
+            let status = cyrinx_batch_encode_v2(&profile, &byte, 0, &sample, 0, &result)
             guard status == CYRINX_STATUS_ERR_BUFFER_TOO_SMALL else {
                 try BatchPHY.check(status)
                 throw Failure.invalidArgument
@@ -72,6 +104,9 @@ public enum BatchPHY {
         public var clipSigma: Double { raw.clip_sigma }
         public var chirpStartHz: Double { raw.chirp_f0 }
         public var chirpEndHz: Double { raw.chirp_f1 }
+        /// The C scrambler mode, `CYRINX_PAYLOAD_SCRAMBLER_*`. It is part of the identity.
+        public var payloadScrambler: UInt32 { raw.payload_scrambler }
+        public var isScrambled: Bool { raw.payload_scrambler != CYRINX_PAYLOAD_SCRAMBLER_NONE.rawValue }
     }
 
     /// A logical microphone channel in owned planar or interleaved PCM.
@@ -138,18 +173,28 @@ public enum BatchPHY {
         public let metrics: Metrics
     }
 
-    /// Encodes exactly one frame. `payload` must hold `profile.payloadByteCount` bytes.
+    /// Encodes exactly one frame.
     ///
-    /// A shorter payload throws `Failure.invalidArgument`. The C entry point would zero-fill it,
-    /// and the codec has no scrambler: in the cases measured, a short record followed by zeros
-    /// decoded no blocks, including the block that carried the record. Fill unused space with
-    /// varied bytes. See docs/BATCH_PHY.md.
+    /// On a scrambled profile `payload` may hold from no bytes to `profile.payloadByteCount`. A
+    /// shorter payload is followed by zero bytes to fill the frame, and the decoder returns the
+    /// whole frame: the frame carries no length, so the application keeps it.
+    ///
+    /// On an unscrambled profile `payload` must hold exactly `profile.payloadByteCount` bytes,
+    /// and a shorter one throws `Failure.invalidArgument`. Zero fill there can lose the whole
+    /// frame: in the cases measured, a short record followed by zeros decoded no blocks,
+    /// including the block that carried the record. See docs/BATCH_PHY.md.
     public static func encode(_ payload: [UInt8], profile: Profile) throws -> Encoded {
-        guard payload.count == profile.payloadByteCount else { throw Failure.invalidArgument }
+        let capacity = profile.payloadByteCount
+        guard payload.count == capacity || (profile.isScrambled && payload.count < capacity) else {
+            throw Failure.invalidArgument
+        }
+        // The fill is done here, not left to the C entry point: C refuses the null pointer that
+        // an empty array becomes.
+        let frame = payload + [UInt8](repeating: 0, count: capacity - payload.count)
         var raw = profile.raw
         var result = emptyResult()
         var samples = [Float](repeating: 0, count: profile.frameSampleCount)
-        try check(cyrinx_batch_encode(&raw, payload, payload.count, &samples, samples.count, &result))
+        try check(cyrinx_batch_encode_v2(&raw, frame, frame.count, &samples, samples.count, &result))
         return Encoded(samples: samples, metrics: Metrics(result))
     }
 
@@ -164,7 +209,7 @@ public enum BatchPHY {
         var payload = [UInt8](repeating: 0, count: profile.payloadByteCount)
         var mask = [UInt8](repeating: 0, count: Int(profile.blockCount))
         func decodeInput() -> Int32 {
-            cyrinx_batch_decode(&raw, &input, &payload, payload.count, &mask, mask.count, &result)
+            cyrinx_batch_decode_v2(&raw, &input, &payload, payload.count, &mask, mask.count, &result)
         }
         let status = primary.withView(role: CYRINX_BATCH_ROLE_PRIMARY) {
             input.channels.0 = $0

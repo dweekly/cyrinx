@@ -15,9 +15,10 @@ def main():
     spec.loader.exec_module(replay)
     manifest = json.loads(replay.MANIFEST.read_text())
     profiles = len(manifest["profile_identities"])
+    registered = {int(key) for key in manifest["registered_profiles"]}
     cases = {case["name"]: case for case in manifest["cases"]}
     for case in cases.values():
-        replay.validate_case(case, profiles)
+        replay.validate_case(case, profiles, registered)
 
     def changed(name, **fields):
         case = copy.deepcopy(cases[name])
@@ -56,10 +57,15 @@ def main():
         "mask with other characters": changed("digital-qpsk", mask="2"),
         "dropout wider than its period": changed("periodic-dropout", dropout={"period": 4, "width": 8}),
         "dropout on two channels": changed("two-mic-recovery", dropout={"period": 2, "width": 1}),
+        "a test geometry and a registered profile": changed("digital-qpsk", registered_profile=8),
+        "no profile of either kind": changed("digital-qpsk", profile=None),
+        "a registered profile the list does not describe": changed(
+            "registered-scrambled-sparse", registered_profile=7),
+        "a registered profile as text": changed("registered-scrambled-sparse", registered_profile="8"),
     }
     for label, case in rejected.items():
         try:
-            replay.validate_case(case, profiles)
+            replay.validate_case(case, profiles, registered)
         except ValueError:
             continue
         raise RuntimeError(f"the replay runner accepted a case with {label}")
@@ -72,7 +78,7 @@ def main():
         "injected sample that truncation removes": changed("digital-qpsk", nonfinite_at=10, truncate=10),
     }
     for label, case in unreachable.items():
-        replay.validate_case(case, profiles)
+        replay.validate_case(case, profiles, registered)
         try:
             replay.fixture_bytes(case, None)
         except ValueError as error:
@@ -89,6 +95,13 @@ def main():
         "too few frame lengths": dict(manifest, frame_samples=frames[:-1]),
         "two cases with one name": dict(manifest, cases=[*manifest["cases"], manifest["cases"][0]]),
         "an unknown version": dict(manifest, version=2),
+        "a registered profile with no frame length": dict(
+            manifest, registered_profiles={"8": {"identity": manifest["registered_profiles"]["8"]["identity"]}}),
+        "a registered profile whose identity is not a digest": dict(
+            manifest, registered_profiles={"8": {"identity": "3bbb", "frame_samples": 147648}}),
+        "a registered profile keyed by a name": dict(
+            manifest, registered_profiles={"eight": manifest["registered_profiles"]["8"]}),
+        "cases naming a registered profile that is not listed": dict(manifest, registered_profiles={}),
     }
     for label, value in damaged.items():
         try:
@@ -109,6 +122,16 @@ def main():
         if done.returncode == 0 or result["status"] != "failed" or "frame_samples" not in result.get("error", ""):
             raise RuntimeError("the 32-bit x86 runner did not refuse a damaged list for its frame lengths: "
                                f"exit {done.returncode}, {result.get('error')!r}")
+    # A case's profile argument and expectation follow the kind of profile it names: a registered
+    # profile reports its own ID and the identity the list gives for it.
+    by_id = cases["registered-scrambled-sparse"]
+    facts = replay.profile_facts(by_id, manifest)
+    if replay.probe_profile(by_id) != "registered:8" or facts["profile_id"] != 8 or (
+            facts["identity"] != manifest["registered_profiles"]["8"]["identity"]):
+        raise RuntimeError("a registered case is not sent to the probes by its registered ID")
+    by_key = cases["digital-qpsk"]
+    if replay.probe_profile(by_key) != "0" or replay.profile_facts(by_key, manifest)["profile_id"] != 0xF000:
+        raise RuntimeError("a test-geometry case is not sent to the probes by its key")
     # A payload of the wrong length is refused and named as the payload, with a matching mask.
     case = cases["digital-qpsk"]
     expected = replay.expectation(case, manifest, b"")

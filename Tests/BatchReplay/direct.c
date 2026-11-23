@@ -4,8 +4,14 @@
 #include <stdlib.h>
 
 int main(int argc, char **argv) {
+    // A registered profile goes through the v2 type and entry point, a test geometry through
+    // the v1 ones, so both are exercised.
     cyrinx_profile_t profile;
-    if (argc != 4 || !replay_profile(atoi(argv[1]), &profile))
+    cyrinx_profile_v2_t registered;
+    if (argc != 4)
+        return 1;
+    bool by_id = replay_registered(argv[1], &registered);
+    if (!by_id && !replay_profile(atoi(argv[1]), &profile))
         return 1;
     uint32_t channels = (uint32_t)atoi(argv[3]);
     if (channels != 1 && channels != 2)
@@ -28,11 +34,12 @@ int main(int argc, char **argv) {
                      {samples, (size_t)size / sizeof(float), 1, channels, CYRINX_BATCH_ROLE_SECONDARY}}};
     cyrinx_batch_result_t result = {.struct_size = sizeof(result),
                                     .abi_version = CYRINX_BATCH_RESULT_ABI_VERSION};
-    size_t blocks = profile.block_count, capacity = blocks * 256;
+    size_t blocks = by_id ? registered.block_count : profile.block_count, capacity = blocks * 256;
     uint8_t *payload = calloc(capacity, 1), *mask = calloc(blocks, 1);
     if (!payload || !mask)
         return 1;
-    int status = cyrinx_batch_decode(&profile, &input, payload, capacity, mask, blocks, &result);
+    int status = by_id ? cyrinx_batch_decode_v2(&registered, &input, payload, capacity, mask, blocks, &result)
+                       : cyrinx_batch_decode(&profile, &input, payload, capacity, mask, blocks, &result);
     free(samples);
     // A rejected input is a result too: the header carries the status and nothing follows it.
     uint8_t header[REPLAY_HEADER_BYTES];

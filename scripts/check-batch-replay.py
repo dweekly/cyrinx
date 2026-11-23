@@ -166,6 +166,28 @@ def parse(packet):
     return record
 
 
+def probe_profile(case):
+    """The profile argument every probe is given for this case (Tests/BatchReplay/Profiles.h)."""
+    if "registered_profile" in case:
+        return f"registered:{case['registered_profile']}"
+    return str(case["profile"])
+
+
+def profile_facts(case, manifest):
+    """The identity, ID and frame length of the profile a case names.
+
+    A test geometry is known by its key and reports FIXTURE_ID_BASE plus that key. A registered
+    profile is known by, and reports, its registered ID.
+    """
+    if "registered_profile" in case:
+        entry = manifest["registered_profiles"][str(case["registered_profile"])]
+        return dict(identity=entry["identity"], profile_id=case["registered_profile"],
+                    frame_samples=entry["frame_samples"])
+    key = case["profile"]
+    return dict(identity=manifest["profile_identities"][key], profile_id=FIXTURE_ID_BASE + key,
+                frame_samples=manifest["frame_samples"][key])
+
+
 def expectation(case, manifest, pcm):
     """What every binding must report for this case, from the list and the input itself."""
     channels = 2 if "secondary_path" in case else 1
@@ -173,21 +195,18 @@ def expectation(case, manifest, pcm):
         # The decoder gave up after reading the capture. It still reports which profile it was
         # given, what that profile needs, how much it read and what it saw, with nothing produced.
         blocks = case["blocks"]
-        return dict(status=DECODE_FAILURE, identity=manifest["profile_identities"][case["profile"]],
-                    profile_id=FIXTURE_ID_BASE + case["profile"], receiver=case["receiver"],
+        return dict(status=DECODE_FAILURE, **profile_facts(case, manifest), receiver=case["receiver"],
                     reason=case["reason"], blocks_total=blocks, blocks_ok=0, validity_required=blocks,
                     clipping=case["clipping"], nonfinite=case["nonfinite"], payload_required=256 * blocks,
-                    frame_samples=manifest["frame_samples"][case["profile"]],
                     logical_samples=len(pcm) // 4 // channels, payload_bytes=0)
     if case.get("status", 0):
         return dict(status=case["status"])
     mask = case["mask"]
-    return dict(status=0, identity=manifest["profile_identities"][case["profile"]],
-                profile_id=FIXTURE_ID_BASE + case["profile"], receiver=case["receiver"],
+    return dict(status=0, **profile_facts(case, manifest), receiver=case["receiver"],
                 reason=case["reason"], blocks_total=len(mask), blocks_ok=mask.count("1"),
                 validity_required=len(mask), clipping=case["clipping"], nonfinite=case["nonfinite"],
-                payload_required=256 * len(mask), frame_samples=manifest["frame_samples"][case["profile"]],
-                logical_samples=len(pcm) // 4 // channels, payload_bytes=256 * len(mask))
+                payload_required=256 * len(mask), logical_samples=len(pcm) // 4 // channels,
+                payload_bytes=256 * len(mask))
 
 
 class Mismatch(ValueError):
@@ -289,7 +308,8 @@ def validate_report(report):
 
 
 REPORT_SCHEMA = "cyrinx-batch-replay-report/2"
-IDENTITY_FIELDS = {"name", "profile", "pcm_sha256"}
+IDENTITY_FIELDS = {"name", "pcm_sha256"}  # and exactly one of PROFILE_FIELDS
+PROFILE_FIELDS = {"profile", "registered_profile"}
 FAILURE_FIELDS = {"blocks", "receiver", "reason", "clipping", "nonfinite", "metrics"}
 DECODED_FIELDS = {"mask", "receiver", "reason", "valid_payload_sha256", "clipping", "nonfinite", "metrics"}
 FILE_FIELDS = {"path"}, {"secondary_path", "dropout", "gain", "nonfinite_at", "truncate", "delay", "status"}
@@ -297,8 +317,11 @@ RECORDING_FIELDS = {"archive", "source_sha256", "start", "samples"}, {"member", 
 RESEARCH_PROFILE = 2  # The control geometry is the only one the research lane decodes.
 
 
-def validate_case(case, profile_count):
+def validate_case(case, profile_count, registered=()):
     """Refuse any case this runner would not apply in full.
+
+    `profile_count` is the number of test geometries the list describes and `registered` the
+    registered profile IDs it describes.
 
     A field it ignored would let a run pass against a different input or decoder than the list
     asked for, so the set of fields is closed: one source, and only the options that source reads.
@@ -318,13 +341,19 @@ def validate_case(case, profile_count):
                          "failed decode")
     # A refused input writes no result, so its case is the status alone. A failed decode writes
     # evidence, so its case names that evidence and every binding must report it.
-    required = required | IDENTITY_FIELDS | (FAILURE_FIELDS if failed else set() if rejected else DECODED_FIELDS)
+    if len(PROFILE_FIELDS & case.keys()) != 1:
+        raise ValueError(f"{name}: name exactly one of profile or registered_profile")
+    required = (required | IDENTITY_FIELDS | (PROFILE_FIELDS & case.keys())
+                | (FAILURE_FIELDS if failed else set() if rejected else DECODED_FIELDS))
     if not required <= case.keys() <= required | optional:
         odd = sorted((required - case.keys()) | (case.keys() - required - optional))
         raise ValueError(f"{name}: missing or unsupported fields {', '.join(odd)}")
-    profile = case["profile"]
-    if type(profile) is not int or not 0 <= profile < profile_count:
+    profile = case.get("profile")
+    if "profile" in case and (type(profile) is not int or not 0 <= profile < profile_count):
         raise ValueError(f"{name}: unknown profile {profile!r}")
+    listed = case.get("registered_profile")
+    if "registered_profile" in case and (type(listed) is not int or listed not in registered):
+        raise ValueError(f"{name}: the list does not describe registered profile {listed!r}")
     if not rejected:
         mask = case["mask"]
         if not isinstance(mask, str) or not mask or set(mask) - {"0", "1"}:
@@ -416,11 +445,20 @@ def validate_manifest(manifest):
     if (not isinstance(frames, list) or len(frames) != len(manifest["profile_identities"])
             or not all(type(n) is int and n > 0 for n in frames)):
         raise ValueError("the list needs frame_samples, one whole number per profile")
+    # Registered profiles a case may name, by ID: the identity and frame length each must report.
+    listed = manifest.get("registered_profiles", {})
+    if not isinstance(listed, dict) or not all(
+            key.isdecimal() and str(int(key)) == key and isinstance(entry, dict)
+            and entry.keys() == {"identity", "frame_samples"} and isinstance(entry["identity"], str)
+            and len(entry["identity"]) == 64 and not set(entry["identity"]) - set("0123456789abcdef")
+            and type(entry["frame_samples"]) is int and entry["frame_samples"] > 0
+            for key, entry in listed.items()):
+        raise ValueError("registered_profiles maps a registered ID to its identity and frame_samples")
     names = [case.get("name") for case in manifest["cases"]]
     if not all(isinstance(name, str) and name for name in names) or len(set(names)) != len(names):
         raise ValueError("every replay case needs its own name")
     for case in manifest["cases"]:
-        validate_case(case, len(manifest["profile_identities"]))
+        validate_case(case, len(manifest["profile_identities"]), {int(key) for key in listed})
 
 
 def execute(args, report):
@@ -506,7 +544,7 @@ def execute(args, report):
                 for name, cmd in probes.items():
                     # Named before the probe runs, so a crash or a sanitizer report is attributed.
                     report["checking"] = f"{backend}/{name}/{case['name']}"
-                    packet = run([*cmd, case["profile"], windows[case["name"]],
+                    packet = run([*cmd, probe_profile(case), windows[case["name"]],
                                   2 if "secondary_path" in case else 1])
                     packet = judge(backend, name, case, packet, reference)
                     # Bindings share one C build, so their records are identical to the byte. The
@@ -523,7 +561,8 @@ def execute(args, report):
             dex, library, ndk = android.build(build, ADAPTERS, jar)
             report["toolchains"]["Android NDK"] = ndk
             for serial in args.android:
-                android.replay(serial, dex, library, cases, windows, kiss_reference, report, judge)
+                android.replay(serial, dex, library, cases, windows, kiss_reference, report, judge,
+                               probe_profile)
         if any("research" in case for case in cases):
             report["checking"] = "research control frames"
             retained_research(build, cases, windows, report["results"], args.observe)
