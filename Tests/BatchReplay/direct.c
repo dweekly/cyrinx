@@ -1,3 +1,4 @@
+#include "Packet.h"
 #include "Profiles.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,17 +30,16 @@ int main(int argc, char **argv) {
                                     .abi_version = CYRINX_BATCH_RESULT_ABI_VERSION};
     size_t blocks = profile.block_count, capacity = blocks * 256;
     uint8_t *payload = calloc(capacity, 1), *mask = calloc(blocks, 1);
+    if (!payload || !mask)
+        return 1;
     int status = cyrinx_batch_decode(&profile, &input, payload, capacity, mask, blocks, &result);
     free(samples);
-    if (status != CYRINX_STATUS_OK || result.blocks_total != blocks ||
-        result.payload_bytes_produced != capacity) {
-        fprintf(stderr, "batch decode status %d, blocks %u\n", status, result.blocks_total);
-        return 1;
-    }
-    bool ok = fwrite(result.profile_identity_sha256, 1, 32, stdout) == 32 &&
-              fwrite(&result.selected_receiver, sizeof(uint32_t), 1, stdout) == 1 &&
-              fwrite(&result.selection_reason, sizeof(uint32_t), 1, stdout) == 1 &&
-              fwrite(mask, 1, blocks, stdout) == blocks && fwrite(payload, 1, capacity, stdout) == capacity;
+    // A rejected input is a result too: the header carries the status and nothing follows it.
+    uint8_t header[REPLAY_HEADER_BYTES];
+    replay_header(header, status, &result);
+    bool ok = fwrite(header, 1, sizeof header, stdout) == sizeof header;
+    if (ok && status == CYRINX_STATUS_OK)
+        ok = fwrite(mask, 1, blocks, stdout) == blocks && fwrite(payload, 1, capacity, stdout) == capacity;
     free(mask);
     free(payload);
     return ok ? 0 : 1;

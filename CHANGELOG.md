@@ -7,6 +7,23 @@ date-labelled.
 Detailed evidence for every claim is in the cited document and its reproduction
 commands or content hashes.
 
+## Unreleased — conformance: full result records, sanitizers, negative controls
+
+- **Every binding now reports the whole decode result**, and the replay
+  runner compares it field by field: status, identity, decisions and counts
+  exactly, and the EVM and pilot residuals against a tolerance declared per
+  fixture. Twelve fixtures give 108 cross-binding outcomes on a Mac and two
+  phones, plus the two research outcomes.
+- **The C core runs under AddressSanitizer and UndefinedBehaviorSanitizer** on
+  every fixture. Neither reported anything.
+- **Generated faults**: a truncated capture is rejected by every binding with
+  the same status; a not-a-number sample and an overdriven capture are counted
+  as evidence.
+- **Negative controls**: changing a payload byte, a mask position, a count, an
+  identity byte or a metric beyond its tolerance each fails the run and names
+  the field. Partial work toward C3-08; see the status ledger in
+  [docs/CYRINX_3_PLAN.md](docs/CYRINX_3_PLAN.md).
+
 ## Unreleased — 32-bit x86 supported by the C core
 
 - **The Cyrinx 3 batch and profile structures now have one layout on every
