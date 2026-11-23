@@ -315,9 +315,16 @@ loopback; numbers are quoted as measured.
     receiver decision, mask and every payload byte matched the macOS arm64
     build (`.venv/bin/python scripts/check-x86-32.py --host <linux host>`).
     Not tested: the Android runtime or JNI on 32-bit x86, for which no
-    device or emulator was available. The lesson is general: a 64-bit
-    member that follows a pointer or a 32-bit member needs explicit
-    alignment in any future versioned structure.
+    device or emulator was available. This covers the Cyrinx 3 versioned
+    structures only: the ABI header, the profile, and the batch channel
+    view, input and result. The 2.x structures make no such promise and
+    still differ on 32-bit x86, where a double also aligns to four bytes:
+    `cyrinx_bulk_diversity_diagnostics` is 60 bytes there and 64 on the
+    other three. Each is filled and read within one build, so the
+    difference changes no result, as the 32-bit run above shows for the
+    two-channel fixtures that use that structure. The lesson is general:
+    a 64-bit integer or double that follows a pointer or a 32-bit member
+    needs explicit alignment in any future versioned structure.
 
 ## Measurement-integrity reminders (process, not physics)
 

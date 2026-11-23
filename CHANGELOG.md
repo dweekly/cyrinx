@@ -9,11 +9,13 @@ commands or content hashes.
 
 ## Unreleased — 32-bit x86 supported by the C core
 
-- **The versioned structures now have one layout on every ABI.** The batch
-  channel view was 28 bytes on 32-bit x86 and 32 everywhere else. Its first
-  64-bit member is now eight-byte aligned everywhere, its field offsets are
-  asserted, and the core builds for arm64-v8a, armeabi-v7a, x86_64 and x86.
-  Layout on the other three is unchanged.
+- **The Cyrinx 3 batch and profile structures now have one layout on every
+  ABI.** The batch channel view was 28 bytes on 32-bit x86 and 32 everywhere
+  else. Its first 64-bit member is now eight-byte aligned everywhere, its
+  field offsets are asserted, and the core builds for arm64-v8a,
+  armeabi-v7a, x86_64 and x86. Layout on the other three is unchanged. The
+  2.x structures make no such promise and still differ on 32-bit x86
+  ([NEGATIVE_FINDINGS entry 27](docs/NEGATIVE_FINDINGS.md)).
 - **The decoder runs correctly as a 32-bit x86 program.** Built in a 32-bit
   x86 Linux container with the Android x86 ABI's floating-point settings, it
   gives the same identity, receiver decision, mask and payload bytes as the

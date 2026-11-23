@@ -75,7 +75,9 @@ typedef int32_t cyrinx_abi_status_t;
  * never read and never modified. On rejection the entry point returns
  * CYRINX_STATUS_ERR_INVALID_ARGUMENT and writes no output at all. */
 /* ---------------- Identical layout on every ABI ----------------
- * A versioned structure must have the same size and field offsets everywhere.
+ * The Cyrinx 3 structures with a named size constant (the profile, the batch
+ * input with its channel views, and the batch result) must have the same size
+ * and field offsets everywhere. The 2.x structures make no such promise.
  * 32-bit x86 aligns a 64-bit integer to four bytes where every other supported
  * ABI uses eight, so a 64-bit member that follows a pointer or a 32-bit member
  * would sit four bytes earlier there. Marking that member CYRINX_ALIGN8 gives
