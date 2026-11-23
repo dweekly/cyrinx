@@ -151,8 +151,8 @@ final class CyrinxBulkTXTests: XCTestCase {
                 XCTAssertEqual(dataFreq.count, expDataFreq.count * 2, "\(c.name): data_freq count")
                 var dfErr: Float = 0
                 for k in 0..<expDataFreq.count {
-                    dfErr = max(dfErr, abs(Float(dataFreq[k * 2]) - expDataFreq[k].re))
-                    dfErr = max(dfErr, abs(Float(dataFreq[k * 2 + 1]) - expDataFreq[k].im))
+                    dfErr = worse(dfErr, abs(Float(dataFreq[k * 2]) - expDataFreq[k].re))
+                    dfErr = worse(dfErr, abs(Float(dataFreq[k * 2 + 1]) - expDataFreq[k].im))
                 }
                 XCTAssertLessThan(dfErr, tol, "\(c.name): data_freq max abs err \(dfErr)")
 
@@ -160,7 +160,7 @@ final class CyrinxBulkTXTests: XCTestCase {
                 XCTAssertEqual(wave.count, expWave.count, "\(c.name): wave length")
                 var wErr: Float = 0
                 for i in 0..<min(wave.count, expWave.count) {
-                    wErr = max(wErr, abs(wave[i] - expWave[i]))
+                    wErr = worse(wErr, abs(wave[i] - expWave[i]))
                 }
                 XCTAssertLessThan(wErr, tol, "\(c.name): wave max abs err \(wErr)")
             }
@@ -285,6 +285,13 @@ final class CyrinxBulkTXTests: XCTestCase {
             z = z ^ (z >> 31)
         }
         return z
+    }
+
+    /// The larger of a running worst error and a new one, where an error that is not a number
+    /// counts as the worst there is. `max` would never select it, and a comparison of the result
+    /// with a tolerance would then pass a waveform holding such a sample.
+    private func worse(_ worst: Float, _ error: Float) -> Float {
+        error.isNaN || error > worst ? error : worst
     }
 
     private func cases() throws -> [GoldenVectors.Case] {

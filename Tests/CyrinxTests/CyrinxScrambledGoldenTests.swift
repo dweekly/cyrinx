@@ -97,8 +97,11 @@ import Testing
             let reference = try fixture.floats("wave")
             let samples = try #require(C3V2.encode(fixture.profile, payload: try fixture.bytes("payload")))
             try #require(samples.count == reference.count, "\(fixture.golden.name): frame length")
-            let worst = zip(samples, reference).map { abs($0 - $1) }.max() ?? 0
-            #expect(worst < tolerance, "\(fixture.golden.name): largest sample difference \(worst)")
+            // Each pair is held to the tolerance by itself. A largest-difference test would let a
+            // sample that is not a number through: comparisons with it are false, so it is
+            // never the largest.
+            let outside = zip(samples, reference).filter { !(abs($0 - $1) < tolerance) }
+            #expect(outside.isEmpty, "\(fixture.golden.name): \(outside.count) samples outside the tolerance")
         }
     }
 
@@ -127,10 +130,15 @@ import Testing
             #expect(C3V2.restamp(&twin) == CYRINX_STATUS_OK)
             let payload = try fixture.bytes("payload")
             let plain = try #require(C3V2.encode(twin, payload: payload))
+            // Both decodes must run to completion and check every block: a decoder that gave up
+            // would also report no valid block.
             let lost = try #require(C3V2.decode(twin, samples: plain))
-            #expect(lost.result.blocks_ok == 0, "the payload survives without the scrambler")
+            #expect(lost.status == CYRINX_STATUS_OK)
+            #expect(
+                lost.mask == [UInt8](repeating: 0, count: config.nBlocks), "the payload survives unscrambled")
             let crossed = try #require(C3V2.decode(twin, samples: try fixture.floats("rx_wave")))
-            #expect(crossed.result.blocks_ok == 0)
+            #expect(crossed.status == CYRINX_STATUS_OK)
+            #expect(crossed.mask == [UInt8](repeating: 0, count: config.nBlocks))
         }
     }
 }
