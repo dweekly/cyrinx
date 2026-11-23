@@ -28,12 +28,18 @@ if [ ! -x "$PYTHON" ]; then
     echo "no Python at $PYTHON; create .venv or set CYRINX_PYTHON" >&2
     exit 2
 fi
+# The suites run from their own directories, so a relative path is fixed to this one first.
+case "$PYTHON" in
+/*) ;;
+*) PYTHON="$ROOT_DIR/$PYTHON" ;;
+esac
 
 CORE="Sources/CCyrinx"
 clang -std=c11 -O2 -dynamiclib -Dkiss_fft_scalar=double \
     -I"$CORE/include" -I"$CORE/kissfft" \
     "$CORE/cyrinx_bulk.c" "$CORE/cyrinx_fft.c" "$CORE/kissfft/kiss_fft.c" "$CORE/kissfft/kiss_fftr.c" \
     -o scratch/hw20k/libcyrinxbulk.dylib -lm
+CODEC_LIBRARY="$ROOT_DIR/scratch/hw20k/libcyrinxbulk.dylib"
 RESEARCH_LIBRARY="$ROOT_DIR/scratch/garage/libcyrinxclock.dylib"
 scratch/garage/build_clock_dylib.sh "$RESEARCH_LIBRARY" >/dev/null
 
@@ -56,7 +62,9 @@ run_suite() {
     rm -f "$log"
 }
 
-run_suite scratch/hw20k
+# Each suite is told which library to load. A CYRINX_BULK_CODEC_PATH inherited from the caller
+# would otherwise point the tests at some other build than the one just made.
+CYRINX_BULK_CODEC_PATH="$CODEC_LIBRARY" run_suite scratch/hw20k
 # The garage tests load the research decoder as the codec, so its pilot-fit switch is reachable.
 CYRINX_BULK_CODEC_PATH="$RESEARCH_LIBRARY" CYRINX_CLOCK_CODEC_PATH="$RESEARCH_LIBRARY" run_suite scratch/garage
 echo "Research suites passed with no test skipped."
