@@ -191,8 +191,10 @@ def compare(case, expected, record):
     observed_exact = {field: record[field] for field in EXACT if field != "status"}
     mask, payload = record["mask"], record["payload"]
     ordered = "".join(str(v) for v in mask)
-    if any(v > 1 for v in mask) or ordered != case["mask"] or len(payload) != 256 * len(mask):
-        raise Mismatch(f"mask: expected mask {case['mask']}, observed {ordered}, {len(payload)} payload bytes")
+    if any(v > 1 for v in mask) or ordered != case["mask"]:
+        raise Mismatch(f"mask: expected mask {case['mask']}, observed {ordered}")
+    if len(payload) != 256 * len(mask):
+        raise Mismatch(f"payload: expected {256 * len(mask)} bytes, observed {len(payload)}")
     valid = b"".join(payload[i * 256:(i + 1) * 256] for i, v in enumerate(mask) if v)
     if sha(valid) != case["valid_payload_sha256"]:
         raise Mismatch("payload: decoded bytes differ from the transmitted blocks")
@@ -332,6 +334,15 @@ def validate_case(case, profile_count):
         raise ValueError(f"{name}: a research expectation needs profile {RESEARCH_PROFILE}, a mask and a hash")
 
 
+def research_outcome(case, mask, payload):
+    """What the research decoder returned, and whether it differs from what the list names."""
+    ordered = "".join(str(v) for v in mask)
+    valid = b"".join(payload[i * 256:(i + 1) * 256] for i, v in enumerate(mask) if v)
+    unexpected = (ordered != case["research"]["mask"] or len(payload) != 256 * len(mask)
+                  or sha(valid) != case["research"]["valid_payload_sha256"])
+    return dict(mask=ordered, valid_payload_sha256=sha(valid)), unexpected
+
+
 def retained_research(build, cases, windows, rows, observe):
     import numpy as np
 
@@ -355,25 +366,17 @@ def retained_research(build, cases, windows, rows, observe):
             decoded = clock_offset.decode(cfg, samples)
             if decoded is None:
                 raise ValueError(f"research decoder failed on {case['name']}")
-            mask, payload = bytes(decoded["block_valid"]), decoded["payload"]
-            ordered = "".join(str(v) for v in mask)
-            valid = b"".join(payload[i * 256:(i + 1) * 256] for i, v in enumerate(mask) if v)
-            unexpected = (ordered != case["research"]["mask"]
-                          or sha(valid) != case["research"]["valid_payload_sha256"])
+            actual, unexpected = research_outcome(case, bytes(decoded["block_valid"]), decoded["payload"])
             if unexpected and not observe:
                 raise ValueError(f"research decoder: unexpected result on {case['name']}")
-            actual = dict(mask=ordered, valid_payload_sha256=sha(valid))
             rows.append(dict(fixture=case["name"], binding="research C via ctypes", backend="KISS", **actual))
 
 
-def execute(args, report):
-    if sys.byteorder != "little":
-        raise ValueError("replay adapters require a little-endian host")
-    if args.mutate is not None and ":" not in args.mutate:
-        raise ValueError("--mutate names a record and a field as BACKEND/BINDING/FIXTURE:FIELD")
-    if args.observe and args.mutate is not None:
-        raise ValueError("--mutate changes a record and --observe records it as seen; use one at a time")
-    manifest = json.loads(args.manifest.read_bytes())
+def validate_manifest(manifest):
+    """Reject a damaged list whole, before any entry is set aside or run.
+
+    Every runner that reads the list calls this, so none accepts a list another refuses.
+    """
     if manifest["version"] != 1:
         raise ValueError("unsupported replay manifest")
     frames = manifest.get("frame_samples")
@@ -385,6 +388,17 @@ def execute(args, report):
         raise ValueError("every replay case needs its own name")
     for case in manifest["cases"]:
         validate_case(case, len(manifest["profile_identities"]))
+
+
+def execute(args, report):
+    if sys.byteorder != "little":
+        raise ValueError("replay adapters require a little-endian host")
+    if args.mutate is not None and ":" not in args.mutate:
+        raise ValueError("--mutate names a record and a field as BACKEND/BINDING/FIXTURE:FIELD")
+    if args.observe and args.mutate is not None:
+        raise ValueError("--mutate changes a record and --observe records it as seen; use one at a time")
+    manifest = json.loads(args.manifest.read_bytes())
+    validate_manifest(manifest)
     cases = [case for case in manifest["cases"] if not args.digital_only or "archive" not in case]
     # The tier names the evidence this run reads, whichever flags selected it.
     report["tier"] = "retained" if any("archive" in case for case in cases) else "digital"

@@ -72,8 +72,48 @@ def main():
             if source["name"] in str(error) and "digest" not in str(error):
                 continue
         raise RuntimeError(f"the replay runner built an input with {label}")
+    # The whole list is checked by one function that every runner calls, including the 32-bit
+    # x86 one, which sets recording cases aside only after the list has passed.
+    replay.validate_manifest(manifest)
+    frames = manifest["frame_samples"]
+    damaged = {
+        "a frame length that is not a whole number": dict(manifest, frame_samples=[float(frames[0]), *frames[1:]]),
+        "a missing frame length": dict(manifest, frame_samples=[*frames[:-1], None]),
+        "too few frame lengths": dict(manifest, frame_samples=frames[:-1]),
+        "two cases with one name": dict(manifest, cases=[*manifest["cases"], manifest["cases"][0]]),
+        "an unknown version": dict(manifest, version=2),
+    }
+    for label, value in damaged.items():
+        try:
+            replay.validate_manifest(value)
+        except ValueError:
+            continue
+        raise RuntimeError(f"the replay runner accepted a list with {label}")
+    x86 = (root / "scripts/check-x86-32.py").read_text()
+    if "replay.validate_manifest(manifest)" not in x86 or "validate_case" in x86:
+        raise RuntimeError("the 32-bit x86 runner does not use the replay's own check of the list")
+    # A payload of the wrong length is refused and named as the payload, with a matching mask.
+    case = cases["digital-qpsk"]
+    expected = replay.expectation(case, manifest, b"")
+    record = dict(expected, mask=bytes(int(bit) for bit in case["mask"]))
+    for length in (256 * len(case["mask"]) - 1, 256 * len(case["mask"]) + 1):
+        try:
+            replay.compare(case, expected, dict(record, payload=bytes(length)))
+        except replay.Mismatch as error:
+            if str(error) == f"payload: expected {256 * len(case['mask'])} bytes, observed {length}":
+                continue
+            raise RuntimeError(f"a {length}-byte payload was reported as: {error}") from error
+        raise RuntimeError(f"the replay runner accepted a {length}-byte payload")
+    # The research comparison refuses a result with bytes beyond the blocks its mask covers.
+    control = cases["pixel-behind-monitor-control"]
+    blocks = len(control["research"]["mask"])
+    mask = bytes(int(bit) for bit in control["research"]["mask"])
+    for length in (256 * blocks - 1, 256 * blocks + 1):
+        if not replay.research_outcome(control, mask, bytes(length))[1]:
+            raise RuntimeError(f"the research comparison accepted a {length}-byte payload")
     print(f"Confirmed that {len(cases)} bundled cases validate, {len(rejected)} malformed cases are refused, "
-          f"and {len(unreachable)} faults that cannot reach the decoder are refused.")
+          f"{len(unreachable)} faults that cannot reach the decoder are refused, {len(damaged)} damaged lists "
+          "are refused, and a payload of the wrong length is refused in both comparisons.")
 
 
 if __name__ == "__main__":
