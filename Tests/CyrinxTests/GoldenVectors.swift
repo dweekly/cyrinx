@@ -75,7 +75,22 @@ enum GoldenVectors {
             case chirpF0 = "chirp_f0"
             case chirpF1 = "chirp_f1"
             case mic0AloneBlocksOk = "mic0_alone_blocks_ok"
+            case payloadScrambler = "payload_scrambler"
+            case profileIdentitySha256 = "profile_identity_sha256"
+            case preClipPeakToRms = "pre_clip_peak_to_rms"
+            case unscrambledPreClipPeakToRms = "unscrambled_pre_clip_peak_to_rms"
         }
+
+        // Declared after the coding keys so that enum keeps its line in the SwiftLint baseline.
+        /// Scrambled cases only: the payload scrambler mode (cyrinx_payload_scrambler_t), the
+        /// v2 identity of the fixture profile that describes the case, computed by the
+        /// generator, and the peak-to-RMS ratio of the frame before the clip, with and without
+        /// the scrambler.
+        let payloadScrambler: Int?
+        let profileIdentitySha256: String?
+        let preClipPeakToRms: Double?
+        let unscrambledPreClipPeakToRms: Double?
+        var isScrambled: Bool { (payloadScrambler ?? 0) != 0 }
     }
 
     struct Artifact: Decodable {

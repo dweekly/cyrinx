@@ -221,6 +221,26 @@ def prbs_bits(n, seed=0xC0FFEE):
     return DetRng(seed).bits(n)
 
 
+# ---------------- Payload scrambler ----------------
+# Mode 1 of docs/SCRAMBLER_PLAN.md, written from that text and not from the C source: XOR the
+# framed bits (each block's 256 payload bytes then its four CRC bytes, most significant bit
+# first) with one high bit per SplitMix64 output from this seed. The mask starts at bit zero of
+# the frame and runs on across CRCs and block boundaries. The information padding after the
+# framed bits is not masked.
+SCRAMBLER_NONE = 0
+SCRAMBLER_FRAMED_BITS_V1 = 1
+SCRAMBLER_V1_SEED = int.from_bytes(b"CYRXSCR1", "big")
+
+
+def scramble_framed_bits(bits, mode):
+    """XOR `bits` with the mode's mask. XOR is its own inverse, so RX calls this too."""
+    if mode == SCRAMBLER_NONE:
+        return bits
+    if mode != SCRAMBLER_FRAMED_BITS_V1:
+        raise ValueError(f"unsupported payload scrambler mode {mode}")
+    return bits ^ prbs_bits(len(bits), seed=SCRAMBLER_V1_SEED)
+
+
 def pilot_symbols(pilot_bins, seed=0xBEEF):
     r = DetRng(seed)
     ph = np.array([r.mod(4) for _ in range(len(pilot_bins))])
@@ -234,8 +254,9 @@ class Config:
                  bits_per_bin=None, rate="1/2", n_sym=64, amp=0.5,
                  clip_sigma=3.3, nfft=NFFT, cp=CP, sr=SR,
                  chirp_f0=None, chirp_f1=None, track_alpha=0.0,
-                 rx_bandpass=None):
+                 rx_bandpass=None, payload_scrambler=SCRAMBLER_NONE):
         self.sr = sr
+        self.payload_scrambler = payload_scrambler
         self.track_alpha = track_alpha   # decision-directed H tracking rate
         self.rx_bandpass = rx_bandpass   # (lo,hi) Hz receive prefilter, or None
         self.nfft = nfft
@@ -388,7 +409,8 @@ def modulate_frame(cfg, payload_bytes, frame_seed=1, taps=None):
         crc = zlib.crc32(blk).to_bytes(4, "big")
         blocks.append(blk + crc)
     stream = b"".join(blocks)
-    bits = np.unpackbits(np.frombuffer(stream, dtype=np.uint8))
+    bits = scramble_framed_bits(np.unpackbits(np.frombuffer(stream, dtype=np.uint8)),
+                                cfg.payload_scrambler)
     # pad info bits up to cfg.info_bits
     pad = cfg.info_bits - len(bits)
     pad_info = prbs_bits(pad, seed=7) if pad else np.zeros(0, dtype=np.uint8)
@@ -633,7 +655,9 @@ def demodulate_frame(cfg, rx, start_hint=None, fine_window=400, diag=None, rx2=N
     # CRC check per block; keep per-position results so callers can verify
     # ordered reconstruction (block j must match payload bytes at offset j),
     # not mere set membership.
-    by = np.packbits(bits[: cfg.n_blocks * (CRC_BLOCK + 4) * 8]).tobytes()
+    framed = scramble_framed_bits(bits[: cfg.n_blocks * (CRC_BLOCK + 4) * 8].astype(np.uint8),
+                                  cfg.payload_scrambler)
+    by = np.packbits(framed).tobytes()
     ok = 0
     good = bytearray()
     blocks = []
